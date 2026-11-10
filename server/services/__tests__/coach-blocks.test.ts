@@ -298,6 +298,12 @@ describe("server-only write cards", () => {
     };
     expect(validateBlocks([modelWritten])).toEqual([]);
   });
+
+  it("drops a checked_trail block the model wrote — only the server builds the trail", () => {
+    expect(
+      validateBlocks([{ type: "checked_trail", items: ["your pantry"] }]),
+    ).toEqual([]);
+  });
 });
 
 describe("write-card prompt rules", () => {

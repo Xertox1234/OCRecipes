@@ -2,6 +2,33 @@ import { describe, it, expect } from "vitest";
 import { runAssertions, runStructuralAssertions } from "../assertions";
 
 describe("runAssertions", () => {
+  it("maxWords survives the dataset schema the runner parses with", async () => {
+    const { evalTestCasesSchema } = await import("../types");
+    const { readFileSync } = await import("node:fs");
+    const raw: unknown = JSON.parse(
+      readFileSync(
+        new URL("../datasets/coach-cases.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    const parsed = evalTestCasesSchema.parse(raw);
+    const capped = parsed.filter((c) => c.assertions?.maxWords !== undefined);
+    expect(capped.map((c) => c.id).sort()).toEqual([
+      "shape-fits-question-01",
+      "shape-general-question-01",
+      "shape-off-topic-01",
+    ]);
+  });
+
+  it("maxWords fails a reply that is too long", () => {
+    expect(
+      runAssertions("one two three four", { maxWords: 3 }).failures,
+    ).toEqual(["Response has 4 words, more than 3"]);
+    expect(runAssertions("one two three four", { maxWords: 4 }).passed).toBe(
+      true,
+    );
+  });
+
   it("passes when no assertions are defined", () => {
     const result = runAssertions("Any response text", undefined);
     expect(result.passed).toBe(true);

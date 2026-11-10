@@ -1575,6 +1575,102 @@ describe("handleCoachChat", () => {
       const statusEvent = events.find((e) => e.type === "status");
       expect(statusEvent).toEqual({ type: "status", label: "Working on it…" });
     });
+
+    it("each tool call emits the plain status and a specific step, in order", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield {
+            type: "tool_calls",
+            toolNames: ["lookup_nutrition", "get_pantry_items"],
+            calls: [
+              {
+                name: "lookup_nutrition",
+                arguments: '{"query":"beef burger"}',
+              },
+              { name: "get_pantry_items", arguments: "{}" },
+            ],
+          };
+          yield { type: "content", content: "Yes, it fits." };
+        },
+      );
+      const events = await collectEvents(
+        handleCoachChat(makeParams({ isCoachPro: true })),
+      );
+      expect(
+        events.filter((e) => e.type === "status" || e.type === "step"),
+      ).toEqual([
+        // step first: a new client queues it, then ignores the plain status
+        // (no flicker, one announcement); old clients ignore `step`.
+        { type: "step", label: "Looking up beef burger…" },
+        { type: "status", label: "Looking up nutrition…" },
+        { type: "step", label: "Checking your pantry…" },
+        { type: "status", label: "Checking your pantry…" },
+      ]);
+    });
+
+    it("the saved reply leads with a checked_trail block", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield {
+            type: "tool_calls",
+            toolNames: ["lookup_nutrition", "get_pantry_items"],
+            calls: [
+              {
+                name: "lookup_nutrition",
+                arguments: '{"query":"beef burger"}',
+              },
+              { name: "get_pantry_items", arguments: "{}" },
+            ],
+          };
+          yield { type: "content", content: "Yes, it fits." };
+        },
+      );
+      const events = await collectEvents(
+        handleCoachChat(makeParams({ isCoachPro: true })),
+      );
+      const trail = {
+        type: "checked_trail",
+        items: ["beef burger", "your pantry"],
+      };
+      const saved = vi.mocked(storage.createChatMessage).mock.calls.at(-1);
+      expect((saved?.[4] as { blocks: unknown[] }).blocks[0]).toEqual(trail);
+      const final = events.filter((e) => e.type === "blocks").at(-1);
+      expect(final?.type === "blocks" ? final.blocks[0] : null).toEqual(trail);
+    });
+
+    it("a reply with no tool calls saves no checked_trail", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield { type: "content", content: "Olive oil is a healthy fat." };
+        },
+      );
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+      const saved = vi.mocked(storage.createChatMessage).mock.calls.at(-1);
+      const meta = saved?.[4] as { blocks?: { type: string }[] } | null;
+      expect((meta?.blocks ?? []).some((b) => b.type === "checked_trail")).toBe(
+        false,
+      );
+    });
+
+    it("a safety override saves no checked_trail", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield {
+            type: "tool_calls",
+            toolNames: ["get_pantry_items"],
+            calls: [{ name: "get_pantry_items", arguments: "{}" }],
+          };
+          yield { type: "safety_override" };
+        },
+      );
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+      for (const c of vi.mocked(storage.createChatMessage).mock.calls) {
+        const meta = c[4] as { blocks?: { type: string }[] } | null;
+        expect(
+          (meta?.blocks ?? []).some((b) => b.type === "checked_trail"),
+        ).toBe(false);
+      }
+    });
   });
 });
 

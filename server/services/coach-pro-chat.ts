@@ -27,6 +27,7 @@ import {
 } from "./nutrition-coach";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "./coach-blocks";
+import { buildTrail, plainStatusLabel, toolStep } from "./coach-step-labels";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
 import {
   sanitizeContextField,
@@ -92,26 +93,13 @@ export type CoachChatEvent =
   | { type: "content"; content: string }
   | { type: "blocks"; blocks: CoachBlock[] }
   | { type: "status"; label: string }
+  // A specific step label (show-the-work spec 2026-11-09). `status` stays the
+  // plain label for runtime 5.1.0 clients, which have no pacing queue.
+  | { type: "step"; label: string }
   | { type: "safety_override"; message: string };
 
 export const STANDARD_SAFETY_MESSAGE =
   "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
-
-const TOOL_STATUS_LABELS: Record<string, string> = {
-  lookup_nutrition: "Looking up nutrition…",
-  search_recipes: "Searching recipes…",
-  get_daily_log_details: "Checking today's log…",
-  log_food_item: "Logging food…",
-  get_pantry_items: "Checking your pantry…",
-  get_meal_plan: "Checking your meal plan…",
-  add_to_meal_plan: "Planning your meals…",
-  add_to_grocery_list: "Updating grocery list…",
-  get_substitutions: "Finding substitutes…",
-};
-
-function getToolStatusLabel(toolName: string): string {
-  return TOOL_STATUS_LABELS[toolName] ?? "Working on it…";
-}
 
 export interface CoachChatParams {
   conversationId: number;
@@ -705,6 +693,9 @@ export async function* handleCoachChat(
   let fullResponse = "";
   let offerToolArgs: string | null = null;
   let writeCardProposal: WriteCardProposal | null = null;
+  // Show-the-work: what this turn looked up, for the "Checked:" trail.
+  const trailEntries: (string | null)[] = [];
+  let safetyOverridden = false;
 
   if (cachedResponse) {
     // Send cached response in 3 chunks with minimal delay
@@ -750,6 +741,7 @@ export async function* handleCoachChat(
       // shown and save only the safety message (as the free tier does).
       if (chunk.type === "safety_override") {
         fullResponse = STANDARD_SAFETY_MESSAGE;
+        safetyOverridden = true;
         if (!isAborted())
           yield { type: "safety_override", message: STANDARD_SAFETY_MESSAGE };
         break;
@@ -758,9 +750,17 @@ export async function* handleCoachChat(
         // Yielded immediately when the tools are detected, before they run —
         // surface the status event on the wire now instead of waiting for
         // the next content chunk.
-        for (const name of chunk.toolNames) {
-          if (!isAborted())
-            yield { type: "status", label: getToolStatusLabel(name) };
+        const calls =
+          chunk.calls ??
+          chunk.toolNames.map((name) => ({ name, arguments: "{}" }));
+        for (const call of calls) {
+          if (isAborted()) break;
+          const step = toolStep(call, { writeCards: !!writeCards });
+          trailEntries.push(step.trail);
+          // step first: a new client queues it and then ignores the plain
+          // status, so the line never flickers between the two labels.
+          yield { type: "step", label: step.label };
+          yield { type: "status", label: plainStatusLabel(call.name) };
         }
         if (isAborted()) break;
         continue;
@@ -831,6 +831,13 @@ export async function* handleCoachChat(
       tz,
     });
     if (card) blocks = [...blocks, card];
+  }
+
+  // The trail leads the reply's blocks, so it sits right under the text and
+  // above any card. A safety override replaced the reply: no trail for it.
+  const trail = buildTrail(trailEntries);
+  if (isCoachPro && !safetyOverridden && trail.length > 0) {
+    blocks = [{ type: "checked_trail", items: trail }, ...blocks];
   }
 
   const maybeAutoTitle = () => {

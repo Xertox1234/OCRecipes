@@ -440,6 +440,8 @@ describe("generateCoachProResponse", () => {
     expect(first.value).toEqual({
       type: "tool_calls",
       toolNames: ["lookup_nutrition"],
+      // Show-the-work: each call's raw arguments ride along for the labels.
+      calls: [{ name: "lookup_nutrition", arguments: '{"query":"chicken"}' }],
     });
     // The tool_calls chunk was yielded — the tool itself must not have run yet.
     expect(executeToolCall).not.toHaveBeenCalled();

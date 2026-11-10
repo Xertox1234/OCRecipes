@@ -26,7 +26,13 @@ import {
   initialRevealState,
   nextReveal,
 } from "@/components/coach/stream-reveal-utils";
-import { coachRevealPacing } from "@/constants/animations";
+import {
+  enqueueStep,
+  initialStepQueue,
+  stepsSettled,
+  tickSteps,
+} from "@/components/coach/step-pacing-utils";
+import { coachRevealPacing, coachStepPacing } from "@/constants/animations";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import { parseErrorCode } from "@/lib/chat-error-copy";
@@ -105,6 +111,10 @@ export function useCoachStream({
   // offsets from a prior stream corrupt the next one's fence detection.
   const fenceStateRef = useRef(createFenceScanState());
   const firstCharDrainedRef = useRef(false); // cleared status on first drain?
+  // Show-the-work: Coach's steps, each held on the line for a minimum time.
+  const stepQueueRef = useRef(initialStepQueue());
+  const stepSeenRef = useRef(false); // a `step` arrived: ignore `status`
+  const shownStepRef = useRef<string | null>(null);
   const fullTextRef = useRef(""); // fence-stripped text to pass to onDone
   const blocksRef = useRef<CoachBlock[]>([]);
   // Mirrors `isStreaming` for a synchronous, stale-closure-safe guard read in
@@ -146,8 +156,27 @@ export function useCoachStream({
       // A starved JS timer must not turn into one big catch-up burst.
       const dt = Math.min(now - lastTickAtRef.current, DRAIN_INTERVAL_MS * 4);
       lastTickAtRef.current = now;
+      const steps = tickSteps(
+        stepQueueRef.current,
+        now,
+        coachStepPacing.minStepMs,
+      );
+      stepQueueRef.current = steps;
+      const stepLabel = steps.current?.label ?? null;
+      if (stepLabel !== shownStepRef.current) {
+        shownStepRef.current = stepLabel;
+        // A finished step keeps its words up until the reply starts; one that
+        // ends under the reply clears.
+        if (stepLabel) setStatusText(stepLabel);
+        else if (firstCharDrainedRef.current) setStatusText("");
+      }
       let chunk = "";
-      if (elapsed >= HOLD_GATE_MS) {
+      // Early steps play out before the first word; later ones never pause it.
+      if (
+        elapsed >= HOLD_GATE_MS &&
+        (firstCharDrainedRef.current ||
+          stepsSettled(steps, now, coachStepPacing.minStepMs))
+      ) {
         const step = nextReveal(
           bufferRef.current,
           dt,
@@ -161,7 +190,12 @@ export function useCoachStream({
 
       if (chunk.length === 0) {
         // Nothing to drain this tick
-        if (isDoneRef.current && bufferRef.current.length === 0) {
+        // Every step gets its full time, even one that arrived late.
+        if (
+          isDoneRef.current &&
+          bufferRef.current.length === 0 &&
+          stepsSettled(steps, now, coachStepPacing.minStepMs)
+        ) {
           // Buffer exhausted and server is done — finish
           stopDrain();
           isStreamingRef.current = false;
@@ -179,7 +213,7 @@ export function useCoachStream({
 
       if (!firstCharDrainedRef.current) {
         firstCharDrainedRef.current = true;
-        setStatusText(""); // clear status as text starts appearing
+        if (!stepQueueRef.current.current) setStatusText(""); // text starts
       }
       setStreamingContent((prev) => prev + chunk);
     }, DRAIN_INTERVAL_MS);
@@ -197,6 +231,9 @@ export function useCoachStream({
     displayedLengthRef.current = 0;
     fenceStateRef.current = createFenceScanState();
     firstCharDrainedRef.current = false;
+    stepQueueRef.current = initialStepQueue();
+    stepSeenRef.current = false;
+    shownStepRef.current = null;
     isStreamingRef.current = false;
     setIsStreaming(false);
     setStatusText("");
@@ -238,6 +275,9 @@ export function useCoachStream({
       displayedLengthRef.current = 0;
       fenceStateRef.current = createFenceScanState();
       firstCharDrainedRef.current = false;
+      stepQueueRef.current = initialStepQueue();
+      stepSeenRef.current = false;
+      shownStepRef.current = null;
       fullTextRef.current = "";
       blocksRef.current = [];
       startedAtRef.current = Date.now();
@@ -317,9 +357,16 @@ export function useCoachStream({
                 fail(String(data.error));
                 return "stop";
               }
-              if (
+              if (typeof data.step === "string") {
+                stepSeenRef.current = true;
+                stepQueueRef.current = enqueueStep(
+                  stepQueueRef.current,
+                  data.step,
+                );
+              } else if (
                 typeof data.status === "string" &&
-                !firstCharDrainedRef.current
+                !firstCharDrainedRef.current &&
+                !stepSeenRef.current
               ) {
                 setStatusText(data.status);
               }
@@ -342,6 +389,9 @@ export function useCoachStream({
                 displayedLengthRef.current = 0;
                 fenceStateRef.current = createFenceScanState();
                 firstCharDrainedRef.current = false;
+                stepQueueRef.current = initialStepQueue();
+                stepSeenRef.current = false;
+                shownStepRef.current = null;
                 fullTextRef.current = data.safety_override;
                 setStreamingContent("");
                 bufferRef.current = data.safety_override;

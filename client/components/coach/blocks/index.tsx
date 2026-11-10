@@ -8,6 +8,7 @@ import CommitmentCard from "./CommitmentCard";
 import QuickReplies from "./QuickReplies";
 import RecipeCard from "./RecipeCard";
 import MealPlanCard from "./MealPlanCard";
+import CheckedTrail from "./CheckedTrail";
 import WriteCard from "./write-cards/WriteCard";
 import type { WriteCardEdits } from "@shared/schemas/coach-write-cards";
 import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMessage";
@@ -146,6 +147,8 @@ function renderBlock(
           onEdit={(e) => onWriteCardEdit?.(block.cardId, e)}
         />
       );
+    case "checked_trail":
+      return <CheckedTrail items={block.items} />;
     case "recipe_results":
     case "recipe_questions":
     case "recipe_offer":

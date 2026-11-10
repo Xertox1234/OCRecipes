@@ -35,10 +35,14 @@ import {
 const COACH_DISCLAIMER_TEXT =
   "OCRecipes provides general nutrition information, not medical advice. Always consult a qualified healthcare professional before making changes to your diet or medication.";
 
-/** Whether a saved reply carries cards — the same check the Coach tab draws by. */
+/** Whether a saved reply carries cards — the same check the Coach tab draws
+ *  by. The "Checked:" trail is a line of text, not a card. */
 function hasCards(metadata: unknown): boolean {
   const raw = (metadata as { blocks?: unknown } | null | undefined)?.blocks;
-  return Array.isArray(raw) && filterValidBlocks(raw).length > 0;
+  return (
+    Array.isArray(raw) &&
+    filterValidBlocks(raw).some((b) => b.type !== "checked_trail")
+  );
 }
 
 export interface CoachQuestion {
@@ -473,8 +477,11 @@ export function CoachOverlayContent({
               ) : null}
             </View>
           ))}
-          {isStreaming && !streamingContent && statusText ? (
-            <CoachStatusRow statusText={statusText} />
+          {isStreaming && statusText ? (
+            <CoachStatusRow
+              statusText={statusText}
+              announceOnMount={!!streamingContent}
+            />
           ) : null}
           {/* Error banner is intentionally placed inside the scroll area (adjacent
               to the failed message) rather than using CoachChatBase's streamingError

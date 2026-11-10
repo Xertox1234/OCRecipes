@@ -253,3 +253,14 @@ describe("BlockRenderer write_card", () => {
     );
   });
 });
+
+describe("BlockRenderer — checked_trail", () => {
+  it("draws a checked_trail block as the trail line", () => {
+    renderComponent(
+      <BlockRenderer
+        block={{ type: "checked_trail", items: ["today's log"] }}
+      />,
+    );
+    expect(screen.getByText("Checked: today's log")).toBeTruthy();
+  });
+});

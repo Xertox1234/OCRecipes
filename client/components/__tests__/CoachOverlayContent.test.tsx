@@ -350,6 +350,26 @@ describe("CoachOverlayContent — replies with cards", () => {
     expect(mockOpenCoachConversation).toHaveBeenCalledWith(9);
   });
 
+  it("a reply whose only block is the Checked: trail has no link", async () => {
+    messagesHolder.messages = [
+      reply(23, {
+        blocks: [{ type: "checked_trail", items: ["your pantry"] }],
+      }),
+    ];
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "Sides?", question: "sides" }}
+        screenContext="recipe"
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    await screen.findByText("Here are some ideas.");
+    expect(
+      screen.queryByRole("button", { name: "See the full reply in Coach" }),
+    ).toBeNull();
+  });
+
   it("a reply without cards has no link", async () => {
     messagesHolder.messages = [reply(22, null)];
     renderComponent(

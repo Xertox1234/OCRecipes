@@ -95,6 +95,17 @@ describe("runTurn (coach path)", () => {
     expect(storage.deleteChatMessage).not.toHaveBeenCalled();
   });
 
+  it("a step event is written as { step }", async () => {
+    vi.mocked(handleCoachChat).mockImplementation(async function* () {
+      yield { type: "step", label: "Looking up beef burger…" };
+    } as unknown as typeof handleCoachChat);
+    const res = makeRes();
+
+    await runTurn(makeInput(res));
+
+    expect(frames(res)[0]).toBe('data: {"step":"Looking up beef burger…"}\n\n');
+  });
+
   it("reports a generic error event when the stream throws", async () => {
     vi.mocked(handleCoachChat).mockImplementation(async function* () {
       yield* [];

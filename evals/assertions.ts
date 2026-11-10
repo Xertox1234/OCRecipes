@@ -88,6 +88,15 @@ export function runAssertions(
     }
   }
 
+  if (assertions.maxWords !== undefined) {
+    const words = response.trim().split(/\s+/).filter(Boolean).length;
+    if (words > assertions.maxWords) {
+      failures.push(
+        `Response has ${words} words, more than ${assertions.maxWords}`,
+      );
+    }
+  }
+
   return { passed: failures.length === 0, failures };
 }
 

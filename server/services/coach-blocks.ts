@@ -17,7 +17,8 @@ export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
       typeof block === "object" &&
       block !== null &&
       (isFinderBlockType((block as { type?: unknown }).type) ||
-        (block as { type?: unknown }).type === "write_card")
+        (block as { type?: unknown }).type === "write_card" ||
+        (block as { type?: unknown }).type === "checked_trail")
     ) {
       logger.debug(
         { type: (block as { type?: unknown }).type },
