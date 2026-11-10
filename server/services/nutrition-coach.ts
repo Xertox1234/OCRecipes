@@ -61,7 +61,13 @@ export type CoachProChunk =
   // before any was): the caller replaces everything with the safety message.
   // Ends the generator.
   | { type: "safety_override" }
-  | { type: "tool_calls"; toolNames: string[] }
+  | {
+      type: "tool_calls";
+      toolNames: string[];
+      // Name + raw argument string per call, for the step labels (show-the-
+      // work spec 2026-11-09). Optional so a chunk with names only still works.
+      calls?: { name: string; arguments: string }[];
+    }
   // offer_recipe is terminal: the round's other calls are dropped and the
   // generator returns. `args` is the raw accumulated arguments string.
   | { type: "terminal_tool"; name: "offer_recipe"; args: string };
@@ -932,6 +938,10 @@ export async function* generateCoachProResponse(
     yield {
       type: "tool_calls",
       toolNames: toolCallsArray.map((tc) => tc.function.name),
+      calls: toolCallsArray.map((tc) => ({
+        name: tc.function.name,
+        arguments: tc.function.arguments,
+      })),
     };
 
     // Execute tool calls in parallel — preserve order when appending results

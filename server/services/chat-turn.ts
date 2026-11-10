@@ -481,9 +481,11 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
         ? { content: event.content }
         : event.type === "status"
           ? { status: event.label }
-          : event.type === "safety_override"
-            ? { safety_override: event.message }
-            : { blocks: event.blocks },
+          : event.type === "step"
+            ? { step: event.label }
+            : event.type === "safety_override"
+              ? { safety_override: event.message }
+              : { blocks: event.blocks },
     );
     if (sink.exceedsCap(eventJson)) break;
     if (event.type === "content") state.streamedContent += event.content;

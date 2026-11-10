@@ -314,6 +314,17 @@ export const memoryRefsSchema = z.object({
 });
 export type MemoryRefs = z.infer<typeof memoryRefsSchema>;
 
+/**
+ * What a Coach Pro reply looked up, shown as one quiet "Checked: a · b" line
+ * under it (show-the-work spec 2026-11-09). SERVER-BUILT from the turn's tool
+ * calls; a model-authored one is dropped (server/services/coach-blocks.ts).
+ */
+export const checkedTrailSchema = z.object({
+  type: z.literal("checked_trail"),
+  items: z.array(z.string().min(1).max(60)).min(1).max(5),
+});
+export type CheckedTrailBlock = z.infer<typeof checkedTrailSchema>;
+
 // ── Discriminated union of all blocks ───────────────────────────────
 
 // recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
@@ -335,6 +346,7 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   // SERVER-BUILT like the finder blocks (spec 2026-11-09): dropped from model
   // output by server/services/coach-blocks.ts.
   writeCardBlockObjectSchema,
+  checkedTrailSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;
