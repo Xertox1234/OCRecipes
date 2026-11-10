@@ -64,11 +64,16 @@ const EXPECTED: Record<string, CoachIntent> = {
   "edge-non-english-01": "personalized_advice",
   "edge-off-topic-question-01": "personalized_advice",
   "edge-goals-null-returning-user-01": "personalized_advice",
+
+  // ── Reply shape (show-the-work spec 2026-11-09) ──────────────────
+  "shape-general-question-01": "personalized_advice",
+  "shape-fits-question-01": "personalized_advice",
+  "shape-off-topic-01": "general_fact",
 };
 
 describe("classifyIntent", () => {
-  it("covers all 41 eval cases in the expected-intent map", () => {
-    expect(Object.keys(EXPECTED)).toHaveLength(41);
+  it("covers all 44 eval cases in the expected-intent map", () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(44);
   });
 
   it("has an expected intent for every loaded eval case", () => {
