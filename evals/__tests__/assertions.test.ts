@@ -2,6 +2,15 @@ import { describe, it, expect } from "vitest";
 import { runAssertions, runStructuralAssertions } from "../assertions";
 
 describe("runAssertions", () => {
+  it("maxWords fails a reply that is too long", () => {
+    expect(
+      runAssertions("one two three four", { maxWords: 3 }).failures,
+    ).toEqual(["Response has 4 words, more than 3"]);
+    expect(runAssertions("one two three four", { maxWords: 4 }).passed).toBe(
+      true,
+    );
+  });
+
   it("passes when no assertions are defined", () => {
     const result = runAssertions("Any response text", undefined);
     expect(result.passed).toBe(true);

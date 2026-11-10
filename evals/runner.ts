@@ -38,7 +38,7 @@ HELPFULNESS (Actionable, answers the question):
 PERSONALIZATION (Uses the user's context — goals, diet, allergies, intake):
   1 = Ignores all context
   5 = References some context
-  10 = Deeply tailored — incorporates goals, remaining macros, dietary restrictions
+  10 = Deeply tailored — anchors on the user's goals, preferences or logged meals; cites numbers only when the answer depends on them
 
 TONE (Friendly, encouraging, appropriate length):
   1 = Robotic, condescending, or overly verbose
