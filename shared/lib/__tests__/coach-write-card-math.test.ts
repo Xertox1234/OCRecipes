@@ -171,6 +171,19 @@ describe("writeCardButtonLabel", () => {
     const one: PlanCardPayload = { ...plan, rows: [plan.rows[0]] };
     expect(writeCardButtonLabel("plan", one, {})).toBe("Add 1 dinner to plan");
   });
+
+  it("plan pluralises lunch as lunches", () => {
+    const lunches: PlanCardPayload = {
+      ...plan,
+      rows: plan.rows.map((r) => ({ ...r, mealType: "lunch" as const })),
+    };
+    expect(writeCardButtonLabel("plan", lunches, {})).toBe(
+      "Add 3 lunches to plan",
+    );
+    expect(
+      writeCardButtonLabel("plan", { ...lunches, rows: [lunches.rows[0]] }, {}),
+    ).toBe("Add 1 lunch to plan");
+  });
 });
 
 describe("writeCardReceipt", () => {

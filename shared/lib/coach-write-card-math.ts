@@ -69,7 +69,9 @@ export function planKept(p: PlanCardPayload, e: PlanCardEdits): KeptPlanRow[] {
 }
 
 function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (n === 1) return `${n} ${word}`;
+  // "lunch" is the one meal type that takes -es.
+  return `${n} ${word}${/(ch|sh|s|x)$/.test(word) ? "es" : "s"}`;
 }
 
 /** "3 dinners" when every row shares a meal type, else "3 meals". */
