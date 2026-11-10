@@ -40,3 +40,24 @@ describe("StreamingBubble — live blocks", () => {
     expect(config.textContent).toContain("Yes please");
   });
 });
+
+describe("StreamingBubble — paced steps (show-the-work spec 2026-11-09)", () => {
+  it("the status row shows under partial text while a step runs", () => {
+    renderComponent(
+      <StreamingBubble
+        streamingContent="Let me see what fits your day."
+        statusText="Checking your pantry…"
+        isStreaming
+        streamBlocks={[]}
+        onBlockAction={vi.fn()}
+        onQuickReply={vi.fn()}
+        onCommitmentAccept={vi.fn()}
+        ttsSpeak={vi.fn()}
+        isSpeaking={false}
+        speakingMessageId={null}
+      />,
+    );
+    expect(screen.getByText("Let me see what fits your day.")).toBeDefined();
+    expect(screen.getByText("Checking your pantry…")).toBeDefined();
+  });
+});

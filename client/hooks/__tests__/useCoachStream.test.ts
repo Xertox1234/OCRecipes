@@ -257,6 +257,108 @@ describe("useCoachStream reveal pacing", () => {
   });
 });
 
+describe("useCoachStream paced steps (show-the-work spec 2026-11-09)", () => {
+  it("steps hold the reveal until each has shown 1000 ms", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ step: "B" });
+      mockXhr.emit({ content: "Hi there " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current.statusText).toBe("A");
+    act(() => {
+      vi.advanceTimersByTime(1000); // t = 1100
+    });
+    expect(result.current.statusText).toBe("B");
+    act(() => {
+      vi.advanceTimersByTime(800); // t = 1900: B has not had its full second
+    });
+    expect(result.current.streamingContent).toBe("");
+    act(() => {
+      vi.advanceTimersByTime(400); // t = 2300
+    });
+    expect(result.current.streamingContent).not.toBe("");
+    expect(result.current.statusText).toBe("");
+  });
+
+  it("with no steps, text starts after the 700 ms gate as before", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ content: "Hi there " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(650);
+    });
+    expect(result.current.streamingContent).toBe("");
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(result.current.streamingContent).not.toBe("");
+  });
+
+  it("a step after text started shows under the text and does not pause it", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ content: "Let me see what fits your day today. " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+    const before = result.current.streamingContent;
+    expect(before).not.toBe("");
+    act(() => {
+      mockXhr.emit({ step: "Checking your pantry…" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(result.current.statusText).toBe("Checking your pantry…");
+    expect(result.current.streamingContent.length).toBeGreaterThan(
+      before.length,
+    );
+  });
+
+  it("status events are ignored once a step arrived", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ status: "Checking your pantry…" });
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ status: "Looking up nutrition…" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current.statusText).toBe("A");
+  });
+
+  it("an error while steps are queued clears the line", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ step: "B" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current.statusText).toBe("A");
+    act(() => {
+      mockXhr.emit({ error: "Response timeout" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(result.current.statusText).toBe("");
+  });
+});
+
 describe("useCoachStream status text", () => {
   it("shows 'Thinking…' immediately on startStream", async () => {
     const { result } = await setupHook();

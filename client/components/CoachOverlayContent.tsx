@@ -473,7 +473,7 @@ export function CoachOverlayContent({
               ) : null}
             </View>
           ))}
-          {isStreaming && !streamingContent && statusText ? (
+          {isStreaming && statusText ? (
             <CoachStatusRow statusText={statusText} />
           ) : null}
           {/* Error banner is intentionally placed inside the scroll area (adjacent
