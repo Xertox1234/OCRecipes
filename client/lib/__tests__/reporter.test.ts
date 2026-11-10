@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { scrubEvent } from "../reporter";
-import type { ErrorEvent } from "@sentry/react-native";
+import { scrubBreadcrumb, scrubEvent } from "../reporter";
+import type { Breadcrumb, ErrorEvent } from "@sentry/react-native";
 
 // reporter.ts imports @sentry/react-native (a native module that does not
 // resolve under vitest/node) at module load — stub it. scrubEvent touches no
@@ -59,6 +59,86 @@ describe("scrubEvent", () => {
   it("returns the same event reference (mutates in place)", () => {
     const event = eventWithHeaders({ Authorization: "Bearer x" });
     expect(scrubEvent(event)).toBe(event);
+  });
+});
+
+describe("scrubBreadcrumb (privacy audit M9)", () => {
+  const http = (url: string, category = "fetch"): Breadcrumb => ({
+    type: "http",
+    category,
+    data: { method: "GET", url, status_code: 200 },
+  });
+
+  it("drops the query string (search text, food names)", () => {
+    const out = scrubBreadcrumb(
+      http("https://api.ocrecipes.com/api/nutrition/lookup?name=whole%20milk"),
+    );
+    expect(out?.data?.url).toBe(
+      "https://api.ocrecipes.com/api/nutrition/lookup",
+    );
+  });
+
+  it("replaces barcodes and ids in the path", () => {
+    const out = scrubBreadcrumb(
+      http("https://api.ocrecipes.com/api/nutrition/barcode/0123456789012"),
+    );
+    expect(out?.data?.url).toBe(
+      "https://api.ocrecipes.com/api/nutrition/barcode/:id",
+    );
+    const nested = scrubBreadcrumb(
+      http(
+        "https://api.ocrecipes.com/api/cookbooks/42/recipes/9f1c2e3a-0b1d-4c5e-8f9a-1b2c3d4e5f60?recipeType=community",
+        "xhr",
+      ),
+    );
+    expect(nested?.data?.url).toBe(
+      "https://api.ocrecipes.com/api/cookbooks/:id/recipes/:id",
+    );
+  });
+
+  it("replaces encoded or mixed-case path text", () => {
+    const out = scrubBreadcrumb(http("/api/things/Whole%20Milk/x"));
+    expect(out?.data?.url).toBe("/api/things/:id/x");
+  });
+
+  it("keeps plain route words and version segments", () => {
+    const out = scrubBreadcrumb(
+      http("https://api.ocrecipes.com/api/v1/meal-plan/grocery-lists"),
+    );
+    expect(out?.data?.url).toBe(
+      "https://api.ocrecipes.com/api/v1/meal-plan/grocery-lists",
+    );
+  });
+
+  it("keeps method and status code", () => {
+    const out = scrubBreadcrumb(http("/api/pantry/7"));
+    expect(out?.data).toEqual({
+      method: "GET",
+      url: "/api/pantry/:id",
+      status_code: 200,
+    });
+  });
+
+  it("scrubs navigation from/to the same way", () => {
+    const out = scrubBreadcrumb({
+      category: "navigation",
+      data: { from: "/recipe/123?q=salt", to: "/scan/0123456789012" },
+    });
+    expect(out?.data).toEqual({ from: "/recipe/:id", to: "/scan/:id" });
+  });
+
+  it("drops console breadcrumbs (their arguments can hold anything)", () => {
+    expect(
+      scrubBreadcrumb({
+        category: "console",
+        message: "user typed whole milk",
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps the app's own context breadcrumbs", () => {
+    const crumb: Breadcrumb = { message: "lookup failed", level: "error" };
+    expect(scrubBreadcrumb(crumb)).toEqual(crumb);
   });
 });
 
@@ -121,6 +201,9 @@ describe("dev/test no-op contract", () => {
     });
     reporter.initReporter();
     expect(Sentry.init).toHaveBeenCalledOnce();
+    expect(vi.mocked(Sentry.init).mock.calls[0][0]).toMatchObject({
+      beforeBreadcrumb: reporter.scrubBreadcrumb,
+    });
   });
 
   it("reports to Sentry in production when a DSN is set", async () => {

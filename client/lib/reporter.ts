@@ -43,6 +43,52 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 }
 
 /**
+ * A path segment survives only if it is a plain route word (`grocery-lists`)
+ * or an API version (`v1`). Anything else — numeric ids, UUIDs, barcodes,
+ * percent-encoded or mixed-case text — becomes `:id`.
+ */
+const ROUTE_WORD = /^(?:[a-z][a-z-]*|v\d+)$/;
+
+/**
+ * Reduce a URL or route to its shape: drop the query string and fragment
+ * (search text, food names, dates) and replace every non-route-word path
+ * segment. Keeps the scheme and host so a report still shows which service
+ * a request went to.
+ */
+function scrubUrl(url: string): string {
+  const bare = url.split(/[?#]/, 1)[0];
+  const origin = /^[a-z][a-z0-9+.-]*:\/\/[^/]*/i.exec(bare)?.[0] ?? "";
+  const path = bare.slice(origin.length);
+  const scrubbed = path
+    .split("/")
+    .map((seg) => (seg === "" || ROUTE_WORD.test(seg) ? seg : ":id"))
+    .join("/");
+  return origin + scrubbed;
+}
+
+/**
+ * Privacy audit M9: Sentry's default breadcrumbs record full request URLs
+ * (ids, barcodes, search text) and console output. The privacy policy says
+ * request contents are removed from crash reports, so:
+ * - http (fetch/xhr) and navigation crumbs keep only the URL's shape;
+ * - console crumbs are dropped — their arguments can hold anything;
+ * - every other crumb (the app's own `reportError` context, touches) passes.
+ * Exported so it can be unit-tested without initializing Sentry.
+ */
+export function scrubBreadcrumb(
+  breadcrumb: Sentry.Breadcrumb,
+): Sentry.Breadcrumb | null {
+  if (breadcrumb.category === "console") return null;
+  const data = breadcrumb.data;
+  if (!data) return breadcrumb;
+  for (const key of ["url", "from", "to"] as const) {
+    const value = data[key];
+    if (typeof value === "string") data[key] = scrubUrl(value);
+  }
+  return breadcrumb;
+}
+
+/**
  * Initialize Sentry. Safe to call unconditionally — no-op when the DSN is
  * absent (dev / pre-deploy) so no traffic is sent before a DSN is configured.
  */
@@ -56,6 +102,8 @@ export function initReporter(): void {
     sendDefaultPii: false,
     // Belt-and-suspenders: scrub Authorization headers regardless of defaults.
     beforeSend: scrubEvent,
+    // Strip ids, barcodes and search text from breadcrumb URLs (audit M9).
+    beforeBreadcrumb: scrubBreadcrumb,
   });
 }
 
