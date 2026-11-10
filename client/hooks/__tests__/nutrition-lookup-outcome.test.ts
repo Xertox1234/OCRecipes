@@ -165,95 +165,69 @@ describe("lookupBarcode", () => {
     });
   });
 
-  it("resolves 'off-fallback' when the server is unreachable but OFF has the product", async () => {
-    mockFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            brands: "GenericBrand",
-            nutriments: {
-              "energy-kcal_100g": 400,
-              proteins_100g: 5,
-              carbohydrates_100g: 60,
-              fat_100g: 10,
-            },
-          },
-        }),
-      });
+  // Privacy audit M1: the phone never contacts Open Food Facts directly — that
+  // exposed the user's IP address to a third party. Every answer from our
+  // server that is not a product is classified from that answer alone.
+  function expectOnlyOurServer() {
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    for (const [url] of mockFetch.mock.calls) {
+      expect(String(url)).not.toMatch(/openfoodfacts/i);
+    }
+  }
 
-    const outcome = await lookupBarcode("000000000003", undefined);
-
-    expect(outcome.kind).toBe("off-fallback");
-    if (outcome.kind !== "off-fallback") throw new Error("wrong outcome kind");
-    expect(outcome.nutrition.productName).toBe("Fallback Snack");
-    expect(outcome.allergenFlag.kind).toBe("allergen-unavailable");
-    expect(outcome.allergenFlag.detail).toBe(
-      "We couldn't reach our service to check this against your allergies — check the package label.",
-    );
-  });
-
-  it("off-fallback: uses the schema-invalid copy when the server's 200 failed validation", async () => {
-    const errorSpy = vi
-      .spyOn(logger, "error")
-      .mockImplementation(() => undefined);
-
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          productName: "Weird Snack",
-          barcode: "000000000005",
-        }),
-      })
-      .mockResolvedValueOnce({
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            nutriments: { "energy-kcal_100g": 400 },
-          },
-        }),
-      });
-
-    const outcome = await lookupBarcode("000000000005", undefined);
-
-    expect(outcome.kind).toBe("off-fallback");
-    if (outcome.kind !== "off-fallback") throw new Error("wrong outcome kind");
-    expect(outcome.allergenFlag.detail).toBe(
-      "Our service sent back information we couldn't understand, so these values come from a backup source — check the package label.",
-    );
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-
-    errorSpy.mockRestore();
-  });
-
-  it("resolves 'off-not-found' when OFF also has no record", async () => {
-    mockFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({ json: async () => ({ status: 0 }) });
+  it("resolves 'not-found' on the server's plain 404, without contacting OFF", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: "Product not found", code: "NOT_FOUND" }),
+    });
 
     const outcome = await lookupBarcode("000000000006", undefined);
 
-    expect(outcome.kind).toBe("off-not-found");
-    if (outcome.kind !== "off-not-found") throw new Error("wrong outcome kind");
+    expect(outcome.kind).toBe("not-found");
+    if (outcome.kind !== "not-found") throw new Error("wrong outcome kind");
     expect(outcome.error).toBe("Product not found in database");
     expect(outcome.nutrition).toEqual({
       productName: "Unknown Product",
       barcode: "000000000006",
     });
+    expectOnlyOurServer();
   });
 
-  it("server 503 + direct OFF miss: retry copy (total-outage), not 'Product not found'", async () => {
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        json: async () => ({ code: "NUTRITION_LOOKUP_FAILED" }),
-      })
-      .mockResolvedValueOnce({ json: async () => ({ status: 0 }) });
+  it("server unreachable: total-outage with the plain copy, without contacting OFF", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("server unreachable"));
+
+    const outcome = await lookupBarcode("000000000007", undefined);
+
+    expect(outcome.kind).toBe("total-outage");
+    if (outcome.kind !== "total-outage") throw new Error("wrong outcome kind");
+    expect(outcome.error).toBe("Failed to fetch product data");
+    expect(outcome.allergenFlag.kind).toBe("allergen-unavailable");
+    expect(outcome.allergenFlag.detail).toBe(
+      "We couldn't reach our service to check this against your allergies — check the package label.",
+    );
+    expectOnlyOurServer();
+  });
+
+  it("server 500: total-outage, without contacting OFF", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "boom" }),
+    });
+
+    const outcome = await lookupBarcode("000000000003", undefined);
+
+    expect(outcome.kind).toBe("total-outage");
+    expectOnlyOurServer();
+  });
+
+  it("server 503: retry copy (total-outage), not 'Product not found'", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ code: "NUTRITION_LOOKUP_FAILED" }),
+    });
 
     const outcome = await lookupBarcode("000000000008", undefined);
 
@@ -261,80 +235,35 @@ describe("lookupBarcode", () => {
     if (outcome.kind !== "total-outage") throw new Error("wrong outcome kind");
     expect(outcome.error).toMatch(/try scanning again/i);
     expect(outcome.error).not.toMatch(/not found/i);
+    expect(outcome.allergenFlag.detail).toBe(
+      "We couldn't reach our product sources to check this against your allergies — check the package label.",
+    );
+    expectOnlyOurServer();
   });
 
-  it("server 503 + direct OFF unreachable: the same retry copy", async () => {
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        json: async () => ({ code: "NUTRITION_LOOKUP_FAILED" }),
-      })
-      .mockRejectedValueOnce(new Error("OFF unreachable"));
+  it("malformed server 200: total-outage with the schema-invalid copy", async () => {
+    const errorSpy = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
 
-    const outcome = await lookupBarcode("000000000009", undefined);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        productName: "Weird Snack",
+        barcode: "000000000005",
+      }),
+    });
 
-    expect(outcome.kind).toBe("total-outage");
-    if (outcome.kind !== "total-outage") throw new Error("wrong outcome kind");
-    expect(outcome.error).toMatch(/try scanning again/i);
-  });
-
-  it("server 503 + direct OFF hit: still falls back to OFF data", async () => {
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        json: async () => ({ code: "NUTRITION_LOOKUP_FAILED" }),
-      })
-      .mockResolvedValueOnce({
-        json: async () => ({
-          status: 1,
-          product: { product_name: "Found", nutriments: {} },
-        }),
-      });
-
-    const outcome = await lookupBarcode("000000000010", undefined);
-
-    expect(outcome.kind).toBe("off-fallback");
-  });
-
-  it("resolves 'total-outage' when both legs fail, with the plain copy", async () => {
-    mockFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockRejectedValueOnce(new Error("OFF unreachable"));
-
-    const outcome = await lookupBarcode("000000000007", undefined);
+    const outcome = await lookupBarcode("000000000005", undefined);
 
     expect(outcome.kind).toBe("total-outage");
     if (outcome.kind !== "total-outage") throw new Error("wrong outcome kind");
     expect(outcome.error).toBe("Failed to fetch product data");
     expect(outcome.allergenFlag.detail).toBe(
-      "We couldn't reach our service to check this against your allergies — check the package label.",
+      "Our service sent back information we couldn't understand, so we couldn't check this against your allergies — check the package label.",
     );
-  });
-
-  it("total-outage: uses the two-sentence copy when a malformed server response is followed by an OFF failure", async () => {
-    const errorSpy = vi
-      .spyOn(logger, "error")
-      .mockImplementation(() => undefined);
-
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          productName: "Weird Snack",
-          barcode: "000000000008",
-        }),
-      })
-      .mockRejectedValueOnce(new Error("OFF unreachable"));
-
-    const outcome = await lookupBarcode("000000000008", undefined);
-
-    expect(outcome.kind).toBe("total-outage");
-    if (outcome.kind !== "total-outage") throw new Error("wrong outcome kind");
-    expect(outcome.allergenFlag.detail).toBe(
-      "Our service sent back information we couldn't understand, and we couldn't reach a backup source either — check the package label.",
-    );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expectOnlyOurServer();
 
     errorSpy.mockRestore();
   });
@@ -497,38 +426,13 @@ describe("lookupStateFromOutcome", () => {
     expect(state.validatedData).toBeNull();
   });
 
-  it("off-fallback: single allergen-unavailable flag, validated data carried", () => {
-    const flag = createAllergenUnavailableFlag({ detail: "fallback detail" });
-    const outcome: LookupOutcome = {
-      kind: "off-fallback",
-      labelReadNotice: "label notice",
-      nutrition,
-      validatedData: validated,
-      servingSizeGrams: null,
-      isPer100g: true,
-      correctionNotice: "corrected",
-      allergenFlag: flag,
-    };
-
-    const state = lookupStateFromOutcome(outcome);
-
-    expect(state.flags).toEqual([flag]);
-    expect(state.validatedData).toBe(validated);
-    expect(state.servingSizeGrams).toBeNull();
-    expect(state.isPer100g).toBe(true);
-    expect(state.correctionNotice).toBe("corrected");
-    expect(state.labelReadNotice).toBe("label notice");
-    expect(state.error).toBeNull();
-    expect(state.showManualSearch).toBe(false);
-  });
-
-  it("off-not-found: error set, no flag", () => {
+  it("not-found: error set, no flag", () => {
     const unk: NutritionData = {
       productName: "Unknown Product",
       barcode: "000",
     };
     const outcome: LookupOutcome = {
-      kind: "off-not-found",
+      kind: "not-found",
       labelReadNotice: null,
       nutrition: unk,
       error: "Product not found in database",

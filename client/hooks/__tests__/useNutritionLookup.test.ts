@@ -625,425 +625,6 @@ describe("useNutritionLookup — trust-the-label override (Task 5)", () => {
   });
 });
 
-describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", () => {
-  const mockServerFetch = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubGlobal("fetch", mockServerFetch);
-    mockApiRequest.mockResolvedValue({
-      ok: true,
-      json: async () => ({ hasFrontLabelData: false }),
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  /**
-   * Drives the hook down the direct-Open-Food-Facts fallback: the server leg
-   * rejects (unreachable), so `fetchBarcodeData` falls through to the public OFF
-   * endpoint and normalizes the product client-side via
-   * `validateAndNormalizeNutrition`.
-   */
-  function mockOffFallback(product: Record<string, unknown>) {
-    mockServerFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({
-        json: async () => ({ status: 1, product }),
-      });
-  }
-
-  /**
-   * A real Open Food Facts shape: per-serving energy is published, but
-   * `serving_size` is a household count with no metric quantity anywhere and
-   * there is no `serving_quantity`. `parseServingGrams` returns null, yet the
-   * per-serving values are perfectly trustworthy — so
-   * `validateAndNormalizeNutrition` takes its trusted branch and emits
-   * `{ grams: null, isServingDataTrusted: true }`.
-   */
-  const UNPARSEABLE_SERVING_PRODUCT = {
-    product_name: "Kombucha, Ginger Lemon",
-    brands: "GT's",
-    serving_size: "1 bottle",
-    nutriments: {
-      "energy-kcal_100g": 21,
-      proteins_100g: 0,
-      carbohydrates_100g: 5,
-      fat_100g: 0,
-      sugars_100g: 4,
-      "energy-kcal_serving": 100,
-      proteins_serving: 0,
-      carbohydrates_serving: 24,
-      fat_serving: 0,
-      sugars_serving: 19,
-    },
-  };
-
-  it("leaves the serving weight unknown instead of fabricating 100 g", async () => {
-    mockOffFallback(UNPARSEABLE_SERVING_PRODUCT);
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "0722430900001" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    // The values on screen are the bottle's, and they are correct.
-    expect(result.current.nutrition?.calories).toBe(100);
-    // They are NOT per-100g values, so the "Values shown per 100g" banner must
-    // stay hidden — this is a real serving, just one of unknown weight.
-    expect(result.current.isPer100g).toBe(false);
-
-    // The bug: `grams ?? 100` asserted a 100 g basis the product never gave us,
-    // which captioned a per-bottle value "1 × 100g" and lit the 100 g chip as
-    // the active selection. Unknown must stay unknown.
-    expect(result.current.servingSizeGrams).toBeNull();
-    expect(
-      getServingContextLabel({
-        servingQuantity: result.current.servingQuantity,
-        servingSizeGrams: result.current.servingSizeGrams,
-        servingOptions: result.current.servingOptions,
-        isPer100g: result.current.isPer100g,
-      }),
-    ).toBe("serving");
-  });
-
-  it("still scales by quantity when the serving weight is unknown", async () => {
-    mockOffFallback(UNPARSEABLE_SERVING_PRODUCT);
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "0722430900001" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    // `servings` is never applied server-side (server/routes/nutrition.ts stores
-    // the posted nutrient values verbatim), so the stepper MUST rescale here or
-    // the user logs one bottle while the counter reads two.
-    act(() => result.current.recalculateNutrition(null, 2));
-
-    expect(result.current.nutrition?.calories).toBe(200);
-    expect(result.current.nutrition?.sugar).toBe(38);
-    // And the caption must keep the product's own wording — not "nullg"/"100g".
-    expect(result.current.nutrition?.servingSize).toBe("1 bottle");
-  });
-
-  /**
-   * A zero serving weight is not a weight — it is the same absence of data as a
-   * null, and `parseServingGrams` hands it back as a number.
-   * `server/services/barcode-lookup.ts` documents its own `|| 100` as a guard
-   * for "a pathological '0 ml' parse", so this shape occurs in live OFF data;
-   * the client's trusted branch has no equivalent guard and emits
-   * `{ grams: 0, isServingDataTrusted: true }`.
-   */
-  const ZERO_SERVING_PRODUCT = {
-    product_name: "Sparkling Beverage",
-    brands: "Generic",
-    serving_size: "0 ml",
-    nutriments: {
-      "energy-kcal_100g": 21,
-      carbohydrates_100g: 5,
-      sugars_100g: 4,
-      "energy-kcal_serving": 100,
-      carbohydrates_serving: 24,
-      sugars_serving: 19,
-    },
-  };
-
-  it("treats a zero serving weight as unknown, not as a real basis", async () => {
-    mockOffFallback(ZERO_SERVING_PRODUCT);
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "0000000000001" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    expect(result.current.servingSizeGrams).toBeNull();
-    // Not "1 × 0 g" — a zero basis that reaches the caption reads as a real
-    // measurement of nothing.
-    expect(
-      getServingContextLabel({
-        servingQuantity: result.current.servingQuantity,
-        servingSizeGrams: result.current.servingSizeGrams,
-        servingOptions: result.current.servingOptions,
-        isPer100g: result.current.isPer100g,
-      }),
-    ).toBe("serving");
-  });
-
-  it("does not zero the card when the stepper runs at a zero serving weight", async () => {
-    mockOffFallback(ZERO_SERVING_PRODUCT);
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "0000000000001" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.nutrition?.calories).toBe(100);
-
-    // `factor = (0 / 100) * quantity` is zero, so a zero basis reaching the
-    // per-100g path blanks every macro and writes a 0-calorie log entry.
-    act(() => result.current.recalculateNutrition(0, 2));
-
-    expect(result.current.nutrition?.calories).toBe(200);
-    expect(result.current.nutrition?.sugar).toBe(38);
-    // The product's own wording, preserved. Pre-fix the per-100g branch
-    // overwrote this with `${grams}g` — i.e. the literal "0g".
-    expect(result.current.nutrition?.servingSize).toBe("0 ml");
-  });
-
-  it("regression: a parseable serving weight is unchanged", async () => {
-    mockOffFallback({
-      product_name: "Sparkling Water, Lime",
-      brands: "Bubly",
-      serving_size: "355 ml",
-      nutriments: {
-        "energy-kcal_100g": 20,
-        carbohydrates_100g: 5,
-        "energy-kcal_serving": 71,
-        carbohydrates_serving: 17.8,
-      },
-    });
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "0012000171705" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    expect(result.current.servingSizeGrams).toBe(355);
-    expect(result.current.isPer100g).toBe(false);
-    expect(result.current.nutrition?.calories).toBe(71);
-
-    // Known-grams scaling still runs off per-100g, exactly as before.
-    act(() => result.current.recalculateNutrition(355, 2));
-    expect(result.current.nutrition?.calories).toBeCloseTo(142, 5);
-    expect(result.current.nutrition?.servingSize).toBe("355g");
-  });
-
-  // Characterization test added for P1-2026-09-23 (atomic lookup state
-  // refactor): `correctionNotice` must be populated on the direct-OFF
-  // fallback path too, not just the server-ok path — driven through a real
-  // `validateAndNormalizeNutrition` correction (an implausible K-cup-pod
-  // per-serving calorie count), not by forcing the derived fields directly.
-  it("sets correctionNotice on the OFF-fallback path when validateAndNormalizeNutrition corrects an implausible serving", async () => {
-    mockOffFallback({
-      product_name: "Hot Chocolate K-Cup Pods",
-      brands: "GenericBrand",
-      serving_size: "236g",
-      nutriments: {
-        "energy-kcal_100g": 400,
-        "energy-kcal_serving": 944,
-        proteins_100g: 5,
-        proteins_serving: 11.8,
-        carbohydrates_100g: 80,
-        carbohydrates_serving: 188,
-        fat_100g: 5,
-        fat_serving: 11.8,
-      },
-    });
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "0663447217174" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    // 944 cal/serving > MAX_PLAUSIBLE_SERVING_CALORIES (800) — a genuine
-    // OFF-shape trigger for `validateAndNormalizeNutrition`'s correction
-    // branch, not a hand-forced value.
-    expect(result.current.correctionNotice).toBe(
-      "944 cal per serving seems too high — this may be the total for the entire package.",
-    );
-    // K-cup pods correct to an estimated 15g serving.
-    expect(result.current.servingSizeGrams).toBe(15);
-    expect(result.current.isPer100g).toBe(false);
-  });
-});
-
-/**
- * `effectivePer100g`'s guard from #819, one layer up from
- * `recalculateNutrition`'s own `> 0` check.
- *
- * Removing the saved-item branch (2026-09-17) removed the last STEADY producer
- * of the guard's other arm — `validatedData === null` while
- * `nutrition.calories` is defined. Every `setNutrition` that settles with
- * calories now pairs with a `setValidatedData` on the same path (server-DB,
- * label-override, OFF fallback, conflict/snapshot, manual-search), and the ones
- * that do not — "Product Not Found", "Unknown Product", "Manual Entry" — carry
- * no calories.
- *
- * The state is still reached IN TRANSIT, and the second test below pins it
- * there: `fetchBarcodeData`'s per-lookup reset nulls `validatedData` without
- * resetting `nutrition` or `servingSizeGrams`, so a re-fetch on a mounted
- * instance holds the prior product's values with no validated basis for the
- * duration of the new lookup. The two tests removed with the saved-item branch
- * asserted this arm through the steady state; the one below asserts it through
- * the window that survives.
- */
-describe("useNutritionLookup — per-100g basis guard placement", () => {
-  const mockServerFetch = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubGlobal("fetch", mockServerFetch);
-    mockApiRequest.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        hasFrontLabelData: false,
-        foodName: "Kombucha, Ginger Lemon",
-        micronutrients: [],
-      }),
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("regression: a validated per-100g basis still wins when the weight is unknown", async () => {
-    // The direct-OFF fallback publishes trustworthy per-serving values against
-    // a serving of unknown weight, so it reaches `effectivePer100g` with
-    // `servingSizeGrams === null` AND a real `validatedData.per100g`. The new
-    // positive-grams guard must sit BELOW the validatedData branch: one line
-    // higher and it nulls this out, killing the serving controls on a path
-    // that works today.
-    //
-    // This test is green both before and after the fix — it is a placement
-    // pin, not a bug reproduction — so its value rests on mutation evidence
-    // rather than a natural RED. Executed 2026-08-15: hoisting the guard above
-    // `if (validatedData) return validatedData.per100g;` turns THIS test red
-    // (calories stay at the pre-recalc 100 instead of reaching 21). That run
-    // also had two saved-item companions covering the guard's OTHER arm; they
-    // were removed with the saved-item branch on 2026-09-17 (see this
-    // describe's docblock — that arm no longer has a reachable input). The
-    // mutation has NOT been re-run since; re-run it before weakening this test,
-    // which is now the only coverage of the guard's placement.
-    mockServerFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Kombucha, Ginger Lemon",
-            brands: "GT's",
-            serving_size: "1 bottle",
-            nutriments: {
-              "energy-kcal_100g": 21,
-              proteins_100g: 0,
-              carbohydrates_100g: 5,
-              fat_100g: 0,
-              sugars_100g: 4,
-              "energy-kcal_serving": 100,
-              proteins_serving: 0,
-              carbohydrates_serving: 24,
-              fat_serving: 0,
-              sugars_serving: 19,
-            },
-          },
-        }),
-      });
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "0722430900001" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.servingSizeGrams).toBeNull();
-    expect(result.current.validatedData).not.toBeNull();
-
-    // Factor is exactly 1, so the card must land on `validatedData.per100g`
-    // byte-identically.
-    act(() => result.current.recalculateNutrition(100, 1));
-
-    expect(result.current.nutrition?.calories).toBe(21);
-    expect(result.current.nutrition?.carbs).toBe(5);
-    expect(result.current.nutrition?.sugar).toBe(4);
-  });
-
-  it("returns no basis mid-re-fetch, when the reset has nulled validatedData but the prior values remain", async () => {
-    // The reset at the top of `fetchBarcodeData` nulls `validatedData` and
-    // resets NEITHER `nutrition` NOR `servingSizeGrams`. So between a new
-    // barcode arriving and its lookup landing, the hook holds the PRIOR
-    // product's per-serving values with no validated basis behind them — the
-    // exact pair this guard exists for, and the reason it is not merely
-    // defensive after the saved-item branch was removed.
-    //
-    // The first product is an OFF record whose serving is "1 bottle", so
-    // `servingSizeGrams` stays null and the BACK-CALCULATION arm is what has to
-    // fire here — not the `if (validatedData)` branch above it, which the
-    // preceding test pins.
-    mockServerFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Kombucha, Ginger Lemon",
-            brands: "GT's",
-            serving_size: "1 bottle",
-            nutriments: {
-              "energy-kcal_100g": 21,
-              proteins_100g: 0,
-              carbohydrates_100g: 5,
-              fat_100g: 0,
-              sugars_100g: 4,
-              "energy-kcal_serving": 100,
-              proteins_serving: 0,
-              carbohydrates_serving: 24,
-              fat_serving: 0,
-              sugars_serving: 19,
-            },
-          },
-        }),
-      });
-
-    const { wrapper } = createQueryWrapper();
-    const { result, rerender } = renderHook(
-      ({ barcode }: { barcode: string }) => useNutritionLookup({ barcode }),
-      { wrapper, initialProps: { barcode: "0722430900001" } },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.validatedData).not.toBeNull();
-    expect(result.current.servingSizeGrams).toBeNull();
-    expect(result.current.nutrition?.calories).toBe(100);
-
-    // Hold the second lookup in flight: the reset has run, nothing has landed.
-    mockServerFetch.mockReturnValue(new Promise(() => {}));
-    rerender({ barcode: "0000000000009" });
-
-    await waitFor(() => expect(result.current.validatedData).toBeNull());
-    expect(result.current.nutrition?.calories).toBe(100);
-    expect(result.current.servingSizeGrams).toBeNull();
-
-    const before = result.current.nutrition;
-    act(() => result.current.recalculateNutrition(236, 1));
-
-    // `|| 100` made the factor exactly 1, which would relabel the PRIOR
-    // product's per-serving values as per-100g on the card.
-    expect(result.current.nutrition).toEqual(before);
-    expect(result.current.nutrition?.calories).toBe(100);
-  });
-});
-
 describe("useNutritionLookup — isBeverage (Task 8)", () => {
   const mockServerFetch = vi.fn();
 
@@ -1196,12 +777,11 @@ describe("useNutritionLookup — isBeverage (Task 8)", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.isBeverage).toBe(true);
 
-    // Second barcode: the primary server fetch fails outright, and the
-    // direct-OFF fallback ALSO fails — landing on the total-outage catch,
+    // Second barcode: the server fetch fails outright — landing on the
+    // total-outage path,
     // which never touches `isBeverage`. Without the reset, the hook would
     // still be reporting the FIRST product's `true` here.
     mockServerFetch.mockRejectedValueOnce(new Error("network down"));
-    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
 
     rerender({ barcode: "00000000" });
 
@@ -1271,12 +851,11 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.correctionNotice).toMatch(/adjusted/i);
 
-    // Second barcode: the primary server fetch fails outright, and the
-    // direct-OFF fallback ALSO fails — landing on the total-outage catch,
+    // Second barcode: the server fetch fails outright — landing on the
+    // total-outage path,
     // which never touches `correctionNotice`. Without the reset, the hook
     // would still be reporting the FIRST product's stale notice here.
     mockServerFetch.mockRejectedValueOnce(new Error("network down"));
-    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
 
     rerender({ barcode: "00000000" });
 
@@ -1320,7 +899,6 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
     expect(result.current.isPer100g).toBe(true);
 
     mockServerFetch.mockRejectedValueOnce(new Error("network down"));
-    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
 
     rerender({ barcode: "00000000" });
 
@@ -1353,7 +931,6 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
 
   it("clears a prior lookup's error when the next lookup succeeds", async () => {
     mockServerFetch.mockRejectedValueOnce(new Error("network down"));
-    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
     const { result, rerender } = renderLookup("00000000");
     await waitFor(() => expect(result.current.error).not.toBeNull());
 
@@ -1433,7 +1010,6 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
     await waitFor(() => expect(result.current.hasFrontLabelData).toBe(true));
 
     mockServerFetch.mockRejectedValueOnce(new Error("network down"));
-    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
     rerender({ barcode: "00000000" });
 
     await waitFor(() =>
@@ -1458,7 +1034,6 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
     await waitFor(() => expect(result.current.servingSizeGrams).toBe(100));
 
     mockServerFetch.mockRejectedValueOnce(new Error("network down"));
-    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
     rerender({ barcode: "00000000" });
 
     await waitFor(() =>
