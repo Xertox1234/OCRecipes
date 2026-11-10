@@ -38,6 +38,20 @@ export const USER_HEALTH_FIELDS = [
   "goalWeight",
 ] as const;
 
+export type UserHealthField = (typeof USER_HEALTH_FIELDS)[number];
+
+/**
+ * One entry in the append-only consent history on the profile: the record of
+ * what the user agreed to, and when, that survives a later withdrawal.
+ */
+export interface HealthConsentEvent {
+  event: "granted" | "withdrawn";
+  /** ISO time, stamped by the server. */
+  at: string;
+  /** The policy version in force; set on "granted". */
+  version?: string;
+}
+
 function carriesValue(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (typeof value === "string") return value.trim().length > 0;

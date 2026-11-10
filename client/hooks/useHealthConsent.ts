@@ -31,8 +31,9 @@ export function useHealthConsent() {
   /** Withdraws the consent and removes the health details. Rejects on failure. */
   const withdraw = useCallback(async () => {
     await apiRequest("POST", "/api/user/health-consent/withdraw");
-    // Allergies, goals and body metrics feed most personalized queries.
-    await queryClient.invalidateQueries();
+    // Allergies, goals and body metrics feed most personalized queries. Not
+    // awaited: the caller's confirmation should not wait on every refetch.
+    void queryClient.invalidateQueries();
   }, [queryClient]);
 
   return { consented, grant, withdraw };

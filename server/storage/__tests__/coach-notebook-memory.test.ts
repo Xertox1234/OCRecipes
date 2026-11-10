@@ -306,9 +306,12 @@ describe("visible memory storage", () => {
     it("decays the stored score, adds the nudge and stamps the time", async () => {
       const t0 = new Date("2026-11-05T12:00:00Z");
       const now = new Date("2026-11-08T12:00:00Z");
-      await tx
-        .insert(userProfiles)
-        .values({ userId: user.id, moodScore: 2, moodUpdatedAt: t0 });
+      await tx.insert(userProfiles).values({
+        userId: user.id,
+        moodScore: 2,
+        moodUpdatedAt: t0,
+        healthDataConsentAt: t0,
+      });
       await updateMoodScore(user.id, -0.5, now);
       const [p] = await tx
         .select()
@@ -316,6 +319,19 @@ describe("visible memory storage", () => {
         .where(eq(userProfiles.userId, user.id));
       expect(p.moodScore).toBeCloseTo(0.5);
       expect(p.moodUpdatedAt).toEqual(now);
+    });
+
+    // Privacy audit H2: the mood signal is health-derived — no consent, no
+    // health data. It is not inferred for a user without the consent.
+    it("does nothing for a user who has not given the health-data consent", async () => {
+      await tx.insert(userProfiles).values({ userId: user.id });
+      await updateMoodScore(user.id, 1, new Date("2026-11-08T12:00:00Z"));
+      const [p] = await tx
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, user.id));
+      expect(p.moodScore).toBe(0);
+      expect(p.moodUpdatedAt).toBeNull();
     });
 
     it("does nothing for a user without a profile", async () => {

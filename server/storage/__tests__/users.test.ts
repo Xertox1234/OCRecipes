@@ -28,9 +28,16 @@ import {
   transactions,
   barcodeVerifications,
   verificationHistory,
+  coachResponseCache,
+  mealSuggestionCache,
 } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
-import { HEALTH_CONSENT_VERSION } from "@shared/lib/health-consent";
+import {
+  HEALTH_CONSENT_VERSION,
+  PROFILE_HEALTH_FIELDS,
+  USER_HEALTH_FIELDS,
+  hasHealthData,
+} from "@shared/lib/health-consent";
 import {
   isUniqueViolation,
   uniqueViolationConstraint,
@@ -788,6 +795,125 @@ describe("users storage", () => {
 
     it("returns undefined when the user has no profile", async () => {
       expect(await withdrawHealthConsent(testUser.id)).toBeUndefined();
+    });
+
+    // The shared lists are the single source: a field added there must be
+    // cleared here, or it would be gated on save but survive a withdrawal.
+    it("clears every field in the shared health-field lists", async () => {
+      await createTestUserProfile(tx, testUser.id, {
+        allergies: [{ name: "peanuts", severity: "severe" }],
+        healthConditions: ["type 2 diabetes"],
+        primaryGoal: "lose_weight",
+        activityLevel: "moderate",
+        glp1Mode: true,
+        glp1Medication: "semaglutide",
+        glp1StartDate: new Date("2026-01-01T00:00:00Z"),
+      });
+      await tx
+        .update(users)
+        .set({
+          weight: "80.00",
+          height: "180.00",
+          age: 35,
+          gender: "male",
+          goalWeight: "75.00",
+        })
+        .where(eq(users.id, testUser.id));
+
+      const profile = await withdrawHealthConsent(testUser.id);
+      const user = await getUser(testUser.id);
+
+      for (const field of PROFILE_HEALTH_FIELDS) {
+        expect(hasHealthData({ [field]: profile![field] }), field).toBe(false);
+      }
+      for (const field of USER_HEALTH_FIELDS) {
+        expect(user![field], field).toBeNull();
+      }
+    });
+
+    it("keeps an append-only history of consents and withdrawals", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+
+      const granted = await updateUserProfile(testUser.id, {}, true);
+      expect(granted!.healthDataConsentHistory).toEqual([
+        {
+          event: "granted",
+          at: expect.any(String),
+          version: HEALTH_CONSENT_VERSION,
+        },
+      ]);
+
+      // A repeat consent while one is on record adds nothing.
+      const again = await updateUserProfile(testUser.id, {}, true);
+      expect(again!.healthDataConsentHistory).toHaveLength(1);
+
+      const withdrawn = await withdrawHealthConsent(testUser.id);
+      expect(withdrawn!.healthDataConsentHistory.map((e) => e.event)).toEqual([
+        "granted",
+        "withdrawn",
+      ]);
+
+      await updateUserProfile(testUser.id, {}, true);
+      const second = await withdrawHealthConsent(testUser.id);
+      expect(second!.healthDataConsentHistory.map((e) => e.event)).toEqual([
+        "granted",
+        "withdrawn",
+        "granted",
+        "withdrawn",
+      ]);
+    });
+
+    it("onboarding consent starts the history, and a replay adds nothing", async () => {
+      const first = await upsertProfileWithOnboarding(testUser.id, {}, true);
+      expect(first.healthDataConsentHistory.map((e) => e.event)).toEqual([
+        "granted",
+      ]);
+
+      const replay = await upsertProfileWithOnboarding(testUser.id, {}, true);
+      expect(replay.healthDataConsentHistory).toHaveLength(1);
+    });
+
+    it("never pairs today's policy version with a consent given earlier", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+      const earlier = new Date("2026-06-01T00:00:00Z");
+      await tx
+        .update(userProfiles)
+        .set({ healthDataConsentAt: earlier, healthDataConsentVersion: null })
+        .where(eq(userProfiles.userId, testUser.id));
+
+      const result = await updateUserProfile(testUser.id, {}, true);
+
+      expect(result!.healthDataConsentAt?.getTime()).toBe(earlier.getTime());
+      expect(result!.healthDataConsentVersion).toBeNull();
+      expect(result!.healthDataConsentHistory).toEqual([]);
+    });
+
+    it("withdrawal deletes the caller's cached AI answers, and only theirs", async () => {
+      const other = await createTestUser(tx);
+      await createTestUserProfile(tx, testUser.id, {});
+      const expiresAt = new Date(Date.now() + 60_000);
+      for (const userId of [testUser.id, other.id]) {
+        await tx.insert(coachResponseCache).values({
+          userId,
+          questionHash: `hash-${userId}`,
+          question: "what can I eat?",
+          response: "avoid peanuts",
+          expiresAt,
+        });
+        await tx.insert(mealSuggestionCache).values({
+          userId,
+          cacheKey: `key-${userId}`,
+          suggestions: [],
+          expiresAt,
+        });
+      }
+
+      await withdrawHealthConsent(testUser.id);
+
+      const coachRows = await tx.select().from(coachResponseCache);
+      const mealRows = await tx.select().from(mealSuggestionCache);
+      expect(coachRows.map((r) => r.userId)).toEqual([other.id]);
+      expect(mealRows.map((r) => r.userId)).toEqual([other.id]);
     });
   });
 

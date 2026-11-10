@@ -526,6 +526,7 @@ describe("Profile Routes", () => {
           dietType: "vegan",
           healthDataConsentVersion: "1999-01-01",
           healthDataConsentWithdrawnAt: "1999-01-01T00:00:00Z",
+          healthDataConsentHistory: [{ event: "granted", at: "1999-01-01" }],
           moodScore: 1,
           moodUpdatedAt: "1999-01-01T00:00:00Z",
         });

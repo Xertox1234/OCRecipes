@@ -60,6 +60,7 @@ const userProfileDefaults: UserProfile = {
   healthDataConsentAt: null,
   healthDataConsentVersion: null,
   healthDataConsentWithdrawnAt: null,
+  healthDataConsentHistory: [],
   reminderMutes: {},
   notificationPrefs: {
     categories: {},

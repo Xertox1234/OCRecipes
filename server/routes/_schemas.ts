@@ -285,6 +285,7 @@ export const userProfileInputSchema = insertUserProfileSchema
     // the consent and withdrawal paths, and the mood signal from Coach.
     healthDataConsentVersion: true,
     healthDataConsentWithdrawnAt: true,
+    healthDataConsentHistory: true,
     moodScore: true,
     moodUpdatedAt: true,
   })

@@ -38,7 +38,7 @@ export const HEALTH_CONSENT_PROMPT = {
 export const WITHDRAW_HEALTH_CONSENT_PROMPT = {
   title: "Withdraw health-data consent",
   message:
-    "This removes your allergies, health conditions and medications, body measurements, activity level and goal from OCRecipes. Allergy warnings and personalized targets stop until you add them again. Your food logs, recipes and calorie targets stay.",
+    "This removes your allergies, health conditions and medications, body measurements, activity level and goal from OCRecipes. Allergy warnings and personalized targets stop until you add them again. Your food logs, recipes, calorie targets, chats and the notes Coach has saved stay; clear those notes under Coach → What Coach knows.",
   confirmLabel: "Withdraw and remove",
   destructive: true,
 } as const;
