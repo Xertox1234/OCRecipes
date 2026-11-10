@@ -14,7 +14,7 @@ import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
 import { raiseIfAiSharingRequired } from "./ai-sharing-events";
 import { fetchWithTimeout } from "./fetch-timeout";
-import { reportError } from "./reporter";
+import { queryKeyLabel, reportError } from "./reporter";
 import { logger } from "./logger";
 import { apiReachabilityConfig } from "./network-reachability";
 
@@ -406,7 +406,7 @@ const GLOBAL_QUERY_ERROR_MESSAGE =
 const queryCache = new QueryCache({
   onError: (error, query) => {
     if (!shouldSurfaceQueryError(error, query.meta)) return;
-    reportError(error, `QueryCache.onError [${String(query.queryKey)}]`);
+    reportError(error, `QueryCache.onError [${queryKeyLabel(query.queryKey)}]`);
     queryErrorListeners.forEach((listener) => {
       listener(GLOBAL_QUERY_ERROR_MESSAGE);
     });
@@ -426,7 +426,7 @@ const mutationCache = new MutationCache({
     if (!shouldSurfaceMutationError(error, mutation.meta)) return;
     reportError(
       error,
-      `MutationCache.onError [${String(mutation.options.mutationKey ?? mutation.mutationId)}]`,
+      `MutationCache.onError [${mutation.options.mutationKey ? queryKeyLabel(mutation.options.mutationKey) : mutation.mutationId}]`,
     );
     queryErrorListeners.forEach((listener) => {
       listener(GLOBAL_MUTATION_ERROR_MESSAGE);

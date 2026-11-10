@@ -39,7 +39,40 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
       }
     }
   }
+  for (const exception of event.exception?.values ?? []) {
+    if (typeof exception.value === "string") {
+      exception.value = scrubErrorText(exception.value);
+    }
+  }
+  if (typeof event.message === "string") {
+    event.message = scrubErrorText(event.message);
+  }
   return event;
+}
+
+/** `"<status>: <response body>"`, the shape every failed API call throws. */
+const STATUS_PREFIXED = /^(\d{3}): ([\s\S]*)$/;
+/** A machine-readable error code such as `VALIDATION_ERROR`. */
+const ERROR_CODE = /^[A-Z][A-Z0-9_]*$/;
+
+/**
+ * Privacy audit M9 follow-up: a failed API call throws the server's response
+ * body in its message, and a validation error can echo what the user typed.
+ * Keep the status and the error code; drop the rest. The thrown message itself
+ * is left alone, because the 4xx retry guards in query-client.ts read it.
+ */
+function scrubErrorText(text: string): string {
+  const match = STATUS_PREFIXED.exec(text);
+  if (!match) return text;
+  let code: unknown;
+  try {
+    code = (JSON.parse(match[2]) as { code?: unknown } | null)?.code;
+  } catch {
+    // Not JSON: nothing machine-readable to keep.
+  }
+  const suffix =
+    typeof code === "string" && ERROR_CODE.test(code) ? ` code=${code}` : "";
+  return `${match[1]}: [body removed]${suffix}`;
 }
 
 /**
@@ -64,6 +97,15 @@ function scrubUrl(url: string): string {
     .map((seg) => (seg === "" || ROUTE_WORD.test(seg) ? seg : ":id"))
     .join("/");
   return origin + scrubbed;
+}
+
+/**
+ * A crash-report label for a query or mutation key: the first element's route
+ * shape only. The other elements hold ingredient names, ids and dates.
+ */
+export function queryKeyLabel(key: readonly unknown[] | undefined): string {
+  const head = key?.[0];
+  return typeof head === "string" ? scrubUrl(head) : "unkeyed";
 }
 
 /**
