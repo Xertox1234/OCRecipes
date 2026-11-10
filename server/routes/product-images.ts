@@ -4,7 +4,6 @@ import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 import {
   PRODUCT_IMAGE_HOST,
-  PRODUCT_IMAGE_ROUTE,
   isProductImagePath,
 } from "../lib/product-image-proxy";
 import { sendError } from "../lib/api-errors";
@@ -58,8 +57,11 @@ async function readLimited(
  * and no redirect is followed.
  */
 export function register(app: Express): void {
+  // A literal path, not PRODUCT_IMAGE_ROUTE: auth-route-wiring.test.ts only
+  // sees quoted paths, and this public route must stay on its allowlist.
+  // product-images.test.ts pins the literal to the constant.
   app.get(
-    PRODUCT_IMAGE_ROUTE,
+    "/api/product-image",
     productImageLimiter,
     async (req: Request, res: Response) => {
       const path = req.query.path;

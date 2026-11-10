@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 
 import { register } from "../product-images";
+import { PRODUCT_IMAGE_ROUTE } from "../../lib/product-image-proxy";
 
 vi.mock("express-rate-limit");
 
@@ -28,6 +29,12 @@ function upstream(body: Buffer, init: { status?: number } = {}) {
 
 describe("GET /api/product-image", () => {
   const mockFetch = vi.fn();
+
+  it("is registered at the path the barcode response points to", () => {
+    // The route uses a literal (for the auth-wiring guard); keep it in step
+    // with the constant the proxy paths are built from.
+    expect(PRODUCT_IMAGE_ROUTE).toBe("/api/product-image");
+  });
 
   beforeEach(() => {
     mockFetch.mockReset();
