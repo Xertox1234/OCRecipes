@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Request, Response } from "express";
 import type { AiFeature } from "../ai-models";
 
 const OpenAICtor = vi.fn();
@@ -74,5 +75,39 @@ describe("aiChat lazy construction", () => {
     );
     await aiChat(FEATURE, PARAMS);
     expect(OpenAICtor).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Privacy audit H3: aiChat is the one path every AI request takes, so the
+// AI-sharing permission is checked here.
+describe("aiChat AI-sharing permission", () => {
+  beforeEach(() => {
+    create.mockReset();
+    vi.resetModules();
+  });
+
+  it("sends nothing for a signed-in user who has not allowed AI sharing", async () => {
+    const { requestContextMiddleware, setRequestUserId } = await import(
+      "../request-context"
+    );
+    const { installAiSharingLookup, AiSharingRequiredError } = await import(
+      "../ai-sharing-gate"
+    );
+    const { aiChat } = await import("../ai-client");
+    installAiSharingLookup(async () => false);
+
+    const result = await new Promise<unknown>((resolve) => {
+      requestContextMiddleware(
+        { id: "req-1" } as unknown as Request,
+        { setHeader: () => undefined } as unknown as Response,
+        () => {
+          setRequestUserId("user-1");
+          aiChat(FEATURE, PARAMS).then(resolve, resolve);
+        },
+      );
+    });
+
+    expect(result).toBeInstanceOf(AiSharingRequiredError);
+    expect(create).not.toHaveBeenCalled();
   });
 });

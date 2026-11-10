@@ -24,6 +24,9 @@ import { ChangeEmailModal } from "@/components/ChangeEmailModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useHealthConsent } from "@/hooks/useHealthConsent";
 import { WITHDRAW_HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
+import { AI_SHARING_OFF_PROMPT } from "@shared/lib/ai-sharing";
+import { useAiSharing } from "@/hooks/useAiSharing";
+import { openAiSharing } from "@/navigation/openAiSharing";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -76,6 +79,12 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
     subtitle: "Sign-ins to recipe sites made in OCRecipes",
   },
   {
+    id: "aiSharing",
+    icon: "cpu",
+    label: "AI features",
+    subtitle: "Who receives your data, and turning it on or off",
+  },
+  {
     id: "withdrawHealthConsent",
     icon: "shield-off",
     label: "Withdraw health-data consent",
@@ -100,6 +109,7 @@ export default function SettingsScreen() {
     useAuthContext();
   const { consented: healthConsented, withdraw: withdrawHealthConsent } =
     useHealthConsent();
+  const { status: aiSharingStatus, answer: answerAiSharing } = useAiSharing();
   const { isPremium } = usePremiumContext();
   const measurementUnit = useMeasurementUnit();
 
@@ -282,6 +292,26 @@ export default function SettingsScreen() {
             },
           });
           break;
+        case "aiSharing":
+          // Off → the full question, which names the companies. On → confirm,
+          // then stop sending.
+          if (!aiSharingStatus?.allowed) {
+            openAiSharing();
+            break;
+          }
+          confirm({
+            ...AI_SHARING_OFF_PROMPT,
+            onConfirm: () => {
+              answerAiSharing(false).then(
+                () => toast.success("AI features are off"),
+                (err: unknown) => {
+                  logger.error("Turning AI sharing off failed", err);
+                  toast.error("Couldn't turn it off. Please try again.");
+                },
+              );
+            },
+          });
+          break;
         case "withdrawHealthConsent":
           confirm({
             ...WITHDRAW_HEALTH_CONSENT_PROMPT,
@@ -340,6 +370,8 @@ export default function SettingsScreen() {
       toast,
       withdrawHealthConsent,
       checkAuth,
+      aiSharingStatus,
+      answerAiSharing,
     ],
   );
 

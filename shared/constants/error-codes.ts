@@ -21,6 +21,8 @@ export const ErrorCode = {
   CONFLICT: "CONFLICT",
   /** A health field was sent by a user who has not agreed to the health-data consent. */
   HEALTH_CONSENT_REQUIRED: "HEALTH_CONSENT_REQUIRED",
+  /** An AI feature was used by a user who has not allowed AI sharing. */
+  AI_SHARING_REQUIRED: "AI_SHARING_REQUIRED",
   /** Coach write card replaced/expired by a newer card — it can't be saved. */
   CARD_LOCKED: "CARD_LOCKED",
   /** Coach write card Undo after the server's undo window. */

@@ -12,6 +12,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { AppState, Platform } from "react-native";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
+import { raiseIfAiSharingRequired } from "./ai-sharing-events";
 import { fetchWithTimeout } from "./fetch-timeout";
 import { reportError } from "./reporter";
 import { logger } from "./logger";
@@ -237,7 +238,16 @@ export async function apiRequest(
     : await fetchWithTimeout(url, requestInit);
 
   await notifyIfSessionExpired(res, token);
-  await throwIfResNotOk(res);
+  try {
+    await throwIfResNotOk(res);
+  } catch (error) {
+    // A write is something the user started: if it was refused because AI
+    // sharing is off, ask again. Reads load in the background and stay quiet.
+    if (method.toUpperCase() !== "GET" && error instanceof ApiError) {
+      raiseIfAiSharingRequired(error.code);
+    }
+    throw error;
+  }
   return res;
 }
 

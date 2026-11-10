@@ -39,6 +39,7 @@ import { db, pool } from "../db";
 import { users, userProfiles, communityRecipes } from "@shared/schema";
 import { eq, ilike } from "drizzle-orm";
 import { z } from "zod";
+import { AI_SHARING_VERSION } from "@shared/lib/ai-sharing";
 import { validateAiResponse } from "../lib/ai-safety";
 import { storage } from "../storage";
 import {
@@ -231,6 +232,21 @@ const RECIPE_TARGETS = [
  * M3 (audit 2026-04-17): removed hardcoded "demo123" password; prod guard
  * lives in main() so the script exits before touching any state.
  */
+function demoAiSharing() {
+  const now = new Date();
+  return {
+    aiSharingAllowedAt: now,
+    aiSharingVersion: AI_SHARING_VERSION,
+    aiSharingHistory: [
+      {
+        event: "granted" as const,
+        at: now.toISOString(),
+        version: AI_SHARING_VERSION,
+      },
+    ],
+  };
+}
+
 async function ensureDemoUser(): Promise<string> {
   // Fail-closed: the demo/test login is local-only and must NEVER reach the live
   // backend. Throws against any non-local DATABASE_URL host — independent of
@@ -258,6 +274,9 @@ async function ensureDemoUser(): Promise<string> {
     } else {
       console.log("Demo user already exists");
     }
+    if (!demo.aiSharingAllowedAt) {
+      await db.update(users).set(demoAiSharing()).where(eq(users.id, demo.id));
+    }
     return demo.id;
   }
 
@@ -280,6 +299,9 @@ async function ensureDemoUser(): Promise<string> {
       onboardingCompleted: true,
       subscriptionTier: "premium",
       subscriptionExpiresAt: new Date("2030-01-01"),
+      // The demo account is a dev/test fixture: AI features on from the start
+      // (a real account is asked first — privacy audit H3).
+      ...demoAiSharing(),
     })
     .returning();
 

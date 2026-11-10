@@ -32,6 +32,7 @@ import type {
 } from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
 import type { HealthConsentEvent } from "./lib/health-consent";
+import type { AiSharingEvent } from "./lib/ai-sharing";
 import type {
   ConsensusNutritionData,
   VerificationNutrition,
@@ -124,6 +125,22 @@ export const users = pgTable(
      * the last 30 days as active. NULL = not seen since this column shipped.
      */
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+    /**
+     * AI-sharing permission (privacy audit H3). Set while the user allows
+     * their data to go to the AI companies named in `shared/lib/ai-sharing.ts`;
+     * NULL = not allowed, and the server makes no AI call for them. Written
+     * only by `server/storage/ai-sharing.ts`.
+     */
+    aiSharingAllowedAt: timestamp("ai_sharing_allowed_at", {
+      withTimezone: true,
+    }),
+    /** The disclosure version the current permission was given against. */
+    aiSharingVersion: text("ai_sharing_version"),
+    /** Append-only log of every answer; empty = never asked. */
+    aiSharingHistory: jsonb("ai_sharing_history")
+      .$type<AiSharingEvent[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

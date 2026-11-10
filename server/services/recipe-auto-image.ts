@@ -1,3 +1,4 @@
+import { isAiSharingAllowedFor } from "../lib/ai-sharing-gate";
 import { storage } from "../storage";
 import { AI_DAILY_CAPS, TIER_FEATURES } from "@shared/types/premium";
 import { generateRecipeImage } from "./recipe-generation";
@@ -22,6 +23,9 @@ export async function autoGenerateRecipeImage(
 ): Promise<void> {
   const tier = await storage.getEffectiveTierForUser(userId);
   if (!TIER_FEATURES[tier].recipeAutoImages) return;
+  // Privacy audit H3: with AI features off, a saved recipe's title and
+  // ingredients do not go to the image company either.
+  if (!(await isAiSharingAllowedFor(userId))) return;
   const claimed = await storage.claimDailyAiCall(
     userId,
     "recipeAutoImage",

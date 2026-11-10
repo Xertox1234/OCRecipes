@@ -1,3 +1,4 @@
+import { raiseIfAiSharingRequired } from "./ai-sharing-events";
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import { tokenStorage } from "./token-storage";
 import { getApiUrl } from "./query-client";
@@ -101,6 +102,8 @@ function uploadError(status: number, body: string): ApiError {
   } catch {
     // Non-JSON error body — no machine-readable code to extract.
   }
+  // An upload is always something the user started (privacy audit H3).
+  raiseIfAiSharingRequired(code);
   return new ApiError(`Upload failed: ${status}`, code);
 }
 
@@ -221,6 +224,7 @@ export async function submitFollowUp(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    raiseIfAiSharingRequired(errorData.code);
     throw new ApiError(
       errorData.error || `Follow-up failed: ${response.status}`,
       errorData.code,
@@ -431,6 +435,7 @@ export async function uploadRecipeTextForAnalysis(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    raiseIfAiSharingRequired(errorData.code);
     throw new ApiError(
       errorData.error || `Structure failed: ${response.status}`,
       errorData.code,

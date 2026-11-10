@@ -139,7 +139,7 @@ tags:
       - tapOn: "Not Now"
 
 # Onboarding wizard — real screen order from OnboardingNavigator.tsx:
-# Welcome → HealthDataConsent → Allergies → HealthConditions → DietType →
+# Welcome → AiSharing → HealthDataConsent → Allergies → HealthConditions → DietType →
 # Goals → Preferences → TastePicks. This flow declines the health-data
 # consent, so the three health screens (Allergies, HealthConditions, Goals)
 # are skipped: no consent, no health data (onboarding-steps.ts →
@@ -150,6 +150,13 @@ tags:
     visible: "Get Started"
     timeout: 15000
 - tapOn: "Get Started"
+
+# 1b. AI-sharing question (privacy audit H3): who the AI features send data
+#     to. Allow it, as a new user who goes on to use the app would.
+- extendedWaitUntil:
+    visible: "Allow AI features"
+    timeout: 15000
+- tapOn: "Allow AI features"
 
 # 2. Health data consent — decline sharing ("Not now, skip health data
 #    sharing" a11y label)

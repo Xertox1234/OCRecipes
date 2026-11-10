@@ -31,6 +31,8 @@ import {
   reportError,
 } from "./lib/error-reporter";
 import { requestContextMiddleware } from "./lib/request-context";
+import { installAiSharingLookup } from "./lib/ai-sharing-gate";
+import { storage } from "./storage";
 import { bodyShapeBudget } from "./middleware/body-shape-budget";
 import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
 import { UUID_RE } from "./lib/identifier-patterns";
@@ -248,6 +250,10 @@ function startServer() {
   setupBodyParsing(app);
   setupRequestLogging(app);
   app.use(requestContextMiddleware);
+  // Privacy audit H3: aiChat refuses a signed-in user who has not allowed AI
+  // sharing. The gate lives in lib/ (a leaf), so storage is handed to it here,
+  // next to the request context it reads the user from.
+  installAiSharingLookup(storage.isAiSharingAllowed);
   // Dev-only, opt-in (CONTRACT_SNAPSHOT=1) — see server/lib/contract-snapshot.ts and
   // docs/research/2026-07-05-pg-lab-roadmap.md (PG Lab Batch C).
   installContractSnapshotMiddleware(app);

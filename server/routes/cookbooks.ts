@@ -8,6 +8,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import {
   checkPremiumFeature,
   formatZodError,
+  checkAiSharing,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
@@ -371,6 +372,8 @@ export function register(app: Express): void {
     cookbookCoverGenerateRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(
@@ -479,6 +482,8 @@ export function register(app: Express): void {
     }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const parsed = coverCandidatesSchema.safeParse(req.body);
         if (!parsed.success) {
           sendError(

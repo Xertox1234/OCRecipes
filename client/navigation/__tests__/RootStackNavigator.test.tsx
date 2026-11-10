@@ -67,6 +67,13 @@ const auth = vi.hoisted(() => ({
 vi.mock("@/context/AuthContext", () => ({ useAuthContext: () => auth }));
 vi.mock("@/hooks/useScreenOptions", () => ({ useScreenOptions: () => ({}) }));
 
+const reask = vi.hoisted(() => ({ enabled: undefined as boolean | undefined }));
+vi.mock("@/navigation/useAiSharingReask", () => ({
+  useAiSharingReask: (enabled: boolean) => {
+    reask.enabled = enabled;
+  },
+}));
+
 function signIn() {
   auth.isAuthenticated = true;
   auth.user = { onboardingCompleted: true };
@@ -113,5 +120,33 @@ describe("RootStackNavigator — VerifyEmail in both auth states", () => {
     expect(signedOutKey).toBeTruthy();
     expect(signedInKey).toBeTruthy();
     expect(signedInKey).not.toBe(signedOutKey);
+  });
+});
+
+// Privacy audit H3 (owner ruling 2026-11-10): a new account is asked inside
+// onboarding; any other account is asked when an AI request is refused.
+describe("RootStackNavigator — AI-sharing question", () => {
+  beforeEach(() => {
+    signIn();
+    reask.enabled = undefined;
+  });
+
+  it("opens the app without a question in the way, with the question reachable", () => {
+    renderComponent(<RootStackNavigator />);
+
+    expect(screen.getByTestId("screen-Main")).toBeTruthy();
+    expect(screen.getByTestId("screen-AiSharing")).toBeTruthy();
+    expect(reask.enabled).toBe(true);
+  });
+
+  it("leaves a new account to the onboarding step", () => {
+    auth.user = { onboardingCompleted: false };
+    renderComponent(<RootStackNavigator />);
+
+    expect(screen.getByTestId("screen-Onboarding")).toBeTruthy();
+    expect(screen.queryByTestId("screen-AiSharing")).toBeNull();
+    // The question screen is not registered here, so nothing may navigate
+    // to it.
+    expect(reask.enabled).toBe(false);
   });
 });

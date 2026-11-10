@@ -35,6 +35,8 @@ import CookSessionReviewScreen from "@/screens/CookSessionReviewScreen";
 import SubstitutionResultScreen from "@/screens/SubstitutionResultScreen";
 import ReceiptMealPlanScreen from "@/screens/meal-plan/ReceiptMealPlanScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
+import AiSharingScreen from "@/screens/AiSharingScreen";
+import { useAiSharingReask } from "@/navigation/useAiSharingReask";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -57,6 +59,8 @@ import NotebookScreen from "@/screens/NotebookScreen";
 import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
 
 export type RootStackParamList = {
+  /** The AI-sharing question (privacy audit H3). */
+  AiSharing: undefined;
   Login:
     | {
         /** Prefill the identifier (e.g. after a password reset). */
@@ -253,6 +257,12 @@ export default function RootStackNavigator() {
   const { isAuthenticated, isLoading, user } = useAuthContext();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
+  const needsOnboarding = isAuthenticated && !user?.onboardingCompleted;
+  // Privacy audit H3: a new account answers the AI-sharing question as an
+  // onboarding step. Any other account that has not said yes is asked when
+  // the server refuses its first AI request; the question screen is only
+  // registered next to Main, so the listener stays off until then.
+  useAiSharingReask(isAuthenticated && !needsOnboarding);
 
   if (isLoading) {
     return (
@@ -261,8 +271,6 @@ export default function RootStackNavigator() {
       </View>
     );
   }
-
-  const needsOnboarding = isAuthenticated && !user?.onboardingCompleted;
 
   return (
     <Stack.Navigator
@@ -326,6 +334,13 @@ export default function RootStackNavigator() {
             name="Main"
             component={MainTabNavigator}
             options={{ headerShown: false }}
+          />
+          {/* Opens when someone without AI sharing uses an AI feature
+              (useAiSharingReask), and from Settings. */}
+          <Stack.Screen
+            name="AiSharing"
+            component={AiSharingScreen}
+            options={{ headerShown: false, presentation: "modal" }}
           />
           {/* A verify link tapped while signed in — change-email mails one to
               the new address. Same screen and linking path as signed out; its
