@@ -223,7 +223,7 @@ export function register(app: Express): void {
         // all real-world paths are unaffected. See
         // todos/archive/2026-05-31-cooking-image-guard-precedence.md.
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         const imageBase64 = requireValidImage(req, res);
         if (!imageBase64) return;
@@ -567,7 +567,7 @@ export function register(app: Express): void {
           .join(", ");
 
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Get user profile for dietary context
         const userProfile = await storage.getUserProfile(req.userId);

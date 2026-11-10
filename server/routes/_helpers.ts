@@ -24,8 +24,8 @@ import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
 import {
-  assertAiSharingAllowed,
-  wasAiSharingRefused,
+  AiSharingRequiredError,
+  isAiSharingAllowedFor,
 } from "../lib/ai-sharing-gate";
 import { isValidCalendarDate } from "../utils/date-validation";
 
@@ -79,19 +79,19 @@ function sendAiSharingRequired(
 
 /**
  * Guard that returns false (and sends 403 AI_SHARING_REQUIRED) when the user
- * has not allowed AI sharing (privacy audit H3). `aiChat` enforces the rule on
- * its own; this answers before any work starts, and before a streaming route
- * has sent its headers. Use next to `checkAiConfigured`.
+ * has not allowed AI sharing (privacy audit H3). Keyed on the request's own
+ * user, so it holds whatever happens to the request context later; `aiChat`
+ * checks again when the call is made. This one answers before any work
+ * starts, and before a streaming route has sent its headers. Use next to
+ * `checkAiConfigured`.
  */
-export async function checkAiSharing(res: Response): Promise<boolean> {
-  try {
-    await assertAiSharingAllowed();
-    return true;
-  } catch (error) {
-    if (!wasAiSharingRefused(error)) throw error;
-    sendAiSharingRequired(res);
-    return false;
-  }
+export async function checkAiSharing(
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<boolean> {
+  if (await isAiSharingAllowedFor(req.userId)) return true;
+  sendAiSharingRequired(res);
+  return false;
 }
 
 /**
@@ -283,7 +283,7 @@ export function handleRouteError(
     );
     return;
   }
-  if (wasAiSharingRefused(error)) {
+  if (error instanceof AiSharingRequiredError) {
     sendAiSharingRequired(res, extra);
     return;
   }

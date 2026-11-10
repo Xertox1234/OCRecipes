@@ -211,7 +211,7 @@ export function register(app: Express): void {
 
         // Premium gate
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
         const features = await checkPremiumFeature(
           req,
           res,

@@ -588,7 +588,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         const features = await checkPremiumFeature(
           req,

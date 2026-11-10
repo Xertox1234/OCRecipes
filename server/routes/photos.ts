@@ -129,7 +129,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Premium gate
         const features = await checkPremiumFeature(
@@ -327,6 +327,8 @@ export function register(app: Express): void {
     photoRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const sessionId = parseStringParam(req.params.sessionId);
         if (!sessionId) {
           return sendError(
@@ -454,6 +456,8 @@ export function register(app: Express): void {
     labelUpload.single("photo"),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const features = await checkPremiumFeature(
           req,
           res,
@@ -503,6 +507,8 @@ export function register(app: Express): void {
     }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const parsed = structureRecipeTextSchema.safeParse(req.body);
         if (!parsed.success) {
           return sendError(
@@ -538,6 +544,8 @@ export function register(app: Express): void {
     labelUpload.single("photo"),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         // Check scan limit (label scans share daily scan limit)
         const features = await getPremiumFeatures(req);
         const scanCount = await storage.getDailyScanCount(

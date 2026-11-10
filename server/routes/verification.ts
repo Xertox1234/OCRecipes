@@ -285,7 +285,7 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Claim BEFORE the vision call: a request refused after the paid call
         // (the in-memory session cap below) has already cost money.

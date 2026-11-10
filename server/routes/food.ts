@@ -38,7 +38,7 @@ export function register(app: Express): void {
         if (!features) return;
 
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
         const validated = parseTextSchema.parse(req.body);
         const items = await parseNaturalLanguageFood(validated.text);
         res.json({ items });
@@ -75,7 +75,7 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Verify audio content via magic bytes (defense-in-depth beyond MIME header)
         const detectedMime = detectAudioMimeType(req.file.buffer);

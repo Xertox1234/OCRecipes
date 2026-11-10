@@ -48,33 +48,34 @@ export function resetAiSharingGateForTests(): void {
   allowedUntil.clear();
 }
 
-export async function assertAiSharingAllowed(): Promise<void> {
-  const ctx = getRequestContext();
-  const userId = ctx?.userId;
-  if (!ctx || !userId) return;
-
+/**
+ * True when `userId` allows AI sharing. A "yes" is remembered briefly; a "no"
+ * is looked up every time, so allowing it takes effect at once.
+ */
+export async function isAiSharingAllowedFor(userId: string): Promise<boolean> {
   const until = allowedUntil.get(userId);
-  if (until !== undefined && until > Date.now()) return;
+  if (until !== undefined && until > Date.now()) return true;
   allowedUntil.delete(userId);
 
-  if (!lookup || !(await lookup(userId))) {
-    // Many services replace a failed AI call's error with their own; the flag
-    // lets handleRouteError still tell the app why (see wasAiSharingRefused).
-    ctx.aiSharingRefused = true;
-    throw new AiSharingRequiredError();
-  }
+  if (!lookup || !(await lookup(userId))) return false;
 
   if (allowedUntil.size >= MAX_REMEMBERED) {
     const oldest = allowedUntil.keys().next().value;
     if (oldest !== undefined) allowedUntil.delete(oldest);
   }
   allowedUntil.set(userId, Date.now() + ALLOWED_TTL_MS);
+  return true;
 }
 
-/** True when `error`, or an AI call earlier in this request, was a refusal. */
-export function wasAiSharingRefused(error: unknown): boolean {
-  return (
-    error instanceof AiSharingRequiredError ||
-    getRequestContext()?.aiSharingRefused === true
-  );
+/**
+ * The check inside the AI call itself: the user is whoever the request
+ * context says is signed in. Routes also check up front with the request's own
+ * user (`checkAiSharing` in routes/_helpers.ts), which does not depend on the
+ * context reaching this far.
+ */
+export async function assertAiSharingAllowed(): Promise<void> {
+  const userId = getRequestContext()?.userId;
+  if (!userId) return;
+  if (await isAiSharingAllowedFor(userId)) return;
+  throw new AiSharingRequiredError();
 }

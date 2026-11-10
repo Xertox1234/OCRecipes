@@ -85,7 +85,7 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate suggestions
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         if (
           !(await claimAiCallOrReject(
@@ -204,7 +204,7 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate instructions
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         if (
           !(await claimAiCallOrReject(

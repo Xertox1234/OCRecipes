@@ -77,9 +77,9 @@ export default function AiSharingScreen() {
             type="body"
             style={[styles.centered, { color: theme.textSecondary }]}
           >
-            Photo scanning, Coach and recipe ideas are run by AI companies
-            outside OCRecipes. Before anything is sent, here is who they are and
-            what they receive.
+            Photo scanning, typed food logging, Coach and recipe ideas are run
+            by AI companies outside OCRecipes. Before anything is sent, here is
+            who they are and what they receive.
           </ThemedText>
         </View>
 
@@ -130,10 +130,10 @@ export default function AiSharingScreen() {
         </View>
 
         <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          We don&apos;t attach your name, email or account ID to these requests,
-          and we never sell your data or share it with advertisers. You can turn
-          AI features off any time in Settings. Barcode scanning, manual logging
-          and saved recipes work either way.
+          We don&apos;t attach your email or account ID to these requests, and
+          we never sell your data or share it with advertisers. You can turn AI
+          features off any time in Settings. Barcode scanning and saved recipes
+          work either way.
         </ThemedText>
 
         <Pressable

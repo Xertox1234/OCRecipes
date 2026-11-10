@@ -1,6 +1,3 @@
-import { ErrorCode } from "@shared/constants/error-codes";
-import { notifyAiSharingRequired } from "./ai-sharing-events";
-
 /**
  * Custom error class for API responses with machine-readable error codes.
  */
@@ -20,8 +17,5 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.code = code;
     this.status = status;
-    // Every refused request is built here (apiRequest, uploads), so this is
-    // the one place that sees an AI-sharing refusal whatever screen made it.
-    if (code === ErrorCode.AI_SHARING_REQUIRED) notifyAiSharingRequired();
   }
 }

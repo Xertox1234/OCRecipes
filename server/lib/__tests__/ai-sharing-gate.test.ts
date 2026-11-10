@@ -76,21 +76,3 @@ describe("assertAiSharingAllowed", () => {
     );
   });
 });
-
-describe("wasAiSharingRefused", () => {
-  it("still knows after a service replaced the error", async () => {
-    const { wasAiSharingRefused } = await import("../ai-sharing-gate");
-    resetAiSharingGateForTests();
-    installAiSharingLookup(async () => false);
-    const ctx = { requestId: "r9", userId: "u9" };
-    mockContext.mockReturnValue(ctx);
-
-    expect(wasAiSharingRefused(new Error("Failed to analyze photo"))).toBe(
-      false,
-    );
-    await expect(assertAiSharingAllowed()).rejects.toThrow();
-    expect(wasAiSharingRefused(new Error("Failed to analyze photo"))).toBe(
-      true,
-    );
-  });
-});

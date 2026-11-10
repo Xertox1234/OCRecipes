@@ -14,7 +14,10 @@ vi.mock("../../storage", () => ({
 }));
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
-vi.mock("../../lib/ai-sharing-gate", () => ({ forgetAiSharing: vi.fn() }));
+vi.mock("../../lib/ai-sharing-gate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/ai-sharing-gate")>()),
+  forgetAiSharing: vi.fn(),
+}));
 
 function createApp() {
   const app = express();

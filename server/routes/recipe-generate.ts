@@ -26,7 +26,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Premium gate — mirrors POST /api/recipes/generate. Both endpoints
         // call the AI generator and must be restricted to premium users.

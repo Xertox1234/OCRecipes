@@ -4,6 +4,7 @@ import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { storage } from "../../storage";
 import { generateRecipeImage } from "../recipe-generation";
 import { autoGenerateRecipeImage } from "../recipe-auto-image";
+import { isAiSharingAllowedFor } from "../../lib/ai-sharing-gate";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -17,6 +18,10 @@ vi.mock("../recipe-generation", () => ({
   generateRecipeImage: vi.fn(),
 }));
 
+vi.mock("../../lib/ai-sharing-gate", () => ({
+  isAiSharingAllowedFor: vi.fn(),
+}));
+
 const recipe = {
   id: 7,
   title: "Lentil soup",
@@ -27,6 +32,19 @@ const recipe = {
 describe("autoGenerateRecipeImage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(isAiSharingAllowedFor).mockResolvedValue(true);
+  });
+
+  // Privacy audit H3.
+  it("sends nothing and claims nothing for a user with AI features off", async () => {
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+    vi.mocked(isAiSharingAllowedFor).mockResolvedValue(false);
+
+    await autoGenerateRecipeImage(recipe, "user-1");
+
+    expect(isAiSharingAllowedFor).toHaveBeenCalledWith("user-1");
+    expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
+    expect(generateRecipeImage).not.toHaveBeenCalled();
   });
 
   it("makes no paid call and claims nothing for a tier without recipeAutoImages", async () => {

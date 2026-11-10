@@ -17,7 +17,8 @@ export const AI_SHARING_VERSION = "2026-11-10";
  * Who receives an AI request. This mirrors the routing in
  * `server/lib/ai-client.ts` and `PINNED_HOSTS` in `server/lib/ai-models.ts`
  * (OpenAI models run on Microsoft Azure, Gemini models on Google Vertex AI,
- * both reached through OpenRouter; Google is also the direct backup route).
+ * both reached through OpenRouter; Google is also the direct backup route) and
+ * the image generator in `server/lib/runware.ts`.
  * `server/lib/__tests__/ai-sharing-recipients.test.ts` fails when a host is
  * pinned that this list does not name.
  */
@@ -37,23 +38,29 @@ export const AI_RECIPIENTS = [
     host: "google-vertex",
     role: "Runs the Gemini models we use.",
   },
+  {
+    name: "Runware",
+    host: "runware",
+    role: "Creates recipe and cookbook pictures from titles and ingredients.",
+  },
 ] as const;
 
 /** The recipients as one phrase, for prompts that have no room for a list. */
 export const AI_RECIPIENT_NAMES =
-  "OpenRouter, Microsoft Azure (which runs OpenAI's models) and Google";
+  "OpenRouter, Microsoft Azure (which runs OpenAI's models), Google and Runware";
 
 /** What an AI feature sends, in the words shown to the user. */
 export const AI_SHARED_DATA = [
   "Photos you scan (meals, labels, menus, receipts)",
   "Messages you send to Coach and the recipe chat, and foods you type or dictate",
-  "The profile details a feature needs, such as your goals, allergies, diet, weight, activity level and what you ate today",
+  "The profile details a feature needs, such as your first name, goals, allergies, diet, weight, activity level and what you ate today",
+  "Recipe titles and ingredients, to create recipe pictures",
 ] as const;
 
 export const AI_SHARING_OFF_PROMPT = {
   title: "Turn off AI features",
   message:
-    "OCRecipes stops sending anything to AI companies. Photo scanning, Coach, recipe ideas and AI meal plans stop working until you turn this back on. Barcode scanning, manual logging and your saved recipes keep working.",
+    "OCRecipes stops sending your data to the AI companies it names. Photo scanning, typed and spoken food logging, Coach, recipe ideas, AI meal plans and AI pictures stop working until you turn this back on. Barcode scanning and your saved recipes keep working.",
   confirmLabel: "Turn off",
   destructive: true,
 } as const;

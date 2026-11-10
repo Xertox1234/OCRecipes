@@ -313,7 +313,7 @@ export function register(app: Express): void {
 
         // Premium gate — fail fast before DB queries
         if (!checkAiConfigured(res)) return;
-        if (!(await checkAiSharing(res))) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Dispatch based on conversation type
         const conversationType: ConversationType =

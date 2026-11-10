@@ -1,20 +1,22 @@
-import { ApiError } from "../api-error";
-import { onAiSharingRequired } from "../ai-sharing-events";
+import {
+  onAiSharingRequired,
+  raiseIfAiSharingRequired,
+} from "../ai-sharing-events";
 import { CHAT_AI_OFF_ERROR, chatRequestErrorCopy } from "../chat-error-copy";
 import { HEALTH_CONSENT_PROMPT } from "../health-consent";
 import { AI_RECIPIENTS } from "@shared/lib/ai-sharing";
 
 // Privacy audit H3.
 describe("AI-sharing refusal signal", () => {
-  it("fires when any request is refused with AI_SHARING_REQUIRED", () => {
+  it("fires for an AI_SHARING_REQUIRED refusal until unsubscribed", () => {
     const listener = vi.fn();
     const off = onAiSharingRequired(listener);
 
-    new ApiError("403: off", "AI_SHARING_REQUIRED", 403);
+    raiseIfAiSharingRequired("AI_SHARING_REQUIRED");
     expect(listener).toHaveBeenCalledTimes(1);
 
     off();
-    new ApiError("403: off", "AI_SHARING_REQUIRED", 403);
+    raiseIfAiSharingRequired("AI_SHARING_REQUIRED");
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
@@ -22,8 +24,8 @@ describe("AI-sharing refusal signal", () => {
     const listener = vi.fn();
     const off = onAiSharingRequired(listener);
 
-    new ApiError("403: premium", "PREMIUM_REQUIRED", 403);
-    new ApiError("500: boom");
+    raiseIfAiSharingRequired("PREMIUM_REQUIRED");
+    raiseIfAiSharingRequired(undefined);
 
     expect(listener).not.toHaveBeenCalled();
     off();
