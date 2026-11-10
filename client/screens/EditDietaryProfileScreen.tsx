@@ -12,6 +12,8 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useDietaryProfileForm } from "@/hooks/useDietaryProfileForm";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
+import { HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
@@ -195,8 +197,22 @@ export default function EditDietaryProfileScreen({
     toggleHealthCondition,
     toggleDislike,
     toggleCuisine,
+    needsConsent,
     handleSave,
   } = useDietaryProfileForm({ addAllergen: route?.params?.addAllergen });
+  const { confirm, ConfirmationModal } = useConfirmationModal();
+
+  // No consent, no health data: ask before a save that stores a health detail.
+  const handleSavePress = () => {
+    if (!needsConsent) {
+      void handleSave();
+      return;
+    }
+    confirm({
+      ...HEALTH_CONSENT_PROMPT,
+      onConfirm: () => void handleSave(true),
+    });
+  };
 
   // Announce the error transition for screen readers (cross-platform — the
   // EmptyState container has no live region, so announceForAccessibility carries
@@ -820,7 +836,7 @@ export default function EditDietaryProfileScreen({
       >
         <InlineError message={saveError} style={{ marginBottom: Spacing.sm }} />
         <Button
-          onPress={handleSave}
+          onPress={handleSavePress}
           loading={isSaving}
           accessibilityLabel={isSaving ? "Saving changes" : "Save Changes"}
           style={{ backgroundColor: theme.accentSolid }}
@@ -828,6 +844,7 @@ export default function EditDietaryProfileScreen({
           Save Changes
         </Button>
       </View>
+      <ConfirmationModal />
     </View>
   );
 }

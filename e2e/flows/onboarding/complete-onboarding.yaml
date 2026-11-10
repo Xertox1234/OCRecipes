@@ -140,9 +140,10 @@ tags:
 
 # Onboarding wizard — real screen order from OnboardingNavigator.tsx:
 # Welcome → HealthDataConsent → Allergies → HealthConditions → DietType →
-# Goals → Preferences → TastePicks. (The previous version of this flow
-# tapped a "Complete setup" button that does not exist anywhere in the
-# codebase; completion actually happens on TastePicks.)
+# Goals → Preferences → TastePicks. This flow declines the health-data
+# consent, so the three health screens (Allergies, HealthConditions, Goals)
+# are skipped: no consent, no health data (onboarding-steps.ts →
+# HEALTH_SCREENS). Completion happens on TastePicks.
 
 # 1. Welcome
 - extendedWaitUntil:
@@ -157,45 +158,21 @@ tags:
     timeout: 15000
 - tapOn: "Not now.*"
 
-# 3. Allergies — none, then advance (Continue kept optional in case the
-#    selection auto-advances)
-- extendedWaitUntil:
-    visible: "No Allergies"
-    timeout: 15000
-- tapOn: "No Allergies"
-- tapOn:
-    text: "Continue"
-    optional: true
-
-# 4. Health conditions — none, then advance
-- extendedWaitUntil:
-    visible: "None of These"
-    timeout: 15000
-- tapOn: "None of These"
-- tapOn:
-    text: "Continue"
-    optional: true
-
-# 5. Diet type — cards carry a11y "{name}: {description}"
+# 3. Diet type — the first screen after a declined consent. Cards carry
+#    a11y "{name}: {description}"
 - extendedWaitUntil:
     visible: "Omnivore.*"
     timeout: 15000
 - tapOn: "Omnivore.*"
 - tapOn: "Continue"
 
-# 6. Goals — defaults are fine
-- extendedWaitUntil:
-    visible: "Continue"
-    timeout: 15000
-- tapOn: "Continue"
-
-# 7. Preferences — forward button is visible "Next" with a11y "Next step"
+# 4. Preferences — forward button is visible "Next" with a11y "Next step"
 - extendedWaitUntil:
     visible: "Next step"
     timeout: 15000
 - tapOn: "Next step"
 
-# 8. Taste picks — "Skip for now" is a real completion path: it sets
+# 5. Taste picks — "Skip for now" is a real completion path: it sets
 #    onboardingCompleted:true (TastePicksScreen skip handler)
 - extendedWaitUntil:
     visible: "Skip for now"

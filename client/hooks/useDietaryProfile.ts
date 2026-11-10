@@ -16,6 +16,8 @@ export interface DietaryProfile {
   cookingSkillLevel?: string | null;
   cookingTimeAvailable?: string | null;
   reminderMutes?: ReminderMutes;
+  /** ISO time the health-data consent was given; null/absent = no consent. */
+  healthDataConsentAt?: string | null;
 }
 
 /**

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -40,9 +40,9 @@ vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
-function renderForm() {
+function renderForm(profile: Record<string, unknown> = {}) {
   const { queryClient, wrapper } = createQueryWrapper();
-  queryClient.setQueryData(QUERY_KEYS.dietaryProfile, {});
+  queryClient.setQueryData(QUERY_KEYS.dietaryProfile, profile);
   return renderHook(() => useDietaryProfileForm(), { wrapper });
 }
 
@@ -101,5 +101,63 @@ describe("useDietaryProfileForm — save feedback", () => {
     expect(mockNotification).toHaveBeenCalledExactlyOnceWith(
       Haptics.NotificationFeedbackType.Error,
     );
+  });
+});
+
+// Privacy audit H2 — "no consent, no health data".
+describe("useDietaryProfileForm — health-data consent", () => {
+  const allergy = [{ name: "peanuts", severity: "severe" }];
+
+  it("needs the consent when an unconsented profile holds a health detail", async () => {
+    const { result } = renderForm({
+      allergies: allergy,
+      healthDataConsentAt: null,
+    });
+
+    await waitFor(() => expect(result.current.allergies).toEqual(allergy));
+    expect(result.current.needsConsent).toBe(true);
+  });
+
+  it("needs no consent for preferences alone, or once consent is on record", async () => {
+    const preferences = renderForm({
+      dietType: "vegan",
+      healthDataConsentAt: null,
+    });
+    await waitFor(() =>
+      expect(preferences.result.current.dietType).toBe("vegan"),
+    );
+    expect(preferences.result.current.needsConsent).toBe(false);
+
+    const consented = renderForm({
+      allergies: allergy,
+      healthDataConsentAt: "2026-11-10T00:00:00Z",
+    });
+    await waitFor(() =>
+      expect(consented.result.current.allergies).toEqual(allergy),
+    );
+    expect(consented.result.current.needsConsent).toBe(false);
+  });
+
+  it("sends the consent with the save only when asked to", async () => {
+    mockApiRequest.mockResolvedValue({});
+    const { result } = renderForm({ allergies: allergy });
+    await waitFor(() => expect(result.current.allergies).toEqual(allergy));
+
+    await act(async () => {
+      await result.current.handleSave(true);
+    });
+    // The query may also refetch (a GET); pick the save.
+    const putBody = () =>
+      mockApiRequest.mock.calls.find(([method]) => method === "PUT")?.[2];
+    expect(putBody()).toEqual(
+      expect.objectContaining({ healthDataConsent: true }),
+    );
+
+    mockApiRequest.mockClear();
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(putBody()).toEqual(expect.objectContaining({ allergies: allergy }));
+    expect(putBody()).not.toHaveProperty("healthDataConsent");
   });
 });

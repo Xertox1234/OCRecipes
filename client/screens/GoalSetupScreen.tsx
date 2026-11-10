@@ -33,6 +33,10 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
+import { useHealthConsent } from "@/hooks/useHealthConsent";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
+import { HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { parseDecimalInput } from "@/lib/number-input";
 import { announceTogether } from "@/lib/announce-together";
@@ -260,6 +264,8 @@ export default function GoalSetupScreen() {
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<GoalSetupScreenNavigationProp>();
   const queryClient = useQueryClient();
+  const { consented, grant: grantConsent } = useHealthConsent();
+  const { confirm, ConfirmationModal } = useConfirmationModal();
   const { updateUser } = useAuthContext();
   const canSetMacros = usePremiumFeature("macroGoals");
   // While the plan is unknown the fields stay read-only (a free user's typed
@@ -468,7 +474,23 @@ export default function GoalSetupScreen() {
       return;
     }
     if (refused.length > 0) return;
-    calculateMutation.mutate();
+    // Body measurements are health data: no consent, no health data.
+    if (consented) {
+      calculateMutation.mutate();
+      return;
+    }
+    confirm({
+      ...HEALTH_CONSENT_PROMPT,
+      onConfirm: () => {
+        grantConsent().then(
+          () => calculateMutation.mutate(),
+          (err: unknown) => {
+            logger.error("Health-data consent save failed", err);
+            toast.error("Couldn't save your consent. Please try again.");
+          },
+        );
+      },
+    });
   };
 
   const handleSave = () => {
@@ -897,6 +919,7 @@ export default function GoalSetupScreen() {
           </Animated.View>
         )}
       </ScreenScrollView>
+      <ConfirmationModal />
     </ThemedView>
   );
 }

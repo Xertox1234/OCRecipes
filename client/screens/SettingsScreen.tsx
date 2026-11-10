@@ -22,6 +22,8 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { DeleteAccountModal } from "@/components/DeleteAccountModal";
 import { ChangeEmailModal } from "@/components/ChangeEmailModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
+import { useHealthConsent } from "@/hooks/useHealthConsent";
+import { WITHDRAW_HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -73,6 +75,12 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
     label: "Clear site data",
     subtitle: "Sign-ins to recipe sites made in OCRecipes",
   },
+  {
+    id: "withdrawHealthConsent",
+    icon: "shield-off",
+    label: "Withdraw health-data consent",
+    subtitle: "Removes your allergies, conditions and body details",
+  },
   { id: "signout", icon: "log-out", label: "Sign Out" },
   {
     id: "deleteAccount",
@@ -88,8 +96,10 @@ export default function SettingsScreen() {
   const toast = useToast();
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { logout, deleteAccount, changeEmail, user, updateUser } =
+  const { logout, deleteAccount, changeEmail, user, updateUser, checkAuth } =
     useAuthContext();
+  const { consented: healthConsented, withdraw: withdrawHealthConsent } =
+    useHealthConsent();
   const { isPremium } = usePremiumContext();
   const measurementUnit = useMeasurementUnit();
 
@@ -272,6 +282,24 @@ export default function SettingsScreen() {
             },
           });
           break;
+        case "withdrawHealthConsent":
+          confirm({
+            ...WITHDRAW_HEALTH_CONSENT_PROMPT,
+            onConfirm: () => {
+              withdrawHealthConsent().then(
+                () => {
+                  toast.success("Health details removed");
+                  // The cached account still holds the body measurements.
+                  void checkAuth();
+                },
+                (err: unknown) => {
+                  logger.error("Health-data consent withdrawal failed", err);
+                  toast.error("Couldn't withdraw. Please try again.");
+                },
+              );
+            },
+          });
+          break;
         case "signout":
           // In-app ConfirmationModal sheet, NEVER a native Alert.alert: on the
           // CI iOS simulator the UIAlertController renders on screen but is
@@ -310,11 +338,16 @@ export default function SettingsScreen() {
       signInMethodsError,
       refetchSignInMethods,
       toast,
+      withdrawHealthConsent,
+      checkAuth,
     ],
   );
 
   const visibleItems = SETTINGS_ITEMS.filter(
-    (item) => !item.iosOnly || Platform.OS === "ios",
+    (item) =>
+      (!item.iosOnly || Platform.OS === "ios") &&
+      // Nothing to withdraw until the consent is on record.
+      (item.id !== "withdrawHealthConsent" || healthConsented),
   );
 
   const openLegalUrl = useCallback(
