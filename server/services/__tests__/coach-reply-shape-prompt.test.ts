@@ -48,6 +48,23 @@ describe("coach reply-shape prompt rules", () => {
     }
   });
 
+  // Eval 2026-11-10: short replies dropped the next step (plateau → "see a
+  // doctor" only) and skipped the watched macro (avocado, 75g carbs left).
+  it("short replies still carry one concrete next step; a referral adds to it", () => {
+    for (const tier of ["free", "pro"] as const) {
+      expect(prompt(tier)).toMatch(
+        /at least one concrete thing the user can do/,
+      );
+      expect(prompt(tier)).toMatch(/never a replacement for it/);
+    }
+  });
+
+  it("a macro the user says they are watching is the figure that matters", () => {
+    for (const intent of ["personalized_advice", "general_fact"] as const) {
+      expect(prompt("pro", intent)).toMatch(/says they are watching/);
+    }
+  });
+
   it("pro: no text before tools, follow-ups as chips", () => {
     expect(prompt("pro")).toMatch(
       /Do not write anything before calling a tool/,
