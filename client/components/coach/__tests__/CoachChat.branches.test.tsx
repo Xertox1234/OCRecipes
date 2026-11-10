@@ -60,6 +60,10 @@ const state = vi.hoisted(() => ({
   // Captured from the mocked BlockRenderer's onAction prop so tests can fire
   // an arbitrary action without a canned block.action.
   onAction: null as ((action: Record<string, unknown>) => void) | null,
+  // Coach write cards: captured from the mocked BlockRenderer.
+  onWriteCardEdit: null as
+    | ((cardId: string, edits: Record<string, unknown>) => void)
+    | null,
   // The plan-status check (usePlanCheck): known by default.
   planUnknown: false,
   recheckPlan: vi.fn(),
@@ -236,7 +240,9 @@ vi.mock("@/components/coach/blocks", () => ({
     expiredFinderFlowIds,
     lockedFinderButtons,
     isActive,
+    onWriteCardEdit,
   }: {
+    onWriteCardEdit?: (cardId: string, edits: Record<string, unknown>) => void;
     lockedFinderButtons?: string[];
     block: { type: string; [k: string]: unknown };
     onFinderAction?: (a: unknown, label: string) => void;
@@ -256,6 +262,7 @@ vi.mock("@/components/coach/blocks", () => ({
     // Captured so tests can fire an arbitrary action (not just the one fixed
     // block.action a given render was mounted with) via `state.onAction?.(...)`.
     state.onAction = onAction ?? null;
+    if (onWriteCardEdit) state.onWriteCardEdit = onWriteCardEdit;
     state.onFinderAction = onFinderAction ?? null;
     state.lockedFinderButtons = lockedFinderButtons;
     state.onOpenFinderItem = onOpenFinderItem ?? null;
@@ -263,7 +270,11 @@ vi.mock("@/components/coach/blocks", () => ({
     state.makingFinderItemId = makingFinderItemId;
     state.expiredFinderFlowIds = expiredFinderFlowIds;
     return (
-      <div data-testid={`block-${block.type}`} data-active={String(isActive)}>
+      <div
+        data-testid={`block-${block.type}`}
+        data-active={String(isActive)}
+        data-status={block.status as string | undefined}
+      >
         <button
           data-testid="block-action"
           onClick={() => onAction?.(block.action as Record<string, unknown>)}
@@ -466,6 +477,7 @@ describe("CoachChat — handleSend", () => {
     fireEvent.click(screen.getByTestId("send"));
     expect(state.startStream).toHaveBeenCalledWith(7, "what should I eat", {
       warmUpId: null,
+      writeCards: true,
     });
   });
 
@@ -491,6 +503,7 @@ describe("CoachChat — handleSend", () => {
     expect(onCreateConversation).toHaveBeenCalled();
     expect(state.startStream).toHaveBeenCalledWith(55, "new convo", {
       warmUpId: null,
+      writeCards: true,
     });
   });
 
@@ -523,6 +536,7 @@ describe("CoachChat — handleSend", () => {
     fireEvent.click(screen.getByTestId("send"));
     expect(state.startStream).toHaveBeenCalledWith(7, "pro message", {
       warmUpId: "warm-123",
+      writeCards: true,
     });
     expect(warmUpHook.reset).toHaveBeenCalled();
   });
@@ -1076,6 +1090,7 @@ describe("CoachChat — recipe finder", () => {
     });
     expect(state.startStream).toHaveBeenCalledWith(1, "Generate", {
       finderAction: { type: "generate", flowId: FLOW },
+      writeCards: true,
     });
   });
 
@@ -1122,6 +1137,7 @@ describe("CoachChat — recipe finder", () => {
     expect(state.recheckPlan).toHaveBeenCalledTimes(1);
     expect(state.startStream).toHaveBeenCalledWith(1, "None of these", {
       finderAction: { type: "none_of_these", flowId: FLOW },
+      writeCards: true,
     });
   });
 
@@ -1478,6 +1494,7 @@ describe("CoachChat — opening brief", () => {
       expect(state.startStream).toHaveBeenCalledWith(99, "hello", {
         warmUpId: null,
         openingBrief: "full",
+        writeCards: true,
       }),
     );
   });
@@ -1525,6 +1542,7 @@ describe("CoachChat — opening brief", () => {
     await waitFor(() =>
       expect(state.startStream).toHaveBeenCalledWith(1, "again", {
         warmUpId: null,
+        writeCards: true,
       }),
     );
   });
@@ -1637,7 +1655,99 @@ describe("CoachChat — brief Not today / Drop it", () => {
     await waitFor(() =>
       expect(state.startStream).toHaveBeenCalledWith(1, "I want to drop it", {
         warmUpId: null,
+        writeCards: true,
       }),
     );
+  });
+});
+
+describe("CoachChat — write cards (spec 2026-11-09)", () => {
+  const A = "11111111-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+  const B = "22222222-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+  const card = (cardId: string, replacesCardId?: string) => ({
+    type: "write_card",
+    cardId,
+    kind: "food",
+    status: "live",
+    ...(replacesCardId && { replacesCardId }),
+    payload: {
+      items: [
+        {
+          name: "egg",
+          unitLabel: "egg",
+          perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+          count: 2,
+          source: "lookup",
+        },
+      ],
+      mealType: "breakfast",
+      day: "today",
+    },
+  });
+
+  it("edits to the live card ride along with the next message", () => {
+    state.messages = [
+      makeMessage({ id: 1, role: "user", content: "two eggs" }),
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Here's what I've got.",
+        metadata: { blocks: [card(A)] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+    act(() => state.onWriteCardEdit?.(A, { counts: [3] }));
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "make it toast too" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(state.startStream).toHaveBeenCalledWith(7, "make it toast too", {
+      warmUpId: null,
+      writeCards: true,
+      liveCard: { cardId: A, edits: { counts: [3] } },
+    });
+  });
+
+  it("no liveCard when the card was never edited", () => {
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "x",
+        metadata: { blocks: [card(A)] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "hi" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(state.startStream).toHaveBeenCalledWith(7, "hi", {
+      warmUpId: null,
+      writeCards: true,
+    });
+  });
+
+  it("an older live card shows locked once a newer card is in the chat", () => {
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "x",
+        metadata: { blocks: [card(A)] },
+      }),
+      makeMessage({
+        id: 4,
+        role: "assistant",
+        content: "Updated.",
+        metadata: { blocks: [card(B, A)] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+    const cards = screen.getAllByTestId("block-write_card");
+    expect(cards.map((c) => c.getAttribute("data-status"))).toEqual([
+      "replaced",
+      "live",
+    ]);
   });
 });

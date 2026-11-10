@@ -28,6 +28,12 @@ import { logger } from "../lib/logger";
 import { sanitizeUserInput } from "../lib/ai-safety";
 import { isValidCalendarDate } from "../utils/date-validation";
 import type { UserProfile } from "@shared/schema";
+import {
+  addGroceryCardArgsSchema,
+  addMealPlanCardArgsSchema,
+  logFoodCardArgsSchema,
+  type WriteCardProposal,
+} from "./write-cards/tool-args";
 
 // ---------------------------------------------------------------------------
 // Structured error type returned by all tool call paths.
@@ -240,7 +246,29 @@ function compactMealPlanItems(
  * Returns the full array of OpenAI function-calling tool definitions.
  * Pass this array directly to OpenAI's `tools` parameter.
  */
-export function getToolDefinitions(): ChatCompletionTool[] {
+/**
+ * The model's tools. `writeCards` (the app sent `writeCards: true` — it can
+ * show write cards, spec 2026-11-09) swaps the three write tools for their
+ * card-building forms and adds the two recipe-id tools a plan card needs.
+ * Without it the list is exactly today's, so an older app is unaffected.
+ */
+export function getToolDefinitions(
+  opts: { writeCards?: boolean } = {},
+): ChatCompletionTool[] {
+  const tools = baseToolDefinitions();
+  if (!opts.writeCards) return tools;
+  return [
+    ...tools.map((t) =>
+      "function" in t && t.function.name in WRITE_CARD_TOOL_DEFINITIONS
+        ? WRITE_CARD_TOOL_DEFINITIONS[t.function.name]
+        : t,
+    ),
+    GET_MY_RECIPES_TOOL,
+    FIND_PLAN_RECIPES_TOOL,
+  ];
+}
+
+function baseToolDefinitions(): ChatCompletionTool[] {
   return [
     {
       type: "function",
@@ -499,6 +527,227 @@ export function getToolDefinitions(): ChatCompletionTool[] {
 }
 
 // ---------------------------------------------------------------------------
+// Write-card mode tool definitions (spec 2026-11-09). Keep each aligned with
+// its Zod schema in server/services/write-cards/*.ts.
+// ---------------------------------------------------------------------------
+
+const MEAL_TYPE_PARAM = {
+  type: "string",
+  enum: [...MEAL_TYPES],
+} as const;
+
+const WRITE_CARD_TOOL_DEFINITIONS: Record<string, ChatCompletionTool> = {
+  log_food_item: {
+    type: "function",
+    function: {
+      name: "log_food_item",
+      description:
+        "Show the user a card to log food they ate. Nothing is saved until the user taps the card. Put every item from the message in one call. Food can be logged for today or yesterday only.",
+      parameters: {
+        type: "object",
+        properties: {
+          items: {
+            type: "array",
+            description: "Each food the user ate (1 to 8).",
+            items: {
+              type: "object",
+              properties: {
+                name: {
+                  type: "string",
+                  description:
+                    "The food, e.g. 'large egg', 'whole-wheat toast'.",
+                },
+                count: {
+                  type: "integer",
+                  description: "How many units they had (1 to 20).",
+                },
+                unitLabel: {
+                  type: "string",
+                  description: "The unit counted, e.g. 'egg', 'slice', 'cup'.",
+                },
+                estimate: {
+                  type: "object",
+                  description:
+                    "Your estimate for ONE unit; the server prefers a nutrition lookup when it finds one.",
+                  properties: {
+                    calories: { type: "number" },
+                    protein: { type: "number" },
+                    carbs: { type: "number" },
+                    fat: { type: "number" },
+                  },
+                  required: ["calories", "protein", "carbs", "fat"],
+                },
+              },
+              required: ["name", "count", "unitLabel", "estimate"],
+            },
+          },
+          mealType: {
+            ...MEAL_TYPE_PARAM,
+            description:
+              "The meal, only if the user said it (otherwise it is set from the time of day).",
+          },
+          day: {
+            type: "string",
+            enum: ["today", "yesterday"],
+            description: "When they ate it. Defaults to today.",
+          },
+        },
+        required: ["items"],
+      },
+    },
+  },
+  add_to_grocery_list: {
+    type: "function",
+    function: {
+      name: "add_to_grocery_list",
+      description:
+        "Show the user a card of grocery items to add to one of their lists. Nothing is saved until the user taps the card. Items already in their pantry are left off automatically.",
+      parameters: {
+        type: "object",
+        properties: {
+          items: {
+            type: "array",
+            description: "Items to buy (1 to 40).",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "e.g. 'red lentils'." },
+                quantity: { type: "string", description: "e.g. '500', '2'." },
+                unit: { type: "string", description: "e.g. 'g', 'cans'." },
+                maybeHave: {
+                  type: "boolean",
+                  description:
+                    "True for staples the user may already have; the card starts it unticked.",
+                },
+              },
+              required: ["name"],
+            },
+          },
+          listName: {
+            type: "string",
+            description:
+              "A name if the user makes a new list, e.g. 'Lentil stew'.",
+          },
+        },
+        required: ["items"],
+      },
+    },
+  },
+  add_to_meal_plan: {
+    type: "function",
+    function: {
+      name: "add_to_meal_plan",
+      description:
+        "Show the user a card of meals to add to their plan. Nothing is saved until the user taps the card. Every recipe must be an id returned by find_plan_recipes or get_my_recipes in this conversation — never invent one.",
+      parameters: {
+        type: "object",
+        properties: {
+          rows: {
+            type: "array",
+            description: "One row per day and meal (1 to 7).",
+            items: {
+              type: "object",
+              properties: {
+                plannedDate: {
+                  type: "string",
+                  description:
+                    'YYYY-MM-DD. Resolve relative days ("tomorrow", "Sunday") against the current date given in USER CONTEXT.',
+                },
+                mealType: MEAL_TYPE_PARAM,
+                recipe: {
+                  type: "object",
+                  properties: {
+                    source: { type: "string", enum: ["community", "mine"] },
+                    id: { type: "integer" },
+                  },
+                  required: ["source", "id"],
+                },
+                alternatives: {
+                  type: "array",
+                  description:
+                    "Up to 3 other recipes for this row, for the user's Swap.",
+                  items: {
+                    type: "object",
+                    properties: {
+                      source: { type: "string", enum: ["community", "mine"] },
+                      id: { type: "integer" },
+                    },
+                    required: ["source", "id"],
+                  },
+                },
+              },
+              required: ["plannedDate", "mealType", "recipe"],
+            },
+          },
+        },
+        required: ["rows"],
+      },
+    },
+  },
+};
+
+const GET_MY_RECIPES_TOOL: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "get_my_recipes",
+    description:
+      "List recipes saved in the user's own library (source 'mine' for add_to_meal_plan).",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Optional words to match in the title.",
+        },
+        limit: { type: "integer", description: "At most 10. Default 10." },
+      },
+    },
+  },
+};
+
+const FIND_PLAN_RECIPES_TOOL: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "find_plan_recipes",
+    description:
+      "Find community recipes to put on a meal plan card (source 'community' for add_to_meal_plan). Only for building a plan; results are already safe for the user's allergies.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "e.g. 'high protein dinner', 'vegetarian lunch'.",
+        },
+        diet: { type: "string" },
+        cuisine: { type: "string" },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+const getMyRecipesSchema = z.object({
+  query: z.string().trim().max(100).optional(),
+  limit: z.number().int().min(1).max(10).optional(),
+});
+
+/** Every write tool's result in write-card mode — never "saved". */
+const CARD_SHOWN_MESSAGE =
+  "A card with these details is on screen for the user to check and save. Nothing has been saved. Do not say it was logged or added; tell them to tap the card when it looks right.";
+
+export interface ExecuteToolOptions {
+  /** The app can show write cards (it sent `writeCards: true`). */
+  writeCards?: boolean;
+  /** Receives each validated write-tool call in write-card mode. */
+  onWriteCardProposal?: (p: WriteCardProposal) => void;
+  /**
+   * One array per turn: find_plan_recipes adds the ids it returns, and the
+   * plan card offers them as Swap choices when the model gives too few.
+   */
+  planRecipePool?: number[];
+}
+
+// ---------------------------------------------------------------------------
 // Tool Execution
 // ---------------------------------------------------------------------------
 
@@ -526,6 +775,8 @@ export async function executeToolCall(
   _preloadedProfile?: UserProfile | null,
   /** IANA timezone of the requesting user — day-buckets "today" tool data. */
   tz: string = "UTC",
+  /** Write-card mode (spec 2026-11-09). New trailing param — see above. */
+  opts: ExecuteToolOptions = {},
 ): Promise<ToolErrorResult | object> {
   logger.debug(
     { toolName, userIdHash: hashUserId(userId) },
@@ -605,6 +856,14 @@ export async function executeToolCall(
     }
 
     case "log_food_item": {
+      if (opts.writeCards) {
+        const card = logFoodCardArgsSchema.safeParse(args);
+        if (!card.success) {
+          return invalidArgs("log_food_item", card.error.message);
+        }
+        opts.onWriteCardProposal?.({ kind: "food", args: card.data });
+        return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+      }
       const parsed = logFoodItemSchema.safeParse(args);
       if (!parsed.success) {
         return invalidArgs("log_food_item", parsed.error.message);
@@ -683,6 +942,18 @@ export async function executeToolCall(
     }
 
     case "add_to_meal_plan": {
+      if (opts.writeCards) {
+        const card = addMealPlanCardArgsSchema.safeParse(args);
+        if (!card.success) {
+          return invalidArgs("add_to_meal_plan", card.error.message);
+        }
+        opts.onWriteCardProposal?.({
+          kind: "plan",
+          args: card.data,
+          pool: [...(opts.planRecipePool ?? [])],
+        });
+        return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+      }
       const parsed = addToMealPlanSchema.safeParse(args);
       if (!parsed.success) {
         return invalidArgs("add_to_meal_plan", parsed.error.message);
@@ -711,6 +982,14 @@ export async function executeToolCall(
     }
 
     case "add_to_grocery_list": {
+      if (opts.writeCards) {
+        const card = addGroceryCardArgsSchema.safeParse(args);
+        if (!card.success) {
+          return invalidArgs("add_to_grocery_list", card.error.message);
+        }
+        opts.onWriteCardProposal?.({ kind: "grocery", args: card.data });
+        return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+      }
       const parsed = addToGroceryListSchema.safeParse(args);
       if (!parsed.success) {
         return invalidArgs("add_to_grocery_list", parsed.error.message);
@@ -753,6 +1032,55 @@ export async function executeToolCall(
 
       const result = await getSubstitutions(ingredients, null);
       return result;
+    }
+
+    case "get_my_recipes": {
+      if (!opts.writeCards) throw new Error(`Unknown tool: ${toolName}`);
+      const parsed = getMyRecipesSchema.safeParse(args);
+      if (!parsed.success) {
+        return invalidArgs("get_my_recipes", parsed.error.message);
+      }
+      const { items } = await storage.getUserMealPlanRecipes(userId, 50);
+      const q = parsed.data.query?.toLowerCase();
+      return {
+        recipes: items
+          .filter((r) => !q || r.title.toLowerCase().includes(q))
+          .slice(0, parsed.data.limit ?? 10)
+          .map((r) => ({
+            id: r.id,
+            // The user's own text, but still tool output read by the model.
+            title: sanitizeUserInput(r.title),
+            calories: Math.round(Number(r.caloriesPerServing ?? 0)),
+            protein: Math.round(Number(r.proteinPerServing ?? 0)),
+          })),
+      };
+    }
+
+    case "find_plan_recipes": {
+      if (!opts.writeCards) throw new Error(`Unknown tool: ${toolName}`);
+      const parsed = searchRecipesSchema.safeParse(args);
+      if (!parsed.success) {
+        return invalidArgs("find_plan_recipes", parsed.error.message);
+      }
+      // Same safe-for-me community search as search_recipes.
+      const items = await findCommunity(
+        {
+          q: parsed.data.query,
+          diet: parsed.data.diet,
+          cuisine: parsed.data.cuisine,
+        },
+        userId,
+        [],
+      );
+      const shown = items.slice(0, 10);
+      opts.planRecipePool?.push(...shown.map((r) => r.id));
+      return {
+        recipes: shown.map(({ id, title, calories }) => ({
+          id,
+          title: sanitizeUserInput(title),
+          calories,
+        })),
+      };
     }
 
     default:

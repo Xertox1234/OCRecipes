@@ -19,6 +19,12 @@ export const ErrorCode = {
   /** The new password appears in a known breach (HIBP range check). */
   PASSWORD_BREACHED: "PASSWORD_BREACHED",
   CONFLICT: "CONFLICT",
+  /** Coach write card replaced/expired by a newer card — it can't be saved. */
+  CARD_LOCKED: "CARD_LOCKED",
+  /** Coach write card Undo after the server's undo window. */
+  UNDO_EXPIRED: "UNDO_EXPIRED",
+  /** Coach write card Undo for a card that isn't saved. */
+  CARD_NOT_SAVED: "CARD_NOT_SAVED",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   API_KEY_INVALID: "API_KEY_INVALID",
   API_KEY_REVOKED: "API_KEY_REVOKED",

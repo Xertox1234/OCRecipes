@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BriefForm } from "@shared/lib/opening-brief";
+import {
+  buildCoachStreamBody,
+  type CoachStreamExtras,
+} from "@/lib/coach-stream-body";
 import {
   getApiUrl,
   notifyIfStreamSessionExpired,
@@ -27,7 +30,6 @@ import { coachRevealPacing } from "@/constants/animations";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import { parseErrorCode } from "@/lib/chat-error-copy";
-import type { FinderAction } from "@shared/schemas/recipe-finder";
 
 // Exported so tests can import and verify against them. How much text each
 // tick reveals is decided by `nextReveal` (stream-reveal-utils.ts), tuned by
@@ -66,12 +68,7 @@ export interface UseCoachStreamReturn {
   startStream: (
     conversationId: number,
     userMessage: string,
-    extras?: {
-      warmUpId?: string | null;
-      screenContext?: string;
-      finderAction?: FinderAction;
-      openingBrief?: BriefForm;
-    },
+    extras?: CoachStreamExtras,
   ) => void;
   abortStream: () => void;
   streamingContent: string;
@@ -221,13 +218,7 @@ export function useCoachStream({
     (
       conversationId: number,
       userMessage: string,
-      extras?: {
-        warmUpId?: string | null;
-        screenContext?: string;
-        finderAction?: FinderAction;
-        /** First send from a new chat that showed the opening brief. */
-        openingBrief?: BriefForm;
-      },
+      extras?: CoachStreamExtras,
     ) => {
       // Refuse an overlapping stream: most internal state here (buffer,
       // accumulated text, abortRef, timers) is a single shared slot, not
@@ -311,14 +302,7 @@ export function useCoachStream({
           disposeHealthRef.current = health.dispose;
 
           const turnKey = randomUuidV4();
-          const body: Record<string, unknown> = {
-            content: userMessage,
-            turnKey,
-          };
-          if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
-          if (extras?.screenContext) body.screenContext = extras.screenContext;
-          if (extras?.finderAction) body.finderAction = extras.finderAction;
-          if (extras?.openingBrief) body.openingBrief = extras.openingBrief;
+          const body = buildCoachStreamBody(userMessage, turnKey, extras);
 
           streamSse({
             url: `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`,

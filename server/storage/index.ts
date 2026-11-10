@@ -38,6 +38,7 @@ import * as carousel from "./carousel";
 import * as profileHub from "./profile-hub";
 import * as coachNotebook from "./coach-notebook";
 import * as coachNotebookMemory from "./coach-notebook-memory";
+import * as coachWriteCards from "./coach-write-cards";
 import * as recipeFromChat from "./recipe-from-chat";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
@@ -389,6 +390,15 @@ export const storage = {
   rejectNotebookEntries: coachNotebookMemory.rejectNotebookEntries,
   markNotebookEntriesShown: coachNotebookMemory.markNotebookEntriesShown,
   getUnseenNotebookSaves: coachNotebookMemory.getUnseenNotebookSaves,
+
+  // Coach write cards (spec 2026-11-09)
+  createWriteCard: coachWriteCards.createWriteCard,
+  getWriteCard: coachWriteCards.getWriteCard,
+  getLiveWriteCard: coachWriteCards.getLiveWriteCard,
+  setWriteCardEdits: coachWriteCards.setWriteCardEdits,
+  saveWriteCard: coachWriteCards.saveWriteCard,
+  undoWriteCard: coachWriteCards.undoWriteCard,
+  getWriteCardsByIds: coachWriteCards.getWriteCardsByIds,
   getConfirmedNotebookEntries: coachNotebookMemory.getConfirmedNotebookEntries,
   clearNotebook: coachNotebookMemory.clearNotebook,
   updateMoodScore: coachNotebookMemory.updateMoodScore,

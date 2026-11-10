@@ -52,7 +52,14 @@ export interface TurnInput {
   features: TurnFeatures;
   user: TurnUser;
   sanitizedContent: string;
-  body: { screenContext?: string; warmUpId?: string; turnKey?: string };
+  body: {
+    screenContext?: string;
+    warmUpId?: string;
+    turnKey?: string;
+    /** Coach write cards (spec 2026-11-09). */
+    writeCards?: true;
+    liveCard?: { cardId: string; edits: Record<string, unknown> };
+  };
   userMessage: ChatMessage;
   finderEnabled: boolean;
   offerEnabled: boolean;
@@ -439,6 +446,8 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     content: sanitizedContent,
     screenContext: ctx.body.screenContext,
     warmUpId: ctx.body.warmUpId,
+    writeCards: ctx.body.writeCards,
+    liveCard: ctx.body.liveCard,
     turnKey: coachTurnKey,
     isCoachPro: !!features.coachPro,
     user: {

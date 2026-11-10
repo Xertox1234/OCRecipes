@@ -18,6 +18,7 @@ import { logger, toError } from "../lib/logger";
 import { tryArchiveNotebook } from "../services/coach-pro-chat";
 import { sanitizeUserInput } from "../lib/ai-safety";
 import { finderActionSchema } from "@shared/schemas/recipe-finder";
+import { enrichWriteCardBlocks } from "../services/write-cards/enrich";
 import { admitTurn } from "./chat-admit";
 import {
   CONVERSATION_CONFIG,
@@ -236,7 +237,10 @@ export function register(app: Express): void {
             ErrorCode.NOT_FOUND,
           );
 
-        const messages = await storage.getChatMessages(id, 100, req.userId);
+        const messages = await enrichWriteCardBlocks(
+          await storage.getChatMessages(id, 100, req.userId),
+          req.userId,
+        );
         fireAndForget(
           "coach-notebook-archival",
           tryArchiveNotebook(req.userId),
@@ -285,6 +289,17 @@ export function register(app: Express): void {
           // only WHICH form was shown. The server re-renders and saves the
           // brief itself; the client never supplies assistant text.
           openingBrief: z.enum(["full", "short"]).optional(),
+          // Coach write cards (spec 2026-11-09): the app can show them, and
+          // the card on screen with the user's edits. Only edits — the
+          // server never takes numbers or ids from here.
+          writeCards: z.literal(true).optional(),
+          liveCard: z
+            .object({
+              cardId: z.string().uuid(),
+              edits: z.record(z.string(), z.unknown()),
+            })
+            .strict()
+            .optional(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)

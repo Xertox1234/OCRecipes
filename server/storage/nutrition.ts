@@ -130,11 +130,18 @@ export async function createScannedItem(
   return scannedItem;
 }
 
+/**
+ * A caller already inside a transaction (a write-card save) passes its `tx`;
+ * the inner `.transaction()` then runs as a savepoint on that client.
+ */
+type TxExecutor = Pick<typeof db, "transaction">;
+
 export async function softDeleteScannedItem(
   id: number,
   userId: string,
+  executor: TxExecutor = db,
 ): Promise<boolean> {
-  return db.transaction(async (tx) => {
+  return executor.transaction(async (tx) => {
     const [updated] = await tx
       .update(scannedItems)
       .set({ discardedAt: new Date() })
@@ -414,9 +421,10 @@ export async function createScannedItemWithLog(
      */
     occurredAt?: Date;
   },
+  executor: TxExecutor = db,
 ): Promise<ScannedItem> {
   const occurredAt = logOverrides?.occurredAt;
-  return db.transaction(async (tx) => {
+  return executor.transaction(async (tx) => {
     const [scannedItem] = await tx
       .insert(scannedItems)
       .values(occurredAt ? { ...item, scannedAt: occurredAt } : item)

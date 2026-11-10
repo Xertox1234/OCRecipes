@@ -138,6 +138,7 @@ describe("Coach — offer + adjust", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     expect(chat.startStream).toHaveBeenCalledWith(1, "Search", {
       finderAction: { type: "offer_search", flowId: FLOW },
+      writeCards: true,
     });
   });
 
@@ -168,6 +169,7 @@ describe("Coach — offer + adjust", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(chat.startStream).toHaveBeenCalledWith(1, "Cancel", {
       finderAction: { type: "adjust_cancel", flowId: FLOW },
+      writeCards: true,
     });
   });
 

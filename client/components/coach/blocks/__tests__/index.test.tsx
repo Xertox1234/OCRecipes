@@ -5,7 +5,7 @@
  * Child cards are mocked to thin doubles so this isolates the switch logic.
  */
 import React from "react";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { FadeInUp } from "react-native-reanimated";
 import { renderComponent } from "../../../../../test/utils/render-component";
@@ -215,5 +215,41 @@ describe("BlockRenderer — entrance", () => {
       />,
     );
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("BlockRenderer write_card", () => {
+  it("renders a write card and reports edits with its card id", () => {
+    const onWriteCardEdit = vi.fn();
+    renderComponent(
+      <BlockRenderer
+        block={{
+          type: "write_card",
+          cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+          kind: "food",
+          status: "live",
+          payload: {
+            items: [
+              {
+                name: "Large eggs",
+                unitLabel: "egg",
+                perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+                count: 2,
+                source: "lookup",
+              },
+            ],
+            mealType: "breakfast",
+            day: "today",
+          },
+        }}
+        onWriteCardEdit={onWriteCardEdit}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Log 144 cal" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "More Large eggs" }));
+    expect(onWriteCardEdit).toHaveBeenCalledWith(
+      "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+      { counts: [3] },
+    );
   });
 });

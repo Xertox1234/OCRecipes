@@ -162,3 +162,59 @@ export function getStreamFinishAnnouncement(
   }
   return "Coach responded";
 }
+
+// ── Coach write cards (spec 2026-11-09) ─────────────────────────────
+
+type WriteCardBlockLike = Extract<CoachBlock, { type: "write_card" }>;
+
+/**
+ * The card the chat's next message should carry edits for: the newest write
+ * card in the chat, if it is still live (a saved or locked newest card means
+ * none is live). `blockLists` is in chat order, oldest first.
+ */
+export function latestLiveWriteCard(
+  blockLists: readonly (readonly CoachBlock[])[],
+): { cardId: string; kind: WriteCardBlockLike["kind"] } | null {
+  let newest: WriteCardBlockLike | null = null;
+  for (const blocks of blockLists) {
+    for (const b of blocks) if (b.type === "write_card") newest = b;
+  }
+  return newest?.status === "live"
+    ? { cardId: newest.cardId, kind: newest.kind }
+    : null;
+}
+
+/**
+ * Locks every live write card older than the newest one, the way the server
+ * already has: the card the newest names in `replacesCardId` shows
+ * "Replaced", any other "Expired". Lets the chat lock an old card the moment
+ * a new one streams in, before the refetch reports it. Blocks are replaced
+ * only where a status changes.
+ */
+export function lockOlderWriteCards(
+  blockLists: readonly CoachBlock[][],
+): CoachBlock[][] {
+  let newest: WriteCardBlockLike | null = null;
+  for (const blocks of blockLists) {
+    for (const b of blocks) if (b.type === "write_card") newest = b;
+  }
+  if (!newest) return blockLists as CoachBlock[][];
+  const keep = newest;
+  // By id, not identity: the finished reply's card can be on screen twice
+  // (the footer's live copy and the saved message) for a moment.
+  const older = (b: CoachBlock): b is WriteCardBlockLike =>
+    b.type === "write_card" && b.cardId !== keep.cardId && b.status === "live";
+  return blockLists.map((blocks) =>
+    blocks.some(older)
+      ? blocks.map((b) =>
+          older(b)
+            ? {
+                ...b,
+                status:
+                  keep.replacesCardId === b.cardId ? "replaced" : "expired",
+              }
+            : b,
+        )
+      : blocks,
+  );
+}

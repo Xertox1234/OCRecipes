@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
 import { allergenIdSchema } from "../constants/allergens";
+import { writeCardBlockObjectSchema } from "./coach-write-cards";
 import {
   recipeResultsBlockSchema,
   recipeQuestionsBlockSchema,
@@ -331,6 +332,9 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   recipeOfferBlockSchema,
   recipeAdjustBlockSchema,
   memoryRefsSchema,
+  // SERVER-BUILT like the finder blocks (spec 2026-11-09): dropped from model
+  // output by server/services/coach-blocks.ts.
+  writeCardBlockObjectSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;

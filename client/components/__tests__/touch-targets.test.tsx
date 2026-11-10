@@ -18,6 +18,7 @@ import { Toast } from "../Toast";
 import { UpgradeModal } from "../UpgradeModal";
 import { SheetHeader } from "../sheet/SheetChrome";
 import { MealSlotSection } from "../meal-plan/MealSlotSection";
+import { CardStepper } from "../coach/blocks/write-cards/CardStepper";
 import CoachChat from "../coach/CoachChat";
 import { Colors } from "@/constants/theme";
 
@@ -154,6 +155,14 @@ function expectRealBox(label: string) {
 }
 
 describe("icon-only buttons are a real 44pt box, not hitSlop", () => {
+  it("Coach write card stepper buttons", () => {
+    renderComponent(
+      <CardStepper value={2} name="Large eggs" onChange={vi.fn()} />,
+    );
+    expectRealBox("More Large eggs");
+    expectRealBox("Fewer Large eggs");
+  });
+
   it("ChatBubble read-aloud button", () => {
     renderComponent(
       <ChatBubble role="assistant" content="Hi" onSpeak={vi.fn()} />,

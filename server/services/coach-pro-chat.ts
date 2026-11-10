@@ -23,13 +23,24 @@ import {
   generateCoachResponse,
   generateCoachProResponse,
   SAFETY_OVERRIDE_SENTINEL,
+  type CoachContext,
 } from "./nutrition-coach";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
-import { parseBlocksFromContent } from "./coach-blocks";
+import { getBlocksSystemPrompt, parseBlocksFromContent } from "./coach-blocks";
+import { isRecipeFinderEnabled } from "./recipe-finder/config";
+import {
+  sanitizeContextField,
+  containsDangerousDietaryAdvice,
+} from "../lib/ai-safety";
+import {
+  buildWriteCardPayload,
+  describeLiveCard,
+  type WriteCardProposal,
+} from "./write-cards";
+import { WRITE_CARD_EDITS_SCHEMAS } from "@shared/schemas/coach-write-cards";
 import { extractNotebookEntries } from "./notebook-extraction";
-import { containsDangerousDietaryAdvice } from "../lib/ai-safety";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
 import {
   assembleCoachContext,
@@ -126,6 +137,13 @@ export interface CoachChatParams {
    * RECIPE_FINDER_ENABLED is on and the user is Coach Pro; absent → today's
    * behavior exactly.
    */
+  /**
+   * Coach write cards (spec 2026-11-09): the app sent `writeCards: true`, so it
+   * can show a write card. Absent → today's behavior exactly.
+   */
+  writeCards?: boolean;
+  /** The card on screen and the user's edits to it, sent with this message. */
+  liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {
     action?: FinderAction;
     /** This turn's user row — Generate/Spoonacular claims mark it. */
@@ -404,6 +422,75 @@ async function extractAndStoreNotebook(a: {
  * Orchestrates the coach chat response — yields SSE events for the route
  * handler to write, handles persistence and side-effects internally.
  */
+/**
+ * Write-card mode's prompt context: store the edits the app sent for the live
+ * card (only if they parse and the card is this conversation's live card),
+ * then describe the live card so "make it three eggs" starts from what is on
+ * screen now.
+ */
+async function applyWriteCardContext(
+  context: CoachContext,
+  a: {
+    conversationId: number;
+    userId: string;
+    liveCard?: { cardId: string; edits: Record<string, unknown> };
+  },
+): Promise<void> {
+  context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled(), {
+    writeCards: true,
+  });
+  if (a.liveCard) {
+    const card = await storage.getWriteCard(a.liveCard.cardId, a.userId);
+    if (
+      card &&
+      card.conversationId === a.conversationId &&
+      card.status === "live" &&
+      WRITE_CARD_EDITS_SCHEMAS[card.kind].safeParse(a.liveCard.edits).success
+    ) {
+      await storage.setWriteCardEdits(card.id, a.userId, a.liveCard.edits);
+    }
+  }
+  const live = await storage.getLiveWriteCard(a.conversationId, a.userId);
+  if (live) {
+    // Item names came from model output — sanitize like any context field.
+    context.liveWriteCard = sanitizeContextField(describeLiveCard(live), 1500);
+  }
+}
+
+/** Builds the proposal's card and its row; null (logged) when it can't. */
+async function createWriteCardBlock(
+  proposal: WriteCardProposal,
+  a: { conversationId: number; userId: string; tz: string },
+): Promise<CoachBlock | null> {
+  try {
+    const payload = await buildWriteCardPayload(proposal, {
+      userId: a.userId,
+      tz: a.tz,
+      now: new Date(),
+    });
+    const { card, previous } = await storage.createWriteCard({
+      userId: a.userId,
+      conversationId: a.conversationId,
+      kind: proposal.kind,
+      payload,
+    });
+    return {
+      type: "write_card",
+      cardId: card.id,
+      kind: proposal.kind,
+      payload,
+      status: "live",
+      ...(previous?.status === "replaced" && { replacesCardId: previous.id }),
+    };
+  } catch (err) {
+    log.warn(
+      { err: toError(err), kind: proposal.kind },
+      "coach write card not built",
+    );
+    return null;
+  }
+}
+
 export async function* handleCoachChat(
   params: CoachChatParams,
 ): AsyncGenerator<CoachChatEvent> {
@@ -419,7 +506,10 @@ export async function* handleCoachChat(
     user,
     isAborted,
     abortSignal,
+    liveCard,
   } = params;
+  // Write cards ride on Coach Pro's blocks; the free tier never gets them.
+  const writeCards = !!params.writeCards && isCoachPro;
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
@@ -542,6 +632,10 @@ export async function* handleCoachChat(
     frequentFoods,
   });
 
+  if (writeCards) {
+    await applyWriteCardContext(context, { conversationId, userId, liveCard });
+  }
+
   let messageHistory: {
     role: "user" | "assistant" | "system";
     content: string;
@@ -610,6 +704,7 @@ export async function* handleCoachChat(
 
   let fullResponse = "";
   let offerToolArgs: string | null = null;
+  let writeCardProposal: WriteCardProposal | null = null;
 
   if (cachedResponse) {
     // Send cached response in 3 chunks with minimal delay
@@ -638,7 +733,18 @@ export async function* handleCoachChat(
       // redundant classifyIntent call inside the generator.
       intent,
       tz,
-      { offerRecipe: offerOn },
+      {
+        offerRecipe: offerOn,
+        // Only in write-card mode, so the options are unchanged without it.
+        ...(writeCards && {
+          writeCards: true,
+          // A turn shows at most one card: the last write tool call wins.
+          onWriteCardProposal: (p: WriteCardProposal) => {
+            writeCardProposal = p;
+          },
+          planRecipePool: [],
+        }),
+      },
     )) {
       // A later sentence failed the unsafe-advice check: replace everything
       // shown and save only the safety message (as the free tier does).
@@ -713,6 +819,18 @@ export async function* handleCoachChat(
       filterMemoryRefs(parsedBlocks.blocks, confirmedIds),
       context.dietaryProfile.allergies.map((a) => a.name),
     );
+  }
+
+  // The write card is built (and its row created) only for a client still
+  // here: the row locks the previous live card, which an abandoned turn must
+  // not do.
+  if (writeCardProposal && fullResponse && !isAborted()) {
+    const card = await createWriteCardBlock(writeCardProposal, {
+      conversationId,
+      userId,
+      tz,
+    });
+    if (card) blocks = [...blocks, card];
   }
 
   const maybeAutoTitle = () => {

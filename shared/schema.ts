@@ -15,6 +15,7 @@ import {
   unique,
   check,
   date,
+  uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -1404,6 +1405,69 @@ export const chatMessages = pgTable(
 );
 
 /**
+ * Coach write cards (spec docs/superpowers/specs/2026-11-09-coach-write-cards-design.md).
+ * SERVER-BUILT from a write tool call: `payload` holds the numbers the server
+ * resolved, `edits` the user's counts/ticks/choices, `saved_refs` the rows a
+ * save wrote (so Undo removes exactly those). At most one LIVE card per
+ * conversation — the partial unique index enforces it.
+ */
+export const coachWriteCards = pgTable(
+  "coach_write_cards",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    conversationId: integer("conversation_id")
+      .references(() => chatConversations.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: text("kind").notNull().$type<"food" | "grocery" | "plan">(),
+    payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+    edits: jsonb("edits")
+      .notNull()
+      .default(sql`'{}'::jsonb`)
+      .$type<Record<string, unknown>>(),
+    status: text("status")
+      .notNull()
+      .default("live")
+      .$type<"live" | "saved" | "replaced" | "expired">(),
+    savedRefs: jsonb("saved_refs").$type<CoachWriteCardSavedRefs>(),
+    savedAt: timestamp("saved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "coach_write_cards_kind_check",
+      sql`${table.kind} IN ('food', 'grocery', 'plan')`,
+    ),
+    check(
+      "coach_write_cards_status_check",
+      sql`${table.status} IN ('live', 'saved', 'replaced', 'expired')`,
+    ),
+    uniqueIndex("coach_write_cards_one_live")
+      .on(table.conversationId)
+      .where(sql`${table.status} = 'live'`),
+    index("coach_write_cards_conv_created_idx").on(
+      table.conversationId,
+      table.createdAt,
+    ),
+  ],
+);
+
+/** The rows a write-card save wrote — Undo removes exactly these. */
+export interface CoachWriteCardSavedRefs {
+  scannedItemIds?: number[];
+  groceryItemIds?: number[];
+  createdListId?: number;
+  /** The list the grocery items went to (receipt + undo). */
+  listId?: number;
+  mealPlanItemIds?: number[];
+  copiedRecipeIds?: number[];
+}
+
+/**
  * Paid recipe-finder claims (spec 2026-09-28 §6, D9). Append-only and kept
  * apart from chat rows: a user may delete a message or a whole conversation
  * (which cascades its rows), and neither may hand a claimed slot back. No
@@ -2017,6 +2081,7 @@ export type FavouriteScannedItem = typeof favouriteScannedItems.$inferSelect;
 export type ChatConversation = typeof chatConversations.$inferSelect;
 export type InsertChatConversation = typeof chatConversations.$inferInsert;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type CoachWriteCard = typeof coachWriteCards.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
 
 // ============================================================================

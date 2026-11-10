@@ -8,6 +8,7 @@ import { storage } from "../../storage";
 import { actionCardSchema } from "@shared/schemas/coach-blocks";
 import { findCommunity } from "../recipe-finder/find-community";
 import { searchCatalogRecipes } from "../recipe-catalog";
+import { createMockMealPlanRecipe } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -27,6 +28,7 @@ vi.mock("../../storage", () => ({
     createScannedItemWithLog: vi.fn().mockResolvedValue({ id: 42 }),
     // M2: search_recipes now fetches user profile for allergen intolerances
     getUserProfile: vi.fn().mockResolvedValue(null),
+    getUserMealPlanRecipes: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   },
 }));
 
@@ -626,5 +628,236 @@ describe("Coach Tools Service", () => {
         code: "INVALID_ARGS",
       });
     });
+  });
+});
+
+describe("write-card mode (spec 2026-11-09)", () => {
+  const foodArgs = {
+    items: [
+      {
+        name: "Large eggs",
+        count: 2,
+        unitLabel: "egg",
+        estimate: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+      },
+    ],
+    mealType: "breakfast",
+  };
+  const groceryArgs = { items: [{ name: "Spinach", quantity: "1" }] };
+  const planArgs = {
+    rows: [
+      {
+        plannedDate: "2026-11-09",
+        mealType: "dinner",
+        recipe: { source: "community", id: 7 },
+        alternatives: [{ source: "mine", id: 3 }],
+      },
+    ],
+  };
+
+  it("write tools keep proposal wording without writeCards", async () => {
+    expect(
+      await executeToolCall(
+        "log_food_item",
+        { name: "Greek yogurt", calories: 180, protein: 18, carbs: 10, fat: 4 },
+        "user-1",
+      ),
+    ).toEqual({
+      proposal: true,
+      action: {
+        type: "log_food",
+        description: "Greek yogurt",
+        calories: 180,
+        protein: 18,
+        carbs: 10,
+        fat: 4,
+      },
+      description: "Greek yogurt",
+      calories: 180,
+      protein: 18,
+      carbs: 10,
+      fat: 4,
+      servingSize: undefined,
+      message:
+        "This item has not been logged. Tell the user they can log it with Quick Log on the Home screen.",
+    });
+    expect(
+      await executeToolCall(
+        "add_to_grocery_list",
+        { items: [{ name: "Spinach" }] },
+        "user-1",
+        null,
+        "UTC",
+        { writeCards: false },
+      ),
+    ).toMatchObject({
+      proposal: true,
+      message:
+        "These items have not been added. Tell the user they can add them to a grocery list from the Plan tab.",
+    });
+    expect(
+      await executeToolCall(
+        "add_to_meal_plan",
+        { plannedDate: "2026-11-09", mealType: "dinner" },
+        "user-1",
+      ),
+    ).toMatchObject({
+      proposal: true,
+      message:
+        "This meal has not been added. Tell the user they can add it from the Plan tab.",
+    });
+  });
+
+  it("write tools report card_shown and call onWriteCardProposal in writeCards mode", async () => {
+    const onWriteCardProposal = vi.fn();
+    const opts = { writeCards: true, onWriteCardProposal };
+    for (const [tool, args, kind] of [
+      ["log_food_item", foodArgs, "food"],
+      ["add_to_grocery_list", groceryArgs, "grocery"],
+      ["add_to_meal_plan", planArgs, "plan"],
+    ] as const) {
+      const result = await executeToolCall(
+        tool,
+        args,
+        "user-1",
+        null,
+        "UTC",
+        opts,
+      );
+      expect(result).toMatchObject({ card_shown: true });
+      expect(JSON.stringify(result)).not.toMatch(
+        /has not been|logged it|added it/i,
+      );
+      expect(onWriteCardProposal).toHaveBeenLastCalledWith(
+        expect.objectContaining({ kind }),
+      );
+    }
+    expect(onWriteCardProposal).toHaveBeenCalledTimes(3);
+    expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    expect(storage.addMealPlanItem).not.toHaveBeenCalled();
+    expect(storage.addGroceryListItems).not.toHaveBeenCalled();
+  });
+
+  it("invalid write-card args return invalidArgs and no proposal", async () => {
+    const onWriteCardProposal = vi.fn();
+    const result = await executeToolCall(
+      "log_food_item",
+      { name: "Greek yogurt", calories: 180 }, // the old shape
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true, onWriteCardProposal },
+    );
+    expect(result).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    expect(onWriteCardProposal).not.toHaveBeenCalled();
+  });
+
+  it("get_my_recipes and find_plan_recipes are defined only in writeCards mode", () => {
+    const names = (opts?: { writeCards?: boolean }) =>
+      getToolDefinitions(opts).map((t) =>
+        "function" in t ? t.function.name : "",
+      );
+    expect(names()).not.toContain("get_my_recipes");
+    expect(names()).not.toContain("find_plan_recipes");
+    expect(names({ writeCards: true })).toEqual(
+      expect.arrayContaining(["get_my_recipes", "find_plan_recipes"]),
+    );
+    const food = getToolDefinitions({ writeCards: true }).find(
+      (t) => "function" in t && t.function.name === "log_food_item",
+    );
+    expect(JSON.stringify(food)).toContain('"items"');
+    expect(JSON.stringify(food)).toContain('"yesterday"');
+  });
+
+  it("get_my_recipes returns the user's recipes, filtered by query", async () => {
+    vi.mocked(storage.getUserMealPlanRecipes).mockResolvedValueOnce({
+      items: [
+        createMockMealPlanRecipe({
+          id: 3,
+          title: "Lentil stew",
+          caloriesPerServing: "480.4",
+          proteinPerServing: "38",
+        }),
+        createMockMealPlanRecipe({ id: 4, title: "Pancakes" }),
+      ],
+      total: 2,
+    });
+    const result = await executeToolCall(
+      "get_my_recipes",
+      { query: "lentil" },
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true },
+    );
+    expect(result).toEqual({
+      recipes: [{ id: 3, title: "Lentil stew", calories: 480, protein: 38 }],
+    });
+  });
+
+  it("find_plan_recipes returns community ids from the safe-for-me search", async () => {
+    vi.mocked(findCommunity).mockResolvedValueOnce([
+      {
+        id: 7,
+        source: "community",
+        title: "Chicken shawarma bowl",
+        imageUrl: null,
+        readyInMinutes: 30,
+        calories: 520,
+      },
+    ]);
+    const result = await executeToolCall(
+      "find_plan_recipes",
+      { query: "high protein dinner" },
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true },
+    );
+    expect(result).toEqual({
+      recipes: [{ id: 7, title: "Chicken shawarma bowl", calories: 520 }],
+    });
+  });
+
+  it("the plan card proposal carries this turn's finder results for Swap", async () => {
+    vi.mocked(findCommunity).mockResolvedValueOnce(
+      [7, 8, 9].map((id) => ({
+        id,
+        source: "community" as const,
+        title: `Recipe ${id}`,
+        imageUrl: null,
+        readyInMinutes: 30,
+        calories: 500,
+      })),
+    );
+    const onWriteCardProposal = vi.fn();
+    const opts = { writeCards: true, onWriteCardProposal, planRecipePool: [] };
+    await executeToolCall(
+      "find_plan_recipes",
+      { query: "high protein dinner" },
+      "user-1",
+      null,
+      "UTC",
+      opts,
+    );
+    await executeToolCall(
+      "add_to_meal_plan",
+      {
+        rows: [
+          {
+            plannedDate: "2026-11-10",
+            mealType: "dinner",
+            recipe: { source: "community", id: 7 },
+          },
+        ],
+      },
+      "user-1",
+      null,
+      "UTC",
+      opts,
+    );
+    expect(onWriteCardProposal).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "plan", pool: [7, 8, 9] }),
+    );
   });
 });

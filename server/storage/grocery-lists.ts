@@ -71,11 +71,18 @@ export async function verifyGroceryListOwnership(
   return !!row;
 }
 
+/**
+ * A caller inside a transaction (a write-card save or undo) passes its `tx`
+ * as `executor`; everyone else gets the pool `db`.
+ */
+type Executor = Pick<typeof db, "select" | "insert" | "delete" | "transaction">;
+
 export async function deleteGroceryList(
   id: number,
   userId: string,
+  executor: Executor = db,
 ): Promise<boolean> {
-  const result = await db
+  const result = await executor
     .delete(groceryLists)
     .where(and(eq(groceryLists.id, id), eq(groceryLists.userId, userId)))
     .returning({ id: groceryLists.id });
@@ -91,9 +98,10 @@ export async function addGroceryListItem(
 
 export async function addGroceryListItems(
   items: InsertGroceryListItem[],
+  executor: Executor = db,
 ): Promise<GroceryListItem[]> {
   if (items.length === 0) return [];
-  return db.insert(groceryListItems).values(items).returning();
+  return executor.insert(groceryListItems).values(items).returning();
 }
 
 /**
@@ -106,8 +114,9 @@ export async function createGroceryListWithLimitCheck(
   list: InsertGroceryList,
   items: Omit<InsertGroceryListItem, "groceryListId">[],
   maxLists: number,
+  executor: Executor = db,
 ): Promise<{ list: GroceryList; items: GroceryListItem[] } | null> {
-  return db.transaction(async (tx) => {
+  return executor.transaction(async (tx) => {
     // Feature-scoped key so this lock never queues behind unrelated per-user
     // locks (pantry, nutrition, ...). Must precede the count.
     await tx.execute(
@@ -181,10 +190,11 @@ export async function deleteGroceryListItem(
   id: number,
   groceryListId: number,
   userId?: string,
+  executor: Executor = db,
 ): Promise<boolean> {
   if (userId) {
     // Defense-in-depth: verify list ownership via JOIN before mutating
-    const [owned] = await db
+    const [owned] = await executor
       .select({ id: groceryLists.id })
       .from(groceryLists)
       .where(
@@ -195,7 +205,7 @@ export async function deleteGroceryListItem(
       );
     if (!owned) return false;
   }
-  const result = await db
+  const result = await executor
     .delete(groceryListItems)
     .where(
       and(
