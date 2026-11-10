@@ -338,17 +338,17 @@ export async function resolveAndValidateHost(
 // ── Main Import Function ─────────────────────────────────────────────
 
 /**
- * Read response body as text while enforcing a byte-size limit.
+ * Read a response body while enforcing a byte-size limit.
  * Streams the body and aborts if the accumulated size exceeds maxBytes.
  * Throws an error with message "RESPONSE_TOO_LARGE" if limit is exceeded.
  */
-async function readBodyWithLimit(
+export async function readBytesWithLimit(
   res: Response,
   maxBytes: number,
-): Promise<string> {
+): Promise<Buffer> {
   const reader = res.body?.getReader();
   if (!reader) {
-    return "";
+    return Buffer.alloc(0);
   }
 
   const chunks: Uint8Array[] = [];
@@ -365,11 +365,15 @@ async function readBodyWithLimit(
     chunks.push(value);
   }
 
-  const decoder = new TextDecoder();
-  return (
-    chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join("") +
-    decoder.decode()
-  );
+  return Buffer.concat(chunks);
+}
+
+/** {@link readBytesWithLimit}, decoded as UTF-8 text. */
+async function readBodyWithLimit(
+  res: Response,
+  maxBytes: number,
+): Promise<string> {
+  return new TextDecoder().decode(await readBytesWithLimit(res, maxBytes));
 }
 
 /**
@@ -380,9 +384,10 @@ async function readBodyWithLimit(
  * - Validates each redirect target with `isBlockedUrl()` and DNS resolution
  * - Follows at most MAX_REDIRECTS redirects
  */
-async function safeFetch(
+export async function safeFetch(
   initialUrl: string,
   signal: AbortSignal,
+  accept = "text/html",
 ): Promise<Response> {
   let currentUrl = initialUrl;
 
@@ -403,7 +408,7 @@ async function safeFetch(
       headers: {
         "User-Agent":
           "Mozilla/5.0 (compatible; OCRecipes/1.0; +https://ocrecipes.com)",
-        Accept: "text/html",
+        Accept: accept,
       },
       redirect: "manual",
       signal,
