@@ -130,8 +130,8 @@ export function useNutritionLookup(params: {
     // so not even the "Values shown per 100g" banner disclosed it.
     //
     // The state is reached whenever a lookup populates `nutrition` without
-    // resolving a gram weight — the USDA / API Ninjas fallback, and the
-    // direct-OFF fallback described below. Amy's chili — 680 mg of sodium in a
+    // resolving a gram weight — the USDA / API Ninjas fallback, and (until
+    // privacy audit M1 removed it) the direct-OFF fallback. Amy's chili — 680 mg of sodium in a
     // 236 g can — would then read as 680 mg/100 g instead of 288: an FSA HIGH
     // band where the truth is MEDIUM. Returning null is what prevents that.
     //
@@ -154,11 +154,11 @@ export function useNutritionLookup(params: {
     // guard below: `0 || 100` is 100, so a zero basis fabricated identically
     // rather than dividing by zero. A zero is not a measurement.
     //
-    // Placement matters: this sits BELOW the `validatedData` branch. The
-    // direct-OFF fallback legitimately pairs a null `servingSizeGrams` with a
-    // real `validatedData.per100g` (an OFF record whose serving_size is "1
-    // bottle"), and hoisting this guard above that branch would blank the
-    // serving controls on a path that works. Pinned by a test.
+    // Placement matters: this sits BELOW the `validatedData` branch. A null
+    // `servingSizeGrams` with a real `validatedData.per100g` (an OFF record
+    // whose serving_size is "1 bottle") was reached by the direct-OFF
+    // fallback that privacy audit M1 removed; hoisting this guard above that
+    // branch would blank the serving controls if such a pairing returns.
     const grams = lookup.servingSizeGrams;
     if (!(grams != null && grams > 0)) return null;
     const factor = 100 / grams;

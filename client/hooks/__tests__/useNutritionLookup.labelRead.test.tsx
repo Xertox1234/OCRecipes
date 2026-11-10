@@ -17,7 +17,7 @@ const { mockGoBack, mockReset, mockPopTo, mockApiRequest, mockTokenGet } =
 
 /**
  * Flips `tokenStorage.get` to reject, so the hook's whole server leg is skipped
- * and the direct-OFF fallback supplies the numbers. Used by the stale-`labelUsed`
+ * and the lookup ends as a total outage. Used by the stale-`labelUsed`
  * regression test below to prove the per-lookup reset is load-bearing.
  */
 let failKeychainRead = false;
@@ -83,54 +83,9 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
   const READABLE_LABEL =
     "Nutrition Facts\nServing Size 1 can (355 mL)\nCalories 140\nTotal Fat 0g\nTotal Sugars 42g";
 
-  // The direct-Open-Food-Facts fallback's own payload shape — reached when the
-  // server leg fails. Same wrong-by-3.8x record, and the rawest source in the
-  // hook: it never sees the label at all, so nothing here is cross-validated.
-  const offFallbackRecord = {
-    status: 1,
-    product: {
-      product_name: "Cherry Coke",
-      brands: "Coca-Cola",
-      nutriments: {
-        "energy-kcal_100g": 11.11,
-        proteins_100g: 0,
-        carbohydrates_100g: 3.1,
-        fat_100g: 0,
-      },
-      serving_size: "355 ml",
-    },
-  };
-
-  /**
-   * The host the hook's direct-OFF fallback actually calls
-   * (`useNutritionLookup.ts` → `https://world.openfoodfacts.org/api/v0/...`).
-   *
-   * Matched on the parsed hostname rather than with
-   * `String(input).includes("openfoodfacts.org")`, which CodeQL flags as
-   * js/incomplete-url-substring-sanitization — that substring also matches
-   * `https://evil.com/?x=openfoodfacts.org`. Nothing attacker-controlled reaches
-   * this fixture, so it was never a live vulnerability, but an exact host match is
-   * the more precise router anyway: it cannot accidentally claim a server-leg URL
-   * that happens to mention OFF in a query string.
-   */
-  const OFF_FALLBACK_HOST = "world.openfoodfacts.org";
-
-  /** Routes the server leg to `onServerLeg` and the OFF fallback to its record. */
+  /** Routes every fetch (only the server leg exists) to `onServerLeg`. */
   const routeFetch = (onServerLeg: () => Promise<unknown>) => {
-    mockServerFetch.mockImplementation(async (input: unknown) => {
-      // The server leg is built by `getApiUrl(...)`; if it is not a parseable
-      // absolute URL, `new URL` throws and we correctly fall through to it.
-      let host = "";
-      try {
-        host = new URL(String(input)).hostname;
-      } catch {
-        host = "";
-      }
-      if (host === OFF_FALLBACK_HOST) {
-        return { ok: true, json: async () => offFallbackRecord };
-      }
-      return onServerLeg();
-    });
+    mockServerFetch.mockImplementation(async () => onServerLeg());
   };
 
   beforeEach(() => {
@@ -258,25 +213,21 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
 
       // The user takes the notice's advice and retakes the label — same barcode,
       // same screen instance, and this time OCR yields nothing. The keychain read
-      // also fails, so the whole server leg is skipped and the direct-OFF
-      // fallback supplies the numbers.
+      // also fails, so the whole server leg is skipped and the lookup ends as a
+      // total outage.
       //
       // `labelUsed` is assigned only at the end of the successful server leg, so
       // this lookup never reaches the assignment at all — the per-lookup reset is
       // the only thing that can clear the previous lookup's `true`. Deleting that
       // reset makes this test fail and nothing else.
       failKeychainRead = true;
-      mockServerFetch.mockResolvedValue({
-        ok: true,
-        json: async () => offFallbackRecord,
-      });
 
       rerender({ ocrText: null });
 
       // `isLoading` is already false and is not re-armed, and the keychain
       // rejection means `labelReadNotice` is never set either — so wait on the
-      // OFF fallback's own side effect: its fail-safe "couldn't check allergens"
-      // flag, which only that branch sets.
+      // total outage's own side effect: its fail-safe "couldn't check
+      // allergens" flag.
       await waitFor(() => expect(result.current.flags).toHaveLength(1));
 
       expect(result.current.logGate).toEqual({
@@ -409,9 +360,8 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
 
   /**
    * The label parsed cleanly, so nothing warns the user — `labelReadNotice` stays
-   * null by design. But the server leg then failed, so the numbers on screen came
-   * from the direct-OFF fallback, which never saw the label and cross-validated
-   * nothing. `labelUsed` must be false here or the gate opens on the rawest
+   * null by design. But the server leg then failed, so nothing on screen was
+   * cross-validated against the label. `labelUsed` must be false here or the gate opens on the rawest
    * record in the hook while the user believes their photo was used.
    */
   describe("logGate when the label parsed but the server leg never answered", () => {
@@ -435,8 +385,8 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
     });
 
     it("gates a readable label when the server 404s without notInDatabase", async () => {
-      // Falls past the notInDatabase early-return and on to the OFF fallback
-      // without ever throwing — a distinct control path from the rejection above.
+      // Falls past the notInDatabase early-return to "not found" without ever
+      // throwing — a distinct control path from the rejection above.
       routeFetch(async () => ({
         ok: false,
         status: 404,
@@ -445,7 +395,9 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
 
       const { result } = render(READABLE_LABEL);
 
-      await waitFor(() => expect(result.current.flags).toHaveLength(1));
+      await waitFor(() =>
+        expect(result.current.error).toBe("Product not found in database"),
+      );
 
       expect(result.current.logGate).toEqual({
         kind: "needsAcknowledgement",
@@ -581,10 +533,6 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
   // non-ready label that would otherwise have set it.
   it("keeps labelReadNotice null when the token read throws before it can be computed", async () => {
     failKeychainRead = true;
-    mockServerFetch.mockResolvedValue({
-      ok: true,
-      json: async () => offFallbackRecord,
-    });
 
     // A non-ready label (no parseable nutrition values) — under normal
     // conditions this WOULD set labelReadNotice, but the token read throws
@@ -592,7 +540,7 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
     const { result } = render("blurry nothing");
 
     // isLoading/labelReadNotice give no signal here (the keychain rejection
-    // skips both), so wait on the OFF fallback's own side effect instead.
+    // skips both), so wait on the total outage's own side effect instead.
     await waitFor(() => expect(result.current.flags).toHaveLength(1));
 
     expect(result.current.labelReadNotice).toBeNull();
@@ -695,10 +643,9 @@ describe("useNutritionLookup — error announcement", () => {
   // effect is what leaves `InlineError` sole. This pins the hook's half of
   // that split — it still SETS `error`, it just does not SPEAK it.
   //
-  // Total outage drives the error: both `fetch` calls in `fetchBarcodeData`
-  // (the server leg and the direct-OFF fallback) reject, so the outer `catch`
-  // runs `setError("Failed to fetch product data")` — the one error path with
-  // no dependency on a particular response shape.
+  // Total outage drives the error: the server leg rejects, so the lookup
+  // ends with `error: "Failed to fetch product data"` — the one error path
+  // with no dependency on a particular response shape.
   it("does not announce the fetch-failure error — InlineError owns it", async () => {
     const announce = vi
       .spyOn(AccessibilityInfo, "announceForAccessibility")
