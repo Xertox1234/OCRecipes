@@ -5,6 +5,7 @@ import { tokenStorage } from "@/lib/token-storage";
 import { createUploadFilePart } from "@/lib/upload-file-part";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { ApiError } from "@/lib/api-error";
+import { logger } from "@/lib/logger";
 import {
   receiptAnalysisResultSchema,
   receiptConfirmResultSchema,
@@ -14,6 +15,8 @@ import {
 } from "@shared/schemas/receipt";
 
 export type { ReceiptAnalysisResult, ReceiptConfirmResult, ReceiptItem };
+
+type ScanStage = "compress" | "upload" | "response";
 
 export interface ReceiptScanCount {
   count: number;
@@ -47,6 +50,22 @@ export function useReceiptScan() {
 
       const formData = new FormData();
 
+      // A failure only shows "Could not read the receipt", and a pre-upload one
+      // leaves no trace on the server. Track the step and how long each took so
+      // the dev log (Metro, which the E2E artifacts keep) names it.
+      let stage: ScanStage = "compress";
+      const durations: Record<ScanStage, number> = {
+        compress: 0,
+        upload: 0,
+        response: 0,
+      };
+      let stageStart = Date.now();
+      const enterStage = (next: ScanStage) => {
+        durations[stage] = Date.now() - stageStart;
+        stage = next;
+        stageStart = Date.now();
+      };
+
       // Compress and add each photo
       const compressedUris: string[] = [];
       try {
@@ -61,6 +80,7 @@ export function useReceiptScan() {
           formData.append("photos", createUploadFilePart(compressed.uri));
         }
 
+        enterStage("upload");
         const token = await tokenStorage.get();
         const response = await fetch(`${getApiUrl()}/api/receipt/scan`, {
           method: "POST",
@@ -71,6 +91,7 @@ export function useReceiptScan() {
           signal: controller.signal,
         });
 
+        enterStage("response");
         if (!response.ok) {
           const errorData = (await response.json().catch(() => ({}))) as {
             error?: string;
@@ -90,7 +111,20 @@ export function useReceiptScan() {
             "INVALID_RESPONSE_SHAPE",
           );
         }
+        durations.response = Date.now() - stageStart;
+        logger.info(
+          `Receipt scan took compress ${durations.compress} ms, upload ${durations.upload} ms, response ${durations.response} ms`,
+        );
         return parsed.data;
+      } catch (error) {
+        // An unmount abort is not a failure.
+        if (!controller.signal.aborted) {
+          logger.warn(
+            `Receipt scan failed at ${stage} after ${Date.now() - stageStart} ms`,
+            error,
+          );
+        }
+        throw error;
       } finally {
         // Runs on success AND on AbortError (unmount-mid-scan): the abort
         // rejects fetch, which propagates here; the temp compressed files must
