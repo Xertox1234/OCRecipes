@@ -39,13 +39,30 @@ Several worked examples also anchor on the remaining calories and protein: the o
 
 **Safety template (~202–213).** The unsafe-request refusal keeps its three parts: opener, refusal plus referral, safe alternative. Its opener and alternative must stop requiring the remaining-calories figure. _Builder's call, within these limits:_ change the wording without weakening the refusal or the referral. The existing safety tests must still pass.
 
-**Evals.** `npm run eval:coach` measures reply quality. Prompt changes need a before-and-after run, and eval runs cost money, so quote the cost and get the owner's OK before running one. If a rubric line rewards "cites a specific number", it must change to match the new rule. That rubric change is part of this work, not a regression.
+**Evals (my call, from the builder check).** `npm run eval:coach` (`evals/runner.ts`) only calls `generateCoachResponse`, the free-tier path. It runs single turns with no tools, so it never exercises the Coach Pro prompt.
+
+Its judge's PERSONALIZATION 10 anchor rewards "remaining macros" (`runner.ts` ~38–41). That anchor changes to "anchors on something real about the user (goal, preference, logged meal); cites numbers only when the answer depends on them". This is part of the work, not a regression.
+
+Plan:
+
+- Add cases for the new rules: an off-topic question, a general nutrition question (no targets line expected) and a "can I fit X" question (one figure expected). Add a reply-length assertion to `evals/assertions.ts`.
+- Run the old rubric on the current prompt once as the "before" record.
+- Run the new rubric on the new prompt, and refresh `evals/baselines/coach.json` from that run.
+- Quote each run's cost and get the owner's OK before it runs.
+- The Coach Pro prompt is checked by hand in the simulator: a no-tool question, a "can I fit X" question and a write-card turn.
 
 ### 2. Answer first, two or three sentences (M4)
 
-Owner decision: by default a reply leads with the direct answer in **two or three sentences**, then stops. It is longer only when the content needs it: a meal plan, a recipe or a weekly look-back. Those use two or three short headings.
+Owner decision: by default a reply leads with the direct answer in **two or three sentences**, then stops. It is longer only when the content needs it: a meal plan, a recipe or a weekly look-back. Those use two or three short **bold lead-in lines**, not markdown headers.
 
-Follow-ups are offered as tap-to-ask chips, using the existing quick-reply block, not as a closing paragraph listing options. Write cards keep their one line of text around the card. This is a prompt change only; the quick-reply block already exists.
+_My call:_ the persona's "no headers, tables or code blocks" rule stays, because the chat renderer isn't built for headers. Its 150-word cap (`nutrition-coach.ts` ~351–352) is lifted only for plans, recipes and look-backs.
+
+Follow-ups:
+
+- **Coach Pro:** offered as tap-to-ask chips, using the existing quick-reply block, not as a closing paragraph listing options. Write cards keep their one line of text around the card.
+- **Free tier:** _my call._ It has no blocks (they are parsed only on the Pro path), so a free reply may end with at most one short follow-up question, and only when it is genuinely needed.
+
+This is a prompt change only; the quick-reply block already exists. The safety examples that end in "want me to…?" follow the same rule.
 
 ### 3. One line that shows each step, then a "Checked:" trail (M1, M2)
 
@@ -71,6 +88,11 @@ It changes as Coach moves on to the next step.
 - Steps go into a queue on the client. Each step stays on the line for a minimum reading time, even if the tool finished in 50 ms.
 - _My call:_ about 1 s per step, as a named constant beside `coachRevealPacing` in `client/constants/animations.ts`.
 - The reply's first words are held until the last step has had its minimum time. Most of that hold overlaps the model's own 1.5–2 s before its first token, so it seldom adds much wait.
+- **Steps after text has started.** In Coach Pro the model can write a line before a tool call ("Let me check your log…"), and one reply can run several tool rounds.
+  - _Owner decision:_ the prompt tells Coach not to write before it looks things up, because the step line now says that.
+  - If text still arrives first, the step line shows **under the partial reply** while that step plays its reading time. The reply text is not paused.
+  - Every step, early or late, goes in the trail.
+  - Today the status row renders only while there is no streamed text (`StreamingBubble.tsx:79`, `CoachOverlayContent.tsx:476`), and `useCoachStream` drops status once text shows (~321). Both change.
 - The existing 700 ms "Thinking…" hold (`HOLD_GATE_MS`) and the word-paced reveal from #1798 stay as they are.
 - Reduced motion keeps the pacing (as #1798 did) and drops only the transition animation between labels.
 
@@ -78,7 +100,7 @@ It changes as Coach moves on to the next step.
 
 - The server builds every label from the tool name and its arguments, for example `lookup_nutrition` with "beef burger" becomes "Looking up a beef burger…". The model never writes label text.
 - Values taken from arguments are sanitized (`sanitizeUserInput`) and cut short (_my call:_ about 40 characters).
-- A label must not claim something happened that didn't. Since #1812, in write-card mode `log_food_item`, `add_to_meal_plan` and `add_to_grocery_list` only draft a card. Their labels say so ("Preparing a card…" or similar), never "Logging food…".
+- A label must not claim something happened that didn't. `log_food_item`, `add_to_meal_plan` and `add_to_grocery_list` never save anything themselves. In write-card mode they draft a card; otherwise they return a proposal. Their labels say so ("Preparing a card…" or similar), never "Logging food…". That fix applies to every client, including the old `status` field.
 - Write-card mode also brought tools that have no label yet: `find_plan_recipes`, `get_my_recipes` and the card tools. Each gets a specific label. "Working on it…" remains the fallback for an unknown tool.
 - Trail entries are short nouns ("today's log", "beef burger", "your pantry"). They are built from the same source as the live labels, de-duplicated, and limited to _my call:_ five entries.
 
@@ -90,6 +112,9 @@ It changes as Coach moves on to the next step.
 
 - Keep the current design: restyle within `theme.ts` only (owner ruling 2026-10-29). The trail uses existing secondary-text styles.
 - The server-sent event stream gains step data with label and trail text. Older clients ignore unknown fields: an OTA reaches only runtime 5.2.0 builds, and the phones are on 5.1.0. The current `{status: label}` event must keep working.
+  - _My call:_ it keeps the plain per-tool labels, so old phones don't get fast-changing specific labels without the pacing queue.
+  - The specific labels travel only in the new step data.
+  - A test pins `status` to the plain table, apart from the "Logging food…" fix above.
 - Tests first (strict TDD). Pure pacing and label logic goes in `*-utils.ts` files so Vitest can cover it, like `stream-reveal-utils.ts`.
 - No new AI calls. Labels and trail come from data the server already has.
 
