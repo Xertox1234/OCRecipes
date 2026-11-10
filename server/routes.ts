@@ -6,6 +6,7 @@ import { register as registerAuthSocial } from "./routes/auth-social";
 import { register as registerAuthMfa } from "./routes/auth-mfa";
 import { register as registerAuthPassword } from "./routes/auth-password";
 import { register as registerProfile } from "./routes/profile";
+import { register as registerAiSharing } from "./routes/ai-sharing";
 import { register as registerNutrition } from "./routes/nutrition";
 import { register as registerPhotos } from "./routes/photos";
 import { register as registerSuggestions } from "./routes/suggestions";
@@ -68,6 +69,7 @@ export function registerRoutes(app: Express): Server {
   registerAuthMfa(app);
   registerAuthPassword(app);
   registerProfile(app);
+  registerAiSharing(app);
   registerNutrition(app);
   registerPhotos(app);
   registerSuggestions(app);

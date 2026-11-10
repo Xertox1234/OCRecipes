@@ -67,6 +67,16 @@ const auth = vi.hoisted(() => ({
 vi.mock("@/context/AuthContext", () => ({ useAuthContext: () => auth }));
 vi.mock("@/hooks/useScreenOptions", () => ({ useScreenOptions: () => ({}) }));
 
+const aiSharing = vi.hoisted(() => ({
+  status: { allowed: true, answered: true } as
+    | { allowed: boolean; answered: boolean }
+    | undefined,
+  loading: false,
+}));
+vi.mock("@/hooks/useAiSharing", () => ({
+  useAiSharing: () => ({ ...aiSharing, answer: vi.fn() }),
+}));
+
 function signIn() {
   auth.isAuthenticated = true;
   auth.user = { onboardingCompleted: true };
@@ -113,5 +123,60 @@ describe("RootStackNavigator — VerifyEmail in both auth states", () => {
     expect(signedOutKey).toBeTruthy();
     expect(signedInKey).toBeTruthy();
     expect(signedInKey).not.toBe(signedOutKey);
+  });
+});
+
+// Privacy audit H3: the AI-sharing question comes before anything else.
+describe("RootStackNavigator — AI-sharing question", () => {
+  beforeEach(() => {
+    signIn();
+    aiSharing.status = { allowed: true, answered: true };
+    aiSharing.loading = false;
+  });
+
+  it("shows only the question to a signed-in account that never answered", () => {
+    aiSharing.status = { allowed: false, answered: false };
+    renderComponent(<RootStackNavigator />);
+
+    expect(screen.getByTestId("screen-AiSharing")).toBeTruthy();
+    expect(screen.queryByTestId("screen-Main")).toBeNull();
+    expect(screen.queryByTestId("screen-Onboarding")).toBeNull();
+  });
+
+  it("asks before onboarding too", () => {
+    auth.user = { onboardingCompleted: false };
+    aiSharing.status = { allowed: false, answered: false };
+    renderComponent(<RootStackNavigator />);
+
+    expect(screen.getByTestId("screen-AiSharing")).toBeTruthy();
+    expect(screen.queryByTestId("screen-Onboarding")).toBeNull();
+  });
+
+  it("opens the app for someone who said no, with the question reachable", () => {
+    aiSharing.status = { allowed: false, answered: true };
+    renderComponent(<RootStackNavigator />);
+
+    expect(screen.getByTestId("screen-Main")).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("screen-AiSharing")
+        .getAttribute("data-navigation-key"),
+    ).toBe("re-ask");
+  });
+
+  it("opens the app when the status cannot be read (offline)", () => {
+    aiSharing.status = undefined;
+    renderComponent(<RootStackNavigator />);
+
+    expect(screen.getByTestId("screen-Main")).toBeTruthy();
+  });
+
+  it("holds the app back while the status is first read", () => {
+    aiSharing.status = undefined;
+    aiSharing.loading = true;
+    renderComponent(<RootStackNavigator />);
+
+    expect(screen.queryByTestId("screen-Main")).toBeNull();
+    expect(screen.queryByTestId("screen-AiSharing")).toBeNull();
   });
 });

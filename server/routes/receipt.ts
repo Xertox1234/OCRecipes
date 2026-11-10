@@ -13,6 +13,7 @@ import { createImageUpload } from "./_upload";
 import {
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   formatZodError,
   handleRouteError,
 } from "./_helpers";
@@ -92,6 +93,7 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(res))) return;
 
         const imagesBase64 = files.map((f) => f.buffer.toString("base64"));
 

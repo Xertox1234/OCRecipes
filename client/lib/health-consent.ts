@@ -1,4 +1,5 @@
 import { hasHealthData } from "@shared/lib/health-consent";
+import { AI_RECIPIENT_NAMES } from "@shared/lib/ai-sharing";
 
 /**
  * Client side of "no consent, no health data" (privacy audit H2). The server
@@ -29,8 +30,7 @@ export function needsHealthConsent(
 /** The consent question, asked where health details are added after setup. */
 export const HEALTH_CONSENT_PROMPT = {
   title: "Use your health details?",
-  message:
-    "Allergies, health conditions and medications, body measurements, activity and goals are health information. We use them to personalize nutrition recommendations and AI coaching. They are never sold or shared with advertisers, and you can withdraw this consent any time in Settings.",
+  message: `Allergies, health conditions and medications, body measurements, activity and goals are health information. We use them to personalize nutrition recommendations and AI coaching. With AI features on, the details a feature needs go to the AI companies that run it: ${AI_RECIPIENT_NAMES}. They are never sold or shared with advertisers, and you can withdraw this consent any time in Settings.`,
   confirmLabel: "Agree",
   cancelLabel: "Not now",
 } as const;

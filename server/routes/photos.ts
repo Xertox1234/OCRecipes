@@ -36,6 +36,7 @@ import {
   handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   getPremiumFeatures,
   parseStringParam,
   requireValidImage,
@@ -128,6 +129,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(res))) return;
 
         // Premium gate
         const features = await checkPremiumFeature(

@@ -32,6 +32,9 @@ const userDefaults: User = {
   subscriptionExpiresAt: null,
   timezone: null,
   lastActiveAt: null,
+  aiSharingAllowedAt: null,
+  aiSharingVersion: null,
+  aiSharingHistory: [],
   createdAt: new Date("2024-01-01"),
 };
 

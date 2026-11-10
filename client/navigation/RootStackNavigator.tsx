@@ -35,6 +35,10 @@ import CookSessionReviewScreen from "@/screens/CookSessionReviewScreen";
 import SubstitutionResultScreen from "@/screens/SubstitutionResultScreen";
 import ReceiptMealPlanScreen from "@/screens/meal-plan/ReceiptMealPlanScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
+import AiSharingScreen from "@/screens/AiSharingScreen";
+import { useAiSharing } from "@/hooks/useAiSharing";
+import { useAiSharingReask } from "@/navigation/useAiSharingReask";
+import { needsAiSharingAnswer } from "@/navigation/ai-sharing-gate-utils";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -57,6 +61,8 @@ import NotebookScreen from "@/screens/NotebookScreen";
 import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
 
 export type RootStackParamList = {
+  /** The AI-sharing question (privacy audit H3). */
+  AiSharing: undefined;
   Login:
     | {
         /** Prefill the identifier (e.g. after a password reset). */
@@ -253,8 +259,17 @@ export default function RootStackNavigator() {
   const { isAuthenticated, isLoading, user } = useAuthContext();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
+  // Privacy audit H3: the AI-sharing question comes before anything else a
+  // signed-in account sees, for new and existing accounts alike.
+  const { status: aiSharing, loading: aiSharingLoading } =
+    useAiSharing(isAuthenticated);
+  const needsAiAnswer = needsAiSharingAnswer(isAuthenticated, aiSharing);
+  useAiSharingReask(isAuthenticated && !needsAiAnswer);
 
-  if (isLoading) {
+  // Also while the AI-sharing status is first read, so the app does not show
+  // Home for a moment and then swap to the question. Offline, that read is
+  // paused (not loading) and the app opens as usual.
+  if (isLoading || aiSharingLoading) {
     return (
       <View style={[styles.loading, { backgroundColor: theme.backgroundRoot }]}>
         <ActivityIndicator size="large" color={Colors.light.success} />
@@ -314,6 +329,13 @@ export default function RootStackNavigator() {
             options={{ headerShown: false, title: "Two-step verification" }}
           />
         </>
+      ) : needsAiAnswer ? (
+        <Stack.Screen
+          name="AiSharing"
+          navigationKey="first-ask"
+          component={AiSharingScreen}
+          options={{ headerShown: false }}
+        />
       ) : needsOnboarding ? (
         <Stack.Screen
           name="Onboarding"
@@ -326,6 +348,14 @@ export default function RootStackNavigator() {
             name="Main"
             component={MainTabNavigator}
             options={{ headerShown: false }}
+          />
+          {/* Asked again when someone with AI off opens an AI feature
+              (useAiSharingReask). Same screen as the first ask above. */}
+          <Stack.Screen
+            name="AiSharing"
+            navigationKey="re-ask"
+            component={AiSharingScreen}
+            options={{ headerShown: false, presentation: "modal" }}
           />
           {/* A verify link tapped while signed in — change-email mails one to
               the new address. Same screen and linking path as signed out; its

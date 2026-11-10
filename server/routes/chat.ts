@@ -9,6 +9,7 @@ import {
   parseQueryInt,
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
 } from "./_helpers";
 import { chatRateLimit, chatReadRateLimit } from "./_rate-limiters";
 import { fireAndForget } from "../lib/fire-and-forget";
@@ -312,6 +313,7 @@ export function register(app: Express): void {
 
         // Premium gate — fail fast before DB queries
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(res))) return;
 
         // Dispatch based on conversation type
         const conversationType: ConversationType =

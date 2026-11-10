@@ -1,5 +1,6 @@
 import { toFile } from "openai";
 import { getOpenAI, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { assertAiSharingAllowed } from "../lib/ai-sharing-gate";
 
 /**
  * Transcribes an audio buffer using OpenAI Whisper API.
@@ -8,6 +9,9 @@ export async function transcribeAudio(
   buffer: Buffer,
   _filename: string = "audio.m4a",
 ): Promise<string> {
+  // The one AI call that does not go through aiChat (privacy audit H3).
+  await assertAiSharingAllowed();
+
   // Use a safe static filename — client-provided names are untrusted
   const safeFilename = `audio-${Date.now()}.m4a`;
   const file = await toFile(buffer, safeFilename, { type: "audio/m4a" });

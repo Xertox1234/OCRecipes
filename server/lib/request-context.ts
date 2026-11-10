@@ -4,6 +4,11 @@ import type { Request, Response, NextFunction } from "express";
 export interface RequestContext {
   requestId: string;
   userId: string | null;
+  /**
+   * Set when the AI-sharing gate refused a call in this request, so the route
+   * can still answer AI_SHARING_REQUIRED after a service replaced the error.
+   */
+  aiSharingRefused?: boolean;
 }
 
 const als = new AsyncLocalStorage<RequestContext>();

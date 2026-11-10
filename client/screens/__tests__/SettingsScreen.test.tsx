@@ -120,6 +120,25 @@ vi.mock("@/hooks/useHealthConsent", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useAiSharing", () => ({
+  useAiSharing: () => ({
+    status: aiSharing.status,
+    answer: mockAnswerAiSharing,
+  }),
+}));
+
+vi.mock("@/navigation/openAiSharing", () => ({
+  openAiSharing: mockOpenAiSharing,
+}));
+
+const { aiSharing, mockAnswerAiSharing, mockOpenAiSharing } = vi.hoisted(
+  () => ({
+    aiSharing: { status: { allowed: true, answered: true } },
+    mockAnswerAiSharing: vi.fn(),
+    mockOpenAiSharing: vi.fn(),
+  }),
+);
+
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({ isPremium: false }),
 }));
@@ -494,5 +513,54 @@ describe("SettingsScreen — withdraw health-data consent", () => {
     await waitFor(() => expect(mockToast.error).toHaveBeenCalledTimes(1));
     expect(mockToast.success).not.toHaveBeenCalled();
     expect(mockCheckAuth).not.toHaveBeenCalled();
+  });
+});
+
+// Privacy audit H3 — the AI-sharing permission can be changed any time.
+describe("SettingsScreen — AI features", () => {
+  beforeEach(() => {
+    aiSharing.status = { allowed: true, answered: true };
+    mockAnswerAiSharing.mockReset().mockResolvedValue(undefined);
+    mockOpenAiSharing.mockReset();
+  });
+
+  it("asks first, then turns AI features off", async () => {
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: /AI features/ }));
+
+    expect(mockAnswerAiSharing).not.toHaveBeenCalled();
+    const options = mockConfirm.mock.calls[0]?.[0];
+    expect(options).toEqual(
+      expect.objectContaining({
+        title: "Turn off AI features",
+        destructive: true,
+      }),
+    );
+    options?.onConfirm();
+
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledTimes(1));
+    expect(mockAnswerAiSharing).toHaveBeenCalledWith(false);
+  });
+
+  it("says so when turning it off fails", async () => {
+    mockAnswerAiSharing.mockRejectedValue(new Error("offline"));
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: /AI features/ }));
+    mockConfirm.mock.calls[0]?.[0]?.onConfirm();
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens the full question, naming the companies, when AI is off", () => {
+    aiSharing.status = { allowed: false, answered: true };
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: /AI features/ }));
+
+    expect(mockOpenAiSharing).toHaveBeenCalledTimes(1);
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockAnswerAiSharing).not.toHaveBeenCalled();
   });
 });

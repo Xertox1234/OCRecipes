@@ -101,13 +101,13 @@ tags:
 # keyboard-covered-field mode above) degrades to a skipped round instead of
 # hard-failing the recovery loop on an unfocused field.
 - extendedWaitUntil:
-    visible: "(Get Started|Not Now)"
+    visible: "(Allow AI features|Get Started|Not Now)"
     timeout: 20000
     optional: true
 - repeat:
     times: 3
     while:
-      notVisible: "(Get Started|Not Now)"
+      notVisible: "(Allow AI features|Get Started|Not Now)"
     commands:
       # Same password + confirm-password sequence as the main block above,
       # but the RETRY variant: every step optional and erase-before-type, so
@@ -126,12 +126,22 @@ tags:
           text: "Create Account"
           optional: true
       - extendedWaitUntil:
-          visible: "(Get Started|Not Now)"
+          visible: "(Allow AI features|Get Started|Not Now)"
           timeout: 15000
           optional: true
 - extendedWaitUntil:
-    visible: "(Get Started|Not Now)"
+    visible: "(Allow AI features|Get Started|Not Now)"
     timeout: 15000
+# The AI-sharing question comes first for every new account (privacy audit
+# H3). Allow it: this flow goes on to use the app.
+- runFlow:
+    when:
+      visible: "Allow AI features"
+    commands:
+      - tapOn: "Allow AI features"
+      - extendedWaitUntil:
+          visible: "(Get Started|Not Now)"
+          timeout: 15000
 - runFlow:
     when:
       visible: "Not Now"

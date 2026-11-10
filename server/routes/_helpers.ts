@@ -23,6 +23,10 @@ import { isAiConfigured } from "../lib/openai";
 import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
+import {
+  assertAiSharingAllowed,
+  wasAiSharingRefused,
+} from "../lib/ai-sharing-gate";
 import { isValidCalendarDate } from "../utils/date-validation";
 
 // ============================================================================
@@ -58,6 +62,36 @@ export function checkAiConfigured(res: Response): boolean {
     return false;
   }
   return true;
+}
+
+function sendAiSharingRequired(
+  res: Response,
+  extra?: Record<string, unknown>,
+): void {
+  sendError(
+    res,
+    403,
+    "Allow AI features to use this",
+    ErrorCode.AI_SHARING_REQUIRED,
+    extra,
+  );
+}
+
+/**
+ * Guard that returns false (and sends 403 AI_SHARING_REQUIRED) when the user
+ * has not allowed AI sharing (privacy audit H3). `aiChat` enforces the rule on
+ * its own; this answers before any work starts, and before a streaming route
+ * has sent its headers. Use next to `checkAiConfigured`.
+ */
+export async function checkAiSharing(res: Response): Promise<boolean> {
+  try {
+    await assertAiSharingAllowed();
+    return true;
+  } catch (error) {
+    if (!wasAiSharingRefused(error)) throw error;
+    sendAiSharingRequired(res);
+    return false;
+  }
 }
 
 /**
@@ -247,6 +281,10 @@ export function handleRouteError(
       ErrorCode.VALIDATION_ERROR,
       extra,
     );
+    return;
+  }
+  if (wasAiSharingRefused(error)) {
+    sendAiSharingRequired(res, extra);
     return;
   }
   logger.error({ err: toError(error) }, `${context} error`);

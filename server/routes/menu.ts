@@ -7,6 +7,7 @@ import { analyzeMenuPhoto } from "../services/menu-analysis";
 import {
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
@@ -56,6 +57,7 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(res))) return;
 
         if (!(await claimAiCallOrReject(req, res, "menuScan", "menu scan")))
           return;

@@ -40,6 +40,7 @@ import {
   VERTEX_BACKUP_TIMEOUT_FAST_MS,
 } from "./openai";
 import { createVertexClient } from "./vertex-client";
+import { assertAiSharingAllowed } from "./ai-sharing-gate";
 import { createServiceLogger } from "./logger";
 import { reportError } from "./error-reporter";
 
@@ -909,7 +910,10 @@ function defaultDeps(): AiChatDeps {
 // Built on first call: importing this module constructs no client and reads no
 // env. Memoised once — the circuit breakers inside hold state.
 let instance: AiChat | undefined;
-export const aiChat = ((...args: Parameters<AiChat>) => {
+export const aiChat = (async (...args: Parameters<AiChat>) => {
+  // Privacy audit H3: every AI request passes here, so this one check keeps a
+  // user's data in-house until they allow AI sharing.
+  await assertAiSharingAllowed();
   instance ??= createAiChat(defaultDeps());
   return (instance as (...a: Parameters<AiChat>) => unknown)(...args);
 }) as AiChat;

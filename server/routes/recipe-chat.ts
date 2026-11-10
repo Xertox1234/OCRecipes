@@ -9,6 +9,7 @@ import {
   parsePositiveIntParam,
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   handleRouteError,
   claimAiCallOrReject,
 } from "./_helpers";
@@ -210,6 +211,7 @@ export function register(app: Express): void {
 
         // Premium gate
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(res))) return;
         const features = await checkPremiumFeature(
           req,
           res,
