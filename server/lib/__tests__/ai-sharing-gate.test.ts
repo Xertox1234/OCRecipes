@@ -57,6 +57,22 @@ describe("assertAiSharingAllowed", () => {
     );
   });
 
+  it("does not remember a yes that was read before the user turned it off", async () => {
+    let release: (allowed: boolean) => void = () => undefined;
+    lookup.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => (release = resolve)),
+    );
+    const inFlight = assertAiSharingAllowed();
+    forgetAiSharing("u1"); // the user turns it off while the read is open
+    release(true);
+    await inFlight;
+
+    lookup.mockResolvedValue(false);
+    await expect(assertAiSharingAllowed()).rejects.toBeInstanceOf(
+      AiSharingRequiredError,
+    );
+  });
+
   it("remembers a yes briefly, never a no", async () => {
     lookup.mockResolvedValue(false);
     await expect(assertAiSharingAllowed()).rejects.toThrow();

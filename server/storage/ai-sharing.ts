@@ -53,7 +53,8 @@ export async function isAiSharingAllowed(userId: string): Promise<boolean> {
 
 /**
  * Record the user's answer. A repeated "yes" keeps the first record; a "no"
- * is logged as "withdrawn" after a yes and "declined" otherwise. Each CASE
+ * is logged as "withdrawn" after a yes and "declined" the first time
+ * otherwise, and a repeated "no" changes nothing. Each CASE
  * reads the row as it was before this update, so the write is one statement.
  */
 export async function setAiSharing(
@@ -75,7 +76,9 @@ export async function setAiSharing(
     : {
         aiSharingAllowedAt: null,
         aiSharingVersion: null,
-        aiSharingHistory: sql`CASE WHEN ${wasAllowed} THEN ${append({ event: "withdrawn", at })} ELSE ${append({ event: "declined", at })} END`,
+        // A repeated "no" adds nothing: the log records a change of answer,
+        // and must not grow each time the request is repeated.
+        aiSharingHistory: sql`CASE WHEN ${wasAllowed} THEN ${append({ event: "withdrawn", at })} WHEN jsonb_array_length(${users.aiSharingHistory}) = 0 THEN ${append({ event: "declined", at })} ELSE ${users.aiSharingHistory} END`,
       };
 
   const [row] = await db

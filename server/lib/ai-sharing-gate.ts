@@ -1,8 +1,9 @@
 /**
  * AI-sharing gate (privacy audit H3): no AI call is made for a signed-in user
  * who has not allowed their data to go to the AI companies named in
- * `shared/lib/ai-sharing.ts`. `aiChat` calls this before every request, so
- * the rule holds for every feature without a check in each route.
+ * `shared/lib/ai-sharing.ts`. `aiChat`, voice transcription and image
+ * generation call this before every request, so the rule holds for every
+ * feature even where a route has no check of its own.
  *
  * The user comes from the request context (`requireAuth` sets it). Work that
  * runs outside a signed-in request — scheduled jobs, scripts, evals — sends
@@ -33,6 +34,12 @@ const MAX_REMEMBERED = 5_000;
 
 let lookup: AiSharingLookup | undefined;
 const allowedUntil = new Map<string, number>();
+/**
+ * Bumped on every `forgetAiSharing`. A lookup that started before the user
+ * turned the permission off can settle after it; comparing this before and
+ * after the lookup keeps that stale "yes" from being remembered.
+ */
+let forgetCount = 0;
 
 export function installAiSharingLookup(fn: AiSharingLookup): void {
   lookup = fn;
@@ -40,12 +47,14 @@ export function installAiSharingLookup(fn: AiSharingLookup): void {
 
 /** Drop the remembered "yes" for a user whose permission just changed. */
 export function forgetAiSharing(userId: string): void {
+  forgetCount++;
   allowedUntil.delete(userId);
 }
 
 export function resetAiSharingGateForTests(): void {
   lookup = undefined;
   allowedUntil.clear();
+  forgetCount = 0;
 }
 
 /**
@@ -57,7 +66,10 @@ export async function isAiSharingAllowedFor(userId: string): Promise<boolean> {
   if (until !== undefined && until > Date.now()) return true;
   allowedUntil.delete(userId);
 
+  const forgetsBefore = forgetCount;
   if (!lookup || !(await lookup(userId))) return false;
+  // Allowed for this call, but not remembered: an answer changed meanwhile.
+  if (forgetCount !== forgetsBefore) return true;
 
   if (allowedUntil.size >= MAX_REMEMBERED) {
     const oldest = allowedUntil.keys().next().value;

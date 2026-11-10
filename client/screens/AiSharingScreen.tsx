@@ -90,11 +90,7 @@ export default function AiSharingScreen() {
         >
           Who receives it
         </ThemedText>
-        <View
-          accessibilityRole="summary"
-          accessibilityLabel="Companies that receive your data when you use AI features"
-          style={styles.list}
-        >
+        <View style={styles.list}>
           {AI_RECIPIENTS.map((recipient) => (
             <View
               key={recipient.name}

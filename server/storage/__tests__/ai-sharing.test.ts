@@ -72,6 +72,20 @@ describe("AI-sharing permission storage", () => {
     ]);
   });
 
+  it("a repeated no does not grow the history", async () => {
+    await setAiSharing(user.id, false);
+    await setAiSharing(user.id, false);
+    await setAiSharing(user.id, true);
+    await setAiSharing(user.id, false);
+    await setAiSharing(user.id, false);
+
+    expect((await row()).aiSharingHistory.map((e) => e.event)).toEqual([
+      "declined",
+      "granted",
+      "withdrawn",
+    ]);
+  });
+
   it("allowing twice keeps the first record", async () => {
     await setAiSharing(user.id, true);
     const first = await row();

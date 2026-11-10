@@ -9,7 +9,7 @@ export async function transcribeAudio(
   buffer: Buffer,
   _filename: string = "audio.m4a",
 ): Promise<string> {
-  // The one AI call that does not go through aiChat (privacy audit H3).
+  // Not routed through aiChat, so it checks for itself (privacy audit H3).
   await assertAiSharingAllowed();
 
   // Use a safe static filename — client-provided names are untrusted

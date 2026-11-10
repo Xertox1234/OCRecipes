@@ -911,8 +911,9 @@ function defaultDeps(): AiChatDeps {
 // env. Memoised once — the circuit breakers inside hold state.
 let instance: AiChat | undefined;
 export const aiChat = (async (...args: Parameters<AiChat>) => {
-  // Privacy audit H3: every AI request passes here, so this one check keeps a
-  // user's data in-house until they allow AI sharing.
+  // Privacy audit H3: every chat-model request passes here, so this one check
+  // keeps a user's data in-house until they allow AI sharing. (Voice
+  // transcription and image generation check for themselves.)
   await assertAiSharingAllowed();
   instance ??= createAiChat(defaultDeps());
   return (instance as (...a: Parameters<AiChat>) => unknown)(...args);
