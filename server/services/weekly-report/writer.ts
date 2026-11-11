@@ -97,13 +97,20 @@ export function buildWeeklyReportMessages(facts: WeeklyFacts) {
   ];
 }
 
+/**
+ * `aiAllowed` is the user's AI-sharing permission (privacy audit H3). This
+ * runs from the scheduler, outside any signed-in request, so aiChat's own
+ * request-context gate cannot see the user — the caller must check.
+ */
 export async function writeWeeklyReport(
   facts: WeeklyFacts,
+  opts: { aiAllowed: boolean },
 ): Promise<{ content: WeeklyReportContent; source: "ai" | "template" }> {
   const fallback = () => ({
     content: applyGuards(templateContent(facts), facts),
     source: "template" as const,
   });
+  if (!opts.aiAllowed) return fallback();
   try {
     const response = await aiChat(
       "coach-weekly-report",

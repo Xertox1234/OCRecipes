@@ -4,9 +4,9 @@
 --
 -- ORDERING — APPLY TO PROD BEFORE THE PR THAT SHIPS THIS FILE MERGES. Purely
 -- additive and idempotent; the old server never reads these tables.
--- (Follows 0042, the coach write cards table from #1812.)
+-- (Follows 0044, the AI-sharing permission columns.)
 --
--- Apply with:  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0043_coach_weekly_reports.sql
+-- Apply with:  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0045_coach_weekly_reports.sql
 --
 -- Verify (paste the output; expect "true|true|1"):
 --   psql "$DATABASE_URL" -Atc "SELECT (to_regclass('public.coach_weekly_reports') IS NOT NULL) || '|' || (to_regclass('public.coach_weekly_report_settings') IS NOT NULL) || '|' || (SELECT count(*) FROM pg_constraint WHERE conname = 'coach_weekly_reports_user_week_unique');"

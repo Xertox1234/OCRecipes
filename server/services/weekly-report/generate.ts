@@ -1,6 +1,7 @@
 import { storage } from "../../storage";
 import { TIER_FEATURES } from "@shared/types/premium";
 import { logger } from "../../lib/logger";
+import { isAiSharingAllowedFor } from "../../lib/ai-sharing-gate";
 import { civilDateString, civilDateToInstant } from "../../lib/civil-date";
 import { notify } from "../notifications/notify";
 import { buildWeeklyFacts } from "./facts";
@@ -90,7 +91,11 @@ export async function generateWeeklyReportForUser(
     ),
   };
 
-  const { content, source } = await writeWeeklyReport(facts);
+  // A scheduled job has no signed-in request, so aiChat's own gate can't see
+  // this user: check their AI-sharing permission here. Without it the report
+  // still saves, with the template text and no AI call.
+  const aiAllowed = await isAiSharingAllowedFor(userId);
+  const { content, source } = await writeWeeklyReport(facts, { aiAllowed });
   const row = await storage.insertWeeklyReport(userId, {
     weekStart: week.weekStart,
     weekEnd: week.weekEnd,

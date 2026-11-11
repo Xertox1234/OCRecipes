@@ -3,6 +3,7 @@ import { storage } from "../../../storage";
 import { notify } from "../../notifications/notify";
 import { writeWeeklyReport } from "../writer";
 import { createMockWeeklyFacts } from "../../../__tests__/factories";
+import { isAiSharingAllowedFor } from "../../../lib/ai-sharing-gate";
 import {
   generateWeeklyReportForUser,
   sendDueWeeklyReportPushes,
@@ -25,6 +26,9 @@ vi.mock("../../../storage", () => ({
 }));
 vi.mock("../../notifications/notify", () => ({ notify: vi.fn() }));
 vi.mock("../writer", () => ({ writeWeeklyReport: vi.fn() }));
+vi.mock("../../../lib/ai-sharing-gate", () => ({
+  isAiSharingAllowedFor: vi.fn(),
+}));
 vi.mock("../../../lib/logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
   toError: (e: unknown) => e,
@@ -89,6 +93,7 @@ beforeEach(() => {
   s.hasReminderSince.mockResolvedValue(false);
   vi.mocked(writeWeeklyReport).mockResolvedValue({ content, source: "ai" });
   vi.mocked(notify).mockResolvedValue({ pushDelivered: true });
+  vi.mocked(isAiSharingAllowedFor).mockResolvedValue(true);
 });
 
 const inserted = () => s.insertWeeklyReport.mock.calls[0][1];
@@ -134,6 +139,19 @@ describe("generateWeeklyReportForUser", () => {
       new Date("2026-11-08T08:00:00Z"),
       new Date("2026-11-15T08:00:00Z"),
     );
+  });
+
+  it("asks the writer for AI text only when the user allows AI sharing", async () => {
+    await generateWeeklyReportForUser("u1", NOW, TZ);
+    expect(vi.mocked(writeWeeklyReport).mock.calls[0][1]).toEqual({
+      aiAllowed: true,
+    });
+    vi.mocked(isAiSharingAllowedFor).mockResolvedValue(false);
+    await generateWeeklyReportForUser("u1", NOW, TZ);
+    expect(isAiSharingAllowedFor).toHaveBeenCalledWith("u1");
+    expect(vi.mocked(writeWeeklyReport).mock.calls[1][1]).toEqual({
+      aiAllowed: false,
+    });
   });
 
   it("a lost insert race reports exists", async () => {

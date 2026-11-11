@@ -79,7 +79,7 @@ describe("writeWeeklyReport", () => {
 
   it("stores Coach's text when it passes validation", async () => {
     mockAi.mockResolvedValue(reply(good));
-    const r = await writeWeeklyReport(facts());
+    const r = await writeWeeklyReport(facts(), { aiAllowed: true });
     expect(r.source).toBe("ai");
     expect(r.content.headline).toBe(good.headline);
     expect(r.content.next?.recipeId).toBe(12);
@@ -90,26 +90,38 @@ describe("writeWeeklyReport", () => {
   it("falls back to the template when the text has a banned word", async () => {
     const f = facts();
     mockAi.mockResolvedValue(reply({ ...good, watch: ["You skipped lunch."] }));
-    const r = await writeWeeklyReport(f);
+    const r = await writeWeeklyReport(f, { aiAllowed: true });
     expect(r.source).toBe("template");
     expect(r.content).toEqual(templateContent(f));
   });
 
   it("falls back to the template when the reply is not JSON", async () => {
     mockAi.mockResolvedValue(reply("sorry, here is your week"));
-    expect((await writeWeeklyReport(facts())).source).toBe("template");
+    expect((await writeWeeklyReport(facts(), { aiAllowed: true })).source).toBe(
+      "template",
+    );
+  });
+
+  it("makes no AI call when the user hasn't allowed AI sharing", async () => {
+    const f = facts();
+    const r = await writeWeeklyReport(f, { aiAllowed: false });
+    expect(mockAi).not.toHaveBeenCalled();
+    expect(r.source).toBe("template");
+    expect(r.content).toEqual(templateContent(f));
   });
 
   it("falls back to the template when the AI call throws", async () => {
     mockAi.mockImplementation(async () => {
       throw new Error("timeout");
     });
-    expect((await writeWeeklyReport(facts())).source).toBe("template");
+    expect((await writeWeeklyReport(facts(), { aiAllowed: true })).source).toBe(
+      "template",
+    );
   });
 
   it("drops watch and next after a safety signal even if Coach wrote them", async () => {
     mockAi.mockResolvedValue(reply(good));
-    const r = await writeWeeklyReport(facts(true));
+    const r = await writeWeeklyReport(facts(true), { aiAllowed: true });
     expect(r.content.watch).toEqual([]);
     expect(r.content.next).toBeNull();
   });
