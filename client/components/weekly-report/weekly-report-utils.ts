@@ -196,3 +196,20 @@ export function shouldShowYourWeek(
   const hideAt = new Date(y, m - 1, d + 8); // local midnight, 7 days after Saturday ends
   return now < hideAt;
 }
+
+/**
+ * Which report the in-app popup should show, if any. A push received while
+ * the app is open comes first (its push already claimed delivery); otherwise
+ * the pending report no push will announce. Each report shows at most once.
+ */
+export function shouldShowPopup(input: {
+  pending: { id: number } | null;
+  foregroundPush: { reportId: number } | null;
+  alreadyShownIds: Set<number>;
+}): number | null {
+  const push = input.foregroundPush?.reportId;
+  if (push !== undefined) return input.alreadyShownIds.has(push) ? null : push;
+  const pending = input.pending?.id;
+  if (pending === undefined || input.alreadyShownIds.has(pending)) return null;
+  return pending;
+}
