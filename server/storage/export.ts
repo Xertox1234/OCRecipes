@@ -42,6 +42,16 @@ import {
   recipeGenerationLog,
   coachWeeklyReports,
   coachWeeklyReportSettings,
+  userIdentities,
+  coachWriteCards,
+  inspiredSuggestions,
+  coachResponseCache,
+  mealSuggestionCache,
+  suggestionCache,
+  cookbookCoverCandidates,
+  cookbookCoverGenerationLog,
+  recipeFinderClaims,
+  notificationSends,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, inArray, asc, desc } from "drizzle-orm";
@@ -54,6 +64,9 @@ import { eq, inArray, asc, desc } from "drizzle-orm";
 export const exportUserColumns = {
   id: users.id,
   username: users.username,
+  email: users.email,
+  emailVerified: users.emailVerified,
+  pendingEmail: users.pendingEmail,
   displayName: users.displayName,
   avatarUrl: users.avatarUrl,
   dailyCalorieGoal: users.dailyCalorieGoal,
@@ -67,10 +80,89 @@ export const exportUserColumns = {
   goalWeight: users.goalWeight,
   goalsCalculatedAt: users.goalsCalculatedAt,
   onboardingCompleted: users.onboardingCompleted,
+  measurementUnit: users.measurementUnit,
+  mfaEnabledAt: users.mfaEnabledAt,
   subscriptionTier: users.subscriptionTier,
   subscriptionExpiresAt: users.subscriptionExpiresAt,
+  timezone: users.timezone,
+  lastActiveAt: users.lastActiveAt,
+  // The AI-sharing consent record: when it was given, which version, history.
+  aiSharingAllowedAt: users.aiSharingAllowedAt,
+  aiSharingVersion: users.aiSharingVersion,
+  aiSharingHistory: users.aiSharingHistory,
   createdAt: users.createdAt,
 } as const;
+
+// Sign-in connections: what the person linked, never the credentials. The
+// encrypted Apple refresh token is a live credential, and the provider subject
+// is the store-side account key we match sign-ins on.
+export const exportIdentityColumns = {
+  provider: userIdentities.provider,
+  email: userIdentities.email,
+  isPrivateRelay: userIdentities.isPrivateRelay,
+  createdAt: userIdentities.createdAt,
+  lastUsedAt: userIdentities.lastUsedAt,
+} as const;
+
+/**
+ * Every table with a foreign key to `users` is either exported (here) or
+ * excluded on purpose (below), checked by export.test.ts so a new user-linked
+ * table fails CI until someone decides. Privacy audit 2026-11-10, M6.
+ */
+export const EXPORTED_USER_TABLES: readonly string[] = [
+  "users",
+  "user_profiles",
+  "scanned_items",
+  "daily_logs",
+  "meal_plan_recipes",
+  "meal_plan_items",
+  "community_recipes",
+  "chat_conversations",
+  "grocery_lists",
+  "cookbooks",
+  "pantry_items",
+  "saved_items",
+  "favourite_scanned_items",
+  "favourite_recipes",
+  "taste_picks",
+  "recipe_tries",
+  "coach_notebook",
+  "menu_scans",
+  "receipt_scans",
+  "recipe_dismissals",
+  "pending_reminders",
+  "push_tokens",
+  "transactions",
+  "verification_history",
+  "recipe_generation_log",
+  "coach_weekly_reports",
+  "coach_weekly_report_settings",
+  "user_identities",
+  "coach_write_cards",
+  "inspired_suggestions",
+  "coach_response_cache",
+  "meal_suggestion_cache",
+  "suggestion_cache",
+  "cookbook_cover_candidates",
+  "cookbook_cover_generation_log",
+  "recipe_finder_claims",
+  "notification_sends",
+];
+
+/** Tables linked to a user that the export leaves out, and why. */
+export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> = {
+  auth_nonces: "single-use sign-in nonce hashes; minutes-long security state",
+  pending_social_sign_ins:
+    "a sign-in ticket held for minutes while the person finishes connecting",
+  social_link_guesses: "a wrong-password counter for connecting an account",
+  password_change_codes: "the hash of an emailed code and its attempt limits",
+  mfa_email_codes: "the hash of an emailed code and its attempt limits",
+  mfa_challenges: "a single-use second-step token hash",
+  mfa_trusted_devices:
+    "hashes of the keys that skip two-step on a phone; exporting them helps no one and a leaked file would carry them",
+  user_mfa: "two-step lockout counters",
+  api_keys: "developer API keys, created by admins only, not app users",
+};
 
 export interface UserDataExport {
   profile: {
@@ -120,6 +212,27 @@ export interface UserDataExport {
   };
   verificationHistory: Record<string, unknown>[];
   recipeGenerationLog: Record<string, unknown>[];
+  /** Google / Apple accounts linked for sign-in (no credentials). */
+  signInConnections: Record<string, unknown>[];
+  /** Food, grocery and plan cards the coach offered in chat. */
+  coachWriteCards: Record<string, unknown>[];
+  /** Recipe ideas suggested on the Inspired screen. */
+  inspiredSuggestions: Record<string, unknown>[];
+  /** AI answers kept to reuse for a repeat question (lookup keys removed). */
+  savedAiAnswers: {
+    coach: Record<string, unknown>[];
+    mealSuggestions: Record<string, unknown>[];
+    scanSuggestions: Record<string, unknown>[];
+  };
+  /** AI cookbook cover pictures offered and not yet expired. */
+  cookbookCoverCandidates: Record<string, unknown>[];
+  /** When daily-capped AI features were used. */
+  usageLogs: {
+    recipeFinderClaims: Record<string, unknown>[];
+    cookbookCoverGenerations: Record<string, unknown>[];
+  };
+  /** Which kinds of notification were sent, and when. */
+  notificationsSent: Record<string, unknown>[];
 }
 
 /**
@@ -173,6 +286,16 @@ export async function getUserDataExport(
     recipeGenerationLogRows,
     weeklyReportRows,
     weeklyReportSettingsRows,
+    identityRows,
+    writeCardRows,
+    inspiredRows,
+    coachCacheRows,
+    mealCacheRows,
+    scanCacheRows,
+    coverCandidateRows,
+    coverLogRows,
+    finderClaimRows,
+    notificationRows,
   ] = await Promise.all([
     db.select(exportUserColumns).from(users).where(eq(users.id, userId)),
     db.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
@@ -315,6 +438,75 @@ export async function getUserDataExport(
       .select()
       .from(coachWeeklyReportSettings)
       .where(eq(coachWeeklyReportSettings.userId, userId)),
+    db
+      .select(exportIdentityColumns)
+      .from(userIdentities)
+      .where(eq(userIdentities.userId, userId)),
+    db
+      .select()
+      .from(coachWriteCards)
+      .where(eq(coachWriteCards.userId, userId))
+      .orderBy(desc(coachWriteCards.createdAt)),
+    db
+      .select()
+      .from(inspiredSuggestions)
+      .where(eq(inspiredSuggestions.userId, userId))
+      .orderBy(desc(inspiredSuggestions.createdAt)),
+    // The caches' hash / key columns are internal lookup keys, like a chat
+    // message's turnKey: left out.
+    db
+      .select({
+        question: coachResponseCache.question,
+        response: coachResponseCache.response,
+        createdAt: coachResponseCache.createdAt,
+        expiresAt: coachResponseCache.expiresAt,
+      })
+      .from(coachResponseCache)
+      .where(eq(coachResponseCache.userId, userId)),
+    db
+      .select({
+        suggestions: mealSuggestionCache.suggestions,
+        createdAt: mealSuggestionCache.createdAt,
+        expiresAt: mealSuggestionCache.expiresAt,
+      })
+      .from(mealSuggestionCache)
+      .where(eq(mealSuggestionCache.userId, userId)),
+    db
+      .select({
+        scannedItemId: suggestionCache.scannedItemId,
+        suggestions: suggestionCache.suggestions,
+        createdAt: suggestionCache.createdAt,
+        expiresAt: suggestionCache.expiresAt,
+      })
+      .from(suggestionCache)
+      .where(eq(suggestionCache.userId, userId)),
+    db
+      .select({
+        imageUrl: cookbookCoverCandidates.imageUrl,
+        createdAt: cookbookCoverCandidates.createdAt,
+        expiresAt: cookbookCoverCandidates.expiresAt,
+      })
+      .from(cookbookCoverCandidates)
+      .where(eq(cookbookCoverCandidates.userId, userId)),
+    db
+      .select({ createdAt: cookbookCoverGenerationLog.createdAt })
+      .from(cookbookCoverGenerationLog)
+      .where(eq(cookbookCoverGenerationLog.userId, userId)),
+    db
+      .select({
+        kind: recipeFinderClaims.kind,
+        createdAt: recipeFinderClaims.createdAt,
+      })
+      .from(recipeFinderClaims)
+      .where(eq(recipeFinderClaims.userId, userId)),
+    db
+      .select({
+        category: notificationSends.category,
+        sentAt: notificationSends.sentAt,
+      })
+      .from(notificationSends)
+      .where(eq(notificationSends.userId, userId))
+      .orderBy(desc(notificationSends.sentAt)),
   ]);
 
   // After fetching all parent rows, batch-load meal-plan recipe ingredients
@@ -395,5 +587,19 @@ export async function getUserDataExport(
       reports: weeklyReportRows,
       settings: weeklyReportSettingsRows[0] ?? null,
     },
+    signInConnections: identityRows,
+    coachWriteCards: writeCardRows,
+    inspiredSuggestions: inspiredRows,
+    savedAiAnswers: {
+      coach: coachCacheRows,
+      mealSuggestions: mealCacheRows,
+      scanSuggestions: scanCacheRows,
+    },
+    cookbookCoverCandidates: coverCandidateRows,
+    usageLogs: {
+      recipeFinderClaims: finderClaimRows,
+      cookbookCoverGenerations: coverLogRows,
+    },
+    notificationsSent: notificationRows,
   };
 }
