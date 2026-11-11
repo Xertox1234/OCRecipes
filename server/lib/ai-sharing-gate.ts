@@ -6,8 +6,11 @@
  * feature even where a route has no check of its own.
  *
  * The user comes from the request context (`requireAuth` sets it). Work that
- * runs outside a signed-in request — scheduled jobs, scripts, evals — sends
- * no user's request and is not gated.
+ * runs outside a signed-in request — scheduled jobs, scripts, evals — has no
+ * such user, so this gate lets it through. Such work that sends a user's data
+ * must check the owner itself: `isAiSharingAllowedFor(userId)` for one user,
+ * or `ownerAllowsAiSharing` (storage/ai-sharing.ts) in the query that picks
+ * the rows (privacy audit M13).
  *
  * `lib/` is a leaf and cannot read storage, so the server installs the lookup
  * at boot (`server/index.ts`). With no lookup installed a signed-in request

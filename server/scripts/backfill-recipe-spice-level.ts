@@ -13,6 +13,8 @@
  *   asked again on the next run — null cannot tell "no heat" from "not asked".
  * - Replies are validated with the shared `spiceLevelSchema`; anything missing
  *   or invalid leaves the row null. A level is never guessed.
+ * - Recipes whose owner has AI sharing off are never loaded, so never sent
+ *   (privacy audit M13; the loaders are in backfill-ai-rows.ts).
  * - It prints how many rows it would ask about BEFORE any AI call.
  *   DRY_RUN=1 prints that and stops — zero AI calls, zero writes.
  *
@@ -30,6 +32,10 @@ import { db, pool } from "../db";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import type { SpiceLevel } from "@shared/schemas/recipe-finder";
 import { storage } from "../storage";
+import {
+  loadCommunitySpiceRows,
+  loadMealPlanSpiceRows,
+} from "./backfill-ai-rows";
 import {
   SPICE_BATCH_SIZE,
   SPICE_SYSTEM_PROMPT,
@@ -71,14 +77,7 @@ export async function askSpiceLevels(
 }
 
 async function loadCommunityRows(): Promise<SpiceRow[]> {
-  const rows = await db
-    .select({
-      id: communityRecipes.id,
-      title: communityRecipes.title,
-      ingredients: communityRecipes.ingredients,
-    })
-    .from(communityRecipes)
-    .where(isNull(communityRecipes.spiceLevel));
+  const rows = await loadCommunitySpiceRows();
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -87,10 +86,7 @@ async function loadCommunityRows(): Promise<SpiceRow[]> {
 }
 
 async function loadMealPlanRows(): Promise<SpiceRow[]> {
-  const rows = await db
-    .select({ id: mealPlanRecipes.id, title: mealPlanRecipes.title })
-    .from(mealPlanRecipes)
-    .where(isNull(mealPlanRecipes.spiceLevel));
+  const rows = await loadMealPlanSpiceRows();
   const ingredientMap = await storage.getAllRecipeIngredients();
   return rows.map((r) => ({
     id: r.id,

@@ -320,6 +320,19 @@ export async function enrichRecipe(recipeId: number): Promise<void> {
     return;
   }
 
+  // Privacy audit M13: this is where the recipe text leaves for the AI
+  // companies, some time after the promotion query picked it. Check again
+  // here, so a recipe made private or an author who turned AI sharing off in
+  // between is not sent. No author = platform content.
+  if (
+    recipe.isPublic !== true ||
+    (recipe.authorId !== null &&
+      !(await storage.isAiSharingAllowed(recipe.authorId)))
+  ) {
+    log.info({ recipeId }, "recipe is private or its author has AI off");
+    return;
+  }
+
   // 2. Generate 3 HQ images (hero, plated, ingredients)
   const imageContext: RecipeImageContext = {
     title: recipe.title,

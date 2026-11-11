@@ -1,5 +1,6 @@
 import { users } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   AI_SHARING_VERSION,
   type AiSharingEvent,
@@ -87,4 +88,15 @@ export async function setAiSharing(
     .where(eq(users.id, userId))
     .returning(STATUS_COLUMNS);
   return row ? toStatus(row) : undefined;
+}
+
+/**
+ * SQL condition for work that runs outside a signed-in request (scheduled
+ * jobs, backfill scripts), where `aiChat`'s own gate sees no user: true when
+ * the row's owner allows AI sharing. A row with no owner is platform content
+ * (seeded recipes; deleting an account deletes its recipes rather than
+ * orphaning them), so it passes. Privacy audit M13.
+ */
+export function ownerAllowsAiSharing(ownerId: AnyPgColumn): SQL {
+  return sql`(${ownerId} IS NULL OR EXISTS (SELECT 1 FROM ${users} WHERE ${users.id} = ${ownerId} AND ${users.aiSharingAllowedAt} IS NOT NULL))`;
 }

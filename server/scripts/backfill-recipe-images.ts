@@ -19,7 +19,7 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
-import { eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import { generateImage, isRunwareConfigured } from "../lib/runware";
@@ -38,6 +38,10 @@ import {
   evaluateBackfillGuard,
   resolveRefreshOutputFormat,
 } from "./backfill-recipe-images-utils";
+import {
+  loadCommunityImageRows,
+  loadMealPlanImageRows,
+} from "./backfill-ai-rows";
 
 // Flag parsing lives in backfill-recipe-images-utils so it is unit-testable
 // (this module runs main() at load and cannot be imported in a test).
@@ -119,27 +123,10 @@ async function main() {
   };
 
   // Community recipes carry both the hero imageUrl and canonicalImages[].
-  const community = await db
-    .select({
-      id: communityRecipes.id,
-      imageUrl: communityRecipes.imageUrl,
-      canonicalImages: communityRecipes.canonicalImages,
-      cuisineOrigin: communityRecipes.cuisineOrigin,
-      mealTypes: communityRecipes.mealTypes,
-      title: communityRecipes.title,
-    })
-    .from(communityRecipes);
-  const mealPlan = await db
-    .select({
-      id: mealPlanRecipes.id,
-      imageUrl: mealPlanRecipes.imageUrl,
-      cuisine: mealPlanRecipes.cuisine,
-      mealTypes: mealPlanRecipes.mealTypes,
-      title: mealPlanRecipes.title,
-    })
-    .from(mealPlanRecipes)
-    // A soft-deleted recipe is invisible — don't pay to regenerate its image.
-    .where(isNull(mealPlanRecipes.deletedAt));
+  // Both loaders leave out recipes whose owner has AI sharing off (privacy
+  // audit M13): a refresh sends the title to the image companies.
+  const community = await loadCommunityImageRows();
+  const mealPlan = await loadMealPlanImageRows();
 
   let processed = 0;
   for (const r of community) {

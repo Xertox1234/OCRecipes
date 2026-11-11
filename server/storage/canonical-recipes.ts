@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { eq, and, or, gte, desc, sql, isNull } from "drizzle-orm";
 import { communityRecipes, type CommunityRecipe } from "@shared/schema";
+import { ownerAllowsAiSharing } from "./ai-sharing";
 
 const PROMOTION_THRESHOLD = {
   favorites: 5,
@@ -70,7 +71,14 @@ export async function markEnriched(
     .where(eq(communityRecipes.id, recipeId));
 }
 
-/** Find non-canonical recipes that cross the promotion threshold. */
+/**
+ * Find recipes the promotion job should enrich. Enrichment sends the recipe's
+ * title, ingredients and instructions to AI companies with no user action
+ * (privacy audit M13), so only a public recipe whose author allows AI sharing
+ * qualifies. Both conditions sit in the query, not in a filter afterwards:
+ * the job takes the top rows by score, and rows it may never send must not
+ * hold those places.
+ */
 export async function getEligibleForPromotion(
   limit = 10,
 ): Promise<CommunityRecipe[]> {
@@ -81,29 +89,33 @@ export async function getEligibleForPromotion(
     .select()
     .from(communityRecipes)
     .where(
-      or(
-        and(
-          eq(communityRecipes.isCanonical, false),
-          or(
-            gte(
-              communityRecipes.popularityFavorites,
-              PROMOTION_THRESHOLD.favorites,
-            ),
-            gte(
-              communityRecipes.popularityMealPlans,
-              PROMOTION_THRESHOLD.mealPlans,
-            ),
-            gte(
-              communityRecipes.popularityCookSessions,
-              PROMOTION_THRESHOLD.cookSessions,
-            ),
-          )!,
-        ),
-        and(
-          eq(communityRecipes.isCanonical, true),
-          isNull(communityRecipes.canonicalEnrichedAt),
-        ),
-      )!,
+      and(
+        eq(communityRecipes.isPublic, true),
+        ownerAllowsAiSharing(communityRecipes.authorId),
+        or(
+          and(
+            eq(communityRecipes.isCanonical, false),
+            or(
+              gte(
+                communityRecipes.popularityFavorites,
+                PROMOTION_THRESHOLD.favorites,
+              ),
+              gte(
+                communityRecipes.popularityMealPlans,
+                PROMOTION_THRESHOLD.mealPlans,
+              ),
+              gte(
+                communityRecipes.popularityCookSessions,
+                PROMOTION_THRESHOLD.cookSessions,
+              ),
+            )!,
+          ),
+          and(
+            eq(communityRecipes.isCanonical, true),
+            isNull(communityRecipes.canonicalEnrichedAt),
+          ),
+        )!,
+      ),
     )
     .orderBy(desc(communityRecipes.popularityScore))
     .limit(limit);
