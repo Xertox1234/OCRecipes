@@ -21,6 +21,8 @@ import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
 import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
+import WeeklyReportScreen from "@/screens/WeeklyReportScreen";
+import WeeklyReportsScreen from "@/screens/WeeklyReportsScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import {
   LIBRARY_SCREEN_OPTIONS,
@@ -64,6 +66,10 @@ export type ProfileStackParamList = LibraryRoutes & {
   FavouriteRecipes: undefined;
   CoachReminders: undefined;
   TasteProfile: undefined;
+  /** One Coach weekly report. */
+  WeeklyReport: { id: number };
+  /** Past weekly reports, trends and report settings. */
+  WeeklyReports: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -172,6 +178,26 @@ export default function ProfileStackNavigator() {
         options={{
           headerTitle: () => (
             <HeaderTitle title="Taste Profile" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="WeeklyReports"
+        component={WeeklyReportsScreen}
+        options={{
+          title: "Weekly Reports",
+          headerTitle: () => (
+            <HeaderTitle title="Weekly Reports" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="WeeklyReport"
+        component={WeeklyReportScreen}
+        options={{
+          title: "Weekly report",
+          headerTitle: () => (
+            <HeaderTitle title="Weekly report" showIcon={false} />
           ),
         }}
       />

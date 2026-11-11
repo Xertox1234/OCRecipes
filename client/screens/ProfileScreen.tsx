@@ -23,6 +23,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { ProfileCard } from "@/components/profile/ProfileCard";
 import { MiniWidgetRow } from "@/components/profile/MiniWidgetRow";
 import { LibraryGrid } from "@/components/profile/LibraryGrid";
+import { ProfileWeekCard } from "@/components/weekly-report/YourWeekCard";
 import { InlineSettings } from "@/components/profile/InlineSettings";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
@@ -247,6 +248,9 @@ export default function ProfileScreen() {
             onGearPress={handleGearPress}
           />
         </Animated.View>
+
+        {/* 1b. Coach weekly report — newest week, while it's fresh */}
+        <ProfileWeekCard style={styles.widgetSection} />
 
         {/* 2. Mini Widget Row */}
         {widgetData && (

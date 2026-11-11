@@ -4,6 +4,7 @@ import type {
   WeeklyReport,
   WeeklyTrendPoint,
 } from "@shared/schemas/coach-weekly-report";
+import type { FeatureTipTarget } from "@shared/constants/feature-tips";
 
 /**
  * Pure view-model helpers for the Coach weekly report screens. Dates here are
@@ -128,4 +129,70 @@ export function recipeCaption(r: WeeklyRecipe): string {
           ? "logged twice"
           : `logged ${r.timesLogged} times`;
   return `${HOW_LABEL[r.how]} · ${logged}`;
+}
+
+/** Tomorrow on the device's own calendar, as `yyyy-mm-dd` (never toISOString). */
+export function tomorrowLocalDate(now: Date): string {
+  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const mm = String(t.getMonth() + 1).padStart(2, "0");
+  const dd = String(t.getDate()).padStart(2, "0");
+  return `${t.getFullYear()}-${mm}-${dd}`;
+}
+
+/** First message when the user asks Coach about a report's week. */
+export function weekChatMessage(weekStart: string, weekEnd: string): string {
+  return `Can we talk about my week of ${formatWeekRange(weekStart, weekEnd)}?`;
+}
+
+/**
+ * Where a tip's action goes, spelled from the root so it works from any
+ * stack (a bare navigate can't descend into another tab's stack).
+ */
+export function featureTipRoute(
+  target: FeatureTipTarget,
+): [string, Record<string, unknown> | undefined] {
+  switch (target) {
+    case "scanBarcode":
+      return ["Scan", undefined];
+    case "scanPhoto":
+      return ["Scan", { intent: "log" }];
+    case "importRecipe":
+      return [
+        "Main",
+        { screen: "MealPlanTab", params: { screen: "RecipeImport" } },
+      ];
+    case "mealPlan":
+      return [
+        "Main",
+        { screen: "MealPlanTab", params: { screen: "MealPlanHome" } },
+      ];
+    case "pantry":
+      return ["Main", { screen: "ProfileTab", params: { screen: "Pantry" } }];
+    case "cookbooks":
+      return [
+        "Main",
+        { screen: "ProfileTab", params: { screen: "CookbookList" } },
+      ];
+    case "voiceRecipe":
+      return ["RecipeChat", {}];
+  }
+}
+
+/**
+ * The profile's "Your week" card: while the newest report is unseen, or
+ * until a week after its Saturday (local calendar).
+ */
+export function shouldShowYourWeek(
+  newest: { weekEnd: string; seen: boolean } | undefined,
+  now: Date,
+): boolean {
+  if (!newest) return false;
+  if (!newest.seen) return true;
+  const [y, m, d] = newest.weekEnd.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const hideAt = new Date(y, m - 1, d + 8); // local midnight, 7 days after Saturday ends
+  return now < hideAt;
 }

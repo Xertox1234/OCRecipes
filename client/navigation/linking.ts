@@ -208,6 +208,16 @@ export const linking: LinkingOptions<RootStackParamList> = {
     screens: {
       Main: {
         screens: {
+          // A weekly report push opens ocrecipes://weekly-report/<id>.
+          ProfileTab: {
+            screens: {
+              WeeklyReport: {
+                path: "weekly-report/:id",
+                parse: { id: parseIntOrZero },
+              },
+              WeeklyReports: "weekly-reports",
+            },
+          },
           CoachTab: {
             screens: {
               // initialMessage is auto-sent by ChatScreen: a link must not

@@ -2,9 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   availableNutrients,
   chartSeries,
+  featureTipRoute,
   formatWeekRange,
+  tomorrowLocalDate,
+  weekChatMessage,
   recipeCaption,
   shouldPlayCelebration,
+  shouldShowYourWeek,
   trendSeries,
 } from "../weekly-report-utils";
 import type {
@@ -175,5 +179,70 @@ describe("recipeCaption", () => {
     expect(recipeCaption(r("saved", 0))).toBe("Saved · not logged yet");
     expect(recipeCaption(r("favourited", 1))).toBe("Favourited · logged once");
     expect(recipeCaption(r("imported", 3))).toBe("Imported · logged 3 times");
+  });
+});
+
+describe("tomorrowLocalDate", () => {
+  it("uses the device's local calendar, not UTC", () => {
+    // Local constructor: 23:30 on Nov 7 local, whatever the zone.
+    expect(tomorrowLocalDate(new Date(2026, 10, 7, 23, 30))).toBe("2026-11-08");
+    expect(tomorrowLocalDate(new Date(2026, 11, 31, 8, 0))).toBe("2027-01-01");
+  });
+});
+
+describe("weekChatMessage", () => {
+  it("asks Coach about the week by its range", () => {
+    expect(weekChatMessage("2026-11-01", "2026-11-07")).toBe(
+      "Can we talk about my week of Nov 1–7?",
+    );
+  });
+});
+
+describe("featureTipRoute", () => {
+  it("opens the camera for photo logging and the scanner for barcodes", () => {
+    expect(featureTipRoute("scanPhoto")).toEqual(["Scan", { intent: "log" }]);
+    expect(featureTipRoute("scanBarcode")).toEqual(["Scan", undefined]);
+  });
+  it("opens import and the plan in the Plan tab, pantry and cookbooks in Profile", () => {
+    expect(featureTipRoute("importRecipe")).toEqual([
+      "Main",
+      { screen: "MealPlanTab", params: { screen: "RecipeImport" } },
+    ]);
+    expect(featureTipRoute("mealPlan")).toEqual([
+      "Main",
+      { screen: "MealPlanTab", params: { screen: "MealPlanHome" } },
+    ]);
+    expect(featureTipRoute("pantry")).toEqual([
+      "Main",
+      { screen: "ProfileTab", params: { screen: "Pantry" } },
+    ]);
+    expect(featureTipRoute("cookbooks")).toEqual([
+      "Main",
+      { screen: "ProfileTab", params: { screen: "CookbookList" } },
+    ]);
+    expect(featureTipRoute("voiceRecipe")).toEqual(["RecipeChat", {}]);
+  });
+});
+
+describe("shouldShowYourWeek", () => {
+  const item = (weekEnd: string, seen: boolean) => ({ weekEnd, seen });
+  it("shows an unseen report however old", () => {
+    expect(
+      shouldShowYourWeek(item("2026-10-03", false), new Date(2026, 10, 20)),
+    ).toBe(true);
+  });
+  it("shows a seen report until a week after its Saturday, then hides it", () => {
+    expect(
+      shouldShowYourWeek(item("2026-11-07", true), new Date(2026, 10, 14, 23)),
+    ).toBe(true);
+    expect(
+      shouldShowYourWeek(
+        item("2026-11-07", true),
+        new Date(2026, 10, 15, 0, 1),
+      ),
+    ).toBe(false);
+  });
+  it("hides when there is no report", () => {
+    expect(shouldShowYourWeek(undefined, new Date())).toBe(false);
   });
 });
