@@ -43,6 +43,13 @@ function buildExport() {
     verificationHistory: [],
     recipeGenerationLog: [],
     weeklyReports: { reports: [], settings: null },
+    signInConnections: [],
+    coachWriteCards: [],
+    inspiredSuggestions: [],
+    savedAiAnswers: { coach: [], mealSuggestions: [], scanSuggestions: [] },
+    cookbookCoverCandidates: [],
+    usageLogs: { recipeFinderClaims: [], cookbookCoverGenerations: [] },
+    notificationsSent: [],
   };
 }
 

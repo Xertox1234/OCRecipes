@@ -55,7 +55,7 @@ describe("export coverage of user-linked tables", () => {
       "../export"
     );
 
-    const userLinked = Object.values(schema)
+    const userLinked = (Object.values(schema) as unknown[])
       .filter((t): t is InstanceType<typeof PgTable> => t instanceof PgTable)
       .map((t) => getTableConfig(t))
       .filter((cfg) =>
