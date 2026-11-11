@@ -50,6 +50,7 @@ import * as tastePicksStorage from "./taste-picks";
 import * as recipeTriesStorage from "./recipe-tries";
 import * as exportStorage from "./export";
 import * as inspired from "./inspired-suggestions";
+import * as aiSharing from "./ai-sharing";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -142,6 +143,10 @@ export const storage = {
   updateUserProfile: users.updateUserProfile,
   saveReminderMutes: users.saveReminderMutes,
   upsertProfileWithOnboarding: users.upsertProfileWithOnboarding,
+  withdrawHealthConsent: users.withdrawHealthConsent,
+  getAiSharingStatus: aiSharing.getAiSharingStatus,
+  isAiSharingAllowed: aiSharing.isAiSharingAllowed,
+  setAiSharing: aiSharing.setAiSharing,
   updateUserGoalsAndProfile: users.updateUserGoalsAndProfile,
   getSubscriptionStatus: users.getSubscriptionStatus,
   getEffectiveTierForUser: users.getEffectiveTierForUser,

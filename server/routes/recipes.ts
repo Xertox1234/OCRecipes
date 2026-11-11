@@ -13,6 +13,7 @@ import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { recipeGenerationRateLimit, crudRateLimit } from "./_rate-limiters";
 import {
   formatZodError,
+  checkAiSharing,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
@@ -120,6 +121,8 @@ export function register(app: Express): void {
     recipeGenerationRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         // Check premium status
         const features = await checkPremiumFeature(
           req,

@@ -87,7 +87,7 @@ describe("OnboardingProvider default data", () => {
   it("starts at step 0 with the provider's totalSteps", () => {
     const { result } = renderOnboarding();
     expect(result.current.currentStep).toBe(0);
-    expect(result.current.totalSteps).toBe(8);
+    expect(result.current.totalSteps).toBe(9);
   });
 });
 
@@ -194,9 +194,14 @@ describe("OnboardingProvider step navigation", () => {
   it("prevStep decrements within bounds and does not go below 0", () => {
     const { result } = renderOnboarding();
 
+    // With the health-data consent every screen is walked in order.
     act(() => {
       result.current.nextStep();
-      result.current.nextStep();
+    });
+    act(() => {
+      result.current.answerConsent(true);
+    });
+    act(() => {
       result.current.nextStep();
     });
     expect(result.current.currentStep).toBe(3);
@@ -281,5 +286,66 @@ describe("OnboardingProvider completeOnboarding", () => {
     });
 
     expect(mockCheckAuth).toHaveBeenCalledOnce();
+  });
+
+  // Privacy audit H2 — "no consent, no health data".
+  describe("answerConsent", () => {
+    it("agreeing records the consent and moves on to the first health question", () => {
+      const { result } = renderHook(() => useOnboarding(), {
+        wrapper: createWrapper(),
+      });
+      act(() => result.current.nextStep()); // Welcome → AI question
+      act(() => result.current.nextStep()); // AI question → consent
+
+      act(() => result.current.answerConsent(true));
+
+      expect(result.current.data.healthDataConsent).toBe(true);
+      expect(result.current.currentStep).toBe(3); // Allergies
+    });
+
+    it("declining skips the health questions, in both directions", () => {
+      const { result } = renderHook(() => useOnboarding(), {
+        wrapper: createWrapper(),
+      });
+      act(() => result.current.nextStep());
+      act(() => result.current.nextStep());
+
+      act(() => result.current.answerConsent(false));
+      expect(result.current.data.healthDataConsent).toBe(false);
+      expect(result.current.currentStep).toBe(5); // DietType
+
+      act(() => result.current.nextStep());
+      expect(result.current.currentStep).toBe(7); // Preferences, not Goals
+
+      act(() => result.current.prevStep());
+      act(() => result.current.prevStep());
+      expect(result.current.currentStep).toBe(2); // back on the consent screen
+    });
+
+    it("declining after answering drops the health answers already given", () => {
+      const { result } = renderHook(() => useOnboarding(), {
+        wrapper: createWrapper(),
+      });
+      act(() => result.current.nextStep());
+      act(() => result.current.answerConsent(true));
+      act(() =>
+        result.current.updateData({
+          allergies: [{ name: "peanuts", severity: "severe" }],
+          healthConditions: ["type 2 diabetes"],
+          primaryGoal: "lose_weight",
+          activityLevel: "moderate",
+          dietType: "vegan",
+        }),
+      );
+      act(() => result.current.prevStep()); // Allergies → consent
+
+      act(() => result.current.answerConsent(false));
+
+      expect(result.current.data.allergies).toEqual([]);
+      expect(result.current.data.healthConditions).toEqual([]);
+      expect(result.current.data.primaryGoal).toBeNull();
+      expect(result.current.data.activityLevel).toBeNull();
+      expect(result.current.data.dietType).toBe("vegan");
+    });
   });
 });

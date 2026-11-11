@@ -28,8 +28,16 @@ import {
   transactions,
   barcodeVerifications,
   verificationHistory,
+  coachResponseCache,
+  mealSuggestionCache,
 } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
+import {
+  HEALTH_CONSENT_VERSION,
+  PROFILE_HEALTH_FIELDS,
+  USER_HEALTH_FIELDS,
+  hasHealthData,
+} from "@shared/lib/health-consent";
 import {
   isUniqueViolation,
   uniqueViolationConstraint,
@@ -56,6 +64,7 @@ const {
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,
+  withdrawHealthConsent,
   getSubscriptionStatus,
   getEffectiveTierForUser,
   updateSubscription,
@@ -684,6 +693,227 @@ describe("users storage", () => {
       });
 
       expect(updated!.healthDataConsentAt).toBeNull();
+    });
+  });
+
+  describe("health-data consent version and withdrawal", () => {
+    it("records the policy version with the consent", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+
+      const updated = await updateUserProfile(testUser.id, {}, true);
+
+      expect(updated!.healthDataConsentVersion).toBe(HEALTH_CONSENT_VERSION);
+    });
+
+    it("records the policy version when onboarding stamps the consent", async () => {
+      const profile = await upsertProfileWithOnboarding(testUser.id, {}, true);
+
+      expect(profile.healthDataConsentAt).toBeInstanceOf(Date);
+      expect(profile.healthDataConsentVersion).toBe(HEALTH_CONSENT_VERSION);
+    });
+
+    it("withdrawal clears every health field, the consent and the body metrics", async () => {
+      await createTestUserProfile(tx, testUser.id, {
+        allergies: [{ name: "peanuts", severity: "severe" }],
+        healthConditions: ["type 2 diabetes"],
+        primaryGoal: "lose_weight",
+        activityLevel: "moderate",
+        glp1Mode: true,
+        glp1Medication: "semaglutide",
+        glp1StartDate: new Date("2026-01-01T00:00:00Z"),
+        moodScore: 0.6,
+        moodUpdatedAt: new Date("2026-11-01T00:00:00Z"),
+        dietType: "vegan",
+        foodDislikes: ["olives"],
+      });
+      await updateUserProfile(testUser.id, {}, true);
+      await updateUser(testUser.id, {
+        weight: "80.00",
+        height: "180.00",
+        age: 35,
+        gender: "male",
+        dailyCalorieGoal: 2100,
+      });
+
+      const profile = await withdrawHealthConsent(testUser.id);
+
+      expect(profile).toBeDefined();
+      expect(profile!.allergies).toEqual([]);
+      expect(profile!.healthConditions).toEqual([]);
+      expect(profile!.primaryGoal).toBeNull();
+      expect(profile!.activityLevel).toBeNull();
+      expect(profile!.glp1Mode).toBe(false);
+      expect(profile!.glp1Medication).toBeNull();
+      expect(profile!.glp1StartDate).toBeNull();
+      expect(profile!.moodScore).toBe(0);
+      expect(profile!.moodUpdatedAt).toBeNull();
+      expect(profile!.healthDataConsentAt).toBeNull();
+      expect(profile!.healthDataConsentVersion).toBeNull();
+      expect(profile!.healthDataConsentWithdrawnAt).toBeInstanceOf(Date);
+      // Preferences are not health data and stay.
+      expect(profile!.dietType).toBe("vegan");
+      expect(profile!.foodDislikes).toEqual(["olives"]);
+
+      const user = await getUser(testUser.id);
+      expect(user!.weight).toBeNull();
+      expect(user!.height).toBeNull();
+      expect(user!.age).toBeNull();
+      expect(user!.gender).toBeNull();
+      expect(user!.goalWeight).toBeNull();
+      // A calorie target is a number the user chose, not a body metric.
+      expect(user!.dailyCalorieGoal).toBe(2100);
+    });
+
+    it("a consent given after a withdrawal is stamped afresh", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+      await updateUserProfile(testUser.id, {}, true);
+      await withdrawHealthConsent(testUser.id);
+
+      const again = await updateUserProfile(testUser.id, {}, true);
+
+      expect(again!.healthDataConsentAt).toBeInstanceOf(Date);
+      expect(again!.healthDataConsentVersion).toBe(HEALTH_CONSENT_VERSION);
+      expect(again!.healthDataConsentWithdrawnAt).toBeInstanceOf(Date);
+    });
+
+    it("withdrawal touches only the caller's own rows", async () => {
+      const other = await createTestUser(tx);
+      await createTestUserProfile(tx, other.id, {
+        allergies: [{ name: "milk", severity: "mild" }],
+      });
+      await updateUserProfile(other.id, {}, true);
+      await createTestUserProfile(tx, testUser.id, {});
+
+      await withdrawHealthConsent(testUser.id);
+
+      const untouched = await getUserProfile(other.id);
+      expect(untouched!.allergies).toEqual([
+        { name: "milk", severity: "mild" },
+      ]);
+      expect(untouched!.healthDataConsentAt).toBeInstanceOf(Date);
+    });
+
+    it("returns undefined when the user has no profile", async () => {
+      expect(await withdrawHealthConsent(testUser.id)).toBeUndefined();
+    });
+
+    // The shared lists are the single source: a field added there must be
+    // cleared here, or it would be gated on save but survive a withdrawal.
+    it("clears every field in the shared health-field lists", async () => {
+      await createTestUserProfile(tx, testUser.id, {
+        allergies: [{ name: "peanuts", severity: "severe" }],
+        healthConditions: ["type 2 diabetes"],
+        primaryGoal: "lose_weight",
+        activityLevel: "moderate",
+        glp1Mode: true,
+        glp1Medication: "semaglutide",
+        glp1StartDate: new Date("2026-01-01T00:00:00Z"),
+      });
+      await tx
+        .update(users)
+        .set({
+          weight: "80.00",
+          height: "180.00",
+          age: 35,
+          gender: "male",
+          goalWeight: "75.00",
+        })
+        .where(eq(users.id, testUser.id));
+
+      const profile = await withdrawHealthConsent(testUser.id);
+      const user = await getUser(testUser.id);
+
+      for (const field of PROFILE_HEALTH_FIELDS) {
+        expect(hasHealthData({ [field]: profile![field] }), field).toBe(false);
+      }
+      for (const field of USER_HEALTH_FIELDS) {
+        expect(user![field], field).toBeNull();
+      }
+    });
+
+    it("keeps an append-only history of consents and withdrawals", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+
+      const granted = await updateUserProfile(testUser.id, {}, true);
+      expect(granted!.healthDataConsentHistory).toEqual([
+        {
+          event: "granted",
+          at: expect.any(String),
+          version: HEALTH_CONSENT_VERSION,
+        },
+      ]);
+
+      // A repeat consent while one is on record adds nothing.
+      const again = await updateUserProfile(testUser.id, {}, true);
+      expect(again!.healthDataConsentHistory).toHaveLength(1);
+
+      const withdrawn = await withdrawHealthConsent(testUser.id);
+      expect(withdrawn!.healthDataConsentHistory.map((e) => e.event)).toEqual([
+        "granted",
+        "withdrawn",
+      ]);
+
+      await updateUserProfile(testUser.id, {}, true);
+      const second = await withdrawHealthConsent(testUser.id);
+      expect(second!.healthDataConsentHistory.map((e) => e.event)).toEqual([
+        "granted",
+        "withdrawn",
+        "granted",
+        "withdrawn",
+      ]);
+    });
+
+    it("onboarding consent starts the history, and a replay adds nothing", async () => {
+      const first = await upsertProfileWithOnboarding(testUser.id, {}, true);
+      expect(first.healthDataConsentHistory.map((e) => e.event)).toEqual([
+        "granted",
+      ]);
+
+      const replay = await upsertProfileWithOnboarding(testUser.id, {}, true);
+      expect(replay.healthDataConsentHistory).toHaveLength(1);
+    });
+
+    it("never pairs today's policy version with a consent given earlier", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+      const earlier = new Date("2026-06-01T00:00:00Z");
+      await tx
+        .update(userProfiles)
+        .set({ healthDataConsentAt: earlier, healthDataConsentVersion: null })
+        .where(eq(userProfiles.userId, testUser.id));
+
+      const result = await updateUserProfile(testUser.id, {}, true);
+
+      expect(result!.healthDataConsentAt?.getTime()).toBe(earlier.getTime());
+      expect(result!.healthDataConsentVersion).toBeNull();
+      expect(result!.healthDataConsentHistory).toEqual([]);
+    });
+
+    it("withdrawal deletes the caller's cached AI answers, and only theirs", async () => {
+      const other = await createTestUser(tx);
+      await createTestUserProfile(tx, testUser.id, {});
+      const expiresAt = new Date(Date.now() + 60_000);
+      for (const userId of [testUser.id, other.id]) {
+        await tx.insert(coachResponseCache).values({
+          userId,
+          questionHash: `hash-${userId}`,
+          question: "what can I eat?",
+          response: "avoid peanuts",
+          expiresAt,
+        });
+        await tx.insert(mealSuggestionCache).values({
+          userId,
+          cacheKey: `key-${userId}`,
+          suggestions: [],
+          expiresAt,
+        });
+      }
+
+      await withdrawHealthConsent(testUser.id);
+
+      const coachRows = await tx.select().from(coachResponseCache);
+      const mealRows = await tx.select().from(mealSuggestionCache);
+      expect(coachRows.map((r) => r.userId)).toEqual([other.id]);
+      expect(mealRows.map((r) => r.userId)).toEqual([other.id]);
     });
   });
 
@@ -2181,6 +2411,44 @@ describe("users storage", () => {
         });
       }
     }
+
+    // Privacy audit 2026-11-10 L1: rows written before the route stopped
+    // recording the scanner still carry the id, on a table with no FK to it.
+    it("removes the deleted user's id from front-label data it scanned, and leaves others'", async () => {
+      const [leaving, staying] = [
+        await createTestUser(tx),
+        await createTestUser(tx),
+      ];
+      const label = (userId: string) => ({
+        brand: "Brand",
+        productName: "Product",
+        netWeight: "100g",
+        claims: ["organic"],
+        scannedByUserId: userId,
+        scannedAt: "2026-01-01T00:00:00.000Z",
+      });
+      const [mine, theirs] = [newBarcode(), newBarcode()];
+      await tx.insert(barcodeVerifications).values([
+        { barcode: mine, frontLabelData: label(leaving.id) },
+        { barcode: theirs, frontLabelData: label(staying.id) },
+      ]);
+
+      expect(await deleteUser(leaving.id)).toBe(true);
+
+      const rows = await tx
+        .select()
+        .from(barcodeVerifications)
+        .where(inArray(barcodeVerifications.barcode, [mine, theirs]));
+      const byBarcode = new Map(rows.map((r) => [r.barcode, r.frontLabelData]));
+      expect(byBarcode.get(mine)).toEqual({
+        brand: "Brand",
+        productName: "Product",
+        netWeight: "100g",
+        claims: ["organic"],
+        scannedAt: "2026-01-01T00:00:00.000Z",
+      });
+      expect(byBarcode.get(theirs)).toEqual(label(staying.id));
+    });
 
     it("drops the deleted voter from the count and demotes the level when consensus is lost", async () => {
       const [a, b, c] = [

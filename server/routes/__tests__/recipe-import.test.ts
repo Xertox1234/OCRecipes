@@ -24,6 +24,7 @@ import {
   parseRecipeFromLdJson,
 } from "../../services/recipe-import";
 import { generateRecipeImage } from "../../services/recipe-generation";
+import { rehostRecipeImage } from "../../services/recipe-image-rehost";
 import { storage } from "../../storage";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { createMockMealPlanRecipe } from "../../__tests__/factories";
@@ -35,6 +36,10 @@ vi.mock("../../services/recipe-import", () => ({
 
 vi.mock("../../services/recipe-generation", () => ({
   generateRecipeImage: vi.fn(),
+}));
+
+vi.mock("../../services/recipe-image-rehost", () => ({
+  rehostRecipeImage: vi.fn(),
 }));
 
 vi.mock("../../middleware/auth");
@@ -334,7 +339,62 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
     });
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
+    vi.mocked(rehostRecipeImage).mockImplementation(async (url) => url ?? null);
     app = createApp();
+  });
+
+  // Privacy audit M1: the saved recipe's photo is our copy, never the source
+  // site's URL, so the phone never loads it from that site.
+  it("saves our copy of the source photo, not the source URL", async () => {
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      success: true,
+      data: buildImportedData({ imageUrl: "https://example.com/img.jpg" }),
+    });
+    vi.mocked(rehostRecipeImage).mockResolvedValue(
+      "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg",
+    );
+    vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+      createMockMealPlanRecipe({
+        id: 1,
+        imageUrl: "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg",
+      }),
+    );
+
+    await request(app)
+      .post("/api/meal-plan/recipes/import-url")
+      .set("Authorization", "Bearer token")
+      .send({ url: "https://example.com/recipe" });
+
+    expect(rehostRecipeImage).toHaveBeenCalledWith(
+      "https://example.com/img.jpg",
+    );
+    expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageUrl: "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("saves no photo when the copy fails, never the source URL", async () => {
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      success: true,
+      data: buildImportedData({ imageUrl: "https://example.com/img.jpg" }),
+    });
+    vi.mocked(rehostRecipeImage).mockResolvedValue(null);
+    vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+      createMockMealPlanRecipe({ id: 1, imageUrl: null }),
+    );
+
+    await request(app)
+      .post("/api/meal-plan/recipes/import-url")
+      .set("Authorization", "Bearer token")
+      .send({ url: "https://example.com/recipe" });
+
+    expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+      expect.objectContaining({ imageUrl: null }),
+      expect.anything(),
+    );
   });
 
   it("returns 403 for free tier — must NOT call the importer", async () => {

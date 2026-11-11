@@ -24,6 +24,7 @@ import { mealPlanRateLimit, recipeGenerationRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
   formatZodError,
+  checkAiSharing,
   handleRouteError,
   parsePositiveIntParam,
 } from "./_helpers";
@@ -57,6 +58,8 @@ export function register(app: Express): void {
     recipeGenerationRateLimit, // 1 search + 1 AI call per request
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const features = await checkPremiumFeature(
           req,
           res,
@@ -149,6 +152,8 @@ export function register(app: Express): void {
     recipeGenerationRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(

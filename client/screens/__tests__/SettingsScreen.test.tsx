@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import SettingsScreen from "../SettingsScreen";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
+import { HEALTH_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { ConfirmOptions } from "@/components/ConfirmationModal";
 
@@ -107,13 +108,49 @@ vi.mock("@/context/AuthContext", () => ({
     deleteAccount: mockDeleteAccount,
     changeEmail: mockChangeEmail,
     updateUser: vi.fn().mockResolvedValue(undefined),
+    checkAuth: mockCheckAuth,
     user: { id: 1, username: "testuser", measurementUnit: "metric" },
   }),
 }));
 
+vi.mock("@/hooks/useHealthConsent", () => ({
+  useHealthConsent: () => ({
+    consented: healthConsent.given,
+    grant: vi.fn(),
+    withdraw: mockWithdrawConsent,
+  }),
+}));
+
+vi.mock("@/hooks/useAiSharing", () => ({
+  useAiSharing: () => ({
+    status: aiSharing.status,
+    answer: mockAnswerAiSharing,
+  }),
+}));
+
+vi.mock("@/navigation/openAiSharing", () => ({
+  openAiSharing: mockOpenAiSharing,
+}));
+
+const { aiSharing, mockAnswerAiSharing, mockOpenAiSharing } = vi.hoisted(
+  () => ({
+    aiSharing: { status: { allowed: true, answered: true } },
+    mockAnswerAiSharing: vi.fn(),
+    mockOpenAiSharing: vi.fn(),
+  }),
+);
+
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({ isPremium: false }),
 }));
+
+const { healthConsent, mockWithdrawConsent, mockCheckAuth } = vi.hoisted(
+  () => ({
+    healthConsent: { given: false },
+    mockWithdrawConsent: vi.fn(),
+    mockCheckAuth: vi.fn(),
+  }),
+);
 
 const { mockToast, mockClearImportBrowserData } = vi.hoisted(() => ({
   mockToast: {
@@ -419,6 +456,130 @@ describe("SettingsScreen — two-step verification on password proofs", () => {
     expect(mockDeleteAccount).toHaveBeenCalledWith(
       { password: "pw" },
       { code: "123456" },
+    );
+  });
+});
+
+// Privacy audit H2 — "no consent, no health data".
+describe("SettingsScreen — withdraw health-data consent", () => {
+  beforeEach(() => {
+    healthConsent.given = true;
+    mockWithdrawConsent.mockReset().mockResolvedValue(undefined);
+    mockCheckAuth.mockReset().mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    healthConsent.given = false;
+  });
+
+  it("hides the row until a consent is on record", () => {
+    healthConsent.given = false;
+    renderComponent(<SettingsScreen />);
+
+    expect(
+      screen.queryByRole("button", { name: /Withdraw health-data consent/ }),
+    ).toBeNull();
+  });
+
+  it("asks first, then withdraws, confirms it and refreshes the account", async () => {
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Withdraw health-data consent/ }),
+    );
+
+    expect(mockWithdrawConsent).not.toHaveBeenCalled();
+    const options = mockConfirm.mock.calls[0]?.[0];
+    expect(options).toEqual(
+      expect.objectContaining({
+        title: "Withdraw health-data consent",
+        destructive: true,
+      }),
+    );
+    options?.onConfirm();
+
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledTimes(1));
+    expect(mockWithdrawConsent).toHaveBeenCalledTimes(1);
+    expect(mockCheckAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("says so when the withdrawal fails", async () => {
+    mockWithdrawConsent.mockRejectedValue(new Error("offline"));
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Withdraw health-data consent/ }),
+    );
+    mockConfirm.mock.calls[0]?.[0]?.onConfirm();
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledTimes(1));
+    expect(mockToast.success).not.toHaveBeenCalled();
+    expect(mockCheckAuth).not.toHaveBeenCalled();
+  });
+});
+
+// Privacy audit H3 — the AI-sharing permission can be changed any time.
+describe("SettingsScreen — AI features", () => {
+  beforeEach(() => {
+    aiSharing.status = { allowed: true, answered: true };
+    mockAnswerAiSharing.mockReset().mockResolvedValue(undefined);
+    mockOpenAiSharing.mockReset();
+  });
+
+  it("asks first, then turns AI features off", async () => {
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: /AI features/ }));
+
+    expect(mockAnswerAiSharing).not.toHaveBeenCalled();
+    const options = mockConfirm.mock.calls[0]?.[0];
+    expect(options).toEqual(
+      expect.objectContaining({
+        title: "Turn off AI features",
+        destructive: true,
+      }),
+    );
+    options?.onConfirm();
+
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledTimes(1));
+    expect(mockAnswerAiSharing).toHaveBeenCalledWith(false);
+  });
+
+  it("says so when turning it off fails", async () => {
+    mockAnswerAiSharing.mockRejectedValue(new Error("offline"));
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: /AI features/ }));
+    mockConfirm.mock.calls[0]?.[0]?.onConfirm();
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens the full question, naming the companies, when AI is off", () => {
+    aiSharing.status = { allowed: false, answered: true };
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: /AI features/ }));
+
+    expect(mockOpenAiSharing).toHaveBeenCalledTimes(1);
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockAnswerAiSharing).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsScreen legal links", () => {
+  it("opens the Consumer Health Data Privacy Policy", async () => {
+    const openSpy = vi.spyOn(Linking, "openURL").mockResolvedValue();
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(
+      screen.getByRole("link", { name: "Consumer Health Data Privacy Policy" }),
+    );
+
+    await waitFor(() =>
+      expect(openSpy).toHaveBeenCalledWith(HEALTH_PRIVACY_POLICY_URL),
+    );
+    expect(HEALTH_PRIVACY_POLICY_URL).toBe(
+      "https://ocrecipes.com/health-privacy",
     );
   });
 });

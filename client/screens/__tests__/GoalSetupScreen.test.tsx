@@ -66,6 +66,29 @@ vi.mock("@/context/ToastContext", () => ({
   }),
 }));
 
+// The consent hook and the confirm sheet are collaborators with their own
+// suites; `consent.given` flips the "no consent, no health data" path.
+const { consent, mockGrant, mockConfirm } = vi.hoisted(() => ({
+  consent: { given: true },
+  mockGrant: vi.fn(),
+  mockConfirm: vi.fn(),
+}));
+
+vi.mock("@/hooks/useHealthConsent", () => ({
+  useHealthConsent: () => ({
+    consented: consent.given,
+    grant: mockGrant,
+    withdraw: vi.fn(),
+  }),
+}));
+
+vi.mock("@/components/ConfirmationModal", () => ({
+  useConfirmationModal: () => ({
+    confirm: mockConfirm,
+    ConfirmationModal: () => null,
+  }),
+}));
+
 vi.mock("@/hooks/useAccessibility", () => ({
   useAccessibility: () => ({ reducedMotion: false }),
 }));
@@ -338,6 +361,80 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     expect(mockNotification).toHaveBeenCalledWith(
       Haptics.NotificationFeedbackType.Error,
     );
+  });
+
+  // Privacy audit H2: body measurements are health data.
+  describe("without the health-data consent", () => {
+    beforeEach(() => {
+      consent.given = false;
+      mockGrant.mockReset().mockResolvedValue(undefined);
+      mockConfirm.mockReset();
+      mockApiRequest.mockClear();
+    });
+    afterEach(() => {
+      consent.given = true;
+    });
+
+    function fillAndPressCalculate() {
+      renderComponent(<GoalSetupScreen />);
+      fireEvent.change(screen.getByLabelText("Age, years"), {
+        target: { value: "30" },
+      });
+      fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
+        target: { value: "70" },
+      });
+      fireEvent.change(screen.getByLabelText("Height, centimetres"), {
+        target: { value: "170" },
+      });
+      fireEvent.click(screen.getByLabelText("Male"));
+      fireEvent.click(screen.getByLabelText("Sedentary"));
+      fireEvent.click(screen.getByLabelText("Lose Weight"));
+      fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    }
+
+    it("Calculate asks for the consent and sends nothing until it is given", () => {
+      fillAndPressCalculate();
+
+      expect(mockConfirm).toHaveBeenCalledTimes(1);
+      expect(mockConfirm.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ confirmLabel: "Agree" }),
+      );
+      expect(mockGrant).not.toHaveBeenCalled();
+      expect(mockApiRequest).not.toHaveBeenCalledWith(
+        "POST",
+        "/api/goals/calculate",
+        expect.anything(),
+      );
+    });
+
+    it("agreeing records the consent, then calculates", async () => {
+      fillAndPressCalculate();
+
+      mockConfirm.mock.calls[0][0].onConfirm();
+
+      await waitFor(() => {
+        expect(mockApiRequest).toHaveBeenCalledWith(
+          "POST",
+          "/api/goals/calculate",
+          expect.objectContaining({ age: 30 }),
+        );
+      });
+      expect(mockGrant).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not calculate when recording the consent fails", async () => {
+      mockGrant.mockRejectedValue(new Error("offline"));
+      fillAndPressCalculate();
+
+      mockConfirm.mock.calls[0][0].onConfirm();
+
+      await waitFor(() => expect(mockGrant).toHaveBeenCalledTimes(1));
+      expect(mockApiRequest).not.toHaveBeenCalledWith(
+        "POST",
+        "/api/goals/calculate",
+        expect.anything(),
+      );
+    });
   });
 
   it("sends a comma-decimal weight as the number typed", async () => {

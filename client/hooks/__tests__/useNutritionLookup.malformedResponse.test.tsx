@@ -69,7 +69,7 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
     vi.unstubAllGlobals();
   });
 
-  it("logs a validation error, falls back to OFF for values, and does NOT claim we couldn't reach the service", async () => {
+  it("logs a validation error, fails safe without contacting OFF, and does NOT claim we couldn't reach the service", async () => {
     const errorSpy = vi
       .spyOn(logger, "error")
       .mockImplementation(() => undefined);
@@ -77,27 +77,10 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
       .spyOn(logger, "warn")
       .mockImplementation(() => undefined);
 
-    mockServerFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => MALFORMED_SERVER_BODY,
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            brands: "GenericBrand",
-            nutriments: {
-              "energy-kcal_100g": 400,
-              proteins_100g: 5,
-              carbohydrates_100g: 60,
-              fat_100g: 10,
-            },
-          },
-        }),
-      });
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => MALFORMED_SERVER_BODY,
+    });
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -107,9 +90,9 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // The OFF fallback actually ran and produced real values — this is not a
-    // total outage.
-    expect(result.current.nutrition?.productName).toBe("Fallback Snack");
+    // Privacy audit M1: no direct-OFF fallback — only our server is called.
+    expect(mockServerFetch).toHaveBeenCalledTimes(1);
+    expect(result.current.error).toBe("Failed to fetch product data");
 
     // The allergen fail-safe flag is still shown (behavior preserved)...
     expect(result.current.flags).toHaveLength(1);
@@ -147,23 +130,9 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
       .spyOn(logger, "warn")
       .mockImplementation(() => undefined);
 
-    mockServerFetch
-      .mockRejectedValueOnce(new TypeError("Network request failed"))
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            nutriments: {
-              "energy-kcal_100g": 400,
-              proteins_100g: 5,
-              carbohydrates_100g: 60,
-              fat_100g: 10,
-            },
-          },
-        }),
-      });
+    mockServerFetch.mockRejectedValueOnce(
+      new TypeError("Network request failed"),
+    );
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -184,49 +153,6 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
     warnSpy.mockRestore();
   });
 
-  it("still fails safe when the OFF fallback ALSO fails after a malformed 200", async () => {
-    const errorSpy = vi
-      .spyOn(logger, "error")
-      .mockImplementation(() => undefined);
-    const warnSpy = vi
-      .spyOn(logger, "warn")
-      .mockImplementation(() => undefined);
-
-    mockServerFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => MALFORMED_SERVER_BODY,
-      })
-      .mockRejectedValueOnce(new Error("OFF unreachable"));
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "000000000006" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    expect(result.current.error).toBe("Failed to fetch product data");
-    expect(result.current.flags).toHaveLength(1);
-    const [flag] = result.current.flags;
-    expect(flag).toEqual(
-      expect.objectContaining({
-        id: "allergen-unavailable",
-        kind: "allergen-unavailable",
-        severity: "warn",
-        tier: "safety",
-      }),
-    );
-    expect(flag.detail).not.toMatch(/couldn't reach our service/i);
-
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy).not.toHaveBeenCalled();
-
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
-  });
-
   // Pins the `.catch(() => undefined)` guard around `serverRes.json()`
   // itself: a 200 with a body that isn't even valid JSON is also a
   // malformed response, and must land in the same `safeParse` failure path
@@ -240,29 +166,12 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
       .spyOn(logger, "warn")
       .mockImplementation(() => undefined);
 
-    mockServerFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => {
-          throw new SyntaxError("Unexpected token < in JSON at position 0");
-        },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            brands: "GenericBrand",
-            nutriments: {
-              "energy-kcal_100g": 400,
-              proteins_100g: 5,
-              carbohydrates_100g: 60,
-              fat_100g: 10,
-            },
-          },
-        }),
-      });
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON at position 0");
+      },
+    });
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -272,7 +181,8 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    expect(result.current.nutrition?.productName).toBe("Fallback Snack");
+    expect(result.current.error).toBe("Failed to fetch product data");
+    expect(mockServerFetch).toHaveBeenCalledTimes(1);
     const [flag] = result.current.flags;
     expect(flag.detail).not.toMatch(/couldn't reach our service/i);
     expect(errorSpy).toHaveBeenCalledTimes(1);
@@ -284,9 +194,9 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
 
   // Characterization test added for P1-2026-09-23 (atomic lookup state
   // refactor): the 404 branch's OWN try/catch swallows an unparseable body
-  // silently — distinct from the schema-validation-failure path above (which
+  // silently — any 404 from our server means "not found" (privacy audit M1) — distinct from the schema-validation-failure path above (which
   // DOES call logger.error) and from the network-failure path (logger.warn).
-  it("falls through to OFF when a 404 body is unparseable, with no logger call at all", async () => {
+  it("treats a 404 with an unparseable body as not found, with no logger call and no OFF call", async () => {
     const errorSpy = vi
       .spyOn(logger, "error")
       .mockImplementation(() => undefined);
@@ -294,30 +204,13 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
       .spyOn(logger, "warn")
       .mockImplementation(() => undefined);
 
-    mockServerFetch
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-        json: async () => {
-          throw new SyntaxError("Unexpected token < in JSON at position 0");
-        },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            brands: "GenericBrand",
-            nutriments: {
-              "energy-kcal_100g": 400,
-              proteins_100g: 5,
-              carbohydrates_100g: 60,
-              fat_100g: 10,
-            },
-          },
-        }),
-      });
+    mockServerFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON at position 0");
+      },
+    });
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -327,7 +220,8 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    expect(result.current.nutrition?.productName).toBe("Fallback Snack");
+    expect(result.current.error).toBe("Product not found in database");
+    expect(mockServerFetch).toHaveBeenCalledTimes(1);
     expect(errorSpy).not.toHaveBeenCalled();
     expect(warnSpy).not.toHaveBeenCalled();
 

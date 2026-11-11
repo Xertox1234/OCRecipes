@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
+import { AI_RECIPIENT_NAMES } from "@shared/lib/ai-sharing";
 
 /**
  * Privacy Policy URL. Overridable at build time via `EXPO_PUBLIC_PRIVACY_POLICY_URL`
@@ -28,7 +29,7 @@ const DATA_CATEGORIES = [
     icon: "activity" as const,
     title: "Health conditions & medications",
     description:
-      "Including any GLP-1 use, to tailor nutrition guidance and avoid contraindicated suggestions.",
+      "Including any GLP-1 use, to tailor nutrition guidance to you.",
   },
   {
     icon: "user" as const,
@@ -47,23 +48,20 @@ const DATA_CATEGORIES = [
 export default function HealthDataConsentScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { updateData, nextStep, prevStep } = useOnboarding();
+  const { answerConsent, prevStep } = useOnboarding();
 
   const handleAgree = () => {
     // Record the user's intent locally. The authoritative consent timestamp is
     // stamped server-side from `new Date()` when the profile is saved at the
     // end of onboarding — clients never supply or backdate `healthDataConsentAt`.
-    updateData({ healthDataConsent: true });
-    nextStep();
+    answerConsent(true);
   };
 
   const handleSkip = () => {
-    // Skip the consent gate but stay in onboarding. The intent flag stays
-    // `false`; the server will not record `healthDataConsentAt`. Users can
-    // still fill in (or skip) the health screens that follow and revisit
-    // consent later from Profile.
-    updateData({ healthDataConsent: false });
-    nextStep();
+    // No consent, no health data: the health questions are skipped and the
+    // server refuses health fields without the consent. The user can agree
+    // later, when they add health details in Profile.
+    answerConsent(false);
   };
 
   const handleOpenPrivacy = () => {
@@ -87,7 +85,7 @@ export default function HealthDataConsentScreen() {
             <Feather name="shield" size={40} color={theme.success} />
           </View>
           <ThemedText type="h3" style={styles.title}>
-            Your Health Data Stays Yours
+            Your Health Details, Your Choice
           </ThemedText>
           <ThemedText
             type="body"
@@ -114,9 +112,12 @@ export default function HealthDataConsentScreen() {
             type="small"
             style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
           >
-            To personalize nutrition recommendations and AI coaching. Your
-            health data is never sold or shared with advertisers. You can update
-            or delete it any time from your Profile.
+            To personalize nutrition recommendations and AI coaching. With AI
+            features on, the details a feature needs (such as allergies, goals,
+            weight and activity level) go to the AI companies that run it:{" "}
+            {AI_RECIPIENT_NAMES}. Your health data is never sold or shared with
+            advertisers. You can update it in your Profile, or withdraw this
+            consent in Settings, any time.
           </ThemedText>
         </View>
 

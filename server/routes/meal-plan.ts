@@ -16,6 +16,7 @@ import {
 } from "./_rate-limiters";
 import {
   checkAiConfigured,
+  checkAiSharing,
   checkPremiumFeature,
   formatZodError,
   handleRouteError,
@@ -587,6 +588,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         const features = await checkPremiumFeature(
           req,

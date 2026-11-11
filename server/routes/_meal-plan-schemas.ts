@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { isValidCalendarDate } from "../utils/date-validation";
 import { numericStringField, nullableNumericStringField } from "./_schemas";
+import { isOurRecipeImageUrl } from "../services/recipe-image-rehost";
 
 // Zod schemas for meal plan endpoints
 export const createMealPlanRecipeSchema = z.object({
@@ -12,6 +13,9 @@ export const createMealPlanRecipeSchema = z.object({
   servings: z.number().int().min(1).max(50).optional(),
   prepTimeMinutes: z.number().int().min(0).max(1440).optional().nullable(),
   cookTimeMinutes: z.number().int().min(0).max(1440).optional().nullable(),
+  // Privacy audit M1: a recipe photo may only point at our own storage, so the
+  // phone never loads one from another host. Any other URL is stored as null.
+  // The transform sits inside .optional() so an absent key stays absent.
   imageUrl: z
     .string()
     .url()
@@ -20,6 +24,7 @@ export const createMealPlanRecipeSchema = z.object({
       (url) => /^https?:\/\//.test(url),
       "Only http:// or https:// URLs allowed",
     )
+    .transform((url) => (isOurRecipeImageUrl(url) ? url : null))
     .optional()
     .nullable(),
   instructions: z.array(z.string()).max(100).optional(),

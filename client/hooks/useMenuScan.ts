@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { getApiUrl } from "@/lib/query-client";
+import { raiseIfAiSharingRefusal } from "@/lib/ai-sharing-events";
 import { tokenStorage } from "@/lib/token-storage";
 import { createUploadFilePart } from "@/lib/upload-file-part";
 
@@ -47,6 +48,7 @@ export function useMenuScan() {
 
       if (!response.ok) {
         const text = await response.text();
+        raiseIfAiSharingRefusal(text);
         throw new Error(`${response.status}: ${text}`);
       }
 

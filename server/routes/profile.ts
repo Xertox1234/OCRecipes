@@ -1,12 +1,19 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { crudRateLimit } from "./_rate-limiters";
+import {
+  crudRateLimit,
+  ipKeyGenerator,
+  resolveRateLimitMax,
+} from "./_rate-limiters";
 import { userProfileInputSchema } from "./_schemas";
 import { handleRouteError } from "./_helpers";
+import { hasHealthConsent, sendHealthConsentRequired } from "./_health-consent";
+import { hasHealthData } from "@shared/lib/health-consent";
 
 // Fields that affect AI-generated suggestions - if any change, invalidate cache
 const cacheAffectingFields = [
@@ -43,6 +50,14 @@ export function register(app: Express): void {
           ...req.body,
           userId: req.userId,
         });
+
+        if (
+          validated.healthDataConsent !== true &&
+          hasHealthData(validated) &&
+          !(await hasHealthConsent(req.userId))
+        ) {
+          return sendHealthConsentRequired(res);
+        }
 
         // Consent is append-only and server-stamped. The route forwards the
         // client's `healthDataConsent: true` intent as a boolean flag; the
@@ -95,6 +110,14 @@ export function register(app: Express): void {
         // this PUT path even when the flag is true.
         const { healthDataConsent, ...updates } = validated;
 
+        if (
+          healthDataConsent !== true &&
+          hasHealthData(updates) &&
+          !(await hasHealthConsent(req.userId))
+        ) {
+          return sendHealthConsentRequired(res);
+        }
+
         const profile = await storage.updateUserProfile(
           req.userId,
           updates,
@@ -120,6 +143,43 @@ export function register(app: Express): void {
         res.json(profile);
       } catch (error) {
         handleRouteError(res, error, "update dietary profile");
+      }
+    },
+  );
+
+  // Withdraw the health-data consent: clears every health field and the
+  // consent record in one transaction (privacy audit H2).
+  app.post(
+    "/api/user/health-consent/withdraw",
+    requireAuth,
+    // Inlined (not the crudRateLimit const) so CodeQL's js/missing-rate-limiting
+    // query can trace it — see server/routes/photos.ts /api/photos/structure-recipe.
+    // Same behavior as crudRateLimit: 30/min, user-keyed, Railway-aware IP fallback.
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: resolveRateLimitMax(30, process.env),
+      message: {
+        error: "Too many requests. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const profile = await storage.withdrawHealthConsent(req.userId);
+        if (!profile) {
+          return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
+        }
+        // Allergies and goals shaped the cached suggestions.
+        fireAndForget(
+          "suggestion-cache-invalidation",
+          storage.invalidateSuggestionCacheForUser(req.userId),
+        );
+        res.json(profile);
+      } catch (error) {
+        handleRouteError(res, error, "withdraw health-data consent");
       }
     },
   );

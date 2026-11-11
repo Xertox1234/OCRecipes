@@ -204,6 +204,7 @@ vi.mock("@/context/ToastContext", () => ({
 // other two safe-back-navigation call sites never touch the network.
 vi.mock("@/lib/query-client", () => ({
   apiRequest: mockApiRequest,
+  resolveImageUrl: (url: string | null | undefined) => url ?? null,
 }));
 // Wraps the real helper so the key-level assertions below still see the
 // actual invalidations, while the log path's use of the shared helper is

@@ -22,6 +22,11 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { DeleteAccountModal } from "@/components/DeleteAccountModal";
 import { ChangeEmailModal } from "@/components/ChangeEmailModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
+import { useHealthConsent } from "@/hooks/useHealthConsent";
+import { WITHDRAW_HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
+import { AI_SHARING_OFF_PROMPT } from "@shared/lib/ai-sharing";
+import { useAiSharing } from "@/hooks/useAiSharing";
+import { openAiSharing } from "@/navigation/openAiSharing";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -36,7 +41,11 @@ import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
+import {
+  HEALTH_PRIVACY_POLICY_URL,
+  PRIVACY_POLICY_URL,
+  TERMS_URL,
+} from "@/constants/legal";
 import { formatBuildInfo, toCreatedAtIso } from "./settings-version-utils";
 import { clearImportBrowserData } from "../../modules/webview-site-data";
 import type { MeasurementUnit } from "@shared/lib/units";
@@ -73,6 +82,18 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
     label: "Clear site data",
     subtitle: "Sign-ins to recipe sites made in OCRecipes",
   },
+  {
+    id: "aiSharing",
+    icon: "cpu",
+    label: "AI features",
+    subtitle: "Who receives your data, and turning it on or off",
+  },
+  {
+    id: "withdrawHealthConsent",
+    icon: "shield-off",
+    label: "Withdraw health-data consent",
+    subtitle: "Removes your allergies, conditions and body details",
+  },
   { id: "signout", icon: "log-out", label: "Sign Out" },
   {
     id: "deleteAccount",
@@ -88,8 +109,11 @@ export default function SettingsScreen() {
   const toast = useToast();
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { logout, deleteAccount, changeEmail, user, updateUser } =
+  const { logout, deleteAccount, changeEmail, user, updateUser, checkAuth } =
     useAuthContext();
+  const { consented: healthConsented, withdraw: withdrawHealthConsent } =
+    useHealthConsent();
+  const { status: aiSharingStatus, answer: answerAiSharing } = useAiSharing();
   const { isPremium } = usePremiumContext();
   const measurementUnit = useMeasurementUnit();
 
@@ -272,6 +296,44 @@ export default function SettingsScreen() {
             },
           });
           break;
+        case "aiSharing":
+          // Off → the full question, which names the companies. On → confirm,
+          // then stop sending.
+          if (!aiSharingStatus?.allowed) {
+            openAiSharing();
+            break;
+          }
+          confirm({
+            ...AI_SHARING_OFF_PROMPT,
+            onConfirm: () => {
+              answerAiSharing(false).then(
+                () => toast.success("AI features are off"),
+                (err: unknown) => {
+                  logger.error("Turning AI sharing off failed", err);
+                  toast.error("Couldn't turn it off. Please try again.");
+                },
+              );
+            },
+          });
+          break;
+        case "withdrawHealthConsent":
+          confirm({
+            ...WITHDRAW_HEALTH_CONSENT_PROMPT,
+            onConfirm: () => {
+              withdrawHealthConsent().then(
+                () => {
+                  toast.success("Health details removed");
+                  // The cached account still holds the body measurements.
+                  void checkAuth();
+                },
+                (err: unknown) => {
+                  logger.error("Health-data consent withdrawal failed", err);
+                  toast.error("Couldn't withdraw. Please try again.");
+                },
+              );
+            },
+          });
+          break;
         case "signout":
           // In-app ConfirmationModal sheet, NEVER a native Alert.alert: on the
           // CI iOS simulator the UIAlertController renders on screen but is
@@ -310,11 +372,18 @@ export default function SettingsScreen() {
       signInMethodsError,
       refetchSignInMethods,
       toast,
+      withdrawHealthConsent,
+      checkAuth,
+      aiSharingStatus,
+      answerAiSharing,
     ],
   );
 
   const visibleItems = SETTINGS_ITEMS.filter(
-    (item) => !item.iosOnly || Platform.OS === "ios",
+    (item) =>
+      (!item.iosOnly || Platform.OS === "ios") &&
+      // Nothing to withdraw until the consent is on record.
+      (item.id !== "withdrawHealthConsent" || healthConsented),
   );
 
   const openLegalUrl = useCallback(
@@ -512,6 +581,40 @@ export default function SettingsScreen() {
               accessible={false}
             />
             <ThemedText style={styles.settingsLabel}>Privacy Policy</ThemedText>
+          </View>
+          <Feather
+            name="external-link"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <Pressable
+          onPress={() =>
+            openLegalUrl(
+              HEALTH_PRIVACY_POLICY_URL,
+              "our Consumer Health Data Privacy Policy",
+            )
+          }
+          accessibilityLabel="Consumer Health Data Privacy Policy"
+          accessibilityRole="link"
+          accessibilityHint="Opens our Consumer Health Data Privacy Policy in your browser"
+          style={({ pressed }) => [
+            styles.settingsItem,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <View style={styles.settingsItemLeft}>
+            <Feather
+              name="heart"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
+            <ThemedText style={styles.settingsLabel}>
+              Consumer Health Data Privacy Policy
+            </ThemedText>
           </View>
           <Feather
             name="external-link"

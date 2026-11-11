@@ -11,6 +11,7 @@ import { instructionsRateLimit, suggestionsRateLimit } from "./_rate-limiters";
 import {
   parsePositiveIntParam,
   checkAiConfigured,
+  checkAiSharing,
   checkPremiumFeature,
   handleRouteError,
   claimAiCallOrReject,
@@ -84,6 +85,7 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate suggestions
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         if (
           !(await claimAiCallOrReject(
@@ -202,6 +204,7 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate instructions
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         if (
           !(await claimAiCallOrReject(

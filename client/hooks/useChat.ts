@@ -25,6 +25,7 @@ import {
   chatRequestErrorCopy,
   parseErrorCode,
 } from "@/lib/chat-error-copy";
+import { raiseIfAiSharingRequired } from "@/lib/ai-sharing-events";
 import {
   streamSse,
   watchStreamHealth,
@@ -696,6 +697,9 @@ export function useSendMessage(
           );
           // Static copy chosen by code — never the response body.
           const code = parseErrorCode(outcome.responseText);
+          // Sending a message is something the user started (privacy audit
+          // H3): a refusal for AI being off opens the question.
+          raiseIfAiSharingRequired(code);
           setRequestError(chatRequestErrorCopy(code));
           setRequestErrorCode(code ?? null);
         }

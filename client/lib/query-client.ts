@@ -12,9 +12,11 @@ import NetInfo from "@react-native-community/netinfo";
 import { AppState, Platform } from "react-native";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
+import { raiseIfAiSharingRequired } from "./ai-sharing-events";
 import { fetchWithTimeout } from "./fetch-timeout";
-import { reportError } from "./reporter";
+import { queryKeyLabel, reportError } from "./reporter";
 import { logger } from "./logger";
+import { apiReachabilityConfig } from "./network-reachability";
 
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
@@ -236,7 +238,16 @@ export async function apiRequest(
     : await fetchWithTimeout(url, requestInit);
 
   await notifyIfSessionExpired(res, token);
-  await throwIfResNotOk(res);
+  try {
+    await throwIfResNotOk(res);
+  } catch (error) {
+    // A write is something the user started: if it was refused because AI
+    // sharing is off, ask again. Reads load in the background and stay quiet.
+    if (method.toUpperCase() !== "GET" && error instanceof ApiError) {
+      raiseIfAiSharingRequired(error.code);
+    }
+    throw error;
+  }
   return res;
 }
 
@@ -395,7 +406,7 @@ const GLOBAL_QUERY_ERROR_MESSAGE =
 const queryCache = new QueryCache({
   onError: (error, query) => {
     if (!shouldSurfaceQueryError(error, query.meta)) return;
-    reportError(error, `QueryCache.onError [${String(query.queryKey)}]`);
+    reportError(error, `QueryCache.onError [${queryKeyLabel(query.queryKey)}]`);
     queryErrorListeners.forEach((listener) => {
       listener(GLOBAL_QUERY_ERROR_MESSAGE);
     });
@@ -415,7 +426,7 @@ const mutationCache = new MutationCache({
     if (!shouldSurfaceMutationError(error, mutation.meta)) return;
     reportError(
       error,
-      `MutationCache.onError [${String(mutation.options.mutationKey ?? mutation.mutationId)}]`,
+      `MutationCache.onError [${mutation.options.mutationKey ? queryKeyLabel(mutation.options.mutationKey) : mutation.mutationId}]`,
     );
     queryErrorListeners.forEach((listener) => {
       listener(GLOBAL_MUTATION_ERROR_MESSAGE);
@@ -463,6 +474,9 @@ export const queryClient = new QueryClient({
  *    Durable resume across app restarts requires the async-storage persister
  *    (@tanstack/query-async-storage-persister) — deferred as a follow-up.
  */
+// "Online" = our API answers, not Google's generate_204 (network-reachability.ts).
+// Before any subscription: NetInfo applies its configuration to later ones.
+NetInfo.configure(apiReachabilityConfig(getApiUrl()));
 onlineManager.setEventListener((setOnline) =>
   NetInfo.addEventListener((state) => {
     // Mirror useNetworkStatus: only explicit false is "offline"; null is

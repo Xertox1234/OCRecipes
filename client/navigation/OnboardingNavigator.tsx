@@ -6,13 +6,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
 import {
   ONBOARDING_SCREENS,
-  QUESTION_STEP_COUNT,
+  getQuestionStepCount,
   getQuestionStep,
   type OnboardingScreenName,
 } from "@/context/onboarding-steps";
 import { OnboardingProgressBar } from "@/components/OnboardingProgressBar";
 import { useTheme } from "@/hooks/useTheme";
 import WelcomeScreen from "@/screens/onboarding/WelcomeScreen";
+import AiSharingStepScreen from "@/screens/onboarding/AiSharingStepScreen";
 import HealthDataConsentScreen from "@/screens/onboarding/HealthDataConsentScreen";
 import AllergiesScreen from "@/screens/onboarding/AllergiesScreen";
 import HealthConditionsScreen from "@/screens/onboarding/HealthConditionsScreen";
@@ -30,6 +31,7 @@ const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 // ONBOARDING_SCREENS, which the step counts derive from.
 const SCREEN_COMPONENTS: Record<OnboardingScreenName, ComponentType> = {
   Welcome: WelcomeScreen,
+  AiSharing: AiSharingStepScreen,
   HealthDataConsent: HealthDataConsentScreen,
   Allergies: AllergiesScreen,
   HealthConditions: HealthConditionsScreen,
@@ -45,7 +47,8 @@ const SCREENS = ONBOARDING_SCREENS.map((name) => ({
 }));
 
 function OnboardingStack() {
-  const { currentStep } = useOnboarding();
+  const { currentStep, data } = useOnboarding();
+  const consented = data.healthDataConsent;
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const currentScreen = SCREENS[currentStep];
@@ -61,8 +64,8 @@ function OnboardingStack() {
       ]}
     >
       <OnboardingProgressBar
-        currentStep={getQuestionStep(currentStep) - 1}
-        totalSteps={QUESTION_STEP_COUNT}
+        currentStep={getQuestionStep(currentStep, consented) - 1}
+        totalSteps={getQuestionStepCount(consented)}
       />
       <View style={styles.content}>
         <Stack.Navigator

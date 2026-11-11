@@ -21,6 +21,7 @@ import {
   handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   parseTimezone,
 } from "./_helpers";
 
@@ -223,6 +224,7 @@ export function register(app: Express): void {
         };
 
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         const suggestions = await generateMealSuggestions({
           userId: req.userId,

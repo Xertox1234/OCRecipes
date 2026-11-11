@@ -124,59 +124,11 @@ describe("useNutritionLookup — flags (Task 7)", () => {
     expect(result.current.flags).toEqual([]);
   });
 
-  it("sets a couldn't-verify flag (not a client-computed allergen match) on the direct-OFF fallback path", async () => {
-    // First call (server lookup) throws — hook falls through to the direct
-    // Open Food Facts fetch. Second call is the OFF response.
-    mockServerFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            brands: "GenericBrand",
-            nutriments: {
-              "energy-kcal_100g": 400,
-              proteins_100g: 5,
-              carbohydrates_100g: 60,
-              fat_100g: 10,
-            },
-          },
-        }),
-      });
-
-    const { wrapper } = createQueryWrapper();
-    const { result } = renderHook(
-      () => useNutritionLookup({ barcode: "000000000003" }),
-      { wrapper },
-    );
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    // The server-side allergen check never ran (server was unreachable), so
-    // the fallback surfaces an honest "couldn't verify" warn flag instead of
-    // leaving `flags` empty (which would look allergen-clean). Phase 1 still
-    // does not compute client-side allergen MATCHING — assert there is no
-    // "allergen"-kind flag, only the unavailable signal.
-    expect(result.current.flags).toEqual([
-      expect.objectContaining({
-        id: "allergen-unavailable",
-        kind: "allergen-unavailable",
-        severity: "warn",
-        tier: "safety",
-      }),
-    ]);
-    expect(result.current.flags.some((f) => f.kind === "allergen")).toBe(false);
-  });
-
-  it("sets the same couldn't-verify flag on total outage (server AND direct-OFF both fail)", async () => {
-    // First call (server lookup) throws; second call (direct-OFF fallback)
-    // also throws — the outer catch's fail-open [] left the screen looking
-    // allergen-clean. It must be just as fail-safe as the single-failure path.
-    mockServerFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockRejectedValueOnce(new Error("OFF unreachable"));
+  it("sets a couldn't-verify flag when our server is unreachable, and never contacts Open Food Facts", async () => {
+    // Privacy audit M1: no direct-OFF fallback. The server-side allergen
+    // check never ran, so the screen must not look allergen-clean — and
+    // there is no client-computed allergen match either.
+    mockServerFetch.mockRejectedValueOnce(new Error("server unreachable"));
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -195,13 +147,15 @@ describe("useNutritionLookup — flags (Task 7)", () => {
         tier: "safety",
       }),
     ]);
+    expect(result.current.flags.some((f) => f.kind === "allergen")).toBe(false);
+    expect(mockServerFetch).toHaveBeenCalledTimes(1);
   });
 });
 
 // Characterization tests added for P1-2026-09-23 (atomic lookup state
 // refactor): pin exit paths not yet covered by the tests above, against
 // BOTH the pre-refactor and post-refactor hook.
-describe("useNutritionLookup — 5xx vs network-error OFF-fallback distinction (P1-2026-09-23 characterization)", () => {
+describe("useNutritionLookup — 5xx vs network-error outage distinction (P1-2026-09-23 characterization)", () => {
   const mockServerFetch = vi.fn();
 
   beforeEach(() => {
@@ -217,7 +171,7 @@ describe("useNutritionLookup — 5xx vs network-error OFF-fallback distinction (
     vi.unstubAllGlobals();
   });
 
-  it("a 5xx server response falls back to OFF with the 'couldn't reach' copy and calls neither logger.warn nor logger.error", async () => {
+  it("a 5xx server response is an outage with the 'couldn't reach' copy, no OFF call, and calls neither logger.warn nor logger.error", async () => {
     const warnSpy = vi
       .spyOn(logger, "warn")
       .mockImplementation(() => undefined);
@@ -225,28 +179,11 @@ describe("useNutritionLookup — 5xx vs network-error OFF-fallback distinction (
       .spyOn(logger, "error")
       .mockImplementation(() => undefined);
 
-    mockServerFetch
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        json: async () => ({ error: "internal" }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            brands: "GenericBrand",
-            nutriments: {
-              "energy-kcal_100g": 400,
-              proteins_100g: 5,
-              carbohydrates_100g: 60,
-              fat_100g: 10,
-            },
-          },
-        }),
-      });
+    mockServerFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "internal" }),
+    });
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -256,7 +193,9 @@ describe("useNutritionLookup — 5xx vs network-error OFF-fallback distinction (
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    expect(result.current.nutrition?.productName).toBe("Fallback Snack");
+    expect(result.current.nutrition?.productName).toBe("Unknown Product");
+    expect(result.current.error).toBe("Failed to fetch product data");
+    expect(mockServerFetch).toHaveBeenCalledTimes(1);
     expect(result.current.flags).toEqual([
       expect.objectContaining({
         id: "allergen-unavailable",
@@ -275,23 +214,12 @@ describe("useNutritionLookup — 5xx vs network-error OFF-fallback distinction (
 
   // Positive control for the silence assertion above: a REAL connectivity
   // failure must still warn, or the "not called" assertion would be vacuous.
-  it("a genuine network error falls back to OFF AND calls logger.warn", async () => {
+  it("a genuine network error is an outage AND calls logger.warn", async () => {
     const warnSpy = vi
       .spyOn(logger, "warn")
       .mockImplementation(() => undefined);
 
-    mockServerFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          status: 1,
-          product: {
-            product_name: "Fallback Snack",
-            nutriments: { "energy-kcal_100g": 400 },
-          },
-        }),
-      });
+    mockServerFetch.mockRejectedValueOnce(new Error("server unreachable"));
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -306,7 +234,7 @@ describe("useNutritionLookup — 5xx vs network-error OFF-fallback distinction (
   });
 });
 
-describe("useNutritionLookup — off-not-found (P1-2026-09-23 characterization)", () => {
+describe("useNutritionLookup — not-found (P1-2026-09-23 characterization)", () => {
   const mockServerFetch = vi.fn();
 
   beforeEach(() => {
@@ -322,10 +250,12 @@ describe("useNutritionLookup — off-not-found (P1-2026-09-23 characterization)"
     vi.unstubAllGlobals();
   });
 
-  it("server unreachable + OFF status !== 1 ⇒ 'Product not found', Unknown Product nutrition, no flag", async () => {
-    mockServerFetch
-      .mockRejectedValueOnce(new Error("server unreachable"))
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 0 }) });
+  it("the server's plain 404 ⇒ 'Product not found', Unknown Product nutrition, no flag, no OFF call", async () => {
+    mockServerFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: "Product not found", code: "NOT_FOUND" }),
+    });
 
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
@@ -341,7 +271,8 @@ describe("useNutritionLookup — off-not-found (P1-2026-09-23 characterization)"
       barcode: "000000000012",
     });
     // "No product ⇒ no flag" — pinned current behaviour, unlike the
-    // off-fallback and total-outage paths.
+    // total-outage path.
     expect(result.current.flags).toEqual([]);
+    expect(mockServerFetch).toHaveBeenCalledTimes(1);
   });
 });

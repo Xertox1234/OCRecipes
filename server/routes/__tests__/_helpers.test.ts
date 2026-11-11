@@ -107,6 +107,26 @@ describe("handleRouteError", () => {
     });
   });
 
+  // Privacy audit H3: the AI-sharing gate throws from inside aiChat; every
+  // route that reports through here answers 403 with the code the app reads.
+  it("answers 403 AI_SHARING_REQUIRED for an AI-sharing refusal, unreported", async () => {
+    const { reportError } = await import("../../lib/error-reporter");
+    const { AiSharingRequiredError } = await import(
+      "../../lib/ai-sharing-gate"
+    );
+    const res = createMockResponse();
+
+    handleRouteError(
+      res as unknown as Response,
+      new AiSharingRequiredError(),
+      "analyze photo",
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ code: "AI_SHARING_REQUIRED" });
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
   it("does NOT call reportError on the 400 branch (ZodError)", async () => {
     const { reportError } = await import("../../lib/error-reporter");
     const res = createMockResponse();

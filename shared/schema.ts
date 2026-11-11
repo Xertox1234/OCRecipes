@@ -31,6 +31,8 @@ import type {
   NotificationPrefs,
 } from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
+import type { HealthConsentEvent } from "./lib/health-consent";
+import type { AiSharingEvent } from "./lib/ai-sharing";
 import type {
   WeeklyFacts,
   WeeklyReportContent,
@@ -127,6 +129,22 @@ export const users = pgTable(
      * the last 30 days as active. NULL = not seen since this column shipped.
      */
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+    /**
+     * AI-sharing permission (privacy audit H3). Set while the user allows
+     * their data to go to the AI companies named in `shared/lib/ai-sharing.ts`;
+     * NULL = not allowed, and the server makes no AI call for them. Written
+     * only by `server/storage/ai-sharing.ts`.
+     */
+    aiSharingAllowedAt: timestamp("ai_sharing_allowed_at", {
+      withTimezone: true,
+    }),
+    /** The disclosure version the current permission was given against. */
+    aiSharingVersion: text("ai_sharing_version"),
+    /** Append-only log of every answer; empty = never asked. */
+    aiSharingHistory: jsonb("ai_sharing_history")
+      .$type<AiSharingEvent[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -431,6 +449,17 @@ export const userProfiles = pgTable("user_profiles", {
   healthDataConsentAt: timestamp("health_data_consent_at", {
     withTimezone: true,
   }),
+  /** Privacy-policy version the current consent was given against. */
+  healthDataConsentVersion: text("health_data_consent_version"),
+  /** When the user last withdrew the health-data consent (health fields are cleared then). */
+  healthDataConsentWithdrawnAt: timestamp("health_data_consent_withdrawn_at", {
+    withTimezone: true,
+  }),
+  /** Append-only log of every consent and withdrawal; written only by storage. */
+  healthDataConsentHistory: jsonb("health_data_consent_history")
+    .$type<HealthConsentEvent[]>()
+    .default(sql`'[]'::jsonb`)
+    .notNull(),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
     .default(sql`'{}'::jsonb`)

@@ -6,10 +6,11 @@ import {
   savedItems,
   recipeDismissals,
   verificationHistory,
+  barcodeVerifications,
   transactions,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { logger, toError } from "../lib/logger";
 import { removeFromIndex } from "../lib/search-index";
 import { lockBarcodes, recomputeAggregatesForBarcodes } from "./verification";
@@ -104,6 +105,18 @@ export async function deleteUser(id: string): Promise<boolean> {
     // Past the threshold no barcode lock is held here, so there is nothing
     // for that submit to deadlock against.
     if (recomputeHere) await lockBarcodes(tx, votedBarcodes);
+
+    // Front-label data stored before the route stopped recording the scanner
+    // carries the user's id in JSON, on a shared product row with no FK to
+    // cascade (privacy audit 2026-11-10, L1). The rest of the label stays.
+    await tx
+      .update(barcodeVerifications)
+      .set({
+        frontLabelData: sql`${barcodeVerifications.frontLabelData} - 'scannedByUserId'`,
+      })
+      .where(
+        sql`${barcodeVerifications.frontLabelData}->>'scannedByUserId' = ${id}`,
+      );
 
     // Store purchases outlive the account (migration 0038: the FK sets
     // user_id NULL) so a refunded purchase cannot be replayed on a new

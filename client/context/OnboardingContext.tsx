@@ -9,7 +9,11 @@ import React, {
 import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { useAuthContext } from "@/context/AuthContext";
-import { ONBOARDING_SCREENS } from "@/context/onboarding-steps";
+import {
+  ONBOARDING_SCREENS,
+  nextStepIndex,
+  prevStepIndex,
+} from "@/context/onboarding-steps";
 
 export interface Allergy {
   name: string;
@@ -43,6 +47,12 @@ interface OnboardingContextType {
   updateData: (updates: Partial<OnboardingData>) => void;
   nextStep: () => void;
   prevStep: () => void;
+  /**
+   * Answers the health-data consent screen and moves on. Declining skips the
+   * health questions and drops any health answers already given, so nothing
+   * health-related is sent without the consent.
+   */
+  answerConsent: (agreed: boolean) => void;
   skipOnboarding: () => Promise<void>;
   /**
    * Saves the onboarding profile, then the optional taste picks, then marks
@@ -80,12 +90,34 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, ...updates }));
   }, []);
 
+  // Without the health-data consent the health questions are skipped in both
+  // directions (onboarding-steps.ts → HEALTH_SCREENS).
+  const consented = data.healthDataConsent;
+
   const nextStep = useCallback(() => {
-    setCurrentStep((prev) => (prev < TOTAL_STEPS - 1 ? prev + 1 : prev));
-  }, []);
+    setCurrentStep((prev) => nextStepIndex(prev, consented));
+  }, [consented]);
 
   const prevStep = useCallback(() => {
-    setCurrentStep((prev) => (prev > 0 ? prev - 1 : prev));
+    setCurrentStep((prev) => prevStepIndex(prev, consented));
+  }, [consented]);
+
+  const answerConsent = useCallback((agreed: boolean) => {
+    setData((prev) =>
+      agreed
+        ? { ...prev, healthDataConsent: true }
+        : {
+            ...prev,
+            healthDataConsent: false,
+            allergies: [],
+            healthConditions: [],
+            primaryGoal: null,
+            activityLevel: null,
+          },
+    );
+    // `agreed` is passed straight in: the state update above has not landed
+    // yet, so `consented` is still the previous answer here.
+    setCurrentStep((prev) => nextStepIndex(prev, agreed));
   }, []);
 
   // Recovery model for skipOnboarding / completeOnboarding:
@@ -170,6 +202,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       updateData,
       nextStep,
       prevStep,
+      answerConsent,
       skipOnboarding,
       completeOnboarding,
       isSubmitting,
@@ -180,6 +213,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       updateData,
       nextStep,
       prevStep,
+      answerConsent,
       skipOnboarding,
       completeOnboarding,
       isSubmitting,

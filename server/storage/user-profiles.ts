@@ -7,6 +7,26 @@ import {
 import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
 import { eq, sql } from "drizzle-orm";
+import { coachResponseCache, mealSuggestionCache } from "@shared/schema";
+import {
+  HEALTH_CONSENT_VERSION,
+  type HealthConsentEvent,
+  type ProfileHealthField,
+  type UserHealthField,
+} from "@shared/lib/health-consent";
+
+/** A one-entry jsonb array to append to `health_data_consent_history`. */
+function historyEntry(event: HealthConsentEvent) {
+  return sql`${JSON.stringify([event])}::jsonb`;
+}
+
+function grantedEvent(at: Date): HealthConsentEvent {
+  return {
+    event: "granted",
+    at: at.toISOString(),
+    version: HEALTH_CONSENT_VERSION,
+  };
+}
 
 // User profile storage, split out of users.ts (pure move). users.ts
 // re-exports these, so the storage facade and existing imports are unchanged.
@@ -78,7 +98,13 @@ export async function updateUserProfile(
     updatedAt: new Date(),
   };
   if (recordConsent) {
-    setClause.healthDataConsentAt = sql`COALESCE(${userProfiles.healthDataConsentAt}, ${new Date()})`;
+    const now = new Date();
+    // Every right-hand side reads the row as it was before this UPDATE, so
+    // the version and the history entry are written only when the timestamp
+    // is: a consent already on record keeps its own version and adds nothing.
+    setClause.healthDataConsentAt = sql`COALESCE(${userProfiles.healthDataConsentAt}, ${now})`;
+    setClause.healthDataConsentVersion = sql`CASE WHEN ${userProfiles.healthDataConsentAt} IS NULL THEN ${HEALTH_CONSENT_VERSION} ELSE ${userProfiles.healthDataConsentVersion} END`;
+    setClause.healthDataConsentHistory = sql`CASE WHEN ${userProfiles.healthDataConsentAt} IS NULL THEN ${userProfiles.healthDataConsentHistory} || ${historyEntry(grantedEvent(now))} ELSE ${userProfiles.healthDataConsentHistory} END`;
   }
   const [profile] = await db
     .update(userProfiles)
@@ -86,6 +112,78 @@ export async function updateUserProfile(
     .where(eq(userProfiles.userId, userId))
     .returning();
   return profile || undefined;
+}
+
+/**
+ * What a withdrawal writes into each health field. Typed against the shared
+ * field lists (`shared/lib/health-consent.ts`), so a field added there fails
+ * to compile here until it is cleared too.
+ */
+const CLEARED_PROFILE_HEALTH = {
+  allergies: [],
+  healthConditions: [],
+  primaryGoal: null,
+  activityLevel: null,
+  glp1Mode: false,
+  glp1Medication: null,
+  glp1StartDate: null,
+} satisfies Record<ProfileHealthField, unknown>;
+
+const CLEARED_USER_HEALTH = {
+  weight: null,
+  height: null,
+  age: null,
+  gender: null,
+  goalWeight: null,
+} satisfies Record<UserHealthField, null>;
+
+/**
+ * Withdraws the health-data consent, in one transaction: clears every health
+ * field on the profile and the body metrics on the user row, deletes the
+ * cached AI answers that were built from them, and replaces the live consent
+ * with a withdrawal time. Taste and cooking preferences and the calorie
+ * targets are not health data and stay. Returns the cleared profile, or
+ * undefined when the user has no profile.
+ *
+ * This is the only path that clears `healthDataConsentAt` (a later consent is
+ * stamped afresh). The record of what was agreed to survives in
+ * `healthDataConsentHistory`, which is only ever appended to.
+ */
+export async function withdrawHealthConsent(
+  userId: string,
+): Promise<UserProfile | undefined> {
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const [profile] = await tx
+      .update(userProfiles)
+      .set({
+        ...CLEARED_PROFILE_HEALTH,
+        // The inferred mood signal is derived from what the user tells Coach.
+        moodScore: 0,
+        moodUpdatedAt: null,
+        healthDataConsentAt: null,
+        healthDataConsentVersion: null,
+        healthDataConsentWithdrawnAt: now,
+        healthDataConsentHistory: sql`${userProfiles.healthDataConsentHistory} || ${historyEntry({ event: "withdrawn", at: now.toISOString() })}`,
+        updatedAt: now,
+      })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+    if (!profile) return undefined;
+
+    await tx.update(users).set(CLEARED_USER_HEALTH).where(eq(users.id, userId));
+
+    // Cached Coach answers and meal ideas were built from the allergies,
+    // goals and body metrics just removed.
+    await tx
+      .delete(coachResponseCache)
+      .where(eq(coachResponseCache.userId, userId));
+    await tx
+      .delete(mealSuggestionCache)
+      .where(eq(mealSuggestionCache.userId, userId));
+
+    return profile;
+  });
 }
 
 /**
@@ -147,18 +245,30 @@ export async function upsertProfileWithOnboarding(
       // this onboarding endpoint preserve the original timestamp as the
       // legally significant record of agreement. The timestamp is generated
       // here from `new Date()` so callers cannot supply a backdated value.
-      const safeData: Omit<InsertUserProfile, "userId"> =
-        recordConsent && !existing.healthDataConsentAt
-          ? { ...safeProfileData, healthDataConsentAt: new Date() }
-          : safeProfileData;
+      const now = new Date();
+      const stampConsent = recordConsent && !existing.healthDataConsentAt;
       [result] = await tx
         .update(userProfiles)
-        .set({ ...safeData, updatedAt: new Date() })
+        .set({
+          ...safeProfileData,
+          ...(stampConsent && {
+            healthDataConsentAt: now,
+            healthDataConsentVersion: HEALTH_CONSENT_VERSION,
+            healthDataConsentHistory: sql`${userProfiles.healthDataConsentHistory} || ${historyEntry(grantedEvent(now))}`,
+          }),
+          updatedAt: now,
+        })
         .where(eq(userProfiles.userId, userId))
         .returning();
     } else {
+      const now = new Date();
       const insertData: Omit<InsertUserProfile, "userId"> = recordConsent
-        ? { ...safeProfileData, healthDataConsentAt: new Date() }
+        ? {
+            ...safeProfileData,
+            healthDataConsentAt: now,
+            healthDataConsentVersion: HEALTH_CONSENT_VERSION,
+            healthDataConsentHistory: [grantedEvent(now)],
+          }
         : safeProfileData;
       [result] = await tx
         .insert(userProfiles)

@@ -5,6 +5,8 @@
  */
 
 export const CHAT_GENERIC_ERROR = "Something went wrong. Please try again.";
+export const CHAT_AI_OFF_ERROR =
+  "AI features are off. Turn them on in Settings to chat.";
 export const CHAT_LIMIT_ERROR = "You've reached today's limit for this chat.";
 
 /**
@@ -34,6 +36,8 @@ export function chatRequestErrorCopy(code: string | undefined): string {
   switch (code) {
     case "DAILY_LIMIT_REACHED":
       return CHAT_LIMIT_ERROR;
+    case "AI_SHARING_REQUIRED":
+      return CHAT_AI_OFF_ERROR;
     case "CONFLICT":
       return "Recipe finder isn't available right now.";
     default:

@@ -16,6 +16,7 @@ import { parseVerificationNutrition } from "../lib/verification-consensus";
 import { frontLabelDataSchema } from "@shared/types/front-label";
 import {
   checkAiConfigured,
+  checkAiSharing,
   handleRouteError,
   parseQueryInt,
   parseQueryString,
@@ -284,6 +285,7 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Claim BEFORE the vision call: a request refused after the paid call
         // (the in-memory session cap below) has already cost money.
@@ -371,7 +373,6 @@ export function register(app: Express): void {
           productName: session.data.productName,
           netWeight: session.data.netWeight,
           claims: session.data.claims,
-          scannedByUserId: req.userId,
           scannedAt: new Date().toISOString(),
         };
 
