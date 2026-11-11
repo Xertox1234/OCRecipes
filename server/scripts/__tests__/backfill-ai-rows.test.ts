@@ -16,7 +16,8 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { communityRecipes, mealPlanRecipes } from "@shared/schema";
+import { communityRecipes, mealPlanRecipes, users } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -67,7 +68,11 @@ function mine(rows: { title: string }[]): string[] {
 describe("backfill row loaders: who may be sent to AI", () => {
   beforeEach(async () => {
     tx = await setupTestTransaction();
-    allowed = await createTestUser(tx, { aiSharingAllowedAt: new Date() });
+    allowed = await createTestUser(tx);
+    await tx
+      .update(users)
+      .set({ aiSharingAllowedAt: new Date() })
+      .where(eq(users.id, allowed.id));
     aiOff = await createTestUser(tx);
 
     await addCommunity("m13 community allowed", { authorId: allowed.id });

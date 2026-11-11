@@ -16,7 +16,8 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { communityRecipes } from "@shared/schema";
+import { communityRecipes, users } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -61,7 +62,11 @@ async function eligibleTitles() {
 describe("getEligibleForPromotion: who may be sent to AI", () => {
   beforeEach(async () => {
     tx = await setupTestTransaction();
-    allowed = await createTestUser(tx, { aiSharingAllowedAt: new Date() });
+    allowed = await createTestUser(tx);
+    await tx
+      .update(users)
+      .set({ aiSharingAllowedAt: new Date() })
+      .where(eq(users.id, allowed.id));
     aiOff = await createTestUser(tx);
   });
   afterEach(async () => {
