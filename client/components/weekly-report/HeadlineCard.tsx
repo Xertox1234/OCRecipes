@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -44,15 +44,17 @@ export function HeadlineCard({
   const scale = useSharedValue(play && !reducedMotion ? 0.6 : 1);
   const opacity = useSharedValue(play ? 0 : 1);
 
+  // Fire once: onCelebrated is often an inline arrow, so the deps change
+  // every render; the ref keeps the animation, haptic and mark to one run.
+  const played = useRef(false);
   useEffect(() => {
-    if (!play) return;
+    if (!play || played.current) return;
+    played.current = true;
     opacity.set(withTiming(1, { duration: 220 }));
     if (!reducedMotion) scale.set(withSpring(1, CELEBRATION_SPRING));
     haptics.notification(NotificationFeedbackType.Success);
     onCelebrated();
-    // Play once per mount of a celebration week; the server marks it shown.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [play]);
+  }, [play, reducedMotion, haptics, onCelebrated, opacity, scale]);
 
   const badgeStyle = useAnimatedStyle(() => ({
     opacity: opacity.get(),
