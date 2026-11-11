@@ -511,3 +511,17 @@ export const remindersMutesRateLimit = createRateLimiter({
  * deploy (auth audit 2026-10-10 L15). E2E runs can relax it like the others.
  */
 export const SOCIAL_LINK_ACCOUNT_MAX = resolveRateLimitMax(10, process.env);
+
+/** Coach weekly report reads (list, one report, pending popup, settings). */
+export const weeklyReportsReadRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: "Too many weekly report requests. Please wait.",
+});
+
+/** Coach weekly report marks (seen, celebration, popup) and settings changes. */
+export const weeklyReportsWriteRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many weekly report updates. Please wait.",
+});

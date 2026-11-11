@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { storage } from "../../../storage";
 import { notify } from "../../notifications/notify";
 import { writeWeeklyReport } from "../writer";
+import { createMockWeeklyFacts } from "../../../__tests__/factories";
 import {
   generateWeeklyReportForUser,
   sendDueWeeklyReportPushes,
 } from "../generate";
-import type { WeeklyFacts } from "@shared/schemas/coach-weekly-report";
 
 vi.mock("../../../storage", () => ({
   storage: {
@@ -64,7 +64,7 @@ function inputs(logged = true) {
 }
 
 const emptyWeek = (weekStart: string) =>
-  ({ weekStart, mealsLogged: 0, tipIds: [] }) as unknown as WeeklyFacts;
+  createMockWeeklyFacts({ weekStart, mealsLogged: 0, tipIds: [] });
 
 beforeEach(() => {
   vi.resetAllMocks();

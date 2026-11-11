@@ -17,10 +17,8 @@ import {
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 import { eq } from "drizzle-orm";
-import type {
-  WeeklyFacts,
-  WeeklyReportContent,
-} from "@shared/schemas/coach-weekly-report";
+import type { WeeklyReportContent } from "@shared/schemas/coach-weekly-report";
+import { createMockWeeklyFacts } from "../../__tests__/factories";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -46,7 +44,7 @@ const content: WeeklyReportContent = {
   trendLine: null,
 };
 const facts = (weekStart: string, mealsLogged = 3) =>
-  ({ weekStart, weekEnd: weekStart, mealsLogged }) as unknown as WeeklyFacts;
+  createMockWeeklyFacts({ weekStart, weekEnd: weekStart, mealsLogged });
 
 const row = (weekStart: string, extra: Record<string, unknown> = {}) => ({
   weekStart,

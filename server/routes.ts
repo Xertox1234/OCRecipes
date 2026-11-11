@@ -46,6 +46,7 @@ import { register as registerAdminSearchIndex } from "./routes/admin-search-inde
 import { register as registerApiDocs } from "./routes/api-docs";
 import { register as registerPushTokens } from "./routes/push-tokens";
 import { register as registerReminders } from "./routes/reminders";
+import { register as registerWeeklyReports } from "./routes/weekly-reports";
 import { register as registerCuratedRecipes } from "./routes/curated-recipes";
 import { register as registerCoachCommitments } from "./routes/coach-commitments";
 import { register as registerTastePicks } from "./routes/taste-picks";
@@ -107,6 +108,7 @@ export function registerRoutes(app: Express): Server {
   registerProfileHub(app);
   registerPushTokens(app);
   registerReminders(app);
+  registerWeeklyReports(app);
   registerCuratedRecipes(app);
   registerCoachCommitments(app);
   registerTastePicks(app);

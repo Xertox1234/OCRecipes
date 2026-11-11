@@ -42,6 +42,7 @@ function buildExport() {
     transactions: [],
     verificationHistory: [],
     recipeGenerationLog: [],
+    weeklyReports: { reports: [], settings: null },
   };
 }
 

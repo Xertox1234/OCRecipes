@@ -40,6 +40,8 @@ import {
   transactions,
   verificationHistory,
   recipeGenerationLog,
+  coachWeeklyReports,
+  coachWeeklyReportSettings,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, inArray, asc, desc } from "drizzle-orm";
@@ -111,6 +113,11 @@ export interface UserDataExport {
   pendingReminders: Record<string, unknown>[];
   pushTokens: Record<string, unknown>[];
   transactions: Record<string, unknown>[];
+  /** Coach weekly reports (facts + written text) and the report settings row. */
+  weeklyReports: {
+    reports: Record<string, unknown>[];
+    settings: Record<string, unknown> | null;
+  };
   verificationHistory: Record<string, unknown>[];
   recipeGenerationLog: Record<string, unknown>[];
 }
@@ -164,6 +171,8 @@ export async function getUserDataExport(
     transactionRows,
     verificationHistoryRows,
     recipeGenerationLogRows,
+    weeklyReportRows,
+    weeklyReportSettingsRows,
   ] = await Promise.all([
     db.select(exportUserColumns).from(users).where(eq(users.id, userId)),
     db.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
@@ -297,6 +306,15 @@ export async function getUserDataExport(
       .select()
       .from(recipeGenerationLog)
       .where(eq(recipeGenerationLog.userId, userId)),
+    db
+      .select()
+      .from(coachWeeklyReports)
+      .where(eq(coachWeeklyReports.userId, userId))
+      .orderBy(desc(coachWeeklyReports.weekStart)),
+    db
+      .select()
+      .from(coachWeeklyReportSettings)
+      .where(eq(coachWeeklyReportSettings.userId, userId)),
   ]);
 
   // After fetching all parent rows, batch-load meal-plan recipe ingredients
@@ -373,5 +391,9 @@ export async function getUserDataExport(
     ),
     verificationHistory: verificationHistoryRows,
     recipeGenerationLog: recipeGenerationLogRows,
+    weeklyReports: {
+      reports: weeklyReportRows,
+      settings: weeklyReportSettingsRows[0] ?? null,
+    },
   };
 }
