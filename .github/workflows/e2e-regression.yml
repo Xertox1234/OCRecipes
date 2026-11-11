@@ -310,6 +310,19 @@ jobs:
           psql -d postgres -c "ALTER USER ocrecipes WITH PASSWORD 'ocrecipes';"
           createdb -O ocrecipes ocrecipes_test || true
           psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          # Measurement for todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md:
+          # every "Connection terminated due to connection timeout" in server.log
+          # is a NEW connection that took over 5 s to open (pg-pool newClient).
+          # "connection received" -> "connection authorized" timestamps show
+          # whether that time goes to fork + auth inside Postgres; slow
+          # statements show whether queries themselves are slow. Uploaded as
+          # postgres.log with logs-ios.
+          psql -d postgres -c "ALTER SYSTEM SET log_connections = on;" \
+            -c "ALTER SYSTEM SET log_disconnections = on;" \
+            -c "ALTER SYSTEM SET log_min_duration_statement = 1000;" \
+            -c "ALTER SYSTEM SET log_checkpoints = on;" \
+            -c "ALTER SYSTEM SET log_line_prefix = '%m [%p] ';" \
+            -c "SELECT pg_reload_conf();"
 
       - name: Push database schema
         run: npm run db:push
@@ -346,6 +359,31 @@ jobs:
             process.exit(1);
           ')"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+
+      # Measurement for todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md.
+      # metro-probe.log shows load1 around 250-300 for the whole flow phase
+      # (runs 42810549290, 43064552610) but not WHAT is runnable. Every 30 s,
+      # from here to the end of the job (build and flows): load, swap, free
+      # pages, Postgres backends, and the ten busiest processes. Uploaded as
+      # host-sample.log with logs-ios.
+      - name: Start host load sampler
+        run: |
+          cat > "$RUNNER_TEMP/host-sampler.sh" <<'SAMPLER'
+          out="$GITHUB_WORKSPACE/host-sample.log"
+          echo "# $(sysctl -n hw.model) ncpu=$(sysctl -n hw.ncpu) mem=$(( $(sysctl -n hw.memsize) / 1048576 ))MB" > "$out"
+          while true; do
+            {
+              echo "=== $(date -u +%H:%M:%S) load $(sysctl -n vm.loadavg) swap $(sysctl -n vm.swapusage)"
+              vm_stat | grep -E '^(Pages free|Pageouts|Swapouts)' | tr -s ' ' | tr '\n' ';'
+              echo " pg_backends=$(pgrep -f 'postgres: ocrecipes' | wc -l | tr -d ' ')"
+              # comm is a full path and may contain spaces: print everything after rss.
+              ps -Ao pcpu=,rss=,comm= -r | head -10 \
+                | awk '{ c = $1; r = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); printf "  %5s%% %6dMB %s\n", c, r / 1024, $0 }'
+            } >> "$out" 2>&1
+            sleep 30
+          done
+          SAMPLER
+          nohup bash "$RUNNER_TEMP/host-sampler.sh" >/dev/null 2>&1 &
 
       # The photo e2e/flows/plan/receipt-upload.yaml picks from the gallery. Added here, before the
       # app or Maestro starts, instead of by the flow's Maestro addMedia: on iOS that command hung
@@ -587,6 +625,12 @@ jobs:
       - name: Run Maestro regression flows
         run: bash scripts/ci/e2e-with-flow-retry.sh
 
+      # brew services writes Postgres's server log under the brew prefix; copy
+      # it into the workspace so the upload below keeps its usual layout.
+      - name: Collect Postgres log
+        if: always()
+        run: cp "$(brew --prefix)/var/log/postgresql@16.log" postgres.log || echo "::warning::no Postgres log found"
+
       # always(), NOT failure(): scripts/ci/e2e-with-flow-retry.sh re-runs each
       # failed flow individually and the job exits 0 when the re-runs pass, so a
       # failure()-gated upload discards the debug output for every attempt-1
@@ -609,6 +653,8 @@ jobs:
             stub-openai.log
             metro.log
             metro-probe.log
+            host-sample.log
+            postgres.log
             e2e/maestro-output/
           if-no-files-found: warn
 
@@ -686,7 +732,13 @@ jobs:
 
       # The OpenAI stand-in answers the receipt-upload flow's AI step (scripts/ci/stub-openai.mjs);
       # every other AI call gets the same 401 sk-stub got from the real API.
+      # LOG_LEVEL info, as in the iOS job: per-request response times here are
+      # the control for the iOS job's slow requests (same server, same flows,
+      # Linux host with a Postgres service container;
+      # todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md).
       - name: Start backend
+        env:
+          LOG_LEVEL: info
         run: |
           node scripts/ci/stub-openai.mjs &
           for i in $(seq 1 15); do
