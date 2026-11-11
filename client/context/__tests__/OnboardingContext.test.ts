@@ -312,10 +312,10 @@ describe("OnboardingProvider completeOnboarding", () => {
 
       act(() => result.current.answerConsent(false));
       expect(result.current.data.healthDataConsent).toBe(false);
-      expect(result.current.currentStep).toBe(5); // DietType
+      expect(result.current.currentStep).toBe(7); // Preferences
 
       act(() => result.current.nextStep());
-      expect(result.current.currentStep).toBe(7); // Preferences, not Goals
+      expect(result.current.currentStep).toBe(8); // TastePicks
 
       act(() => result.current.prevStep());
       act(() => result.current.prevStep());
@@ -345,7 +345,8 @@ describe("OnboardingProvider completeOnboarding", () => {
       expect(result.current.data.healthConditions).toEqual([]);
       expect(result.current.data.primaryGoal).toBeNull();
       expect(result.current.data.activityLevel).toBeNull();
-      expect(result.current.data.dietType).toBe("vegan");
+      // Diet type sits behind the consent too (owner ruling 2026-11-10).
+      expect(result.current.data.dietType).toBeNull();
     });
   });
 });

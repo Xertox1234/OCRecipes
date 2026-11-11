@@ -111,6 +111,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
             healthDataConsent: false,
             allergies: [],
             healthConditions: [],
+            dietType: null,
             primaryGoal: null,
             activityLevel: null,
           },

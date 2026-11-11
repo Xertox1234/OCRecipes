@@ -36,6 +36,7 @@ export const QUESTION_STEP_COUNT =
 export const HEALTH_SCREENS: readonly OnboardingScreenName[] = [
   "Allergies",
   "HealthConditions",
+  "DietType",
   "Goals",
 ];
 

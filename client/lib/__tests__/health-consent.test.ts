@@ -33,6 +33,7 @@ describe("needsHealthConsent", () => {
       }),
     ).toBe(true);
     expect(needsHealthConsent(null, { primaryGoal: "lose_weight" })).toBe(true);
+    expect(needsHealthConsent(unconsented, { dietType: "vegan" })).toBe(true);
   });
 
   it("does not ask for preferences or cleared health fields", () => {
@@ -42,7 +43,7 @@ describe("needsHealthConsent", () => {
         healthConditions: [],
         primaryGoal: null,
         activityLevel: null,
-        dietType: "vegan",
+        dietType: null,
         foodDislikes: ["olives"],
       }),
     ).toBe(false);
@@ -58,12 +59,14 @@ describe("needsHealthConsent", () => {
 describe("consent prompts", () => {
   it("the consent prompt says what is collected and why", () => {
     expect(HEALTH_CONSENT_PROMPT.message).toMatch(/allergies/i);
+    expect(HEALTH_CONSENT_PROMPT.message).toMatch(/diet type/i);
     expect(HEALTH_CONSENT_PROMPT.message).toMatch(/never sold/i);
     expect(HEALTH_CONSENT_PROMPT.confirmLabel).toBe("Agree");
   });
 
   it("the withdrawal prompt says what is removed and is destructive", () => {
     expect(WITHDRAW_HEALTH_CONSENT_PROMPT.message).toMatch(/allergies/i);
+    expect(WITHDRAW_HEALTH_CONSENT_PROMPT.message).toMatch(/diet type/i);
     expect(WITHDRAW_HEALTH_CONSENT_PROMPT.destructive).toBe(true);
   });
 });
