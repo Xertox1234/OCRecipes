@@ -141,8 +141,8 @@ tags:
 # Onboarding wizard — real screen order from OnboardingNavigator.tsx:
 # Welcome → AiSharing → HealthDataConsent → Allergies → HealthConditions → DietType →
 # Goals → Preferences → TastePicks. This flow declines the health-data
-# consent, so the three health screens (Allergies, HealthConditions, Goals)
-# are skipped: no consent, no health data (onboarding-steps.ts →
+# consent, so the four health screens (Allergies, HealthConditions, DietType,
+# Goals) are skipped: no consent, no health data (onboarding-steps.ts →
 # HEALTH_SCREENS). Completion happens on TastePicks.
 
 # 1. Welcome
@@ -165,21 +165,15 @@ tags:
     timeout: 15000
 - tapOn: "Not now.*"
 
-# 3. Diet type — the first screen after a declined consent. Cards carry
-#    a11y "{name}: {description}"
-- extendedWaitUntil:
-    visible: "Omnivore.*"
-    timeout: 15000
-- tapOn: "Omnivore.*"
-- tapOn: "Continue"
-
-# 4. Preferences — forward button is visible "Next" with a11y "Next step"
+# 3. Preferences — the first screen after a declined consent (diet type sits
+#    behind the consent too). Forward button is visible "Next" with a11y
+#    "Next step"
 - extendedWaitUntil:
     visible: "Next step"
     timeout: 15000
 - tapOn: "Next step"
 
-# 5. Taste picks — "Skip for now" is a real completion path: it sets
+# 4. Taste picks — "Skip for now" is a real completion path: it sets
 #    onboardingCompleted:true (TastePicksScreen skip handler)
 - extendedWaitUntil:
     visible: "Skip for now"

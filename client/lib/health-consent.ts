@@ -30,7 +30,7 @@ export function needsHealthConsent(
 /** The consent question, asked where health details are added after setup. */
 export const HEALTH_CONSENT_PROMPT = {
   title: "Use your health details?",
-  message: `Allergies, health conditions and medications, body measurements, activity and goals are health information. We use them to personalize nutrition recommendations and AI coaching. With AI features on, the details a feature needs go to the AI companies that run it: ${AI_RECIPIENT_NAMES}. They are never sold or shared with advertisers, and you can withdraw this consent any time in Settings.`,
+  message: `Allergies, health conditions and medications, diet type, body measurements, activity and goals are health information. We use them to personalize nutrition recommendations and AI coaching. With AI features on, the details a feature needs go to the AI companies that run it: ${AI_RECIPIENT_NAMES}. They are never sold or shared with advertisers, and you can withdraw this consent any time in Settings.`,
   confirmLabel: "Agree",
   cancelLabel: "Not now",
 } as const;
@@ -38,7 +38,7 @@ export const HEALTH_CONSENT_PROMPT = {
 export const WITHDRAW_HEALTH_CONSENT_PROMPT = {
   title: "Withdraw health-data consent",
   message:
-    "This removes your allergies, health conditions and medications, body measurements, activity level and goal from OCRecipes. Allergy warnings and personalized targets stop until you add them again. Your food logs, recipes, calorie targets, chats and the notes Coach has saved stay; clear those notes under Coach → What Coach knows.",
+    "This removes your allergies, health conditions and medications, diet type, body measurements, activity level and goal from OCRecipes. Allergy warnings and personalized targets stop until you add them again. Your food logs, recipes, calorie targets, chats and the notes Coach has saved stay; clear those notes under Coach → What Coach knows.",
   confirmLabel: "Withdraw and remove",
   destructive: true,
 } as const;

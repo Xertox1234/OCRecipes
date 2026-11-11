@@ -39,9 +39,9 @@ const DATA_CATEGORIES = [
   },
   {
     icon: "target" as const,
-    title: "Dietary goals & preferences",
+    title: "Diet type & goals",
     description:
-      "Your goals and food preferences to personalize meal plans and recipe ideas.",
+      "The diet you follow and your goal, to personalize meal plans and recipe ideas.",
   },
 ];
 

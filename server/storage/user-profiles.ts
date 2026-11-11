@@ -122,6 +122,7 @@ export async function updateUserProfile(
 const CLEARED_PROFILE_HEALTH = {
   allergies: [],
   healthConditions: [],
+  dietType: null,
   primaryGoal: null,
   activityLevel: null,
   glp1Mode: false,
@@ -174,7 +175,7 @@ export async function withdrawHealthConsent(
     await tx.update(users).set(CLEARED_USER_HEALTH).where(eq(users.id, userId));
 
     // Cached Coach answers and meal ideas were built from the allergies,
-    // goals and body metrics just removed.
+    // diet type, goals and body metrics just removed.
     await tx
       .delete(coachResponseCache)
       .where(eq(coachResponseCache.userId, userId));

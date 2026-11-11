@@ -750,8 +750,9 @@ describe("users storage", () => {
       expect(profile!.healthDataConsentAt).toBeNull();
       expect(profile!.healthDataConsentVersion).toBeNull();
       expect(profile!.healthDataConsentWithdrawnAt).toBeInstanceOf(Date);
+      // Diet type sits behind the consent too (owner ruling 2026-11-10).
+      expect(profile!.dietType).toBeNull();
       // Preferences are not health data and stay.
-      expect(profile!.dietType).toBe("vegan");
       expect(profile!.foodDislikes).toEqual(["olives"]);
 
       const user = await getUser(testUser.id);
@@ -808,6 +809,7 @@ describe("users storage", () => {
         glp1Mode: true,
         glp1Medication: "semaglutide",
         glp1StartDate: new Date("2026-01-01T00:00:00Z"),
+        dietType: "keto",
       });
       await tx
         .update(users)
