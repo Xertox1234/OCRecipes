@@ -289,10 +289,10 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     const age = screen.getByLabelText("Age, years");
 
     fireEvent.change(age, { target: { value: "5" } });
-    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+    expect(screen.queryByText("Age must be 14–120")).toBeNull();
 
     fireEvent.blur(age);
-    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    expect(screen.getByText("Age must be 14–120")).toBeTruthy();
     expect(mockNotification).toHaveBeenCalledExactlyOnceWith(
       Haptics.NotificationFeedbackType.Error,
     );
@@ -306,16 +306,16 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     const age = screen.getByLabelText("Age, years");
     fireEvent.change(age, { target: { value: "5" } });
     fireEvent.blur(age);
-    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    expect(screen.getByText("Age must be 14–120")).toBeTruthy();
     mockNotification.mockClear();
 
     fireEvent.change(age, { target: { value: "500" } });
-    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    expect(screen.getByText("Age must be 14–120")).toBeTruthy();
     // Keystrokes never buzz.
     expect(mockNotification).not.toHaveBeenCalled();
 
     fireEvent.change(age, { target: { value: "30" } });
-    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+    expect(screen.queryByText("Age must be 14–120")).toBeNull();
   });
 
   it("an age with no error shown stays quiet while an invalid value is typed", () => {
@@ -323,7 +323,7 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     fireEvent.change(screen.getByLabelText("Age, years"), {
       target: { value: "5" },
     });
-    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+    expect(screen.queryByText("Age must be 14–120")).toBeNull();
   });
 
   // Spec §5.8 guard: the field's InlineError is the one announcement — the
@@ -333,9 +333,9 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     const age = screen.getByLabelText("Age, years");
     fireEvent.change(age, { target: { value: "5" } });
     fireEvent.blur(age);
-    expect(screen.getAllByText("Age must be 13–120")).toHaveLength(1);
+    expect(screen.getAllByText("Age must be 14–120")).toHaveLength(1);
     expect(age.getAttribute("aria-hint") ?? "").not.toContain(
-      "Age must be 13–120",
+      "Age must be 14–120",
     );
   });
 

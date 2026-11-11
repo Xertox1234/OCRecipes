@@ -1,3 +1,4 @@
+import { AGE_ATTESTATION_LABEL } from "@shared/constants/minimum-age";
 import React, { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,7 +50,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
   const { ref: usernameRef } = username;
   // The live checklist under the field (spec §5.2).
   const checklist = usernameRules(username.value.trim());
-  // COPPA 13+ attestation — the person's own checkbox; server enforces true.
+  // Age attestation (14+) — the person's own checkbox; server enforces true.
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   // Server/flow errors only; field errors come from `username.error`.
   const [error, setError] = useState("");
@@ -151,7 +152,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
             }}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: ageConfirmed }}
-            accessibilityLabel="I confirm I am 13 years of age or older"
+            accessibilityLabel={AGE_ATTESTATION_LABEL}
             hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
             testID="checkbox-age-confirm"
             style={styles.ageRow}
@@ -162,7 +163,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
               color={ageConfirmed ? theme.success : theme.textSecondary}
             />
             <ThemedText type="body" style={styles.ageLabel}>
-              I confirm I am 13 years of age or older
+              {AGE_ATTESTATION_LABEL}
             </ThemedText>
           </Pressable>
           <LegalConsentCaption

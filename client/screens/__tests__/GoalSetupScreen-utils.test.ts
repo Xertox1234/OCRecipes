@@ -2,11 +2,11 @@ import { goalFieldError, goalSubmitError } from "../GoalSetupScreen-utils";
 
 describe("goalFieldError", () => {
   it("refuses an age below the range with the range message", () => {
-    expect(goalFieldError("age", "5", "metric")).toBe("Age must be 13–120");
+    expect(goalFieldError("age", "5", "metric")).toBe("Age must be 14–120");
   });
 
   it("refuses a fractional age instead of truncating it", () => {
-    expect(goalFieldError("age", "30.5", "metric")).toBe("Age must be 13–120");
+    expect(goalFieldError("age", "30.5", "metric")).toBe("Age must be 14–120");
   });
 
   it("accepts a comma-decimal weight", () => {
@@ -95,7 +95,7 @@ describe("goalSubmitError", () => {
     expect(goalSubmitError("age", "  ", "metric")).toBe("Enter age");
   });
   it("otherwise answers as goalFieldError", () => {
-    expect(goalSubmitError("age", "5", "metric")).toBe("Age must be 13–120");
+    expect(goalSubmitError("age", "5", "metric")).toBe("Age must be 14–120");
     expect(goalSubmitError("age", "30", "metric")).toBeNull();
   });
 });
