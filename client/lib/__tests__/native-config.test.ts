@@ -102,3 +102,53 @@ describe("native build config survives prebuild", () => {
     expect(manifest.NSPrivacyCollectedDataTypes.length).toBeGreaterThan(0);
   });
 });
+
+// Privacy audit M11 — the manifest must say what the app really collects.
+// The App Store label is typed by hand in App Store Connect; keep the two the same.
+describe("App Store privacy manifest matches what the app collects", () => {
+  const collected = appJson.expo.ios.privacyManifests
+    .NSPrivacyCollectedDataTypes as {
+    NSPrivacyCollectedDataType: string;
+    NSPrivacyCollectedDataTypeLinked: boolean;
+    NSPrivacyCollectedDataTypeTracking: boolean;
+    NSPrivacyCollectedDataTypePurposes: string[];
+  }[];
+  const entry = (type: string) =>
+    collected.find(
+      (d) =>
+        d.NSPrivacyCollectedDataType === `NSPrivacyCollectedDataType${type}`,
+    );
+
+  // The crash SDK puts a per-install id on every report when the app sets no
+  // user (RNSentry.mm deviceContexts → devicecontext integration), so a crash
+  // report can be tied to one phone.
+  it("declares crash data as linked", () => {
+    expect(entry("CrashData")?.NSPrivacyCollectedDataTypeLinked).toBe(true);
+  });
+
+  // Dictation uses the phone's own speech recognition (useSpeechToText); the
+  // app never records or uploads sound. Declare Audio Data again before any
+  // build sends audio to the server (the /api/food/transcribe route).
+  it("does not declare audio data", () => {
+    expect(entry("AudioData")).toBeUndefined();
+  });
+
+  // Search words go to our server and on to a recipe-search provider whose
+  // retention we cannot see. No table stores them against a user, so: not linked.
+  it("declares search history, not linked", () => {
+    expect(entry("SearchHistory")).toEqual({
+      NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeSearchHistory",
+      NSPrivacyCollectedDataTypeLinked: false,
+      NSPrivacyCollectedDataTypeTracking: false,
+      NSPrivacyCollectedDataTypePurposes: [
+        "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+      ],
+    });
+  });
+
+  it("tracks nothing", () => {
+    expect(collected.every((d) => !d.NSPrivacyCollectedDataTypeTracking)).toBe(
+      true,
+    );
+  });
+});
