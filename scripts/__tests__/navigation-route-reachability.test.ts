@@ -130,7 +130,7 @@ describe("navigation route reachability", () => {
 
   it("every screen a Profile library tile opens can reach all of its own links", () => {
     const file = "client/components/profile/library-config.ts";
-    expect(navigationTargets(file).length).toBe(7);
+    expect(navigationTargets(file).length).toBe(8); // + Weekly Reports
     expect(launcherProblems(file, "ProfileStackNavigator")).toEqual([]);
   });
 

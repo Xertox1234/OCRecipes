@@ -654,3 +654,15 @@ describe("classifyIntent", () => {
     });
   });
 });
+
+describe("matchesDisorderedEating", () => {
+  it("uses the classifier's own disordered-eating pattern", async () => {
+    const { matchesDisorderedEating } = await import(
+      "../coach-intent-classifier"
+    );
+    expect(matchesDisorderedEating("I want to purge after dinner")).toBe(true);
+    expect(matchesDisorderedEating("thinking about self harm")).toBe(true);
+    expect(matchesDisorderedEating("I made purée")).toBe(false);
+    expect(matchesDisorderedEating("is oat milk ok")).toBe(false);
+  });
+});

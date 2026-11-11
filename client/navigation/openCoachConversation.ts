@@ -25,3 +25,23 @@ export function openCoachConversation(conversationId: number): void {
     { pop: true },
   );
 }
+
+/**
+ * Open a NEW Coach chat that starts with `message` (sent as the user's first
+ * message). Same root-spelled route as openCoachConversation.
+ */
+export function openCoachWithMessage(message: string): void {
+  if (!navigationRef.isReady()) return;
+  navigationRef.navigate(
+    "Main",
+    {
+      screen: "CoachTab",
+      params: {
+        screen: "Chat",
+        params: { initialMessage: message },
+        pop: true,
+      },
+    },
+    { pop: true },
+  );
+}

@@ -57,3 +57,8 @@ export {
   createMockResolvedFavouriteRecipe,
 } from "./favourite-recipes";
 export { createMockPendingReminder, createMockPushToken } from "./reminders";
+export {
+  createMockWeeklyFacts,
+  createMockWeeklyReportContent,
+  createMockWeeklyReport,
+} from "./weekly-reports";

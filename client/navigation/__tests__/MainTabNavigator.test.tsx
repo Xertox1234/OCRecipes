@@ -136,6 +136,11 @@ vi.mock("@/navigation/navigationRef", () => ({
   navigationRef: mockNavigationRef,
 }));
 
+// The weekly report popup needs a query client and expo-notifications; it
+// has its own tests (popup-rules) and is not what this file checks.
+vi.mock("@/components/weekly-report/WeeklyReportSheet", () => ({
+  WeeklyReportPopupHost: () => null,
+}));
 vi.mock("@/components/ScanFAB", () => ({
   ScanFAB: ({
     onOpen,

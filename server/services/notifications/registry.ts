@@ -30,6 +30,14 @@ export const NOTIFICATION_REGISTRY = {
     channels: ["in-app"],
     countsAgainstCap: true,
   },
+  // Coach weekly report: push only. Never in-app — a pending_reminders row
+  // would light the Coach dot (hasPendingReminders ignores the type); the
+  // report's own popup is its in-app path.
+  "weekly-report": {
+    lane: "governed",
+    channels: ["push"],
+    countsAgainstCap: false,
+  },
 } satisfies Record<string, NotificationCategoryDef>;
 
 export type NotificationCategoryKey = keyof typeof NOTIFICATION_REGISTRY;

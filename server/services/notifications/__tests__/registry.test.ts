@@ -18,11 +18,19 @@ describe("notification registry", () => {
     }
   });
 
-  it("registers exactly the three Phase 0 categories", () => {
+  it("weekly-report is push only (an in-app row would light the Coach dot), not capped", () => {
+    const def = getCategoryDef("weekly-report");
+    expect(def.lane).toBe("governed");
+    expect(def.channels).toEqual(["push"]);
+    expect(def.countsAgainstCap).toBe(false);
+  });
+
+  it("registers exactly the known categories", () => {
     expect(Object.keys(NOTIFICATION_REGISTRY).sort()).toEqual([
       "commitment",
       "daily-checkin",
       "meal-log",
+      "weekly-report",
     ]);
   });
 });

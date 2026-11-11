@@ -13,6 +13,8 @@ export interface LibraryItem {
   readonly label: string;
   readonly countKey: CountKey;
   readonly premiumKey?: PremiumFeatureKey;
+  /** Hide the tile while its count is 0 (Weekly Reports: nothing to open yet). */
+  readonly hideWhenZero?: boolean;
 }
 
 export const LIBRARY_ITEMS: readonly LibraryItem[] = [
@@ -59,7 +61,23 @@ export const LIBRARY_ITEMS: readonly LibraryItem[] = [
     label: "Recipe Catalog",
     countKey: "featuredRecipes",
   },
+  // No premiumKey: generating a report is Coach Pro, but reading your own
+  // past reports never is (a lapsed Pro user keeps them).
+  {
+    id: "weeklyReports",
+    icon: "trending-up",
+    label: "Weekly Reports",
+    countKey: "weeklyReports",
+    hideWhenZero: true,
+  },
 ];
+
+export function visibleLibraryItems(
+  items: readonly LibraryItem[],
+  counts: LibraryCountsResponse,
+): LibraryItem[] {
+  return items.filter((i) => !i.hideWhenZero || (counts[i.countKey] ?? 0) > 0);
+}
 
 /** Switch-based navigation — follows action-config.ts pattern. */
 export function navigateLibraryItem(
@@ -87,6 +105,9 @@ export function navigateLibraryItem(
       break;
     case "recipes":
       navigation.navigate("RecipeBrowser", {});
+      break;
+    case "weeklyReports":
+      navigation.navigate("WeeklyReports");
       break;
   }
 }

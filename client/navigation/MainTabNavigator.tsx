@@ -47,6 +47,7 @@ import { getTabContentA11y } from "@/navigation/MainTabNavigator-utils";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
+import { WeeklyReportPopupHost } from "@/components/weekly-report/WeeklyReportSheet";
 
 export type MainTabParamList = {
   HomeTab: undefined;
@@ -406,6 +407,7 @@ export default function MainTabNavigator() {
       <GeneratedRecipeToastBridge />
       <RecipeDraftToastBridge />
       <ScanFAB menuOpen={menuOpen} onOpen={openMenu} onClose={closeMenu} />
+      <WeeklyReportPopupHost />
     </View>
   );
 }

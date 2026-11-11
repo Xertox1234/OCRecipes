@@ -34,6 +34,10 @@ import type { MeasurementUnit } from "./lib/units";
 import type { HealthConsentEvent } from "./lib/health-consent";
 import type { AiSharingEvent } from "./lib/ai-sharing";
 import type {
+  WeeklyFacts,
+  WeeklyReportContent,
+} from "./schemas/coach-weekly-report";
+import type {
   ConsensusNutritionData,
   VerificationNutrition,
 } from "./types/verification";
@@ -2573,6 +2577,81 @@ export const notificationSends = pgTable(
 
 export type NotificationSend = typeof notificationSends.$inferSelect;
 export type InsertNotificationSend = typeof notificationSends.$inferInsert;
+
+/**
+ * Coach weekly report — one row per (user, week). Facts are frozen when the
+ * report is made; content is Coach's sentences or the template fallback.
+ * Delivery is claimed once (delivered_via) so a push and a popup never both
+ * fire. NOT pending_reminders: that table lights the Coach dot.
+ * Spec: docs/superpowers/specs/2026-11-10-coach-weekly-report-design.md.
+ */
+export const coachWeeklyReports = pgTable(
+  "coach_weekly_reports",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    weekStart: date("week_start").notNull(),
+    weekEnd: date("week_end").notNull(),
+    facts: jsonb("facts").notNull().$type<WeeklyFacts>(),
+    content: jsonb("content").notNull().$type<WeeklyReportContent>(),
+    source: text("source").notNull().$type<"ai" | "template">(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    celebrationShownAt: timestamp("celebration_shown_at", {
+      withTimezone: true,
+    }),
+    pushDueAt: timestamp("push_due_at", { withTimezone: true }),
+    deliveredVia: text("delivered_via").$type<"push" | "popup">(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "coach_weekly_reports_source_check",
+      sql`${table.source} IN ('ai', 'template')`,
+    ),
+    check(
+      "coach_weekly_reports_delivered_via_check",
+      sql`${table.deliveredVia} IS NULL OR ${table.deliveredVia} IN ('push', 'popup')`,
+    ),
+    unique("coach_weekly_reports_user_week_unique").on(
+      table.userId,
+      table.weekStart,
+    ),
+    index("coach_weekly_reports_user_week_idx").on(
+      table.userId,
+      table.weekStart.desc().nullsFirst(),
+    ),
+    index("coach_weekly_reports_push_due_idx")
+      .on(table.pushDueAt)
+      .where(
+        sql`${table.deliveredVia} IS NULL AND ${table.pushDueAt} IS NOT NULL`,
+      ),
+  ],
+);
+
+export type CoachWeeklyReport = typeof coachWeeklyReports.$inferSelect;
+export type InsertCoachWeeklyReport = typeof coachWeeklyReports.$inferInsert;
+
+export const coachWeeklyReportSettings = pgTable(
+  "coach_weekly_report_settings",
+  {
+    userId: varchar("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reportEnabled: boolean("report_enabled").notNull().default(true),
+    pushEnabled: boolean("push_enabled").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+);
+
+export type CoachWeeklyReportSetting =
+  typeof coachWeeklyReportSettings.$inferSelect;
 
 /**
  * Scheduler run claims — one row per (job, run slot) that some server instance
