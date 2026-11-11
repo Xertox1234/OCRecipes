@@ -22,4 +22,13 @@ describe("app.json", () => {
     );
     expect(devClient).toEqual(["expo-dev-client", { toolsButton: false }]);
   });
+
+  // Privacy audit M10: Android Auto Backup would copy the app's saved data
+  // (cached food log, daily totals, diet/allergy profile) to the person's
+  // Google Drive. expo-secure-store's backup rules only exclude its own store.
+  it("turns off Android Auto Backup", () => {
+    expect(
+      (appJson.expo.android as { allowBackup?: boolean }).allowBackup,
+    ).toBe(false);
+  });
 });
