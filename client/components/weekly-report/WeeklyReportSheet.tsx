@@ -124,3 +124,8 @@ export function WeeklyReportPopupHost() {
     </CenteredDialog>
   );
 }
+
+const styles = StyleSheet.create({
+  note: { fontSize: 14, lineHeight: 21, textAlign: "center" },
+  actions: { gap: Spacing.sm, marginTop: Spacing.md, alignSelf: "stretch" },
+});
