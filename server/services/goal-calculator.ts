@@ -1,3 +1,4 @@
+import { MINIMUM_AGE } from "@shared/constants/minimum-age";
 import { z } from "zod";
 
 // Canonical user-goal enums live in shared/ (single source of truth, consumed by
@@ -25,7 +26,7 @@ export type {
 export const userPhysicalProfileSchema = z.object({
   weight: z.number().min(20).max(500), // kg, reasonable bounds
   height: z.number().min(50).max(300), // cm, reasonable bounds
-  age: z.number().int().min(13).max(120),
+  age: z.number().int().min(MINIMUM_AGE).max(120),
   gender: genderSchema,
   activityLevel: activityLevelSchema,
   primaryGoal: primaryGoalSchema,

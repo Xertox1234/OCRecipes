@@ -24,6 +24,7 @@
  * from `@shared/constants/username` and `@shared/constants/password-policy`,
  * the same modules the server uses.
  */
+import { AGE_ATTESTATION_ERROR } from "@shared/constants/minimum-age";
 import { ApiError } from "@/lib/api-error";
 import {
   PASSWORD_MAX,
@@ -141,7 +142,7 @@ export function validateAuthForm(input: AuthFormInput): string | null {
   );
   if (passwordError) return passwordError;
   if (!input.ageConfirmed) {
-    return "You must confirm you are 13 years of age or older";
+    return AGE_ATTESTATION_ERROR;
   }
   return null;
 }

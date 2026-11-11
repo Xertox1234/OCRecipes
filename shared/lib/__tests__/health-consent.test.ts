@@ -21,6 +21,7 @@ describe("hasHealthData", () => {
         glp1Mode: false,
         glp1Medication: null,
         glp1StartDate: null,
+        dietType: null,
       }),
     ).toBe(false);
   });
@@ -28,7 +29,6 @@ describe("hasHealthData", () => {
   it("ignores preference fields that are not health data", () => {
     expect(
       hasHealthData({
-        dietType: "vegan",
         foodDislikes: ["olives"],
         cuisinePreferences: ["thai"],
         householdSize: 4,
@@ -46,6 +46,11 @@ describe("hasHealthData", () => {
     ["glp1Mode", true],
     ["glp1Medication", "semaglutide"],
     ["glp1StartDate", new Date("2026-01-01")],
+    // Owner ruling 2026-11-10: diet type sits behind the consent too. A diet
+    // can point at a health condition (keto, low FODMAP) or a religion
+    // (halal, kosher), so every choice is gated, "omnivore" included.
+    ["dietType", "vegan"],
+    ["dietType", "omnivore"],
   ])("is true when %s carries a value", (field, value) => {
     expect(hasHealthData({ [field]: value })).toBe(true);
   });
@@ -59,6 +64,7 @@ describe("hasHealthData", () => {
       [
         "activityLevel",
         "allergies",
+        "dietType",
         "glp1Medication",
         "glp1Mode",
         "glp1StartDate",

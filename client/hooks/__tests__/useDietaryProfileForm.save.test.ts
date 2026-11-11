@@ -118,13 +118,23 @@ describe("useDietaryProfileForm — health-data consent", () => {
     expect(result.current.needsConsent).toBe(true);
   });
 
-  it("needs no consent for preferences alone, or once consent is on record", async () => {
-    const preferences = renderForm({
+  // Owner ruling 2026-11-10: diet type sits behind the consent too.
+  it("needs consent when the form holds a diet type", async () => {
+    const { result } = renderForm({
       dietType: "vegan",
       healthDataConsentAt: null,
     });
+    await waitFor(() => expect(result.current.dietType).toBe("vegan"));
+    expect(result.current.needsConsent).toBe(true);
+  });
+
+  it("needs no consent for preferences alone, or once consent is on record", async () => {
+    const preferences = renderForm({
+      foodDislikes: ["olives"],
+      healthDataConsentAt: null,
+    });
     await waitFor(() =>
-      expect(preferences.result.current.dietType).toBe("vegan"),
+      expect(preferences.result.current.foodDislikes).toEqual(["olives"]),
     );
     expect(preferences.result.current.needsConsent).toBe(false);
 

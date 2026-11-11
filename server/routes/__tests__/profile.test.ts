@@ -480,12 +480,47 @@ describe("Profile Routes", () => {
           healthConditions: [],
           primaryGoal: null,
           activityLevel: null,
-          dietType: "vegan",
+          dietType: null,
           foodDislikes: ["olives"],
           healthDataConsent: false,
         });
 
       expect(res.status).toBe(201);
+    });
+
+    // Owner ruling 2026-11-10: diet type sits behind the consent too.
+    it("POST refuses a diet type from a user who has not consented", async () => {
+      const res = await request(app)
+        .post("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ dietType: "vegan", healthDataConsent: false });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+      expect(storage.upsertProfileWithOnboarding).not.toHaveBeenCalled();
+    });
+
+    it("PUT refuses a diet type from a user who has not consented", async () => {
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ dietType: "omnivore" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+      expect(storage.updateUserProfile).not.toHaveBeenCalled();
+    });
+
+    it("PUT saves a diet type when the same request carries the consent", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(consentedProfile);
+
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ dietType: "vegan", healthDataConsent: true });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateUserProfile).mock.calls[0][2]).toBe(true);
     });
 
     it("PUT refuses health fields from a user who has not consented", async () => {
@@ -523,7 +558,7 @@ describe("Profile Routes", () => {
         .put("/api/user/dietary-profile")
         .set("Authorization", "Bearer token")
         .send({
-          dietType: "vegan",
+          foodDislikes: ["olives"],
           healthDataConsentVersion: "1999-01-01",
           healthDataConsentWithdrawnAt: "1999-01-01T00:00:00Z",
           healthDataConsentHistory: [{ event: "granted", at: "1999-01-01" }],
@@ -533,7 +568,7 @@ describe("Profile Routes", () => {
 
       expect(res.status).toBe(200);
       expect(vi.mocked(storage.updateUserProfile).mock.calls[0][1]).toEqual({
-        dietType: "vegan",
+        foodDislikes: ["olives"],
       });
     });
 
@@ -545,7 +580,7 @@ describe("Profile Routes", () => {
       const res = await request(app)
         .put("/api/user/dietary-profile")
         .set("Authorization", "Bearer token")
-        .send({ dietType: "vegan", allergies: [] });
+        .send({ foodDislikes: ["olives"], dietType: null, allergies: [] });
 
       expect(res.status).toBe(200);
     });

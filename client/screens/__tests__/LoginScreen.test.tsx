@@ -143,7 +143,7 @@ describe("LoginScreen — auth-failure error copy (H6)", () => {
       target: { value: "demo@example.com" },
     });
     fireEvent.click(
-      screen.getByLabelText("I confirm I am 13 years of age or older"),
+      screen.getByLabelText("I confirm I am 14 years of age or older"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
@@ -178,7 +178,7 @@ describe("LoginScreen — client-side validation pre-flight", () => {
       target: { value: "recipe-passphrase-1" },
     });
     fireEvent.click(
-      screen.getByLabelText("I confirm I am 13 years of age or older"),
+      screen.getByLabelText("I confirm I am 14 years of age or older"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
@@ -225,7 +225,7 @@ describe("LoginScreen — email field", () => {
       target: { value: "recipe-passphrase-1" },
     });
     fireEvent.click(
-      screen.getByLabelText("I confirm I am 13 years of age or older"),
+      screen.getByLabelText("I confirm I am 14 years of age or older"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
@@ -263,7 +263,7 @@ describe("LoginScreen — email field", () => {
       target: { value: "ten-chars!" },
     });
     fireEvent.click(
-      screen.getByLabelText("I confirm I am 13 years of age or older"),
+      screen.getByLabelText("I confirm I am 14 years of age or older"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
     await waitFor(() =>
@@ -294,7 +294,7 @@ describe("LoginScreen — email field", () => {
       target: { value: "recipe-passphrase-1" },
     });
     fireEvent.click(
-      screen.getByLabelText("I confirm I am 13 years of age or older"),
+      screen.getByLabelText("I confirm I am 14 years of age or older"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
@@ -329,7 +329,7 @@ describe("LoginScreen — email field", () => {
         target: { value: confirm },
       });
       fireEvent.click(
-        screen.getByLabelText("I confirm I am 13 years of age or older"),
+        screen.getByLabelText("I confirm I am 14 years of age or older"),
       );
     };
 

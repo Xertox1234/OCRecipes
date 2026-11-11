@@ -5,21 +5,26 @@
  * the consent before it shows a health question.
  *
  * Health fields are the ones the consent screen names: allergies, health
- * conditions and medications, body metrics and activity, and the nutrition
- * goal. Taste and cooking preferences (diet type, dislikes, cuisines,
+ * conditions and medications, diet type, body metrics and activity, and the
+ * nutrition goal. Taste and cooking preferences (dislikes, cuisines,
  * household, skill, time) are not health data and stay ungated.
+ *
+ * Diet type joined the list by owner ruling 2026-11-10: a diet can point at a
+ * health condition (keto, low FODMAP) or a religion (halal, kosher), so every
+ * choice is gated, "omnivore" included.
  */
 
 /**
  * The privacy-policy version a consent is recorded against — the policy's
  * effective date. Bump it when the policy's health-data wording changes.
  */
-export const HEALTH_CONSENT_VERSION = "2026-11-03";
+export const HEALTH_CONSENT_VERSION = "2026-11-10";
 
 /** `user_profiles` columns that hold health data. */
 export const PROFILE_HEALTH_FIELDS = [
   "allergies",
   "healthConditions",
+  "dietType",
   "primaryGoal",
   "activityLevel",
   "glp1Mode",

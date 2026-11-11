@@ -56,26 +56,34 @@ describe("onboarding-steps", () => {
   });
 
   // Privacy audit H2: without the health-data consent the health questions
-  // (Allergies, HealthConditions, Goals) are never shown.
+  // (Allergies, HealthConditions, DietType, Goals) are never shown. DietType
+  // joined them by owner ruling 2026-11-10.
   describe("without the health-data consent", () => {
     const idx = (name: (typeof ONBOARDING_SCREENS)[number]) =>
       ONBOARDING_SCREENS.indexOf(name);
 
-    it("goes from the consent screen straight to DietType", () => {
+    it("goes from the consent screen straight to Preferences", () => {
       expect(nextStepIndex(idx("HealthDataConsent"), false)).toBe(
-        idx("DietType"),
+        idx("Preferences"),
       );
     });
 
-    it("skips Goals between DietType and Preferences, both ways", () => {
-      expect(nextStepIndex(idx("DietType"), false)).toBe(idx("Preferences"));
-      expect(prevStepIndex(idx("Preferences"), false)).toBe(idx("DietType"));
-    });
-
-    it("goes back from DietType to the consent screen", () => {
-      expect(prevStepIndex(idx("DietType"), false)).toBe(
+    it("goes back from Preferences to the consent screen", () => {
+      expect(prevStepIndex(idx("Preferences"), false)).toBe(
         idx("HealthDataConsent"),
       );
+    });
+
+    it("never lands on a health question", () => {
+      const shown: string[] = [];
+      let i = idx("HealthDataConsent");
+      for (;;) {
+        const next = nextStepIndex(i, false);
+        if (next === i) break;
+        shown.push(ONBOARDING_SCREENS[next]);
+        i = next;
+      }
+      expect(shown).toEqual(["Preferences", "TastePicks"]);
     });
 
     it("stops at the last screen and at the first", () => {
@@ -83,11 +91,10 @@ describe("onboarding-steps", () => {
       expect(prevStepIndex(0, false)).toBe(0);
     });
 
-    it("counts only the three screens that are shown", () => {
-      expect(getQuestionStepCount(false)).toBe(3);
-      expect(getStepLabel(idx("DietType"), false)).toBe("Step 1 of 3");
-      expect(getStepLabel(idx("Preferences"), false)).toBe("Step 2 of 3");
-      expect(getStepLabel(idx("TastePicks"), false)).toBe("Step 3 of 3");
+    it("counts only the two screens that are shown", () => {
+      expect(getQuestionStepCount(false)).toBe(2);
+      expect(getStepLabel(idx("Preferences"), false)).toBe("Step 1 of 2");
+      expect(getStepLabel(idx("TastePicks"), false)).toBe("Step 2 of 2");
       expect(getQuestionStep(idx("HealthDataConsent"), false)).toBe(0);
     });
   });

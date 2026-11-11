@@ -26,13 +26,13 @@
 
 <h2>What we collect</h2>
 <h3>Account information</h3>
-<p>Your username, email address, password (stored only as a one-way hash), display name, and profile picture if you add one. At sign-up you confirm that you are at least 13. We also record when you last used the app, so we know not to delete your history while you are still using it.</p>
+<p>Your username, email address, password (stored only as a one-way hash), display name, and profile picture if you add one. At sign-up you confirm that you are at least 14. We also record when you last used the app, so we know not to delete your history while you are still using it.</p>
 <p>If you sign in with Google or Apple, we receive and keep the account identifier that company gives us and the email address it shares (with Apple this can be a private relay address). For Apple we also keep an encrypted sign-in token, which we use only to tell Apple to end the connection when you delete your account.</p>
 <p>If you turn on two-step sign-in, we email you a code and keep a one-way hash of it until it expires, a count of attempts, and, if you choose “trust this phone”, a one-way hash of a key stored on that phone.</p>
 <p>When you choose a password we check whether it has appeared in a known data breach. To do that we send the first five characters of a one-way hash of the password to the Have I Been Pwned service. Your password, your email address and anything that identifies you are not sent.</p>
 
 <h3>Health and nutrition information</h3>
-<p>If you choose to provide them: allergies and how severe they are, health conditions and medications (including GLP-1 medications), age, height, weight, goal weight, gender, activity level, dietary goals and preferences, foods you dislike, and household and cooking preferences. You also create records as you use the app: foods you log, scanned items, daily totals, meal plans, grocery lists, pantry items, saved recipes and cookbooks, and the community recipes you mark as “I tried it”.</p>
+<p>If you choose to provide them: allergies and how severe they are, health conditions and medications (including GLP-1 medications), age, height, weight, goal weight, gender, activity level, your diet type and dietary goal, foods you dislike, and household and cooking preferences. You also create records as you use the app: foods you log, scanned items, daily totals, meal plans, grocery lists, pantry items, saved recipes and cookbooks, and the community recipes you mark as “I tried it”.</p>
 
 <h3>Photos, voice and text you give the app</h3>
 <ul>
@@ -67,7 +67,7 @@
 
 <h2>Your health information</h2>
 <p>Before any AI feature is used, the app shows you the companies that run our AI (OpenRouter, Microsoft Azure, which runs OpenAI’s models, Google and Runware) and what they receive, and asks for your permission. If you choose “Keep AI off”, we send nothing to them: photo scanning, typed and spoken food logging, the AI coach, recipe ideas, AI meal plans and AI pictures stay off, and barcode scanning and your saved recipes keep working. You can change your answer any time in Profile → Settings → AI features. We keep a record of when you allowed it and when you turned it off.</p>
-<p>During setup we ask for your consent to use health information to personalize recommendations and AI coaching. Health details are optional: you can choose “Not now” and keep using the app. If you do, we do not ask for or store your health details; we ask for your consent again if you later add them in Profile. Your health information is <strong>never sold and never shared with advertisers</strong>. Some of it is sent to the service providers below, only to produce the answer you asked for. For example, the coach receives your goals, allergies, diet type, weight and activity level so its suggestions fit you. To withdraw your consent and have your health details removed, use Profile → Settings → Withdraw health-data consent, or email <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. Withdrawing removes your allergies, health conditions and medications, body measurements, activity level and goal, and resets the coach’s mood score; we keep only a record of when you agreed and when you withdrew. Your food logs, recipes, chats and the notes Coach has saved stay; you can clear those notes under Coach → What Coach knows.</p>
+<p>During setup we ask for your consent to use health information to personalize recommendations and AI coaching. Health details are optional: you can choose “Not now” and keep using the app. If you do, we do not ask for or store your health details, which include your diet type; we ask for your consent again if you later add them in Profile. Your health information is <strong>never sold and never shared with advertisers</strong>. Some of it is sent to the service providers below, only to produce the answer you asked for. For example, the coach receives your goals, allergies, diet type, weight and activity level so its suggestions fit you. To withdraw your consent and have your health details removed, use Profile → Settings → Withdraw health-data consent, or email <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. Withdrawing removes your allergies, health conditions and medications, diet type, body measurements, activity level and goal, and resets the coach’s mood score; we keep only a record of when you agreed and when you withdrew. Your food logs, recipes, chats and the notes Coach has saved stay; you can clear those notes under Coach → What Coach knows.</p>
 <p>OCRecipes provides general nutrition information, not medical advice. See our <a href="/terms">Terms of Service</a>.</p>
 
 <h2 id="who-we-share-it-with">Who we share it with</h2>
@@ -128,7 +128,7 @@
   <li><strong>Notifications:</strong> turn them off in your phone’s settings, or mute reminders under Profile → Settings → <em>Coach Reminders</em>.</li>
   <li><strong>Withdraw consent</strong> or make any other request by emailing <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. We reply within 30 days.</li>
 </ul>
-<p>If you’re not satisfied with our response, you can contact the Office of the Information and Privacy Commissioner of Alberta (<a href="https://oipc.ab.ca">oipc.ab.ca</a>), the Office of the Privacy Commissioner of Canada (<a href="https://www.priv.gc.ca">priv.gc.ca</a>), or the privacy regulator where you live.</p>
+<p>If you’re not satisfied with our response, you can contact the Office of the Information and Privacy Commissioner of Alberta (<a href="https://oipc.ab.ca">oipc.ab.ca</a>), the Office of the Privacy Commissioner of Canada (<a href="https://www.priv.gc.ca">priv.gc.ca</a>), Quebec’s Commission d’accès à l’information (<a href="https://www.cai.gouv.qc.ca">cai.gouv.qc.ca</a>), or the privacy regulator where you live.</p>
 
 <h3>If you live in the United States</h3>
 <p>Whichever state you live in, you can ask us to confirm what information we hold about you, give you a copy, correct it, or delete it, and you can withdraw a consent you gave. We do not sell personal information, do not share it for advertising, and will not treat you differently for making a request. Use the controls above or email <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. If we refuse a request, you can appeal by replying to our answer, and we will tell you the outcome in writing. If you are still not satisfied, you can contact your state’s Attorney General. Our <a href="/health-privacy">Consumer Health Data Privacy Policy</a> covers health information in more detail.</p>
@@ -137,7 +137,7 @@
 <p>Passwords are stored with bcrypt hashing, connections are encrypted, sign-ins are rate-limited, and resetting your password signs you out on every other device. No system is perfectly secure, so please use a strong, unique password.</p>
 
 <h2>Children</h2>
-<p>OCRecipes is not for children under 13. If we learn that a child under 13 has created an account, we will delete it. If you believe this has happened, contact us.</p>
+<p>OCRecipes is not for children under 14. If we learn that a child under 14 has created an account, we will delete it. If you believe this has happened, contact us.</p>
 
 <h2>Changes to this policy</h2>
 <p>If we change this policy we will update the date at the top. If a change is significant, we will tell you in the app or by email before it takes effect.</p>
