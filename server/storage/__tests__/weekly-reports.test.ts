@@ -86,6 +86,13 @@ describe("weekly-reports storage", () => {
       expect(b).toBeNull();
     });
 
+    it("reports whether a week already has a report", async () => {
+      expect(await wr.weeklyReportExists(user.id, "2026-11-01")).toBe(false);
+      await wr.insertWeeklyReport(user.id, row("2026-11-01"));
+      expect(await wr.weeklyReportExists(user.id, "2026-11-01")).toBe(true);
+      expect(await wr.weeklyReportExists(user.id, "2026-10-25")).toBe(false);
+    });
+
     it("claims delivery once", async () => {
       const r = await wr.insertWeeklyReport(user.id, row("2026-11-01"));
       expect(await wr.claimWeeklyReportDelivery(user.id, r!.id, "push")).toBe(

@@ -26,6 +26,11 @@ import { reportError } from "../lib/error-reporter";
 import { storage } from "../storage";
 import { civilHourInTz, parseTimezone } from "../lib/civil-date";
 import { notify } from "./notifications/notify";
+import {
+  generateWeeklyReportForUser,
+  sendDueWeeklyReportPushes,
+} from "./weekly-report/generate";
+import { reportWeekFor } from "./weekly-report/week-window";
 import type { ReminderMutes } from "@shared/types/reminders";
 
 /**
@@ -352,6 +357,60 @@ export async function sendMealLogReminders(
 }
 
 /**
+ * Coach weekly report, run every hour: write the report for each user whose
+ * local time is Sunday 18:00, then send every push that is due (including
+ * ones held overnight). Generation is idempotent per (user, week) and pushes
+ * are claimed before sending, so a re-run sends nothing twice.
+ */
+export async function runWeeklyReports(now: Date): Promise<void> {
+  try {
+    await forEachUserPaged(async (pageUserIds) => {
+      let tzMap: Map<string, string | null>;
+      try {
+        tzMap = await storage.getUserTimezones(pageUserIds);
+      } catch (err) {
+        logger.error(
+          { err },
+          "notification-scheduler: failed to fetch timezones for weekly report page",
+        );
+        return;
+      }
+      const due = pageUserIds.filter(
+        (id) =>
+          reportWeekFor(now, parseTimezone(tzMap.get(id))).isSundayEvening,
+      );
+      await runBounded(due, async (userId) => {
+        try {
+          await generateWeeklyReportForUser(
+            userId,
+            now,
+            parseTimezone(tzMap.get(userId)),
+          );
+        } catch (err) {
+          logger.error(
+            { err, userId },
+            "notification-scheduler: failed weekly report for user",
+          );
+        }
+      });
+    });
+  } catch (err) {
+    logger.error(
+      { err },
+      "notification-scheduler: failed to page users for weekly report",
+    );
+  }
+  try {
+    await sendDueWeeklyReportPushes(now);
+  } catch (err) {
+    logger.error(
+      { err },
+      "notification-scheduler: failed sending weekly report pushes",
+    );
+  }
+}
+
+/**
  * Run slot for a cron tick: the nearest UTC hour boundary, e.g. "2026-11-01T09".
  * Both jobs fire on the hour, so two instances ticking a few ms apart (or
  * straddling the boundary through clock skew) compute the SAME slot — truncating
@@ -456,13 +515,20 @@ export function startNotificationScheduler(): void {
               reportError(err, "notification-scheduler: meal-log cron");
             },
           ),
+          runWeeklyReports(now).catch((err) => {
+            logger.error(
+              { err: toError(err) },
+              "notification-scheduler: unhandled error in weekly-report cron",
+            );
+            reportError(err, "notification-scheduler: weekly-report cron");
+          }),
         ]),
       ),
     { timezone: "UTC", noOverlap: true, name: "local-hour-reminders" },
   );
 
   logger.info(
-    "notification-scheduler: started (09:00 UTC commitments; hourly local-time check-in 09:00 / meal-log 12:00)",
+    "notification-scheduler: started (09:00 UTC commitments; hourly local-time check-in 09:00 / meal-log 12:00 / weekly report Sun 18:00)",
   );
 }
 

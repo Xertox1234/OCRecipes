@@ -145,3 +145,27 @@ export async function acknowledgeReminderType(
     .returning({ id: pendingReminders.id });
   return rows.length;
 }
+
+/**
+ * Whether a reminder of `type` was scheduled at or after `since`, acknowledged
+ * or not. The weekly report uses it to hold its push until the next morning
+ * when a commitment push already went out that local day.
+ */
+export async function hasReminderSince(
+  userId: string,
+  type: ReminderType,
+  since: Date,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: pendingReminders.id })
+    .from(pendingReminders)
+    .where(
+      and(
+        eq(pendingReminders.userId, userId),
+        eq(pendingReminders.type, type),
+        gte(pendingReminders.scheduledFor, since),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}

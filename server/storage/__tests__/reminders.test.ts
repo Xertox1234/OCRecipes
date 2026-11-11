@@ -32,6 +32,7 @@ const {
   acknowledgeReminders,
   getTodaysPendingReminders,
   acknowledgeReminderType,
+  hasReminderSince,
 } = await import("../reminders");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -331,6 +332,39 @@ describe("reminders storage", () => {
         rows.map((r) => [r.type, r.acknowledgedAt !== null]),
       );
       expect(byType).toEqual({ "meal-log": true, commitment: false });
+    });
+  });
+
+  describe("hasReminderSince", () => {
+    it("sees a reminder of the type at or after the instant, acknowledged or not", async () => {
+      await createPendingReminder({
+        userId: testUser.id,
+        type: "commitment",
+        context: {},
+        scheduledFor: new Date("2026-11-08T09:00:00Z"),
+      });
+      await acknowledgeReminders(testUser.id);
+      expect(
+        await hasReminderSince(
+          testUser.id,
+          "commitment",
+          new Date("2026-11-08T00:00:00Z"),
+        ),
+      ).toBe(true);
+      expect(
+        await hasReminderSince(
+          testUser.id,
+          "commitment",
+          new Date("2026-11-08T10:00:00Z"),
+        ),
+      ).toBe(false);
+      expect(
+        await hasReminderSince(
+          testUser.id,
+          "meal-log",
+          new Date("2026-11-08T00:00:00Z"),
+        ),
+      ).toBe(false);
     });
   });
 });

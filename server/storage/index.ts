@@ -427,6 +427,7 @@ export const storage = {
   getWeeklyReportInputs: weeklyReportsStorage.getWeeklyReportInputs,
   getFeatureUsage: weeklyReportsStorage.getFeatureUsage,
   insertWeeklyReport: weeklyReportsStorage.insertWeeklyReport,
+  weeklyReportExists: weeklyReportsStorage.weeklyReportExists,
   listWeeklyReports: weeklyReportsStorage.listWeeklyReports,
   getWeeklyReport: weeklyReportsStorage.getWeeklyReport,
   getRecentWeeklyFacts: weeklyReportsStorage.getRecentWeeklyFacts,
@@ -448,6 +449,7 @@ export const storage = {
   hasPendingReminders: remindersStorage.hasPendingReminders,
   acknowledgeReminders: remindersStorage.acknowledgeReminders,
   acknowledgeReminderType: remindersStorage.acknowledgeReminderType,
+  hasReminderSince: remindersStorage.hasReminderSince,
   getTodaysPendingReminders: remindersStorage.getTodaysPendingReminders,
 
   // Canonical recipes

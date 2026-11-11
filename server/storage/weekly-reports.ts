@@ -335,6 +335,23 @@ export async function insertWeeklyReport(
   return row ?? null;
 }
 
+export async function weeklyReportExists(
+  userId: string,
+  weekStart: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: coachWeeklyReports.id })
+    .from(coachWeeklyReports)
+    .where(
+      and(
+        eq(coachWeeklyReports.userId, userId),
+        eq(coachWeeklyReports.weekStart, weekStart),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
 export async function listWeeklyReports(
   userId: string,
   limit = 60,
