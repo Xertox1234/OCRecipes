@@ -172,7 +172,7 @@ describe("validateAuthForm", () => {
 
   it("rejects when the age checkbox is unconfirmed", () => {
     expect(validateAuthForm({ ...validRegister, ageConfirmed: false })).toMatch(
-      /13 years/i,
+      /14 years/i,
     );
   });
 });

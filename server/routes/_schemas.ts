@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 import { measurementUnitSchema } from "@shared/lib/units";
+import { AGE_ATTESTATION_ERROR } from "@shared/constants/minimum-age";
 import { parseTimezone } from "../lib/civil-date";
 import {
   PASSWORD_MAX,
@@ -86,10 +87,11 @@ export const registerSchema = z.object({
     .toLowerCase()
     .email("Please enter a valid email address")
     .max(254),
-  // COPPA 13+ age attestation — legal attestation at registration time,
+  // Age attestation (14+, `shared/constants/minimum-age.ts`) — legal
+  // attestation at registration time,
   // not persisted to the DB. z.literal(true) rejects false/undefined/missing.
   ageConfirmed: z.literal(true, {
-    error: "You must confirm you are 13 years of age or older",
+    error: AGE_ATTESTATION_ERROR,
   }),
   // The "Use two-step verification" switch (password policy spec P4): sets
   // the minimum only (8 on, 15 off) and is never stored.

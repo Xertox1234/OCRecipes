@@ -1,3 +1,4 @@
+import { MINIMUM_AGE } from "@shared/constants/minimum-age";
 import { parseDecimalInput } from "@/lib/number-input";
 import {
   cmToInches,
@@ -35,7 +36,13 @@ function fieldRange(field: GoalField, unit: MeasurementUnit): FieldRange {
   const imperial = unit === "imperial";
   switch (field) {
     case "age":
-      return { label: "Age", min: 13, max: 120, suffix: "", integer: true };
+      return {
+        label: "Age",
+        min: MINIMUM_AGE,
+        max: 120,
+        suffix: "",
+        integer: true,
+      };
     case "weight":
       return imperial
         ? {

@@ -49,6 +49,7 @@ import {
 } from "@react-navigation/native";
 import { useToast } from "@/context/ToastContext";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { AGE_ATTESTATION_LABEL } from "@shared/constants/minimum-age";
 import { ApiError } from "@/lib/api-error";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -124,7 +125,7 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   // Bumped on each validation reject (not server errors) to shake the error.
   const [shakeKey, setShakeKey] = useState(0);
-  // COPPA 13+ age attestation — gated by checkbox; server enforces ageConfirmed:true
+  // Age attestation (14+) — gated by checkbox; server enforces ageConfirmed:true
   const [ageConfirmed, setAgeConfirmed] = useState(false);
 
   const passwordReset = route.params?.passwordReset === true;
@@ -530,7 +531,7 @@ export default function LoginScreen() {
                 onPress={toggleAgeConfirmed}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: ageConfirmed }}
-                accessibilityLabel="I confirm I am 13 years of age or older"
+                accessibilityLabel={AGE_ATTESTATION_LABEL}
                 hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
                 testID="checkbox-age-confirm"
                 style={styles.ageCheckboxRow}
@@ -541,7 +542,7 @@ export default function LoginScreen() {
                   color={ageConfirmed ? theme.success : theme.textSecondary}
                 />
                 <ThemedText type="body" style={styles.ageCheckboxLabel}>
-                  I confirm I am 13 years of age or older
+                  {AGE_ATTESTATION_LABEL}
                 </ThemedText>
               </Pressable>
               <LegalConsentCaption onLinkError={showLinkError} />

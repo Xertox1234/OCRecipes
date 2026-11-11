@@ -384,6 +384,10 @@ describe("Route Helpers", () => {
         ageConfirmed: false,
       });
       expect(result.success).toBe(false);
+      // The attestation is 14+ (Quebec Law 25; privacy audit G5).
+      expect(JSON.stringify(result.error?.issues)).toContain(
+        "14 years of age or older",
+      );
     });
 
     it("rejects password shorter than 8 chars", () => {
