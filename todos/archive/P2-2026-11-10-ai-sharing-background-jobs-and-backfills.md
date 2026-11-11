@@ -1,6 +1,6 @@
 ---
 title: "AI sharing: background promotion job and backfill scripts ignore the user's AI-off choice"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-10
 updated: 2026-11-10
@@ -25,7 +25,13 @@ Found while mapping every route that reaches `aiChat` for the H3 fix (2026-11-10
 
 ## Acceptance Criteria
 
-- [ ] The promotion job skips recipes that are private or whose author has AI sharing off (`users.ai_sharing_allowed_at IS NULL`)
-- [ ] The two backfill scripts skip recipes owned by a user with AI sharing off
-- [ ] Any new per-user AI job outside a request checks `isAiSharingAllowedFor` before the call
-- [ ] Tests cover an author with AI off for each path
+- [x] The promotion job skips recipes that are private or whose author has AI sharing off (`users.ai_sharing_allowed_at IS NULL`)
+- [x] The two backfill scripts skip recipes owned by a user with AI sharing off
+- [x] Any new per-user AI job outside a request checks `isAiSharingAllowedFor` before the call
+- [x] Tests cover an author with AI off for each path
+
+## Resolution (2026-11-10)
+
+- Promotion: `getEligibleForPromotion` takes only public recipes whose author allows AI sharing, and `enrichRecipe` checks again before it sends.
+- Backfills: the spice-level, image and nutrition scripts load rows through `server/scripts/backfill-ai-rows.ts`, which leaves out owners with AI off. `backfill-community-nutrition.ts` was a third script with the same gap.
+- Weekly report: `server/services/weekly-report/generate.ts` already checks `isAiSharingAllowedFor` before the AI call.

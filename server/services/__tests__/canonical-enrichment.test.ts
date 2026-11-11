@@ -10,6 +10,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getRecipeById: vi.fn(),
     markEnriched: vi.fn().mockResolvedValue(undefined),
+    isAiSharingAllowed: vi.fn().mockResolvedValue(true),
   },
 }));
 
@@ -222,6 +223,64 @@ describe("enrichRecipe", () => {
     runware.configured = false;
     runware.generateImage.mockResolvedValue(null);
     runware.saveImageBuffer.mockResolvedValue("/api/recipe-images/test.png");
+    vi.mocked(storage.isAiSharingAllowed).mockResolvedValue(true);
+    vi.mocked(storage.markEnriched).mockClear();
+    mockCreate.mockClear();
+    runware.generateImage.mockClear();
+  });
+
+  // Privacy audit M13 — enrichment is the point where recipe text leaves for
+  // the AI companies, and it runs some time after the recipe was picked.
+  it("sends nothing to AI when the author has AI sharing off", async () => {
+    runware.configured = true;
+    vi.mocked(storage.isAiSharingAllowed).mockResolvedValue(false);
+    vi.mocked(storage.getRecipeById).mockResolvedValue(
+      createMockCommunityRecipe({
+        id: 21,
+        authorId: "author-ai-off",
+        canonicalEnrichedAt: null,
+      }),
+    );
+
+    await enrichRecipe(21);
+
+    expect(storage.isAiSharingAllowed).toHaveBeenCalledWith("author-ai-off");
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(runware.generateImage).not.toHaveBeenCalled();
+    expect(storage.markEnriched).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing to AI for a private recipe", async () => {
+    runware.configured = true;
+    vi.mocked(storage.getRecipeById).mockResolvedValue(
+      createMockCommunityRecipe({
+        id: 22,
+        isPublic: false,
+        canonicalEnrichedAt: null,
+      }),
+    );
+
+    await enrichRecipe(22);
+
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(runware.generateImage).not.toHaveBeenCalled();
+    expect(storage.markEnriched).not.toHaveBeenCalled();
+  });
+
+  it("enriches a recipe with no author without an AI-sharing lookup", async () => {
+    vi.mocked(storage.isAiSharingAllowed).mockClear();
+    vi.mocked(storage.getRecipeById).mockResolvedValue(
+      createMockCommunityRecipe({
+        id: 23,
+        authorId: null,
+        canonicalEnrichedAt: null,
+      }),
+    );
+
+    await enrichRecipe(23);
+
+    expect(storage.isAiSharingAllowed).not.toHaveBeenCalled();
+    expect(storage.markEnriched).toHaveBeenCalledWith(23, expect.anything());
   });
 
   it("throws when the recipe is not found", async () => {

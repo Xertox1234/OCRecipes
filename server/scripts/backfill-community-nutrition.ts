@@ -17,9 +17,10 @@ import "dotenv/config";
 import { aiChat } from "../lib/ai-client";
 import { db, pool } from "../db";
 import { communityRecipes } from "@shared/schema";
-import { isNull, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { validateAiResponse } from "../lib/ai-safety";
+import { loadCommunityNutritionRows } from "./backfill-ai-rows";
 
 /** The AI's per-serving macro estimate: finite, non-negative numbers. */
 const macroEstimateSchema = z.object({
@@ -91,15 +92,8 @@ async function main() {
     `=== Backfill Community Recipe Nutrition${DRY_RUN ? " (DRY RUN)" : ""} ===\n`,
   );
 
-  const recipes = await db
-    .select({
-      id: communityRecipes.id,
-      title: communityRecipes.title,
-      ingredients: communityRecipes.ingredients,
-      servings: communityRecipes.servings,
-    })
-    .from(communityRecipes)
-    .where(isNull(communityRecipes.caloriesPerServing));
+  // Leaves out recipes whose author has AI sharing off (privacy audit M13).
+  const recipes = await loadCommunityNutritionRows();
 
   if (recipes.length === 0) {
     console.log("No community recipes need nutrition backfill.");
