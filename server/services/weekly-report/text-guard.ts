@@ -52,7 +52,10 @@ export function factNumbers(facts: WeeklyFacts): Set<number> {
   add(facts.proteinDaysMet);
   add(facts.caloriesDaysMet);
   add(facts.carbsDaysMet);
-  for (const r of facts.recipes) add(r.timesLogged);
+  for (const r of facts.recipes) {
+    add(r.timesLogged);
+    addNumbersFromText(s, r.title); // "13-Bean Soup" may be named as is
+  }
   for (const p of facts.patterns) addNumbersFromText(s, p);
   if (facts.lastWeek) {
     const lw = facts.lastWeek;

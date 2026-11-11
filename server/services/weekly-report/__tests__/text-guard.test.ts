@@ -161,6 +161,24 @@ describe("validateContent", () => {
   });
 });
 
+describe("factNumbers — recipe titles", () => {
+  it("allows the digits in a recipe title the user added", () => {
+    const f = build({
+      recipes: [
+        {
+          recipeId: 3,
+          recipeType: "mealPlan",
+          title: "13-Bean Soup",
+          how: "imported",
+          timesLogged: 0,
+          imageUrl: null,
+        },
+      ],
+    });
+    expect(factNumbers(f).has(13)).toBe(true);
+  });
+});
+
 describe("templateContent", () => {
   it.each([
     ["normal", normal],
