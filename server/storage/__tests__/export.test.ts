@@ -7,13 +7,40 @@ import { exportUserColumns } from "../export";
 // This test guards the allowlist directly so a regression fails fast in CI,
 // independent of any database, mocks, or HTTP setup.
 describe("exportUserColumns", () => {
-  const forbiddenKeys = ["password", "tokenVersion"] as const;
+  const forbiddenKeys = [
+    "password",
+    "tokenVersion",
+    "resetCodeHash",
+    "resetCodeExpiresAt",
+    "resetCodeAttempts",
+    "resetIssueCount",
+    "resetIssueWindowStart",
+  ] as const;
 
   for (const key of forbiddenKeys) {
     it(`does not include sensitive column "${key}"`, () => {
       expect(Object.keys(exportUserColumns)).not.toContain(key);
     });
   }
+
+  // Privacy audit M6 review: the account's own email and settings were never
+  // in the file, while the privacy page says only security records are left out.
+  it("includes the account's email, settings and consent record", () => {
+    expect(Object.keys(exportUserColumns)).toEqual(
+      expect.arrayContaining([
+        "email",
+        "emailVerified",
+        "pendingEmail",
+        "measurementUnit",
+        "mfaEnabledAt",
+        "timezone",
+        "lastActiveAt",
+        "aiSharingAllowedAt",
+        "aiSharingVersion",
+        "aiSharingHistory",
+      ]),
+    );
+  });
 });
 
 // Privacy audit 2026-11-10, M6: tables added after the export was written

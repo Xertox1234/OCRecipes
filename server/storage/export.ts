@@ -64,6 +64,9 @@ import { eq, inArray, asc, desc } from "drizzle-orm";
 export const exportUserColumns = {
   id: users.id,
   username: users.username,
+  email: users.email,
+  emailVerified: users.emailVerified,
+  pendingEmail: users.pendingEmail,
   displayName: users.displayName,
   avatarUrl: users.avatarUrl,
   dailyCalorieGoal: users.dailyCalorieGoal,
@@ -77,8 +80,16 @@ export const exportUserColumns = {
   goalWeight: users.goalWeight,
   goalsCalculatedAt: users.goalsCalculatedAt,
   onboardingCompleted: users.onboardingCompleted,
+  measurementUnit: users.measurementUnit,
+  mfaEnabledAt: users.mfaEnabledAt,
   subscriptionTier: users.subscriptionTier,
   subscriptionExpiresAt: users.subscriptionExpiresAt,
+  timezone: users.timezone,
+  lastActiveAt: users.lastActiveAt,
+  // The AI-sharing consent record: when it was given, which version, history.
+  aiSharingAllowedAt: users.aiSharingAllowedAt,
+  aiSharingVersion: users.aiSharingVersion,
+  aiSharingHistory: users.aiSharingHistory,
   createdAt: users.createdAt,
 } as const;
 
