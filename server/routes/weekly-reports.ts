@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { handleRouteError, parsePositiveIntParam } from "./_helpers";
@@ -10,15 +11,14 @@ import {
   type WeeklyReport,
   type WeeklyReportList,
 } from "@shared/schemas/coach-weekly-report";
-import {
-  weeklyReportsReadRateLimit,
-  weeklyReportsWriteRateLimit,
-} from "./_rate-limiters";
+import { ipKeyGenerator, resolveRateLimitMax } from "./_rate-limiters";
 
 /**
  * Coach weekly report (spec docs/superpowers/specs/2026-11-10-coach-weekly-report-design.md).
  * Every route is scoped to req.userId. No Pro gate: a user keeps reading the
- * reports they own after a lapse; only generation is gated.
+ * reports they own after a lapse; only generation is gated. Limiters are
+ * inlined per route (not _rate-limiters factory consts) so CodeQL's
+ * js/missing-rate-limiting dataflow can see them, as in coach-write-cards.ts.
  */
 
 const TREND_WEEKS = 6;
@@ -41,7 +41,17 @@ export function register(app: Express): void {
   app.get(
     "/api/weekly-reports",
     requireAuth,
-    weeklyReportsReadRateLimit,
+    rateLimit({
+      windowMs: 60_000,
+      max: resolveRateLimitMax(60, process.env),
+      message: {
+        error: "Too many weekly report requests. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const rows = await storage.listWeeklyReports(req.userId);
@@ -73,7 +83,17 @@ export function register(app: Express): void {
   app.get(
     "/api/weekly-reports/pending-popup",
     requireAuth,
-    weeklyReportsReadRateLimit,
+    rateLimit({
+      windowMs: 60_000,
+      max: resolveRateLimitMax(60, process.env),
+      message: {
+        error: "Too many weekly report requests. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const r = await storage.getPendingPopup(req.userId);
@@ -87,7 +107,17 @@ export function register(app: Express): void {
   app.get(
     "/api/weekly-reports/settings",
     requireAuth,
-    weeklyReportsReadRateLimit,
+    rateLimit({
+      windowMs: 60_000,
+      max: resolveRateLimitMax(60, process.env),
+      message: {
+        error: "Too many weekly report requests. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         res.json(await storage.getWeeklyReportSettings(req.userId));
@@ -100,7 +130,17 @@ export function register(app: Express): void {
   app.put(
     "/api/weekly-reports/settings",
     requireAuth,
-    weeklyReportsWriteRateLimit,
+    rateLimit({
+      windowMs: 60_000,
+      max: resolveRateLimitMax(30, process.env),
+      message: {
+        error: "Too many weekly report updates. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = settingsPatchSchema.safeParse(req.body);
@@ -124,7 +164,17 @@ export function register(app: Express): void {
   app.get(
     "/api/weekly-reports/:id",
     requireAuth,
-    weeklyReportsReadRateLimit,
+    rateLimit({
+      windowMs: 60_000,
+      max: resolveRateLimitMax(60, process.env),
+      message: {
+        error: "Too many weekly report requests. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -154,7 +204,17 @@ export function register(app: Express): void {
     app.post(
       `/api/weekly-reports/:id/${action}`,
       requireAuth,
-      weeklyReportsWriteRateLimit,
+      rateLimit({
+        windowMs: 60_000,
+        max: resolveRateLimitMax(30, process.env),
+        message: {
+          error: "Too many weekly report updates. Please wait.",
+          code: ErrorCode.RATE_LIMITED,
+        },
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+      }),
       async (req: AuthenticatedRequest, res: Response) => {
         try {
           const id = parsePositiveIntParam(req.params.id);
