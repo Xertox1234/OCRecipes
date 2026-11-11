@@ -110,7 +110,8 @@ export async function writeWeeklyReport(
     content: applyGuards(templateContent(facts), facts),
     source: "template" as const,
   });
-  if (!opts.aiAllowed) return fallback();
+  // No AI words after a safety signal: the gentle template only.
+  if (!opts.aiAllowed || facts.safetySignal) return fallback();
   try {
     const response = await aiChat(
       "coach-weekly-report",

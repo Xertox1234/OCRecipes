@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import {
   useNavigation,
   useRoute,
@@ -161,6 +167,8 @@ export default function WeeklyReportScreen() {
   }, [haptics, updateSettings, toast]);
 
   if (!report) {
+    // A link whose id didn't parse arrives as 0 and never loads: show the error.
+    const failed = isError || params.id <= 0;
     return (
       <View
         style={[
@@ -168,7 +176,13 @@ export default function WeeklyReportScreen() {
           { backgroundColor: theme.backgroundDefault, paddingTop: headerInset },
         ]}
       >
-        {isError ? (
+        {!failed && (
+          <ActivityIndicator
+            color={theme.link}
+            accessibilityLabel="Loading your report"
+          />
+        )}
+        {failed ? (
           <>
             <ThemedText style={{ color: theme.textSecondary }}>
               {"Couldn't load this report."}
@@ -212,7 +226,7 @@ export default function WeeklyReportScreen() {
 
       <HeadlineCard
         headline={content.headline}
-        subline={facts.quiet ? content.fromLogged : null}
+        subline={facts.quiet || facts.safetySignal ? content.fromLogged : null}
         celebrate={shouldPlayCelebration(report)}
         onCelebrated={() => markCelebration(report.id)}
       />

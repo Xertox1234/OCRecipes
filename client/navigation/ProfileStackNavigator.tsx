@@ -194,6 +194,9 @@ export default function ProfileStackNavigator() {
       <Stack.Screen
         name="WeeklyReport"
         component={WeeklyReportScreen}
+        // One screen per report: opening another report (popup, push link)
+        // pushes a fresh screen instead of re-using this one's local state.
+        getId={({ params }) => String(params.id)}
         options={{
           title: "Weekly report",
           headerTitle: () => (

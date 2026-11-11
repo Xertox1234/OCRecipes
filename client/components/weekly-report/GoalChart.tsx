@@ -135,6 +135,7 @@ export function GoalChart({ facts }: { facts: WeeklyFacts }) {
       <View
         style={styles.labels}
         importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
       >
         {bars.map((b, i) => (
           <ThemedText

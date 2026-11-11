@@ -44,7 +44,6 @@ export function factNumbers(facts: WeeklyFacts): Set<number> {
     add(d.calories);
     add(d.protein);
     add(d.carbs);
-    add(Number(d.date.slice(8, 10)));
   }
   add(facts.daysActive);
   add(facts.mealsLogged);
@@ -112,6 +111,9 @@ export function validateContent(
     if (containsUnsafeCoachAdvice(t)) return { ok: false, reason: "unsafe" };
   }
   const next = parsed.data.next;
+  // The idea for next week carries no numbers at all (no grams, times or counts).
+  if (next && /\d/.test(next.text))
+    return { ok: false, reason: "number-in-next" };
   if (next?.recipeId != null) {
     const found = facts.recipes.some(
       (r) => r.recipeId === next.recipeId && r.recipeType === next.recipeType,
@@ -130,8 +132,22 @@ function templateHeadline(facts: WeeklyFacts): string {
   return `You showed up ${facts.daysActive} of 7 days this week.`;
 }
 
+/** The safety-week pointer to help, in the coach's referral voice. */
+export const SAFETY_REFERRAL =
+  "If food has felt hard lately, a doctor or registered dietitian can help, and Coach is here whenever you want to talk.";
+
 /** Text built from the facts alone: always valid, costs nothing. */
 export function templateContent(facts: WeeklyFacts): WeeklyReportContent {
+  if (facts.safetySignal) {
+    return {
+      headline: templateHeadline(facts),
+      wins: [],
+      watch: [],
+      next: null,
+      fromLogged: SAFETY_REFERRAL,
+      trendLine: null,
+    };
+  }
   const wins: string[] = [];
   if (facts.daysActive > 0) {
     wins.push(

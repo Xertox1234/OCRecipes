@@ -44,6 +44,10 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function positiveOrNull(v: number | null | undefined): number | null {
+  return v !== null && v !== undefined && v > 0 ? v : null;
+}
+
 // ── Inputs ──────────────────────────────────────────────────────────────
 
 export async function getWeeklyReportInputs(
@@ -113,10 +117,11 @@ export async function getWeeklyReportInputs(
     .orderBy(chatMessages.createdAt);
 
   return {
+    // A saved goal of 0 (the goals form allows it) means "no goal".
     goals: {
-      calories: user?.calories ?? null,
-      protein: user?.protein ?? null,
-      carbs: user?.carbs ?? null,
+      calories: positiveOrNull(user?.calories),
+      protein: positiveOrNull(user?.protein),
+      carbs: positiveOrNull(user?.carbs),
     },
     logs,
     recipes,
@@ -546,5 +551,18 @@ export async function setWeeklyReportSettings(
       reportEnabled: coachWeeklyReportSettings.reportEnabled,
       pushEnabled: coachWeeklyReportSettings.pushEnabled,
     });
+  // Turning the push off also cancels one still waiting (e.g. held to the next
+  // morning); the in-app popup delivers that report instead.
+  if (partial.pushEnabled === false) {
+    await db
+      .update(coachWeeklyReports)
+      .set({ pushDueAt: null })
+      .where(
+        and(
+          eq(coachWeeklyReports.userId, userId),
+          isNull(coachWeeklyReports.deliveredVia),
+        ),
+      );
+  }
   return row;
 }

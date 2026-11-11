@@ -2623,7 +2623,7 @@ export const coachWeeklyReports = pgTable(
     ),
     index("coach_weekly_reports_user_week_idx").on(
       table.userId,
-      table.weekStart.desc(),
+      table.weekStart.desc().nullsFirst(),
     ),
     index("coach_weekly_reports_push_due_idx")
       .on(table.pushDueAt)

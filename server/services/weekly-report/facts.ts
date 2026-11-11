@@ -15,7 +15,10 @@ import type {
 
 export type { WeeklyInputs, WeeklyLog };
 
-/** A day counts toward "met" (or "low") only with this many meals logged. */
+/**
+ * A day counts toward "low" only with this many meals logged; a day that meets
+ * a goal counts as met however many meals were logged.
+ */
 const FULL_DAY_MEALS = 2;
 const PROTEIN_MET_RATIO = 0.9;
 const RANGE_TOLERANCE = 0.1;
@@ -181,7 +184,12 @@ export function buildWeeklyFacts(
     proteinDaysMet,
     caloriesDaysMet,
     carbsDaysMet,
-    celebrate: (proteinDaysMet ?? 0) >= 5 || daysActive === 7,
+    // Never celebrate a guarded week: low intake is not a win, and a safety
+    // signal week gets gentle copy only.
+    celebrate:
+      !safetySignal &&
+      !lowCalorieGuard &&
+      ((proteinDaysMet ?? 0) >= 5 || daysActive === 7),
     lowCalorieGuard,
     safetySignal,
     recipes: inputs.recipes,

@@ -143,6 +143,23 @@ describe("buildWeeklyFacts — celebration", () => {
   });
 });
 
+describe("buildWeeklyFacts — no celebration on a guarded week", () => {
+  const seven = () =>
+    DATES.flatMap((d) => twoMeals(d, { protein: 130, calories: 2000 }));
+  it("a safety signal turns the celebration off", () => {
+    expect(facts({ logs: seven() }).celebrate).toBe(true);
+    expect(facts({ logs: seven() }, true).celebrate).toBe(false);
+  });
+  it("the low-calorie guard turns the celebration off", () => {
+    const low = DATES.flatMap((d) =>
+      twoMeals(d, { protein: 130, calories: 1000 }),
+    );
+    const f = facts({ logs: low });
+    expect(f.lowCalorieGuard).toBe(true);
+    expect(f.celebrate).toBe(false);
+  });
+});
+
 describe("buildWeeklyFacts — low-calorie guard", () => {
   it("4 of 6 fully logged days under 1400 kcal on a 2000 goal sets the guard", () => {
     const logs = [

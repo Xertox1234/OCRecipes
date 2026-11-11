@@ -165,6 +165,18 @@ describe("weekly-reports storage", () => {
   });
 
   describe("settings", () => {
+    it("turning the push off cancels a push that is still waiting", async () => {
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-09T17:00:00Z") }),
+      );
+      await wr.setWeeklyReportSettings(user.id, { pushEnabled: false });
+      expect(
+        await wr.getDuePushes(new Date("2026-11-10T00:00:00Z")),
+      ).not.toContainEqual(expect.objectContaining({ id: r!.id }));
+      expect((await wr.getPendingPopup(user.id))?.id).toBe(r!.id);
+    });
+
     it("defaults to both on, and upserts a partial change", async () => {
       expect(await wr.getWeeklyReportSettings(user.id)).toEqual({
         reportEnabled: true,
@@ -184,6 +196,17 @@ describe("weekly-reports storage", () => {
   });
 
   describe("inputs", () => {
+    it("treats a saved goal of 0 as no goal", async () => {
+      await tx
+        .update(schema.users)
+        .set({ dailyProteinGoal: 0, dailyCarbsGoal: 0 })
+        .where(eq(schema.users.id, user.id));
+      const inputs = await wr.getWeeklyReportInputs(user.id, FROM, TO);
+      expect(inputs.goals.protein).toBeNull();
+      expect(inputs.goals.carbs).toBeNull();
+      expect(inputs.goals.calories).toBe(2000);
+    });
+
     it("reads goals, scales a scan log by servings and keeps the meal type", async () => {
       const [scan] = await tx
         .insert(schema.scannedItems)

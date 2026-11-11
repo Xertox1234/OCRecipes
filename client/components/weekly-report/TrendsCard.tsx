@@ -111,6 +111,7 @@ export function TrendsCard({
       <View
         style={styles.labels}
         importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
       >
         {points.map((p) => (
           <ThemedText

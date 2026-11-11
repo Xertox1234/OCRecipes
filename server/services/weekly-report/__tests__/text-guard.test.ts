@@ -151,6 +151,31 @@ describe("validateContent", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("rejects a day of the month quoted as a count (dates are not facts to quote)", () => {
+    // 6 appears in this week only as Nov 6's day of the month.
+    expect(factNumbers(normal).has(6)).toBe(false);
+    const r = validateContent(
+      { ...base, wins: ["Protein on target 6 days."] },
+      normal,
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects any digit in the next-week idea", () => {
+    const r = validateContent(
+      {
+        ...base,
+        next: {
+          text: "Aim for 2 servings of beans.",
+          recipeId: null,
+          recipeType: null,
+        },
+      },
+      normal,
+    );
+    expect(r.ok).toBe(false);
+  });
+
   it("accepts thousands separators that match a fact", () => {
     expect(factNumbers(normal).has(1950)).toBe(true);
     const r = validateContent(
@@ -211,6 +236,13 @@ describe("templateContent", () => {
     expect(templateContent(four).headline).toBe(
       "You showed up 4 of 7 days this week.",
     );
+  });
+
+  it("a safety week gets no wins and a gentle pointer to professional help", () => {
+    const t = templateContent(safety);
+    expect(t.wins).toEqual([]);
+    expect(t.fromLogged).toMatch(/doctor or registered dietitian/);
+    expect(validateContent(t, safety)).toEqual({ ok: true });
   });
 
   it("writes no watch, next or trend line, and no wins for an empty week", () => {

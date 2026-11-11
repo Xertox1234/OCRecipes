@@ -119,11 +119,15 @@ describe("writeWeeklyReport", () => {
     );
   });
 
-  it("drops watch and next after a safety signal even if Coach wrote them", async () => {
+  it("a safety signal makes no AI call and stores the gentle template", async () => {
     mockAi.mockResolvedValue(reply(good));
-    const r = await writeWeeklyReport(facts(true), { aiAllowed: true });
+    const f = facts(true);
+    const r = await writeWeeklyReport(f, { aiAllowed: true });
+    expect(mockAi).not.toHaveBeenCalled();
+    expect(r.source).toBe("template");
     expect(r.content.watch).toEqual([]);
     expect(r.content.next).toBeNull();
+    expect(r.content.fromLogged).toMatch(/registered dietitian/);
   });
 });
 

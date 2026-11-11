@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -38,18 +38,21 @@ export function HeadlineCard({
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
-  const scale = useSharedValue(celebrate && !reducedMotion ? 0.6 : 1);
-  const opacity = useSharedValue(celebrate ? 0 : 1);
+  // Latch the first-open decision: marking it shown refetches the report with
+  // `celebrate` false, which must not unmount the badge mid-animation.
+  const [play] = useState(celebrate);
+  const scale = useSharedValue(play && !reducedMotion ? 0.6 : 1);
+  const opacity = useSharedValue(play ? 0 : 1);
 
   useEffect(() => {
-    if (!celebrate) return;
+    if (!play) return;
     opacity.set(withTiming(1, { duration: 220 }));
     if (!reducedMotion) scale.set(withSpring(1, CELEBRATION_SPRING));
     haptics.notification(NotificationFeedbackType.Success);
     onCelebrated();
     // Play once per mount of a celebration week; the server marks it shown.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [celebrate]);
+  }, [play]);
 
   const badgeStyle = useAnimatedStyle(() => ({
     opacity: opacity.get(),
@@ -64,8 +67,9 @@ export function HeadlineCard({
       ]}
       accessibilityRole="header"
     >
-      {celebrate && (
+      {play && (
         <Animated.View
+          testID="weekly-celebration-badge"
           style={[
             styles.badge,
             { backgroundColor: withOpacity(theme.success, 0.12) },
