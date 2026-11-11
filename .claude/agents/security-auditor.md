@@ -392,3 +392,5 @@ When auditing a route file or service, check every item:
 - **`docs/solutions/*.md`** — canonical, git-tracked codified knowledge store; find candidates mid-session with `grep -rl '^tags:.*\b<tag>\b' docs/solutions --include='*.md' | grep -v _manifests` or a title-keyword grep; frontmatter schema in `docs/solutions/README.md`.
 
 **Export/redaction check (2026-06-10 audit):** in data exports, treat infrastructure credentials as non-user-data even in own-data exports — Expo push tokens, raw IAP receipt blobs, and on Android the `transactionId` itself (it IS the Google purchase token). Object-storage keys on public CDNs must be random (`crypto.randomUUID()`), never `userId`-or-timestamp-derived.
+
+- **AI-sharing in background work:** `aiChat`'s AI-sharing gate reads the user from the request context, so a cron/queue/script call that sends one user's data is NOT gated. Demand an explicit `isAiSharingAllowedFor(userId)` check with a no-AI fallback (`docs/solutions/logic-errors/scheduled-job-ai-call-bypasses-request-context-ai-sharing-gate-2026-11-10.md`).
