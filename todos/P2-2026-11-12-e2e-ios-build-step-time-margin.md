@@ -17,7 +17,7 @@ The nightly iOS E2E run on 2026-11-11 (42986537073) failed before any flow ran: 
 
 ## Background
 
-Found during the CI Postgres saturation work (`todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md`); the owner asked for it to be tracked on its own (2026-11-12).
+Found during the CI Postgres saturation work (`todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md`); the owner asked for it to be tracked on its own (2026-11-12).
 
 The step's bound is tied to the job's: the comment above `Build and install iOS app` in `.github/workflows/e2e-regression.yml` derives `timeout-minutes: 160` for the job from setup about 6 min, build, pre-warm about 10 min, and flows about 64 min. Raising the build limit without re-deriving the job limit uses up the job's margin. That comment also says to re-measure the build time and revisit the bound.
 

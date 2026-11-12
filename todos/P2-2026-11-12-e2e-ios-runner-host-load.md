@@ -17,7 +17,7 @@ During iOS E2E flows the runner has too little CPU for the simulator, the app, M
 
 ## Background
 
-Split out from `todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md` (owner call, 2026-11-12). #1845 fixed that todo's connection timeouts (0 in both acceptance runs). Its other criterion, "no server request slower than 5 s", cannot be met by connection changes: `SELECT 1` on an already-open connection took 4.3 s server-side in run 43104528885.
+Split out from `todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md` (owner call, 2026-11-12). #1845 fixed that todo's connection timeouts (0 in both acceptance runs). Its other criterion, "no server request slower than 5 s", cannot be met by connection changes: `SELECT 1` on an already-open connection took 4.3 s server-side in run 43104528885.
 
 What was measured (host-sample.log in the logs-ios artifacts of runs 43104528885, 43132429962 and 43143893480):
 

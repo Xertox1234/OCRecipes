@@ -17,7 +17,7 @@ In iOS E2E run 43120554293 the receipt-upload flow's retry showed "Could not rea
 
 ## Background
 
-Deferred from the CI Postgres saturation work (`todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md`, PR #1845). The stage logging from #1826 named the failing step (metro.log of run 43120554293):
+Deferred from the CI Postgres saturation work (`todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md`, PR #1845). The stage logging from #1826 named the failing step (metro.log of run 43120554293):
 
 - Attempt 1: `Receipt scan took compress 600 ms, upload 767 ms, response 29 ms`. The flow then failed on the relaunch: `simctl openurl` timed out (`NSPOSIXErrorDomain` code 60).
 - Attempt 2: `Receipt scan failed at compress after 30056 ms [Error: Image resize timed out after 30000 ms]`. No request reached the server.
