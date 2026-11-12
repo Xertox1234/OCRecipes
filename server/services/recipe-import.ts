@@ -60,9 +60,20 @@ export function parseIsoDuration(duration: string | undefined): number | null {
   return Math.round(n(d) * 1440 + n(h) * 60 + n(m) + n(sec) / 60);
 }
 
-// An HTML tag. `[^<>]`, not `[^>]`: with the latter a run of "<" that never
-// closes is rescanned from every "<", which is quadratic in a page-sized string.
-const TAG = /<[^<>]*>/g;
+/**
+ * Remove HTML tags: everything from a "<" to the next ">".
+ *
+ * The pattern alone is quadratic on a page-sized run of "<" that never closes
+ * (each "<" is scanned to the end of the string), so it runs only up to the
+ * last ">", where every "<" has a ">" after it. Do not swap in `/<[^<>]*>/g`:
+ * one pass of it turns "<<b>script>" into "<script>", and repeating it until
+ * nothing changes is quadratic again.
+ */
+function stripTags(text: string): string {
+  const last = text.lastIndexOf(">");
+  if (last === -1) return text;
+  return text.slice(0, last + 1).replace(/<[^>]*>/g, "") + text.slice(last + 1);
+}
 
 /**
  * Normalize recipeInstructions from either a single string or
@@ -75,10 +86,9 @@ export function normalizeInstructions(
   if (typeof instructions === "string") {
     // A page that writes the method as one HTML block has its steps in the
     // tags, so a closing block tag or a line-break tag counts as a new line.
-    const cleaned = instructions
-      .replace(/<\/(?:li|p|div)\s*>|<br\s*\/?>/gi, "\n")
-      .replace(TAG, "")
-      .trim();
+    const cleaned = stripTags(
+      instructions.replace(/<\/(?:li|p|div)\s*>|<br\s*\/?>/gi, "\n"),
+    ).trim();
     if (!cleaned) return null;
     return cleaned
       .split(/\n/)
@@ -88,7 +98,7 @@ export function normalizeInstructions(
   const steps = instructions
     .map((step) => {
       const text = typeof step === "string" ? step : step.text;
-      return text.replace(TAG, "").trim();
+      return stripTags(text).trim();
     })
     .filter((s) => s.length > 0);
   return steps.length > 0 ? steps : null;

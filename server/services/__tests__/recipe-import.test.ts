@@ -123,6 +123,39 @@ describe("Recipe Import", () => {
       expect(performance.now() - started).toBeLessThan(500);
     });
 
+    it.each([
+      ["a string", (text: string) => text],
+      [
+        "a HowToStep",
+        (text: string) => [{ "@type": "HowToStep" as const, text }],
+      ],
+    ])(
+      "leaves no tag that nested brackets reassemble in %s",
+      (_shape, wrap) => {
+        // One pass of a pattern that stops at "<" turns "<<b>script>" into
+        // "<script>": the strip must remove from the first "<" to the next ">".
+        expect(
+          normalizeInstructions(wrap("<<b>script>alert(1)<</b>/script>")),
+        ).toEqual(["script>alert(1)/script>"]);
+        expect(
+          normalizeInstructions(wrap('<a title="1 < 2">link</a>')),
+        ).toEqual(["link"]);
+      },
+    );
+
+    it.each([
+      ["a string", (text: string) => text],
+      [
+        "a HowToStep",
+        (text: string) => [{ "@type": "HowToStep" as const, text }],
+      ],
+    ])("strips in linear time when %s closes late", (_shape, wrap) => {
+      const hostile = "<".repeat(60_000) + ">".repeat(60_000);
+      const started = performance.now();
+      normalizeInstructions(wrap(hostile));
+      expect(performance.now() - started).toBeLessThan(500);
+    });
+
     it("returns string[] from HowToStep array", () => {
       const steps = [
         { "@type": "HowToStep" as const, text: "Preheat oven" },
