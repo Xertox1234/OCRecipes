@@ -28,6 +28,7 @@ const {
   mockClearFeatureTipsState,
   mockClearScheduledCoachReminders,
   mockClearImportBrowserData,
+  mockClearDeviceImageLeftovers,
   mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
@@ -56,6 +57,7 @@ const {
     mockClearFeatureTipsState: vi.fn().mockResolvedValue(true),
     mockClearScheduledCoachReminders: vi.fn().mockResolvedValue(true),
     mockClearImportBrowserData: vi.fn().mockResolvedValue(true),
+    mockClearDeviceImageLeftovers: vi.fn().mockResolvedValue(undefined),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
     // assert the sweep waits for restoration before clearing.
@@ -136,6 +138,10 @@ vi.mock("@/hooks/useNotebookNotifications", () => ({
 
 vi.mock("../../../modules/webview-site-data", () => ({
   clearImportBrowserData: () => mockClearImportBrowserData(),
+}));
+
+vi.mock("@/lib/device-leftovers", () => ({
+  clearDeviceImageLeftovers: () => mockClearDeviceImageLeftovers(),
 }));
 
 const { mockLoggerError } = vi.hoisted(() => ({ mockLoggerError: vi.fn() }));
@@ -1200,6 +1206,28 @@ describe("useAuth", () => {
       });
 
       expect(mockClearImportBrowserData).toHaveBeenCalledTimes(1);
+      expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBe(
+        String(fakeUser.id),
+      );
+    });
+
+    // Privacy audit 2026-11-10, L4.
+    it("clearDurableLocalState clears the image cache and pasted-picture temp files", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      mockClearDeviceImageLeftovers.mockClear();
+
+      await act(async () => {
+        await result.current.login("testuser", "password123");
+      });
+
+      // Best-effort: it reports nothing, so the marker still advances.
+      expect(mockClearDeviceImageLeftovers).toHaveBeenCalledTimes(1);
       expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBe(
         String(fakeUser.id),
       );
