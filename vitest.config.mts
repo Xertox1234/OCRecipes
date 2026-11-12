@@ -232,6 +232,12 @@ export default defineConfig({
         import.meta.dirname,
         "./test/mocks/expo-image.ts",
       ),
+      // Only the /legacy entry: the bare package keeps its per-test mock
+      // (test/mocks/expo-file-system.ts). See the mock's header.
+      "expo-file-system/legacy": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-file-system-legacy.ts",
+      ),
       "react-native-webview": path.resolve(
         import.meta.dirname,
         "./test/mocks/react-native-webview.ts",
