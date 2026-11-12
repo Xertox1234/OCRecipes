@@ -1,6 +1,6 @@
 ---
 title: "iOS E2E: receipt photo resize takes 600 ms on one attempt and over 30 s on the next"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-11-12
 updated: 2026-11-12
@@ -51,3 +51,11 @@ Two more failures in the same flow, seen in the #1845 acceptance runs:
 - Run 43143893480 passed the receipt flow on its first attempt.
 
 All three failures (slow resize, stuck picker, openurl timeout) happen in simulator or system code while the host is CPU-starved; see `todos/archive/P2-2026-11-12-e2e-ios-runner-host-load.md`. Fixing the host load may fix some of them, so check the order of work before starting.
+
+### 2026-11-12 (investigation)
+
+**The picker wait was always marginal.** Across the four runs with the receipt flow's debug output (43143893480, 43258730882, 43273131678, 43283689921), the label `Photo, <date>, <time>` took 10.0, 10.9, 12.9 and 14.7 s to appear after the "Pick from gallery" tap, against a 15 s `extendedWaitUntil`. In 43283689921 attempt 1 the wait failed at 15 s. The picker was already showing the grid (step-072 screenshot), the label `Photo, November 12, 6:48 PM` (which matches the regex) is in the hierarchy dumped about 22 s after the tap, and the driver re-read the hierarchy every 0.3 s. So the label arrived between 15 and 22 s; Maestro wasn't looking at the wrong thing. The "Loading…" failure in 43132429962 is the same delay seen earlier. Fix: the wait is now 60 s. `extendedWaitUntil` returns as soon as the label shows, so passing runs are no slower.
+
+**The resize is unlikely to be merely slow on this photo.** `e2e/assets/receipt.jpg` is 480×480 and 85 KB, so `fitWithinActions` returns no resize and `compressImage` makes one JPEG pass. It took 243 ms to 2.7 s in the branch runs above. A 30 s miss on this input points to a native call that never settles, not to CPU starvation, but that is still unproven: `resizeWithin` now logs `Image resize settled N ms after it started` when a timed-out resize finally answers, so the next occurrence's metro.log will say which. Note that Maestro relaunches the app for the retry, so a missing line can also mean the app was killed before the late answer. The resize hasn't recurred since 43120554293, so no retry or parameter change yet.
+
+**The openurl timeout** (`NSPOSIXErrorDomain` 60 in `launch-app.yaml`) follows the failure in 43283689921 as well. It belongs to the relaunch after any failed flow, not to this flow, and isn't addressed here.
