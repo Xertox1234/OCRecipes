@@ -15,8 +15,9 @@ export const FileSystemUploadType = {
   MULTIPART: 1,
 } as const;
 
-export const readDirectoryAsync = async (): Promise<string[]> => [];
-export const deleteAsync = async (): Promise<void> => {};
-export const writeAsStringAsync = async (): Promise<void> => {};
-export const getInfoAsync = async () => ({ exists: false as const });
-export const uploadAsync = async () => ({ status: 200, body: "", headers: {} });
+export const readDirectoryAsync = (): Promise<string[]> => Promise.resolve([]);
+export const deleteAsync = (): Promise<void> => Promise.resolve();
+export const writeAsStringAsync = (): Promise<void> => Promise.resolve();
+export const getInfoAsync = () => Promise.resolve({ exists: false as const });
+export const uploadAsync = () =>
+  Promise.resolve({ status: 200, body: "", headers: {} });

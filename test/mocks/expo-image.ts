@@ -56,6 +56,6 @@ export const Image = React.forwardRef<unknown, Record<string, unknown>>(
 // Static cache controls (the sign-out wipe calls them). `true` = the native
 // "cleared" answer.
 Object.assign(Image, {
-  clearMemoryCache: async () => true,
-  clearDiskCache: async () => true,
+  clearMemoryCache: () => Promise.resolve(true),
+  clearDiskCache: () => Promise.resolve(true),
 });
