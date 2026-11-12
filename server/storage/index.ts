@@ -243,6 +243,7 @@ export const storage = {
   getChatMessageByTurnKey: chat.getChatMessageByTurnKey,
   deleteChatConversation: chat.deleteChatConversation,
   deleteChatMessage: chat.deleteChatMessage,
+  reportChatMessage: chat.reportChatMessage,
   updateChatConversationTitle: chat.updateChatConversationTitle,
   pinChatConversation: chat.pinChatConversation,
   getChatMessageCount: chat.getChatMessageCount,

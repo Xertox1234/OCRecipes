@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -11,7 +12,13 @@ import {
   checkAiConfigured,
   checkAiSharing,
 } from "./_helpers";
-import { chatRateLimit, chatReadRateLimit } from "./_rate-limiters";
+import {
+  chatRateLimit,
+  chatReadRateLimit,
+  ipKeyGenerator,
+  resolveRateLimitMax,
+} from "./_rate-limiters";
+import { CHAT_MESSAGE_REPORT_REASON_IDS } from "@shared/constants/chat-message-report";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -477,6 +484,63 @@ export function register(app: Express): void {
         res.status(204).send();
       } catch (error) {
         handleRouteError(res, error, "delete chat message");
+      }
+    },
+  );
+
+  // POST /api/chat/messages/:id/report - Report an AI reply (privacy audit
+  // 2026-11-10, G7: Google Play asks for an in-app report control on
+  // AI-generated content). Saves the reply id, the reason and who reported,
+  // never the text; `.strict()` keeps free text out. No premium or AI-sharing
+  // gate: someone who turned AI off can still report an old reply. Its own
+  // limiter, inline so CodeQL's js/missing-rate-limiting can see it, and so
+  // reports never spend the chat send budget.
+  const reportSchema = z
+    .object({ reason: z.enum(CHAT_MESSAGE_REPORT_REASON_IDS) })
+    .strict();
+
+  app.post(
+    "/api/chat/messages/:id/report",
+    requireAuth,
+    rateLimit({
+      windowMs: 60_000,
+      max: resolveRateLimitMax(10, process.env),
+      message: {
+        error: "Too many reports. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid message ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const parsed = reportSchema.safeParse(req.body);
+        if (!parsed.success)
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const saved = await storage.reportChatMessage(
+          id,
+          req.userId,
+          parsed.data.reason,
+        );
+        if (!saved)
+          return sendError(res, 404, "Message not found", ErrorCode.NOT_FOUND);
+        res.status(204).send();
+      } catch (error) {
+        handleRouteError(res, error, "report chat message");
       }
     },
   );

@@ -370,6 +370,26 @@ describe("CoachOverlayContent — replies with cards", () => {
     ).toBeNull();
   });
 
+  // Privacy audit G7: AI replies can be reported from the sheet too.
+  it("a saved reply can be reported; the person's own message cannot", async () => {
+    messagesHolder.messages = [
+      { ...reply(30, null), role: "user", content: "Sides?" },
+      reply(31, null),
+    ];
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "Sides?", question: "sides" }}
+        screenContext="recipe"
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    await screen.findByText("Here are some ideas.");
+    expect(
+      screen.getAllByRole("button", { name: "Report this reply" }),
+    ).toHaveLength(1);
+  });
+
   it("a reply without cards has no link", async () => {
     messagesHolder.messages = [reply(22, null)];
     renderComponent(

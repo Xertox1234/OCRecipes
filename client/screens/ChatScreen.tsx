@@ -34,6 +34,7 @@ import * as Haptics from "expo-haptics";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ChatBubble } from "@/components/ChatBubble";
+import ReportReplyButton from "@/components/coach/ReportReplyButton";
 import { ThemedText } from "@/components/ThemedText";
 import { EmptyState, OfflineEmptyState } from "@/components/EmptyState";
 import { isPausedWithoutData } from "@/components/empty-state-utils";
@@ -754,13 +755,20 @@ export default function ChatScreen() {
   );
 
   const renderItem = useCallback(({ item }: { item: DisplayMessage }) => {
+    // Saved AI replies only (privacy audit G7): a pending row has no id yet.
+    const savedId = item.role === "assistant" ? Number(item.id) : NaN;
     return (
-      <ChatBubble
-        role={item.role}
-        content={item.content}
-        isStreaming={false}
-        animateEntry={item.id === "pending-user"}
-      />
+      <>
+        <ChatBubble
+          role={item.role}
+          content={item.content}
+          isStreaming={false}
+          animateEntry={item.id === "pending-user"}
+        />
+        {Number.isInteger(savedId) && savedId > 0 ? (
+          <ReportReplyButton messageId={savedId} />
+        ) : null}
+      </>
     );
   }, []);
 

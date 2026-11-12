@@ -678,6 +678,8 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
     };
     rerender(<ChatScreen />);
     expect(screen.getByText("Here's a healthy snack idea.")).toBeDefined();
+    // Privacy audit G7: a reply with no id yet cannot be reported.
+    expect(screen.queryByLabelText("Report this reply")).toBeNull();
 
     // The real assistant message lands in the next fetch — bubble clears.
     mockUseChatMessages.mockReturnValue({
@@ -698,6 +700,8 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
     // one instance to prove the bubble actually cleared rather than merely
     // coexisting with the real message.
     expect(screen.getAllByText("Here's a healthy snack idea.")).toHaveLength(1);
+    // The saved AI reply can be reported; the person's own message cannot.
+    expect(screen.getAllByLabelText("Report this reply")).toHaveLength(1);
   });
 
   it("never shows a pending bubble when the stream ends in error", () => {
