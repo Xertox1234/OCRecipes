@@ -1,6 +1,6 @@
 ---
 title: "iOS E2E: the 3-vCPU macOS runner is CPU-starved, so requests take seconds"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-12
 updated: 2026-11-12
@@ -28,9 +28,9 @@ What was measured (host-sample.log in the logs-ios artifacts of runs 43104528885
 
 ## Acceptance Criteria
 
-- [ ] Find which simulator or host processes can be reduced or turned off in CI, and how. Candidates to check: why `diagnosticd` is busy and whether simulator logging can be lowered (`xcrun simctl spawn <udid> log config`), what starts the sim-internal `log stream`, and whether apsd or other simulator services can be quieted.
-- [ ] Find out whether a larger macOS runner is available to this repo, and at what cost. Changing it is an owner decision.
-- [ ] Apply what the evidence supports, then in two dispatch runs: no server request slower than 5 s in server.log, or a written finding that it is not reachable on this runner. Either result closes this item.
+- [x] Find which simulator or host processes can be reduced or turned off in CI, and how. Candidates to check: why `diagnosticd` is busy and whether simulator logging can be lowered (`xcrun simctl spawn <udid> log config`), what starts the sim-internal `log stream`, and whether apsd or other simulator services can be quieted.
+- [x] Find out whether a larger macOS runner is available to this repo, and at what cost. Changing it is an owner decision.
+- [x] Apply what the evidence supports, then in two dispatch runs: no server request slower than 5 s in server.log, or a written finding that it is not reachable on this runner. Either result closes this item.
 
 ## Implementation Notes
 
@@ -69,4 +69,10 @@ Against acceptance run 43143893480:
 - Build: 46.4 min (was 45.5); clang 111% of CPU (was 106%), no simulator process in the build-window top 10. Stopping apsd did not shorten this build, so the 70-minute nightly is not explained by apsd alone (see the build-time todo).
 - Flows: simulator diagnosticd 24% → 11.6%, host diagnosticd 14% → 4.7%, Maestro's `log` 15% → 7.5%; device-simulator.log total 793 MB → 278 MB.
 - Requests: p50 299 → 288 ms, p99 6.7 → 3.3 s, over 5 s: 3 → 1. The one left is the first `GET /api/carousel` (9.1 s; 8.3 s in the baseline), started right after the first login; later carousel calls took 0.2–1.5 s. It is one SQL query and Postgres logged no statement over 1 s; the home screen's other requests in the same burst took 60–200 ms, so the event loop was not blocked.
-- Hypothesis for that first call: the server and the pool's backends (opened by the seed step) sit idle through the build, which swaps (474 MB used at 17:24), and the first requests page them back in. Added a "Warm the backend after the build" step that logs in and times two concurrent rounds of home-screen requests before the flows.
+- Hypothesis for that first call: the server and the pool's backends (opened by the seed step) sit idle through the build, which swaps (474 MB used at 17:24), and the first requests page them back in. Tested in dispatch 3 below with a timed warm-up step: refuted, and the step was removed.
+
+### 2026-11-12 (dispatches 2 and 3; closed)
+
+- **Dispatch 2** (run 43273131678 on 5d06e184e, iOS and Android green): build 30.8 min; requests p50 132 ms, p90 898 ms, max 2.7 s, **0 over 5 s**; simulator apsd absent in 103 of 103 samples.
+- **Dispatch 3** (run 43283689921 on da930fff0, the same workflow plus a timed "Warm the backend after the build" step; iOS and Android green): build 42.1 min. The warm-up ran at 19:39:42: round 1 took 0.10–0.15 s per endpoint and round 2 0.01–0.03 s, so the server and its Postgres backends were not paged out. Three minutes later the app's first home-screen burst after its first login (requests started ~19:42:34) took ~6 s each: `/api/carousel` 6.4 s, `/api/curated-recipes` 6.2 s, `/api/daily-budget` 6.2 s (3 over 5 s; p50 319 ms). For those 6 s: Postgres logged no statement over 1 s, the pool (pg default max 10) had 4 backends, and the 2 new connections were authorized in under 160 ms after the slow requests had finished. What remains is the host during the app's first launch (simulator testmanagerd 70%, SpringBoard 47% in the samples either side); the 30 s sampler is too coarse to show what starved node in those seconds. The warm-up step was removed; the final workflow differs from the one dispatches 1 and 2 ran only in comments (this file's archive path).
+- **Result.** With apsd stopped, two dispatch runs on the final workflow had 1 and 0 requests over 5 s (from 3 in the baseline), p99 3.3 s and 2.3 s (from 6.7 s). The requests that still exceed 5 s are only those of the app's first home screen after its first login (1 in dispatch 1, 3 in dispatch 3, 0 in dispatch 2), while the host is saturated by the app's cold start. With the levers available on this runner (no `log config`, no Maestro switch for its device log capture), "no request over 5 s" is not reliably reachable on the 3-vCPU, 7 GB runner. The next lever is the larger runner (`macos-26-xlarge`, 5 CPUs and 14 GB, about $10 a run), which is the owner's decision.
