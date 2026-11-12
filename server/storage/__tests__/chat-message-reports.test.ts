@@ -36,7 +36,10 @@ const { getUserDataExport } = await import("../export");
 let tx: NodePgDatabase<typeof schema>;
 let user: schema.User;
 
-async function replyFor(userId: string, role = "assistant") {
+async function replyFor(
+  userId: string,
+  role: "user" | "assistant" = "assistant",
+) {
   const conv = await createChatConversation(userId, "Chat");
   const msg = await createChatMessage(conv.id, userId, role, "Eat more fibre.");
   return { conv, msg };
