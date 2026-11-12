@@ -207,6 +207,21 @@ function getInclusiveDayCount(startDate: string, endDate: string): number {
 
 // Titles and product names can come from other users' public recipes or an
 // external barcode database, and this goes back to the model as tool output.
+/**
+ * Pantry rows as tool output. The model reads the text fields, so they get
+ * the same sanitizing as every other stored text a tool hands back.
+ */
+function sanitizePantryItems(
+  items: Awaited<ReturnType<typeof storage.getPantryItems>>,
+) {
+  return items.map((item) => ({
+    ...item,
+    name: sanitizeUserInput(item.name),
+    unit: item.unit === null ? null : sanitizeUserInput(item.unit),
+    category: item.category === null ? null : sanitizeUserInput(item.category),
+  }));
+}
+
 function compactMealPlanItems(
   items: Awaited<ReturnType<typeof storage.getMealPlanItems>>,
 ) {
@@ -795,8 +810,16 @@ export async function executeToolCall(
       }
       // Trim to fields the model needs — full result has micronutrients and source
       // metadata that inflate the token budget unnecessarily.
+      // The name and serving size come from an outside nutrition source.
       const { name, calories, protein, carbs, fat, servingSize } = result;
-      return { name, calories, protein, carbs, fat, servingSize };
+      return {
+        name: sanitizeUserInput(name),
+        calories,
+        protein,
+        carbs,
+        fat,
+        servingSize: sanitizeUserInput(servingSize),
+      };
     }
 
     case "search_recipes": {
@@ -902,11 +925,11 @@ export async function executeToolCall(
           userId,
           expiringWithinDays,
         );
-        return { items, expiringWithinDays };
+        return { items: sanitizePantryItems(items), expiringWithinDays };
       }
 
       const items = await storage.getPantryItems(userId);
-      return { items };
+      return { items: sanitizePantryItems(items) };
     }
 
     case "get_meal_plan": {
@@ -1030,8 +1053,17 @@ export async function executeToolCall(
         userEdited: false,
       }));
 
+      // The suggestion text is written by a second model from the names above.
       const result = await getSubstitutions(ingredients, null);
-      return result;
+      return {
+        suggestions: result.suggestions.map((suggestion) => ({
+          ...suggestion,
+          substitute: sanitizeUserInput(suggestion.substitute),
+          reason: sanitizeUserInput(suggestion.reason),
+          ratio: sanitizeUserInput(suggestion.ratio),
+        })),
+        dietaryProfileSummary: sanitizeUserInput(result.dietaryProfileSummary),
+      };
     }
 
     case "get_my_recipes": {

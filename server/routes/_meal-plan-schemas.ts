@@ -27,7 +27,7 @@ export const createMealPlanRecipeSchema = z.object({
     .transform((url) => (isOurRecipeImageUrl(url) ? url : null))
     .optional()
     .nullable(),
-  instructions: z.array(z.string()).max(100).optional(),
+  instructions: z.array(z.string().max(2000)).max(100).optional(),
   dietTags: z.array(z.string().max(50)).max(20).optional(),
   caloriesPerServing: nullableNumericStringField,
   proteinPerServing: nullableNumericStringField,
@@ -46,6 +46,7 @@ export const createMealPlanRecipeSchema = z.object({
         category: z.string().max(50).optional(),
       }),
     )
+    .max(200)
     .optional(),
   sourceCommunityRecipeId: z.number().int().positive().optional().nullable(),
 });

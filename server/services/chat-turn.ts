@@ -25,6 +25,7 @@ import { handleCoachChat, STANDARD_SAFETY_MESSAGE } from "./coach-pro-chat";
 import {
   sanitizeContextField,
   containsUnsafeCoachAdvice,
+  containsUnsafeCoachAdviceInValue,
 } from "../lib/ai-safety";
 import { parseBlocksFromContent } from "./coach-blocks";
 import type { ChatConversation, ChatMessage } from "@shared/schema";
@@ -370,11 +371,13 @@ async function streamRecipeTurn(ctx: TurnContext): Promise<void> {
   // Output safety screen (same check the coach runs). Recipe chat streams
   // progressively, so a hit can only REPLACE what was already shown: tell
   // the client to swap it out, and persist the standard message with no
-  // recipe card or title.
+  // recipe card or title. The card is checked as the decoded object the
+  // client shows: the generator also accepts a bare JSON object with no
+  // fence, which the text check cannot decode.
   const unsafeReply =
     !state.aborted &&
-    fullTextResponse !== "" &&
-    containsUnsafeCoachAdvice(fullTextResponse);
+    ((fullTextResponse !== "" && containsUnsafeCoachAdvice(fullTextResponse)) ||
+      containsUnsafeCoachAdviceInValue(recipeData));
   if (unsafeReply) {
     sink.sendRaw(JSON.stringify({ safety_override: STANDARD_SAFETY_MESSAGE }));
     await storage.createChatMessage(

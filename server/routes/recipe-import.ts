@@ -20,6 +20,24 @@ import {
 } from "./_helpers";
 import { importUrlSchema, parsePageSchema } from "@shared/schemas/recipe";
 import { rehostRecipeImage } from "../services/recipe-image-rehost";
+import { deleteImage } from "../lib/image-store";
+import { logger, toError } from "../lib/logger";
+
+/**
+ * Remove a photo copy stored for a recipe row that was then never saved.
+ * Best-effort: the request is already failing, and a cleanup error must not
+ * replace the real one.
+ */
+async function rollbackRehostedImage(url: string): Promise<void> {
+  try {
+    await deleteImage(url, "recipe");
+  } catch (error) {
+    logger.error(
+      { err: toError(error), url },
+      "imported recipe photo rollback failed — object may be orphaned",
+    );
+  }
+}
 
 /**
  * Shared success/failure tail for parse-url and parse-page: maps a failed
@@ -209,32 +227,42 @@ export function register(app: Express): void {
           category: "other" as const,
           displayOrder: idx,
         }));
-        const recipe = await storage.createMealPlanRecipe(
-          {
-            userId: req.userId,
-            title: data.title,
-            description: data.description,
-            sourceType: "url_import",
-            sourceUrl: data.sourceUrl,
-            cuisine: data.cuisine,
-            servings: data.servings || 2,
-            prepTimeMinutes: data.prepTimeMinutes,
-            cookTimeMinutes: data.cookTimeMinutes,
-            // Privacy audit M1: our copy of the photo, never the source URL.
-            imageUrl: await rehostRecipeImage(data.imageUrl),
-            instructions: data.instructions ?? undefined,
-            dietTags: data.dietTags,
-            mealTypes: inferMealTypes(
-              normalizedTitle,
-              data.ingredients.map((i) => i.name),
-            ),
-            caloriesPerServing: data.caloriesPerServing,
-            proteinPerServing: data.proteinPerServing,
-            carbsPerServing: data.carbsPerServing,
-            fatPerServing: data.fatPerServing,
-          },
-          ingredientData,
-        );
+        // Privacy audit M1: our copy of the photo, never the source URL. It
+        // is stored before the row exists, so a failed save removes it — but
+        // only a copy made just now: a URL that was already ours comes back
+        // unchanged and may belong to another recipe.
+        const imageUrl = await rehostRecipeImage(data.imageUrl);
+        const storedNewCopy = imageUrl !== null && imageUrl !== data.imageUrl;
+        const recipe = await storage
+          .createMealPlanRecipe(
+            {
+              userId: req.userId,
+              title: data.title,
+              description: data.description,
+              sourceType: "url_import",
+              sourceUrl: data.sourceUrl,
+              cuisine: data.cuisine,
+              servings: data.servings || 2,
+              prepTimeMinutes: data.prepTimeMinutes,
+              cookTimeMinutes: data.cookTimeMinutes,
+              imageUrl,
+              instructions: data.instructions ?? undefined,
+              dietTags: data.dietTags,
+              mealTypes: inferMealTypes(
+                normalizedTitle,
+                data.ingredients.map((i) => i.name),
+              ),
+              caloriesPerServing: data.caloriesPerServing,
+              proteinPerServing: data.proteinPerServing,
+              carbsPerServing: data.carbsPerServing,
+              fatPerServing: data.fatPerServing,
+            },
+            ingredientData,
+          )
+          .catch(async (error: unknown) => {
+            if (storedNewCopy) await rollbackRehostedImage(imageUrl);
+            throw error;
+          });
 
         // Auto-generate image if source had none (async, non-blocking).
         // Shares the meal-plan auto-image daily cap, claimed BEFORE the paid

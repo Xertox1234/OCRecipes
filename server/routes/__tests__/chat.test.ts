@@ -845,6 +845,50 @@ describe("Chat Routes", () => {
           expect(storage.updateChatConversationTitle).not.toHaveBeenCalled();
         });
 
+        it("replaces a reply whose recipe card is unsafe although its text is clean", async () => {
+          // The card is shown from the decoded recipe object, so a phrase the
+          // model hid behind JSON escapes (or put in a bare object with no
+          // fence) never appears in the streamed text.
+          setupRecipeTurn();
+          vi.mocked(generateRecipeChatResponse).mockImplementation(
+            async function* () {
+              yield { content: "Here is a simple plan." };
+              yield {
+                content: "",
+                recipe: {
+                  title: "Reset plan",
+                  description: "d",
+                  difficulty: "Easy",
+                  timeEstimate: "5 min",
+                  servings: 1,
+                  ingredients: [{ name: "water", quantity: "1", unit: "cup" }],
+                  instructions: ["Fast for 3 days before you start."],
+                  dietTags: [],
+                  spiceLevel: null,
+                },
+                allergenWarning: null,
+              };
+              yield { done: true };
+            },
+          );
+
+          const res = await request(app)
+            .post("/api/chat/conversations/1/messages")
+            .set("Authorization", "Bearer token")
+            .send({ content: "Make me a plan" });
+
+          expect(res.status).toBe(200);
+          expect(res.text).toContain(
+            JSON.stringify({ safety_override: STANDARD_SAFETY_MESSAGE }),
+          );
+          const assistantWrites = vi
+            .mocked(storage.createChatMessage)
+            .mock.calls.filter((c) => c[2] === "assistant");
+          expect(assistantWrites).toHaveLength(1);
+          expect(assistantWrites[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
+          expect(assistantWrites[0][4]).toBeNull();
+        });
+
         it("leaves a clean reply untouched: no override, original text stored", async () => {
           setupRecipeTurn();
           vi.mocked(generateRecipeChatResponse).mockImplementation(

@@ -25,6 +25,7 @@ import {
 } from "../../services/recipe-import";
 import { generateRecipeImage } from "../../services/recipe-generation";
 import { rehostRecipeImage } from "../../services/recipe-image-rehost";
+import { deleteImage } from "../../lib/image-store";
 import { storage } from "../../storage";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { createMockMealPlanRecipe } from "../../__tests__/factories";
@@ -40,6 +41,11 @@ vi.mock("../../services/recipe-generation", () => ({
 
 vi.mock("../../services/recipe-image-rehost", () => ({
   rehostRecipeImage: vi.fn(),
+}));
+
+vi.mock("../../lib/image-store", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/image-store")>()),
+  deleteImage: vi.fn(),
 }));
 
 vi.mock("../../middleware/auth");
@@ -395,6 +401,60 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
       expect.objectContaining({ imageUrl: null }),
       expect.anything(),
     );
+  });
+
+  // Security audit 2026-11-12, L10: the copy is stored before the row exists,
+  // so a failed save must remove it or nothing ever points at it.
+  describe("when saving the recipe fails", () => {
+    const OUR_COPY = "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg";
+
+    beforeEach(() => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: buildImportedData({ imageUrl: "https://example.com/img.jpg" }),
+      });
+      vi.mocked(storage.createMealPlanRecipe).mockRejectedValue(
+        new Error("insert failed"),
+      );
+    });
+
+    const importIt = () =>
+      request(app)
+        .post("/api/meal-plan/recipes/import-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/recipe" });
+
+    it("removes the photo copy it just stored", async () => {
+      vi.mocked(rehostRecipeImage).mockResolvedValue(OUR_COPY);
+
+      const res = await importIt();
+
+      expect(res.status).toBe(500);
+      expect(deleteImage).toHaveBeenCalledWith(OUR_COPY, "recipe");
+    });
+
+    it("leaves a photo that was already ours (another recipe may use it)", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: buildImportedData({ imageUrl: OUR_COPY }),
+      });
+      vi.mocked(rehostRecipeImage).mockResolvedValue(OUR_COPY);
+
+      const res = await importIt();
+
+      expect(res.status).toBe(500);
+      expect(deleteImage).not.toHaveBeenCalled();
+    });
+
+    it("still answers 500 when the cleanup fails too", async () => {
+      vi.mocked(rehostRecipeImage).mockResolvedValue(OUR_COPY);
+      vi.mocked(deleteImage).mockRejectedValueOnce(new Error("storage down"));
+
+      const res = await importIt();
+
+      expect(res.status).toBe(500);
+      expect(deleteImage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("returns 403 for free tier — must NOT call the importer", async () => {

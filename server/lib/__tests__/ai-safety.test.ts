@@ -7,6 +7,7 @@ import {
   containsDangerousDietaryAdvice,
   containsUnsafeMedicalAdvice,
   containsUnsafeCoachAdvice,
+  containsUnsafeCoachAdviceInValue,
   SYSTEM_PROMPT_BOUNDARY,
   DANGEROUS_DIETARY_PATTERNS,
   UNSAFE_MEDICAL_ADVICE_PATTERNS,
@@ -297,6 +298,172 @@ describe("containsUnsafeCoachAdvice", () => {
     expect(
       containsUnsafeCoachAdvice("Try a balanced dinner with vegetables."),
     ).toBe(false);
+  });
+
+  // The client shows fenced JSON (coach_blocks, the recipe card) after
+  // JSON.parse, so the screen has to read the decoded strings too.
+  describe("text inside a JSON fence", () => {
+    const fence = (json: string) =>
+      "Here you go.\n```coach_blocks\n" + json + "\n```";
+    const block = (label: string) =>
+      `[{"type":"quick_replies","options":[{"label":"${label}","message":"ok"}]}]`;
+
+    it("flags a phrase written with plain spaces (control)", () => {
+      expect(
+        containsUnsafeCoachAdvice(fence(block("Fast for 3 days this week"))),
+      ).toBe(true);
+    });
+
+    it("flags a phrase whose spaces are JSON escapes", () => {
+      const escaped = fence(
+        block("Fast\\u0020for\\u00203\\u0020days this week"),
+      );
+      // The raw text no longer matches any pattern; only the decoded one does.
+      expect(escaped).not.toMatch(/fast\s+for\s+\d+\s+days/i);
+      expect(containsUnsafeCoachAdvice(escaped)).toBe(true);
+    });
+
+    it("flags an escaped phrase nested deep in the JSON", () => {
+      const nested = fence(
+        '{"a":[{"b":{"c":["You\\u0020likely\\u0020have\\u0020diabetes"]}}]}',
+      );
+      expect(containsUnsafeCoachAdvice(nested)).toBe(true);
+    });
+
+    it("flags an escaped phrase in any fence, whatever its label", () => {
+      const jsonFence =
+        '```json\n{"title":"Dry\\u0020fast plan"}\n```\nEnjoy your meal.';
+      expect(containsUnsafeCoachAdvice(jsonFence)).toBe(true);
+    });
+
+    it("flags an escaped phrase when the JSON starts on the fence line", () => {
+      // Recipe chat reads the fence with /```json\s*/ — no line break needed.
+      expect(
+        containsUnsafeCoachAdvice('```json{"title":"Dry\\u0020fast plan"}```'),
+      ).toBe(true);
+      expect(
+        containsUnsafeCoachAdvice('```json {"title":"Dry\\u0020fast plan"}```'),
+      ).toBe(true);
+    });
+
+    // Each fence reader looks for its own opening tag, so a stray marker
+    // earlier in the reply does not stop it reading the fence.
+    it.each([1, 2, 3])(
+      "flags an escaped phrase in a fence that follows %i stray fence marker(s)",
+      (strays) => {
+        const lead = "Use ``` for code. ".repeat(strays);
+        const blocks = lead + fence(block("Dry\\u0020fast this week"));
+        const recipe = lead + '```json\n{"title":"Dry\\u0020fast plan"}\n```';
+        expect(blocks).not.toMatch(/dry\s+fast/i);
+        expect(recipe).not.toMatch(/dry\s+fast/i);
+        expect(containsUnsafeCoachAdvice(blocks)).toBe(true);
+        expect(containsUnsafeCoachAdvice(recipe)).toBe(true);
+      },
+    );
+
+    // Recipe chat trims the fence body before parsing it, and trim() drops
+    // more than spaces (no-break space, BOM, line separator). The later
+    // "{x}" stops the bare-object reading from catching it instead.
+    it.each([
+      ["a no-break space", "\u00a0"],
+      ["a byte-order mark", "\ufeff"],
+      ["a line separator", "\u2028"],
+    ])("flags an escaped phrase in a fence that ends with %s", (_name, ch) => {
+      const reply =
+        '```json\n{"title":"Dry\\u0020fast plan"}' + ch + "```\nEnjoy {x}";
+      expect(reply).not.toMatch(/dry\s+fast/i);
+      expect(containsUnsafeCoachAdvice(reply)).toBe(true);
+    });
+
+    it("does not flag a harmless fence", () => {
+      expect(
+        containsUnsafeCoachAdvice(fence(block("Show me a high-protein lunch"))),
+      ).toBe(false);
+    });
+
+    it("does not join separate fields into one phrase", () => {
+      const split = fence(
+        '[{"type":"quick_replies","options":[{"label":"Dry","message":"fast food ideas"}]}]',
+      );
+      expect(containsUnsafeCoachAdvice(split)).toBe(false);
+    });
+
+    it("ignores a fence that is not JSON without throwing", () => {
+      expect(
+        containsUnsafeCoachAdvice("```coach_blocks\n[{not json\n```\nDone."),
+      ).toBe(false);
+      expect(containsUnsafeCoachAdvice("An unterminated ``` fence")).toBe(
+        false,
+      );
+    });
+  });
+});
+
+describe("containsUnsafeCoachAdvice — a JSON object with no fence", () => {
+  // Recipe chat also reads a bare object: first "{" to last "}", with any
+  // text around it.
+  it.each([
+    ["nothing around it", '{"title":"Dry\\u0020fast plan"}'],
+    ["text before it", 'Here you go: {"title":"Dry\\u0020fast plan"}'],
+    ["text after it", '{"title":"Dry\\u0020fast plan"} Enjoy!'],
+    ["text on both sides", 'Here: {"title":"Dry\\u0020fast plan"} Enjoy!'],
+  ])("flags an escaped phrase with %s", (_shape, reply) => {
+    expect(reply).not.toMatch(/dry\s+fast/i);
+    expect(containsUnsafeCoachAdvice(reply)).toBe(true);
+  });
+
+  it("does not flag a harmless object with text around it", () => {
+    expect(containsUnsafeCoachAdvice('Here: {"title":"Oat bowl"} Enjoy!')).toBe(
+      false,
+    );
+  });
+
+  it("ignores braces that hold no JSON without throwing", () => {
+    expect(containsUnsafeCoachAdvice("Use {curly} braces {here}.")).toBe(false);
+  });
+});
+
+describe("containsUnsafeCoachAdviceInValue", () => {
+  it("flags an unsafe string anywhere inside a decoded value", () => {
+    expect(containsUnsafeCoachAdviceInValue("Fast for 3 days")).toBe(true);
+    expect(
+      containsUnsafeCoachAdviceInValue({
+        title: "Soup",
+        instructions: ["Chop", "Then fast for 3 days"],
+      }),
+    ).toBe(true);
+    expect(
+      containsUnsafeCoachAdviceInValue([
+        { a: { b: "You likely have diabetes" } },
+      ]),
+    ).toBe(true);
+  });
+
+  it("does not flag a harmless value, a key, or a non-string", () => {
+    expect(
+      containsUnsafeCoachAdviceInValue({
+        title: "Lentil soup",
+        servings: 4,
+        spiceLevel: null,
+        instructions: ["Chop the onion", "Simmer for 20 minutes"],
+      }),
+    ).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue({ "dry fast": 1 })).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue(null)).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue(undefined)).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue(42)).toBe(false);
+  });
+
+  it("does not join separate fields into one phrase", () => {
+    expect(
+      containsUnsafeCoachAdviceInValue({ instructions: ["Dry", "fast food"] }),
+    ).toBe(false);
+  });
+
+  it("handles very deep nesting without overflowing the stack", () => {
+    let deep: unknown = "Fast for 3 days";
+    for (let i = 0; i < 50_000; i++) deep = [deep];
+    expect(containsUnsafeCoachAdviceInValue(deep)).toBe(true);
   });
 });
 

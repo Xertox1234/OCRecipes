@@ -10,6 +10,7 @@ import {
   schemaOrgRecipeSchema,
   type SchemaOrgRecipe,
 } from "./recipe-import-schema";
+import { capImportedRecipe } from "./recipe-import-caps";
 
 const log = createServiceLogger("recipe-import");
 
@@ -60,6 +61,33 @@ export function parseIsoDuration(duration: string | undefined): number | null {
 }
 
 /**
+ * Remove HTML tags: everything from a "<" to the next ">".
+ *
+ * Written as a scan, not as `text.replace(/<[^>]*>/g, "")`, which gives the
+ * same output but is quadratic on a page-sized run of "<" that never closes
+ * (each "<" is scanned to the end of the string). Here the first "<" with no
+ * ">" after it ends the scan. Do not swap in `/<[^<>]*>/g`: one pass of it
+ * turns "<<b>script>" into "<script>", and repeating it until nothing changes
+ * is quadratic again.
+ *
+ * No "<" is left in front of a ">" in the result, so removed tags cannot join
+ * into a new one. A "<" with no ">" after it is kept as text ("cook < 5 min").
+ */
+function stripTags(text: string): string {
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf("<", from);
+    if (open === -1) break;
+    const close = text.indexOf(">", open);
+    if (close === -1) break;
+    out += text.slice(from, open);
+    from = close + 1;
+  }
+  return out + text.slice(from);
+}
+
+/**
  * Normalize recipeInstructions from either a single string or
  * an array of strings/HowToStep objects into a string[] of steps.
  */
@@ -68,7 +96,11 @@ export function normalizeInstructions(
 ): string[] | null {
   if (!instructions) return null;
   if (typeof instructions === "string") {
-    const cleaned = instructions.replace(/<[^>]*>/g, "").trim();
+    // A page that writes the method as one HTML block has its steps in the
+    // tags, so a closing block tag or a line-break tag counts as a new line.
+    const cleaned = stripTags(
+      instructions.replace(/<\/(?:li|p|div)\s*>|<br\s*\/?>/gi, "\n"),
+    ).trim();
     if (!cleaned) return null;
     return cleaned
       .split(/\n/)
@@ -78,7 +110,7 @@ export function normalizeInstructions(
   const steps = instructions
     .map((step) => {
       const text = typeof step === "string" ? step : step.text;
-      return text.replace(/<[^>]*>/g, "").trim();
+      return stripTags(text).trim();
     })
     .filter((s) => s.length > 0);
   return steps.length > 0 ? steps : null;
@@ -505,7 +537,7 @@ export function parseRecipeFromLdJson(
     sourceUrl,
   };
 
-  return { success: true, data };
+  return { success: true, data: capImportedRecipe(data) };
 }
 
 export async function importRecipeFromUrl(url: string): Promise<ImportResult> {

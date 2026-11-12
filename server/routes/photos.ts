@@ -60,15 +60,15 @@ const followUpSchema = z.object({
 
 // Zod schema for confirm request
 const confirmPhotoSchema = z.object({
-  sessionId: z.string(),
+  sessionId: z.string().max(100),
   // Bounds match the batch-scan item schema (shared/types/batch-scan.ts):
   // a negative food could cancel another out and slip a corrupted total past
   // the scanned_items >= 0 CHECKs, and an unbounded one overflows numeric(10,2).
   foods: z
     .array(
       z.object({
-        name: z.string(),
-        quantity: z.string(),
+        name: z.string().max(200),
+        quantity: z.string().max(100),
         calories: z.number().min(0).max(50000),
         protein: z.number().min(0).max(5000),
         carbs: z.number().min(0).max(5000),
@@ -76,7 +76,7 @@ const confirmPhotoSchema = z.object({
       }),
     )
     .max(50),
-  mealType: z.string().optional(),
+  mealType: z.string().max(50).optional(),
   preparationMethods: z.array(preparationMethodSchema).optional(),
   analysisIntent: photoIntentSchema.optional(),
 });
@@ -532,9 +532,9 @@ export function register(app: Express): void {
 
   // Zod schema for confirm-label request
   const confirmLabelSchema = z.object({
-    sessionId: z.string(),
+    sessionId: z.string().max(100),
     servingsConsumed: z.number().min(0.1).max(100).default(1),
-    mealType: z.string().optional(),
+    mealType: z.string().max(50).optional(),
   });
 
   app.post(

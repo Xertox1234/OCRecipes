@@ -31,7 +31,8 @@ import { buildTrail, plainStatusLabel, toolStep } from "./coach-step-labels";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
 import {
   sanitizeContextField,
-  containsDangerousDietaryAdvice,
+  containsUnsafeCoachAdvice,
+  STANDARD_SAFETY_MESSAGE,
 } from "../lib/ai-safety";
 import {
   buildWriteCardPayload,
@@ -98,8 +99,7 @@ export type CoachChatEvent =
   | { type: "step"; label: string }
   | { type: "safety_override"; message: string };
 
-export const STANDARD_SAFETY_MESSAGE =
-  "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
+export { STANDARD_SAFETY_MESSAGE };
 
 export interface CoachChatParams {
   conversationId: number;
@@ -682,11 +682,12 @@ export async function* handleCoachChat(
     cachedResponse = await storage.getCoachCachedResponse(userId, questionHash);
   }
 
-  // M6 (2026-04-18): Re-scan cached responses for dangerous dietary advice before
-  // serving. A response may have been cached before the safety filter existed, or
-  // safety thresholds may have been tightened since it was stored. Discarding the
-  // entry forces a fresh generation that goes through the live safety checks.
-  if (cachedResponse && containsDangerousDietaryAdvice(cachedResponse)) {
+  // M6 (2026-04-18): Re-scan cached responses with the live output screen
+  // (dietary and medical — the same check a fresh reply gets) before serving.
+  // A response may have been cached before the safety filter existed, or
+  // safety thresholds may have been tightened since it was stored. Discarding
+  // the entry forces a fresh generation that goes through the live checks.
+  if (cachedResponse && containsUnsafeCoachAdvice(cachedResponse)) {
     cachedResponse = null;
   }
 

@@ -72,7 +72,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 - [ ] `sanitizeUserInput()` on ALL user-sourced strings (including profile fields — diet type, allergies, food dislikes)
 - [ ] `SYSTEM_PROMPT_BOUNDARY` appended to every system prompt
 - [ ] `validateAiResponse()` with Zod schema on AI outputs — AI can return malformed JSON; always validate
-- [ ] `containsDangerousDietaryAdvice()` check on coaching/suggestion outputs
+- [ ] Every path that saves or shows AI coach/recipe text runs `containsUnsafeCoachAdvice(text)` (and `containsUnsafeCoachAdviceInValue(obj)` on a decoded card), falling back to `STANDARD_SAFETY_MESSAGE` — including a second consumer of an existing generator. The screen must decode everything any reader decodes (fence, bare object, trim): a reader change without the matching screen change is a finding. See `docs/solutions/logic-errors/output-screen-on-raw-reply-misses-what-the-reader-decodes-2026-11-12.md`
 - [ ] `checkAiConfigured()` guard at start of route handler — the route will crash if the OpenAI key is not set
 - [ ] No user input directly interpolated into prompts without sanitization
 - [ ] DB-stored user content (community-recipe ingredient/instruction text, URL-imported recipes, pantry items) is sanitized at **prompt-construction** time — the write path (`recipe-normalization.ts`, storage inserts) does NOT sanitize, so the prompt is the only gate. Especially for enrichment whose output is persisted and shown to other users (stored injection, e.g. `canonical-enrichment.ts`). Don't assume server-sourced rows are clean.

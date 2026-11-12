@@ -137,11 +137,87 @@ export function containsUnsafeMedicalAdvice(text: string): boolean {
   return UNSAFE_MEDICAL_ADVICE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-export function containsUnsafeCoachAdvice(text: string): boolean {
+function isUnsafeCoachText(text: string): boolean {
   return (
     containsDangerousDietaryAdvice(text) || containsUnsafeMedicalAdvice(text)
   );
 }
+
+/**
+ * True when any string inside a decoded JSON value (a recipe card, a list of
+ * coach blocks) trips the unsafe-advice screen. Use it on a value the user is
+ * shown after JSON.parse: a JSON escape for a space decodes to a space, so
+ * the raw reply text can pass the screen while the card does not.
+ *
+ * Values only, never keys. Each string is screened on its own: they are
+ * separate fields on screen, so joining them would flag phrases no user reads.
+ */
+export function containsUnsafeCoachAdviceInValue(value: unknown): boolean {
+  // Explicit stack: model output decides the nesting depth.
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      if (isUnsafeCoachText(current)) return true;
+    } else if (typeof current === "object" && current !== null) {
+      for (const child of Object.values(current)) pending.push(child);
+    }
+  }
+  return false;
+}
+
+/**
+ * Every JSON value a reader of a reply can decode from `text`:
+ *
+ * - each piece between ``` markers, from its first bracket. Every piece is
+ *   tried, not every second one: each fence reader looks for its own opening
+ *   tag, so a stray marker earlier in the reply shifts which pieces are
+ *   fences. Starting at the first bracket and trimming accepts everything
+ *   the two fence readers accept (`coach_blocks` needs a line break after
+ *   the tag; the recipe `json` fence does not, and trims its body);
+ * - the first "{" to the last "}" of the whole text, which is how recipe chat
+ *   reads a recipe written with no fence and with text around it.
+ *
+ * A piece that holds no JSON yields nothing: it is shown as written, and the
+ * raw text is screened as written.
+ */
+function decodedJson(text: string): unknown[] {
+  const candidates: string[] = [];
+  for (const segment of text.split("```")) {
+    const start = segment.search(/[[{]/);
+    if (start !== -1) candidates.push(segment.slice(start));
+  }
+  const open = text.indexOf("{");
+  const close = text.lastIndexOf("}");
+  if (open !== -1 && close > open) candidates.push(text.slice(open, close + 1));
+
+  const decoded: unknown[] = [];
+  for (const candidate of candidates) {
+    try {
+      // Trimmed, as recipe chat trims a fence body: trim() drops characters
+      // JSON.parse refuses (no-break space, BOM, line separator).
+      decoded.push(JSON.parse(candidate.trim()));
+    } catch {
+      // Not JSON: nothing is decoded from it for the user either.
+    }
+  }
+  return decoded;
+}
+
+/**
+ * The output screen for a coach or recipe-chat reply: the text as written,
+ * plus the decoded strings of any JSON in it.
+ */
+export function containsUnsafeCoachAdvice(text: string): boolean {
+  return (
+    isUnsafeCoachText(text) ||
+    decodedJson(text).some(containsUnsafeCoachAdviceInValue)
+  );
+}
+
+/** What the user is shown, and what is saved, in place of a reply that fails the screen. */
+export const STANDARD_SAFETY_MESSAGE =
+  "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
 
 /**
  * Sanitize a screen context field for safe inclusion in AI system prompts.

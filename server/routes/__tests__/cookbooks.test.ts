@@ -857,7 +857,7 @@ describe("Cookbook Routes", () => {
 
       expect(res.status).toBe(403);
       expect(vi.mocked(generateCoverCandidates)).not.toHaveBeenCalled();
-      expect(vi.mocked(storage.countCoverSetsSince)).not.toHaveBeenCalled();
+      expect(vi.mocked(storage.claimDailyAiCall)).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -872,29 +872,45 @@ describe("Cookbook Routes", () => {
       expect(res.status).toBe(503);
       expect(res.body.code).toBe("AI_NOT_CONFIGURED");
       expect(vi.mocked(generateCoverCandidates)).not.toHaveBeenCalled();
+      // A set that was never attempted does not use up the day's allowance.
+      expect(vi.mocked(storage.claimDailyAiCall)).not.toHaveBeenCalled();
     });
 
-    it("returns 429 at the daily cap, counting the last 24 hours, before any spend", async () => {
-      vi.mocked(storage.countCoverSetsSince).mockResolvedValue(15);
-      const before = Date.now();
+    it("returns 429 when the day's claim is refused, before any spend", async () => {
+      vi.mocked(storage.claimDailyAiCall).mockResolvedValue(false);
 
       const res = await post();
 
       expect(res.status).toBe(429);
       expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
       expect(vi.mocked(generateCoverCandidates)).not.toHaveBeenCalled();
-      const since = vi.mocked(storage.countCoverSetsSince).mock.calls[0][1];
-      expect(before - since.getTime()).toBeGreaterThanOrEqual(
-        24 * 60 * 60 * 1000 - 1000,
-      );
-      expect(before - since.getTime()).toBeLessThanOrEqual(
-        24 * 60 * 60 * 1000 + 1000,
-      );
     });
 
-    it("allows the set just under the cap", async () => {
-      vi.mocked(storage.countCoverSetsSince).mockResolvedValue(14);
+    it("claims one set against the stored daily cap before generating", async () => {
+      // Claim first, in one atomic step: two requests at once cannot both
+      // pass a count they each read before either was recorded.
+      const order: string[] = [];
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(async () => {
+        order.push("claim");
+        return true;
+      });
+      vi.mocked(generateCoverCandidates).mockImplementation(async () => {
+        order.push("generate");
+        return {
+          buffers: [Buffer.from("1"), Buffer.from("2"), Buffer.from("3")],
+          promptIgnored: false,
+        };
+      });
+
       expect((await post()).status).toBe(200);
+
+      expect(order).toEqual(["claim", "generate"]);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        expect.any(String),
+        "cookbookCoverSet",
+        AI_DAILY_CAPS.cookbookCoverSet,
+      );
+      expect(AI_DAILY_CAPS.cookbookCoverSet).toBe(15);
     });
 
     it("returns 503 AI_UNAVAILABLE when the pre-pass fails on a request", async () => {
