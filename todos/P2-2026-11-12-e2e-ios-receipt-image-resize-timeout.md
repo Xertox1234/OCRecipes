@@ -1,0 +1,42 @@
+---
+title: "iOS E2E: receipt photo resize takes 600 ms on one attempt and over 30 s on the next"
+status: backlog
+priority: medium
+created: 2026-11-12
+updated: 2026-11-12
+assignee:
+labels: [deferred, e2e]
+github_issue:
+---
+
+# iOS E2E: receipt photo resize takes 600 ms on one attempt and over 30 s on the next
+
+## Summary
+
+In iOS E2E run 43120554293 the receipt-upload flow's retry showed "Could not read the receipt". The cause was the on-device resize (`expo-image-manipulator` `manipulateAsync`), which hit `RESIZE_TIMEOUT_MS` (30 s) in `client/lib/image-compression.ts`. The first attempt, minutes earlier, compressed the same photo in 600 ms. This is the recurring receipt-flow flakiness.
+
+## Background
+
+Deferred from the CI Postgres saturation work (`todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md`, PR #1845). The stage logging from #1826 named the failing step (metro.log of run 43120554293):
+
+- Attempt 1: `Receipt scan took compress 600 ms, upload 767 ms, response 29 ms`. The flow then failed on the relaunch: `simctl openurl` timed out (`NSPOSIXErrorDomain` code 60).
+- Attempt 2: `Receipt scan failed at compress after 30056 ms [Error: Image resize timed out after 30000 ms]`. No request reached the server.
+
+The runner is a 3-vCPU, 7 GB VM that is CPU-starved for the whole flow phase (host-sample.log). Even so, a 50× swing on the same photo looks more like a resize that never settles than a slow one. The code comment above `SIZE_READ_TIMEOUT_MS` already records one iOS hang ("either can fail to settle on iOS", nightly 2026-11-04).
+
+## Acceptance Criteria
+
+- [ ] Find out whether the second resize is slow or never settles. For example, log the late result's arrival time through `onLateResult` in `resizeWithin`, or compare against host-sample.log CPU at that moment.
+- [ ] Choose a fix from that evidence: retry the resize once, change resize parameters, or (if it is pure starvation) accept it and document it. Do not just raise the timeout.
+- [ ] The receipt-upload flow passes on its first attempt in two dispatch runs.
+
+## Implementation Notes
+
+- Files in scope: `client/lib/image-compression.ts` (`resizeWithin`, `RESIZE_TIMEOUT_MS`), `client/hooks/useReceiptScan.ts`, and `e2e/flows/plan/receipt-upload.yaml`.
+- Evidence: the logs-ios artifact of run 43120554293 (metro.log, host-sample.log, `e2e/maestro-output/Plan - Receipt photo upload reaches the server-2/`).
+
+## Updates
+
+### 2026-11-12
+
+- Initial creation (deferred finding from the #1845 acceptance run).

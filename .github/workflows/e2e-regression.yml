@@ -190,6 +190,12 @@ jobs:
       # both began with a dropped ::1 attempt.
       # todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md
       DATABASE_URL: postgresql://ocrecipes:ocrecipes@127.0.0.1:5432/ocrecipes_test
+      # Keep the server's idle pool connections open (server/db.ts; pg's
+      # default closes them after 10 s idle). With IPv4 alone, run 43120554293
+      # still had 2 connection timeouts, both new connections that Postgres
+      # took 6.2 s and 7.6 s to start (received -> authorized in postgres.log),
+      # longer than the 5 s connectionTimeoutMillis.
+      DB_POOL_IDLE_TIMEOUT_MS: "0"
 
     steps:
       - uses: actions/checkout@v5
