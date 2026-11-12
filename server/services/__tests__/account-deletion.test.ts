@@ -90,6 +90,30 @@ describe("deleteAccount", () => {
     ).toBeGreaterThan(calls.indexOf("filterImages"));
   });
 
+  // The owner-run script exits when it returns, so it must be able to wait
+  // for the stored images to go (privacy audit G7).
+  it("waits for the image cleanup when asked to", async () => {
+    // A real storage call takes a turn of the event loop.
+    storage.filterUnreferencedImageUrls.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return [ownedImages[0]];
+    });
+    await deleteAccount(
+      { id: "u1", avatarUrl: "https://cdn/a/me.jpg" },
+      { awaitCleanup: true },
+    );
+    // No settle(): the deletes have already run.
+    expect(calls).toContain("deleteImage:https://cdn/a/me.jpg");
+    expect(calls).toContain("deleteImage:https://cdn/x/recipe.jpg");
+  });
+
+  it("a failed image delete does not fail a waited deletion", async () => {
+    deleteImage.mockRejectedValue(new Error("r2 down"));
+    await expect(
+      deleteAccount({ id: "u1", avatarUrl: "a" }, { awaitCleanup: true }),
+    ).resolves.toBeUndefined();
+  });
+
   it("revokes the ticket tokens as Apple identities", async () => {
     await deleteAccount({ id: "u1", avatarUrl: null });
     expect(storage.takeAppleTokensOnTicketsTargeting).toHaveBeenCalledWith(
