@@ -665,6 +665,30 @@ jobs:
             sleep 5
           done' >/dev/null 2>&1 &
 
+      # The first requests after the first login were the slowest of each run
+      # (GET /api/carousel 8.3 s and 9.1 s in runs 43143893480 and 43258730882;
+      # later calls 0.2-1.5 s), while Postgres logged no statement over 1 s.
+      # The server and the pool's backends (opened by the seed step) sit idle
+      # through the ~45-minute build, which pushes the host into swap. Hypothesis
+      # (todos/P2-2026-11-12-e2e-ios-runner-host-load.md): their pages are swapped
+      # out and the first requests pay to bring them back. Two concurrent rounds
+      # of home-screen requests here, timed: round 1 slow and round 2 fast
+      # confirms it, and the flows then start warm.
+      - name: Warm the backend after the build
+        timeout-minutes: 5
+        run: |
+          TOKEN=$(curl -s --max-time 60 -X POST http://localhost:3000/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" | jq -r '.token // empty')
+          if [ -z "$TOKEN" ]; then echo "::warning::warm-up login failed - continuing cold"; exit 0; fi
+          for round in 1 2; do
+            for p in /api/carousel /api/favourite-recipes/ids /api/curated-recipes /api/daily-budget /api/profile/library-counts /api/scanned-items; do
+              curl -s -o /dev/null --max-time 60 -w "round $round %{time_total}s %{http_code} $p\n" \
+                -H "Authorization: Bearer $TOKEN" "http://localhost:3000$p" &
+            done
+            wait
+          done
+
       # Runs `maestro test --include-tags regression e2e/` (see e2e/README.md for
       # the tagged flow inventory) via the per-flow retry wrapper: failed
       # flows are re-run INDIVIDUALLY; only a flow failing twice fails the

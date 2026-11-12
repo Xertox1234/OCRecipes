@@ -60,3 +60,13 @@ What was measured (host-sample.log in the logs-ios artifacts of runs 43104528885
 - **Memory is tight too:** free pages stayed near 60 MB through the flows and swap-outs rose from 29k to 63k pages in the first 10 minutes of flows (run 43143893480).
 - **Larger runner:** `macos-26-xlarge` is an M2 with 5 CPUs and 14 GB RAM (GitHub's larger-runners reference), $0.102/min (`macos_xl`, actions-runner-pricing). Larger runners are billed for public repositories too, need a card on file and a spending limit above $0. At ~100 min per iOS job, about $10 a run. The repo is user-owned; whether a personal account can use it was not confirmed. Owner decision.
 - **Change made:** the Boot step stops apsd in the simulator; the sampler counts the simulator's apsd and adds the ten largest processes by RSS every 5 minutes. Overlaps `todos/P2-2026-11-12-e2e-ios-build-step-time-margin.md` (build CPU).
+
+### 2026-11-12 (dispatch 1 with apsd stopped: run 43258730882 on 5d06e184e, iOS and Android green)
+
+Against acceptance run 43143893480:
+
+- Simulator apsd: absent in 135 of 135 samples.
+- Build: 46.4 min (was 45.5); clang 111% of CPU (was 106%), no simulator process in the build-window top 10. Stopping apsd did not shorten this build, so the 70-minute nightly is not explained by apsd alone (see the build-time todo).
+- Flows: simulator diagnosticd 24% → 11.6%, host diagnosticd 14% → 4.7%, Maestro's `log` 15% → 7.5%; device-simulator.log total 793 MB → 278 MB.
+- Requests: p50 299 → 288 ms, p99 6.7 → 3.3 s, over 5 s: 3 → 1. The one left is the first `GET /api/carousel` (9.1 s; 8.3 s in the baseline), started right after the first login; later carousel calls took 0.2–1.5 s. It is one SQL query and Postgres logged no statement over 1 s; the home screen's other requests in the same burst took 60–200 ms, so the event loop was not blocked.
+- Hypothesis for that first call: the server and the pool's backends (opened by the seed step) sit idle through the build, which swaps (474 MB used at 17:24), and the first requests page them back in. Added a "Warm the backend after the build" step that logs in and times two concurrent rounds of home-screen requests before the flows.
