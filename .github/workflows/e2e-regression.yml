@@ -178,6 +178,24 @@ jobs:
       # fails soft, surfacing any *other* problem in it instead of masking
       # the phase entirely.
       SENTRY_ALLOW_FAILURE: "true"
+      # 127.0.0.1, not the workflow-level `localhost`. On macOS `localhost`
+      # resolves to ::1 first, then 127.0.0.1, and Node 24 Happy Eyeballs
+      # (autoSelectFamily true, 250 ms per address) dropped the ::1 attempt
+      # whenever this starved runner could not finish it in 250 ms, then
+      # retried over IPv4. Run 43104528885 (postgres.log): 30 of 210
+      # connections were dropped ::1 attempts, each paired with an IPv4 retry
+      # (30 of 30). The retry came 584 ms later at p50 and 3.2 s at most, all
+      # of it spent from the pool's 5 s connectionTimeoutMillis. The two
+      # "Connection terminated due to connection timeout" errors in that run
+      # both began with a dropped ::1 attempt.
+      # todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md
+      DATABASE_URL: postgresql://ocrecipes:ocrecipes@127.0.0.1:5432/ocrecipes_test
+      # Keep the server's idle pool connections open (server/db.ts; pg's
+      # default closes them after 10 s idle). With IPv4 alone, run 43120554293
+      # still had 2 connection timeouts, both new connections that Postgres
+      # took 6.2 s and 7.6 s to start (received -> authorized in postgres.log),
+      # longer than the 5 s connectionTimeoutMillis.
+      DB_POOL_IDLE_TIMEOUT_MS: "0"
 
     steps:
       - uses: actions/checkout@v5
@@ -379,6 +397,12 @@ jobs:
               # comm is a full path and may contain spaces: print everything after rss.
               ps -Ao pcpu=,rss=,comm= -r | head -10 \
                 | awk '{ c = $1; r = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); printf "  %5s%% %6dMB %s\n", c, r / 1024, $0 }'
+              # A `log` process (~14% CPU, with diagnosticd at ~42%) ran for the
+              # whole flow phase in run 43104528885; name what started it.
+              for p in $(pgrep -x log); do
+                pp=$(ps -o ppid= -p "$p" | tr -d ' ')
+                echo "  log pid=$p args=$(ps -o args= -p "$p" | cut -c1-200) parent=$pp $(ps -o args= -p "$pp" | cut -c1-200)"
+              done
             } >> "$out" 2>&1
             sleep 30
           done

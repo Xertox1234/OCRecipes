@@ -66,4 +66,44 @@ describe("database pool", () => {
       expect((await loadDb()).statement_timeout).toBe(30_000);
     },
   );
+
+  // The iOS E2E runner is so starved that opening a new connection can take
+  // longer than connectionTimeoutMillis (Postgres took 6-8 s to start a
+  // backend in run 43120554293). The CI job keeps idle connections open with
+  // DB_POOL_IDLE_TIMEOUT_MS=0; everywhere else pg's default stays.
+  describe("idle connection timeout", () => {
+    const originalIdle = process.env.DB_POOL_IDLE_TIMEOUT_MS;
+
+    beforeEach(() => {
+      delete process.env.DB_POOL_IDLE_TIMEOUT_MS;
+    });
+
+    afterAll(() => {
+      if (originalIdle === undefined) {
+        delete process.env.DB_POOL_IDLE_TIMEOUT_MS;
+      } else {
+        process.env.DB_POOL_IDLE_TIMEOUT_MS = originalIdle;
+      }
+    });
+
+    it("leaves pg's default in place when unset", async () => {
+      expect(await loadDb()).not.toHaveProperty("idleTimeoutMillis");
+    });
+
+    it("keeps idle connections open when set to 0, or uses the given value", async () => {
+      process.env.DB_POOL_IDLE_TIMEOUT_MS = "0";
+      expect((await loadDb()).idleTimeoutMillis).toBe(0);
+
+      process.env.DB_POOL_IDLE_TIMEOUT_MS = "60000";
+      expect((await loadDb()).idleTimeoutMillis).toBe(60_000);
+    });
+
+    it.each(["abc", "", " ", "-5", "1.5", "1e3"])(
+      "ignores the malformed value %j",
+      async (value) => {
+        process.env.DB_POOL_IDLE_TIMEOUT_MS = value;
+        expect(await loadDb()).not.toHaveProperty("idleTimeoutMillis");
+      },
+    );
+  });
 });
