@@ -45,3 +45,7 @@ The runner is a CPU-starved 3-vCPU VM (see `todos/P2-2026-11-12-e2e-ios-runner-h
 ### 2026-11-12
 
 - Initial creation.
+
+### 2026-11-12 (from the host-load todo)
+
+- The booted, idle simulator competes with the compile: clang got 78% CPU in the timed-out nightly 43182452033 against 106% in the 45-minute build of 43143893480, while simulator apsd/diagnosticd used ≈ 66% and ≈ 30%. `todos/P2-2026-11-12-e2e-ios-runner-host-load.md` stops apsd (its retry storm) at boot. Measure build times after that lands before choosing a build-time fix. `expo run:ios` boots its device before compiling (resolveDevice → ensureBootedAsync), so a later boot needs a separate xcodebuild + `expo run:ios --binary`.

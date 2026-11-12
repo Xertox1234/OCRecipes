@@ -49,3 +49,14 @@ What was measured (host-sample.log in the logs-ios artifacts of runs 43104528885
 ### 2026-11-12
 
 - Initial creation (follow-up the owner asked for when closing the saturation todo).
+
+### 2026-11-12 (findings)
+
+- **apsd is in a retry storm on CI, not locally.** The flows' Maestro `device-simulator.log` (run 43143893480, "Auth - Login flow") has 529k lines; 193k are apsd. It tries `sandbox.push.apple.com`, ends "Connected on 0 interfaces … consecutiveFailures 6", and retries with no backoff: ~920 attempts in one 3-minute flow. A fresh local simulator on the same runtime (iOS 26.5, 23F77) settled to ~1–2% total CPU within 8 minutes and apsd never appeared.
+- **The idle simulator slows the build.** Build-window averages: nightly 43182452033 (timed out at 70 min) had clang 78% against sim diagnosticd + apsd + host diagnosticd ≈ 66%; acceptance run 43143893480 (45-min build) had clang 106% against ≈ 30%.
+- **The `log stream --style syslog` is Maestro 2.9.0**, not Xcode or expo: `IOSDriver.startDeviceLogCapture` (maestro-client.jar) writes `logs/device-simulator.log` per flow, 793 MB in total for that run. A new process per flow (11 PIDs). Maestro 2.6.0 does not have it. No CLI option to turn it off was found (`captureFullArtifacts` in the suite path comes from `--analyze`; the single-flow path was not traced further).
+- **Lowering simulator logging does not work:** `simctl spawn <udid> log config --mode level:off` returns "Simulator unable to set system mode".
+- **apsd can be stopped:** `launchctl disable` + `bootout system/com.apple.apsd` inside a throwaway simulator removed it; it stayed gone after 65 s and an app launch; SpringBoard and `openurl` were fine. The app's `registerPushToken` never gets a token on CI anyway (apsd never connects), so the app sees no change.
+- **Memory is tight too:** free pages stayed near 60 MB through the flows and swap-outs rose from 29k to 63k pages in the first 10 minutes of flows (run 43143893480).
+- **Larger runner:** `macos-26-xlarge` is an M2 with 5 CPUs and 14 GB RAM (GitHub's larger-runners reference), $0.102/min (`macos_xl`, actions-runner-pricing). Larger runners are billed for public repositories too, need a card on file and a spending limit above $0. At ~100 min per iOS job, about $10 a run. The repo is user-owned; whether a personal account can use it was not confirmed. Owner decision.
+- **Change made:** the Boot step stops apsd in the simulator; the sampler counts the simulator's apsd and adds the ten largest processes by RSS every 5 minutes. Overlaps `todos/P2-2026-11-12-e2e-ios-build-step-time-margin.md` (build CPU).

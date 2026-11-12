@@ -377,6 +377,19 @@ jobs:
             process.exit(1);
           ')"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          # Stop the simulator's push daemon (todos/P2-2026-11-12-e2e-ios-runner-host-load.md).
+          # On this runner apsd never reaches sandbox.push.apple.com and retries with no
+          # backoff ("Connected on 0 interfaces", ~920 attempts in a 3-minute flow, run
+          # 43143893480): ~20% CPU from boot to the end of the job, plus the system-log
+          # traffic diagnosticd and Maestro's per-flow device log capture then process
+          # (193k of the 529k lines in one flow's device-simulator.log). It never got a
+          # push token here, so the app sees the same thing with it stopped. The build
+          # step competes with it too: clang got 78% of the CPU in the 70-minute timeout
+          # (nightly 43182452033) against 106% in a 45-minute build (43143893480).
+          xcrun simctl spawn "$UDID" launchctl disable system/com.apple.apsd \
+            || echo "::warning::could not disable apsd in the simulator"
+          xcrun simctl spawn "$UDID" launchctl bootout system/com.apple.apsd \
+            || echo "::warning::could not boot out apsd in the simulator"
 
       # Measurement for todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md.
       # metro-probe.log shows load1 around 250-300 for the whole flow phase
@@ -389,6 +402,7 @@ jobs:
           cat > "$RUNNER_TEMP/host-sampler.sh" <<'SAMPLER'
           out="$GITHUB_WORKSPACE/host-sample.log"
           echo "# $(sysctl -n hw.model) ncpu=$(sysctl -n hw.ncpu) mem=$(( $(sysctl -n hw.memsize) / 1048576 ))MB" > "$out"
+          i=0
           while true; do
             {
               echo "=== $(date -u +%H:%M:%S) load $(sysctl -n vm.loadavg) swap $(sysctl -n vm.swapusage)"
@@ -397,13 +411,24 @@ jobs:
               # comm is a full path and may contain spaces: print everything after rss.
               ps -Ao pcpu=,rss=,comm= -r | head -10 \
                 | awk '{ c = $1; r = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); printf "  %5s%% %6dMB %s\n", c, r / 1024, $0 }'
-              # A `log` process (~14% CPU, with diagnosticd at ~42%) ran for the
-              # whole flow phase in run 43104528885; name what started it.
+              # The `log stream --style syslog` process (~15% CPU during flows) is
+              # Maestro 2.9.0's per-flow device log capture (IOSDriver
+              # startDeviceLogCapture -> logs/device-simulator.log). Kept to show
+              # whether it still runs and for how long.
               for p in $(pgrep -x log); do
                 pp=$(ps -o ppid= -p "$p" | tr -d ' ')
                 echo "  log pid=$p args=$(ps -o args= -p "$p" | cut -c1-200) parent=$pp $(ps -o args= -p "$pp" | cut -c1-200)"
               done
+              # The host runs its own apsd; count only the simulator's.
+              echo "  sim_apsd=$(ps -Ao comm= | grep -c 'simruntime/.*/apsd$')"
+              # Memory: free pages sit near 60 MB through the flows and swap-outs
+              # climb (run 43143893480). Every 5 minutes, the ten largest by RSS.
+              if [ $(( i % 10 )) -eq 0 ]; then
+                ps -Ao rss=,pcpu=,comm= -m | head -10 \
+                  | awk '{ r = $1; c = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); printf "  rss %6dMB %5s%% %s\n", r / 1024, c, $0 }'
+              fi
             } >> "$out" 2>&1
+            i=$(( i + 1 ))
             sleep 30
           done
           SAMPLER
