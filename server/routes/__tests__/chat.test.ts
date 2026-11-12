@@ -62,6 +62,7 @@ vi.mock("../../storage", () => ({
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
     deleteChatMessage: vi.fn(),
+    reportChatMessage: vi.fn(),
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
     getCommunityRecipe: vi.fn(),
@@ -2454,6 +2455,60 @@ describe("Chat Routes", () => {
         },
       );
       const res = await request(app).delete("/api/chat/messages/5");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/chat/messages/:id/report", () => {
+    it("saves the report and returns 204", async () => {
+      vi.mocked(storage.reportChatMessage).mockResolvedValue(true);
+      const res = await request(app)
+        .post("/api/chat/messages/5/report")
+        .set("Authorization", "Bearer valid-token")
+        .send({ reason: "harmful" });
+      expect(res.status).toBe(204);
+      expect(storage.reportChatMessage).toHaveBeenCalledWith(5, "1", "harmful");
+    });
+
+    it("returns 404 when the reply is not found, not the person's, or not an AI reply", async () => {
+      vi.mocked(storage.reportChatMessage).mockResolvedValue(false);
+      const res = await request(app)
+        .post("/api/chat/messages/999/report")
+        .set("Authorization", "Bearer valid-token")
+        .send({ reason: "other" });
+      expect(res.status).toBe(404);
+    });
+
+    it.each([
+      ["a reason off the list", { reason: "spam" }],
+      ["no reason", {}],
+      ["extra text", { reason: "other", comment: "my condition is…" }],
+    ])("returns 400 for %s and saves nothing", async (_name, body) => {
+      const res = await request(app)
+        .post("/api/chat/messages/5/report")
+        .set("Authorization", "Bearer valid-token")
+        .send(body);
+      expect(res.status).toBe(400);
+      expect(storage.reportChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 for an invalid message id", async () => {
+      const res = await request(app)
+        .post("/api/chat/messages/abc/report")
+        .set("Authorization", "Bearer valid-token")
+        .send({ reason: "other" });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      vi.mocked(requireAuth).mockImplementationOnce(
+        async (_req, res, _next) => {
+          sendError(res, 401, "Unauthorized");
+        },
+      );
+      const res = await request(app)
+        .post("/api/chat/messages/5/report")
+        .send({ reason: "other" });
       expect(res.status).toBe(401);
     });
   });

@@ -30,6 +30,7 @@ import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
 import MemoryRefsTag from "@/components/coach/MemoryRefsTag";
+import ReportReplyButton from "@/components/coach/ReportReplyButton";
 import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
 import { COACH_BRIEF_KEY } from "@/hooks/useCoachBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -1116,6 +1117,12 @@ export default function CoachChat({
                   void handleFavouriteGeneratedRecipe(msg.id, savedRecipeId)
                 }
               />
+            ) : null}
+            {/* Privacy audit G7: every saved AI reply can be reported, cards
+                and block-only replies included. Not while the footer still
+                shows the rest of this reply. */}
+            {isAssistant && !isHeld ? (
+              <ReportReplyButton messageId={msg.id} />
             ) : null}
             {isRetryTarget && (
               <Pressable

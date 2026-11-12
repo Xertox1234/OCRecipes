@@ -20,6 +20,7 @@ import {
   mealPlanItems,
   communityRecipes,
   chatConversations,
+  chatMessageReports,
   chatMessages,
   groceryLists,
   groceryListItems,
@@ -147,6 +148,7 @@ export const EXPORTED_USER_TABLES: readonly string[] = [
   "cookbook_cover_generation_log",
   "recipe_finder_claims",
   "notification_sends",
+  "chat_message_reports",
 ];
 
 /** Tables linked to a user that the export leaves out, and why. */
@@ -233,6 +235,8 @@ export interface UserDataExport {
   };
   /** Which kinds of notification were sent, and when. */
   notificationsSent: Record<string, unknown>[];
+  /** AI replies the person reported: which reply, the reason, when. */
+  chatMessageReports: Record<string, unknown>[];
 }
 
 /**
@@ -296,6 +300,7 @@ export async function getUserDataExport(
     coverLogRows,
     finderClaimRows,
     notificationRows,
+    messageReportRows,
   ] = await Promise.all([
     db.select(exportUserColumns).from(users).where(eq(users.id, userId)),
     db.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
@@ -507,6 +512,15 @@ export async function getUserDataExport(
       .from(notificationSends)
       .where(eq(notificationSends.userId, userId))
       .orderBy(desc(notificationSends.sentAt)),
+    db
+      .select({
+        messageId: chatMessageReports.messageId,
+        reason: chatMessageReports.reason,
+        createdAt: chatMessageReports.createdAt,
+      })
+      .from(chatMessageReports)
+      .where(eq(chatMessageReports.userId, userId))
+      .orderBy(desc(chatMessageReports.createdAt)),
   ]);
 
   // After fetching all parent rows, batch-load meal-plan recipe ingredients
@@ -601,5 +615,6 @@ export async function getUserDataExport(
       cookbookCoverGenerations: coverLogRows,
     },
     notificationsSent: notificationRows,
+    chatMessageReports: messageReportRows,
   };
 }

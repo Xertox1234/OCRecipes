@@ -17,6 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ChatBubble } from "@/components/ChatBubble";
+import ReportReplyButton from "@/components/coach/ReportReplyButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
@@ -447,6 +448,11 @@ export function CoachOverlayContent({
                 isStreaming={msg.id === -1}
                 animateEntry={msg.id < 0}
               />
+              {/* Saved AI replies only (privacy audit G7): live rows have
+                  negative ids. */}
+              {msg.role === "assistant" && msg.id > 0 ? (
+                <ReportReplyButton messageId={msg.id} />
+              ) : null}
               {/* The sheet draws text only; a reply's cards work in the
                   Coach tab, so offer the whole reply there. */}
               {msg.role === "assistant" &&

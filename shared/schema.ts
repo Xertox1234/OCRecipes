@@ -23,6 +23,7 @@ import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { DietConflictId } from "./constants/diet-conflicts";
+import type { ChatMessageReportReason } from "./constants/chat-message-report";
 import type { SpiceLevel } from "./schemas/recipe-finder";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type {
@@ -1535,6 +1536,43 @@ export const recipeFinderClaims = pgTable(
       table.messageId,
       table.kind,
     ),
+  ],
+);
+
+/**
+ * A person's report on an AI reply (privacy audit 2026-11-10, G7). Holds the
+ * reply's id, a reason from a fixed list and who reported — never the text
+ * (owner ruling 2026-11-11). Both FKs cascade: a report means nothing once its
+ * reply is gone, so deleting a chat, the retention purge and account deletion
+ * all remove it with no code of their own.
+ */
+export const chatMessageReports = pgTable(
+  "chat_message_reports",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    messageId: integer("message_id")
+      .references(() => chatMessages.id, { onDelete: "cascade" })
+      .notNull(),
+    reason: text("reason").notNull().$type<ChatMessageReportReason>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "chat_message_reports_reason_check",
+      sql`${table.reason} IN ('inaccurate', 'harmful', 'offensive', 'other')`,
+    ),
+    // One report per person per reply: a second tap changes nothing.
+    uniqueIndex("chat_message_reports_user_message_idx").on(
+      table.userId,
+      table.messageId,
+    ),
+    // The FK's own index: deleting a reply looks its reports up by this.
+    index("chat_message_reports_message_idx").on(table.messageId),
   ],
 );
 

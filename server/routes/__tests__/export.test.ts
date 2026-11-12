@@ -50,6 +50,7 @@ function buildExport() {
     cookbookCoverCandidates: [],
     usageLogs: { recipeFinderClaims: [], cookbookCoverGenerations: [] },
     notificationsSent: [],
+    chatMessageReports: [],
   };
 }
 

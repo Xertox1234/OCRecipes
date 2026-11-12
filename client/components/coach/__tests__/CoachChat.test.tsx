@@ -416,6 +416,8 @@ describe("CoachChat — a finished reply's blocks", () => {
 
       expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
       expect(screen.queryByLabelText("Regenerate response")).toBeNull();
+      // Privacy audit G7: the report flag waits with them.
+      expect(screen.queryByLabelText("Report this reply")).toBeNull();
     });
 
     it("swaps to the saved copy once the entrance is done", () => {
@@ -430,6 +432,9 @@ describe("CoachChat — a finished reply's blocks", () => {
 
       expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
       expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+      // Privacy audit G7: the saved AI reply can be reported; the person's
+      // own message cannot.
+      expect(screen.getAllByLabelText("Report this reply")).toHaveLength(1);
     });
 
     // The chips arrive one after another, so a longer row holds the saved
