@@ -188,7 +188,7 @@ jobs:
       # of it spent from the pool's 5 s connectionTimeoutMillis. The two
       # "Connection terminated due to connection timeout" errors in that run
       # both began with a dropped ::1 attempt.
-      # todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md
+      # todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md
       DATABASE_URL: postgresql://ocrecipes:ocrecipes@127.0.0.1:5432/ocrecipes_test
       # Keep the server's idle pool connections open (server/db.ts; pg's
       # default closes them after 10 s idle). With IPv4 alone, run 43120554293
@@ -328,7 +328,7 @@ jobs:
           psql -d postgres -c "ALTER USER ocrecipes WITH PASSWORD 'ocrecipes';"
           createdb -O ocrecipes ocrecipes_test || true
           psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
-          # Measurement for todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md:
+          # Measurement for todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md:
           # every "Connection terminated due to connection timeout" in server.log
           # is a NEW connection that took over 5 s to open (pg-pool newClient).
           # "connection received" -> "connection authorized" timestamps show
@@ -378,7 +378,7 @@ jobs:
           ')"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
 
-      # Measurement for todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md.
+      # Measurement for todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md.
       # metro-probe.log shows load1 around 250-300 for the whole flow phase
       # (runs 42810549290, 43064552610) but not WHAT is runnable. Every 30 s,
       # from here to the end of the job (build and flows): load, swap, free
@@ -759,7 +759,7 @@ jobs:
       # LOG_LEVEL info, as in the iOS job: per-request response times here are
       # the control for the iOS job's slow requests (same server, same flows,
       # Linux host with a Postgres service container;
-      # todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md).
+      # todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md).
       - name: Start backend
         env:
           LOG_LEVEL: info

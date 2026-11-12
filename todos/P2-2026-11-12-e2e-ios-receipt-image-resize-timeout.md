@@ -17,7 +17,7 @@ In iOS E2E run 43120554293 the receipt-upload flow's retry showed "Could not rea
 
 ## Background
 
-Deferred from the CI Postgres saturation work (`todos/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md`, PR #1845). The stage logging from #1826 named the failing step (metro.log of run 43120554293):
+Deferred from the CI Postgres saturation work (`todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md`, PR #1845). The stage logging from #1826 named the failing step (metro.log of run 43120554293):
 
 - Attempt 1: `Receipt scan took compress 600 ms, upload 767 ms, response 29 ms`. The flow then failed on the relaunch: `simctl openurl` timed out (`NSPOSIXErrorDomain` code 60).
 - Attempt 2: `Receipt scan failed at compress after 30056 ms [Error: Image resize timed out after 30000 ms]`. No request reached the server.
@@ -26,6 +26,7 @@ The runner is a 3-vCPU, 7 GB VM that is CPU-starved for the whole flow phase (ho
 
 ## Acceptance Criteria
 
+- [ ] Find out why the system photo picker stays on "Loading…" (run 43132429962, both attempts) and whether the flow can wait for it or seed the photo differently.
 - [ ] Find out whether the second resize is slow or never settles. For example, log the late result's arrival time through `onLateResult` in `resizeWithin`, or compare against host-sample.log CPU at that moment.
 - [ ] Choose a fix from that evidence: retry the resize once, change resize parameters, or (if it is pure starvation) accept it and document it. Do not just raise the timeout.
 - [ ] The receipt-upload flow passes on its first attempt in two dispatch runs.
@@ -40,3 +41,13 @@ The runner is a 3-vCPU, 7 GB VM that is CPU-starved for the whole flow phase (ho
 ### 2026-11-12
 
 - Initial creation (deferred finding from the #1845 acceptance run).
+
+### 2026-11-12 (later)
+
+Two more failures in the same flow, seen in the #1845 acceptance runs:
+
+- **The system photo picker never loaded** (run 43132429962, both attempts). The flow's `extendedWaitUntil` for `Photo, \w+ \d{2}, …` failed after 15 s, with the picker still showing "Loading…" (step-072 screenshot in the logs-ios artifact). This is before any of our code runs: no `Receipt scan` line in metro.log.
+- **The relaunch after a passing scan failed** (run 43120554293, attempt 1): `simctl openurl` timed out with `NSPOSIXErrorDomain` code 60, in `e2e/helpers/launch-app.yaml`.
+- Run 43143893480 passed the receipt flow on its first attempt.
+
+All three failures (slow resize, stuck picker, openurl timeout) happen in simulator or system code while the host is CPU-starved; see `todos/P2-2026-11-12-e2e-ios-runner-host-load.md`. Fixing the host load may fix some of them, so check the order of work before starting.
