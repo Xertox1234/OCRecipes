@@ -50,4 +50,4 @@ Two more failures in the same flow, seen in the #1845 acceptance runs:
 - **The relaunch after a passing scan failed** (run 43120554293, attempt 1): `simctl openurl` timed out with `NSPOSIXErrorDomain` code 60, in `e2e/helpers/launch-app.yaml`.
 - Run 43143893480 passed the receipt flow on its first attempt.
 
-All three failures (slow resize, stuck picker, openurl timeout) happen in simulator or system code while the host is CPU-starved; see `todos/P2-2026-11-12-e2e-ios-runner-host-load.md`. Fixing the host load may fix some of them, so check the order of work before starting.
+All three failures (slow resize, stuck picker, openurl timeout) happen in simulator or system code while the host is CPU-starved; see `todos/archive/P2-2026-11-12-e2e-ios-runner-host-load.md`. Fixing the host load may fix some of them, so check the order of work before starting.
