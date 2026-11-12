@@ -97,7 +97,11 @@ export async function claimCoverCandidate(
   return row?.imageUrl ?? null;
 }
 
-/** Sets the user has stored since `since` — the daily cap's count. */
+/**
+ * Sets the user has stored since `since`. No longer the daily cap: the route
+ * claims `cookbookCoverSet` before it generates (security audit 2026-11-12,
+ * L6). Kept with the log it reads, which still records every stored set.
+ */
 export async function countCoverSetsSince(
   userId: string,
   since: Date,

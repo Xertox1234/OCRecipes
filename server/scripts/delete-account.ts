@@ -14,10 +14,23 @@
  *               (or --username sam). Prints the account. Deletes nothing.
  *   2. Delete:  the same command plus --confirm-delete <the id step 1 printed>
  *
- * Production (the internal database host does not resolve from a laptop):
- *   railway run --service Postgres -- sh -c \
- *     'DATABASE_URL="$DATABASE_PUBLIC_URL" npx tsx \
+ * Production. The script needs the SERVER's settings, not only the database:
+ * the image storage keys remove the pictures, and the Apple sign-in settings
+ * revoke Apple's token. So it runs with the server service's variables, and
+ * takes only the database address from the Postgres service (the server's own
+ * address is an internal host that does not resolve from a laptop):
+ *   DB="$(railway variable list --service Postgres --json \
+ *         | jq -r .DATABASE_PUBLIC_URL)" \
+ *   railway run --service OCRecipes -- sh -c \
+ *     'DATABASE_URL="$DB" npx tsx \
  *       server/scripts/delete-account.ts --email sam@example.com'
+ *
+ * The delete step refuses to run where it could not finish the job (image
+ * storage or Apple sign-in not set up), and says what is missing. On a
+ * development database with nothing in storage, add --allow-incomplete.
+ *
+ * A phone that is signed in to the account can keep reading for up to a
+ * minute afterwards: the running server caches each session check that long.
  *
  * Deleting an account does not cancel a store subscription; the person
  * cancels that in the App Store or Google Play.
@@ -26,18 +39,27 @@ import "dotenv/config";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { deleteAccount } from "../services/account-deletion";
+import { isR2Configured } from "../lib/image-store";
+import { getSocialConfig } from "../lib/social-identity/config";
 
 const USAGE = [
   "Usage:",
   "  delete-account (--email <address> | --username <name>)",
-  "                 [--confirm-delete <account id>]",
+  "                 [--confirm-delete <account id>] [--allow-incomplete]",
   "Without --confirm-delete it only shows the account.",
+  "--allow-incomplete deletes even where the pictures or the Apple sign-in",
+  "cannot be removed (a development database only).",
 ].join("\n");
 
 type Lookup = { by: "email" | "username"; value: string };
 
 export type ParsedArgs =
-  | { ok: true; lookup: Lookup; confirmId: string | undefined }
+  | {
+      ok: true;
+      lookup: Lookup;
+      confirmId: string | undefined;
+      allowIncomplete: boolean;
+    }
   | { ok: false };
 
 /** A flag's value: the next argument, unless that is another flag. */
@@ -61,7 +83,35 @@ export function parseDeleteAccountArgs(argv: string[]): ParsedArgs {
   const lookup: Lookup = email
     ? { by: "email", value: email }
     : { by: "username", value: username as string };
-  return { ok: true, lookup, confirmId };
+  return {
+    ok: true,
+    lookup,
+    confirmId,
+    allowIncomplete: argv.includes("--allow-incomplete"),
+  };
+}
+
+/**
+ * What `deleteAccount` would leave behind in this environment. Both steps are
+ * best-effort inside it (a missing setting is skipped, not an error), which
+ * suits the running server, where the settings are checked at boot. Run by
+ * hand, the settings are whatever the command line supplied.
+ */
+export function findCleanupGaps(): string[] {
+  const gaps: string[] = [];
+  if (!isR2Configured()) {
+    gaps.push(
+      "stored pictures stay in storage (the R2_* variables are not all set)",
+    );
+  }
+  if (!getSocialConfig().apple) {
+    gaps.push(
+      "Apple sign-in stays authorised (APPLE_TEAM_ID, APPLE_SIGN_IN_KEY_ID, " +
+        "APPLE_SIGN_IN_PRIVATE_KEY, APPLE_BUNDLE_ID and IDENTITY_TOKEN_ENC_KEY " +
+        "are not all set)",
+    );
+  }
+  return gaps;
 }
 
 interface FoundAccount {
@@ -80,6 +130,8 @@ export interface DeleteAccountDeps {
     user: FoundAccount,
     options: { awaitCleanup: boolean },
   ) => Promise<void>;
+  /** What a deletion run here would leave behind; empty when nothing. */
+  cleanupGaps: () => string[];
   print: (line: string) => void;
 }
 
@@ -114,7 +166,17 @@ export async function runDeleteAccount(
     );
   }
 
+  const gaps = deps.cleanupGaps();
+  const printGaps = (heading: string) => {
+    deps.print("");
+    deps.print(heading);
+    for (const gap of gaps) deps.print(`  - ${gap}`);
+  };
+
   if (args.confirmId === undefined) {
+    if (gaps.length > 0) {
+      printGaps("This environment cannot finish a deletion:");
+    }
     deps.print("");
     deps.print("Nothing was deleted. To delete this account, run again with:");
     deps.print(`  --confirm-delete ${account.id}`);
@@ -127,10 +189,20 @@ export async function runDeleteAccount(
     );
     return 1;
   }
+  if (gaps.length > 0 && !args.allowIncomplete) {
+    printGaps("This environment cannot finish the deletion:");
+    deps.print("");
+    deps.print(
+      "Nothing was deleted. Run it with the server's settings (see the top " +
+        "of this file), or add --allow-incomplete on a development database.",
+    );
+    return 1;
+  }
 
   await deps.deleteAccount(account, { awaitCleanup: true });
   deps.print("");
   deps.print(`Deleted account ${account.id}.`);
+  if (gaps.length > 0) printGaps("Left behind:");
   return 0;
 }
 
@@ -139,6 +211,7 @@ async function main() {
     findByEmail: storage.getUserByEmailForAuth,
     findByUsername: storage.getUserByUsernameForAuth,
     deleteAccount,
+    cleanupGaps: findCleanupGaps,
     print: (line) => console.log(line),
   });
   await pool.end();

@@ -219,6 +219,31 @@ describe("error-reporter", () => {
       expect(scrubbed.request?.data).toBeUndefined();
     });
 
+    // Security audit 2026-11-12, L12 (review): two routes carry the scanned
+    // barcode in the path, and a 5xx on either sent it to Sentry.
+    it.each([
+      [
+        "https://api.ocrecipes.com/api/nutrition/barcode/0123456789012?x=1",
+        "https://api.ocrecipes.com/api/nutrition/barcode/:code",
+      ],
+      [
+        "https://api.ocrecipes.com/api/verification/0123456789012",
+        "https://api.ocrecipes.com/api/verification/:barcode",
+      ],
+      ["/api/nutrition/barcode/0123456789012", "/api/nutrition/barcode/:code"],
+      [
+        "https://api.ocrecipes.com/api/verification/submit#top",
+        "https://api.ocrecipes.com/api/verification/submit",
+      ],
+    ])(
+      "replaces a scanned barcode in the request URL: %s",
+      async (url, kept) => {
+        const { scrubEvent } = await importReporter();
+        const event = { type: undefined, request: { url } };
+        expect(scrubEvent(event as ErrorEvent).request?.url).toBe(kept);
+      },
+    );
+
     it("strips query strings from http breadcrumbs (outbound API keys)", async () => {
       const { scrubEvent } = await importReporter();
       const event = {

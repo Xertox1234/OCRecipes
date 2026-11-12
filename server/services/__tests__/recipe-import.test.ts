@@ -91,6 +91,38 @@ describe("Recipe Import", () => {
       ]);
     });
 
+    // Security audit 2026-11-12, L9 (review): a page that writes its method
+    // as one HTML block has its steps in the tags, not in line breaks.
+    it("takes the steps of an HTML list written on one line", () => {
+      expect(
+        normalizeInstructions(
+          "<ol><li>Mix the <b>dough</b>.</li><li>Bake.</li></ol>",
+        ),
+      ).toEqual(["Mix the dough.", "Bake."]);
+    });
+
+    it("takes paragraphs and line-break tags as step breaks", () => {
+      expect(
+        normalizeInstructions("<p>Mix.</p><p>Rest.<br>Bake.<BR />Serve.</p>"),
+      ).toEqual(["Mix.", "Rest.", "Bake.", "Serve."]);
+    });
+
+    // Security audit 2026-11-12, H1: the tag strip took quadratic time on a
+    // run of "<" with no ">" (60,000 of them: about 2 s; a 2 MB page: the
+    // server stops answering). Linear, the same input takes under 1 ms.
+    it.each([
+      ["a string", (text: string) => text],
+      [
+        "a HowToStep",
+        (text: string) => [{ "@type": "HowToStep" as const, text }],
+      ],
+    ])("strips tags in linear time from %s", (_shape, wrap) => {
+      const hostile = "<".repeat(60_000);
+      const started = performance.now();
+      normalizeInstructions(wrap(hostile));
+      expect(performance.now() - started).toBeLessThan(500);
+    });
+
     it("returns string[] from HowToStep array", () => {
       const steps = [
         { "@type": "HowToStep" as const, text: "Preheat oven" },
@@ -845,6 +877,113 @@ describe("Recipe Import", () => {
         expect(result.data.ingredients.length).toBe(1);
         expect(result.data.sourceUrl).toBe("https://x.test/pie");
       }
+    });
+
+    // Security audit 2026-11-12, L9: an imported page is cut to the caps the
+    // manual-create schema enforces (server/routes/_meal-plan-schemas.ts), so
+    // a hostile page cannot store a multi-megabyte row and an imported recipe
+    // can still be edited.
+    it("cuts an oversized page down to the manual-create caps", () => {
+      const block = JSON.stringify({
+        "@type": "Recipe",
+        name: "T".repeat(50_000),
+        description: "a ".repeat(400_000),
+        recipeYield: "99999999999 servings",
+        prepTime: "P9999999D",
+        cookTime: "PT99999999H",
+        keywords: Array.from(
+          { length: 5000 },
+          (_, i) => `tag${i}${"x".repeat(60)}`,
+        ).join(","),
+        recipeCuisine: "c".repeat(30_000),
+        recipeIngredient: Array.from(
+          { length: 3000 },
+          (_, i) => `1 cup thing${i}${"y".repeat(500)}`,
+        ),
+        recipeInstructions: Array.from(
+          { length: 2000 },
+          (_, i) => `step ${i} ${"z".repeat(5000)}`,
+        ),
+        nutrition: {
+          calories: "99999999999 calories",
+          proteinContent: "99999999 g",
+          carbohydrateContent: "30 g",
+          fatContent: "12 g",
+        },
+      });
+
+      const result = parseRecipeFromLdJson([block], "https://x.test/big");
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      const d = result.data;
+      expect(d.title).toHaveLength(200);
+      expect(d.description).toHaveLength(2000);
+      expect(d.cuisine).toHaveLength(100);
+      expect(d.servings).toBe(50);
+      expect(d.prepTimeMinutes).toBe(1440);
+      expect(d.cookTimeMinutes).toBe(1440);
+      expect(d.dietTags).toHaveLength(20);
+      expect(Math.max(...d.dietTags.map((t) => t.length))).toBe(50);
+      expect(d.ingredients).toHaveLength(200);
+      expect(Math.max(...d.ingredients.map((i) => i.name.length))).toBe(200);
+      expect(d.instructions).toHaveLength(100);
+      expect(Math.max(...(d.instructions ?? []).map((s) => s.length))).toBe(
+        2000,
+      );
+      // A value no real serving has is treated as unreadable, not stored.
+      expect(d.caloriesPerServing).toBeNull();
+      expect(d.proteinPerServing).toBeNull();
+      expect(d.carbsPerServing).toBe("30");
+      expect(d.fatPerServing).toBe("12");
+    });
+
+    it("leaves an ordinary recipe as the page wrote it", () => {
+      const block = JSON.stringify({
+        "@type": "Recipe",
+        name: "Sugar Cookies",
+        description: "Soft and chewy.",
+        recipeYield: "24 cookies",
+        prepTime: "PT15M",
+        cookTime: "PT10M",
+        keywords: "dessert, cookies",
+        recipeCuisine: "American",
+        recipeIngredient: ["2 cups flour", "1 cup sugar"],
+        recipeInstructions: ["Mix.", "Bake."],
+        nutrition: { calories: "120 calories", proteinContent: "2 g" },
+      });
+
+      const result = parseRecipeFromLdJson([block], "https://x.test/cookies");
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data).toMatchObject({
+        title: "Sugar Cookies",
+        description: "Soft and chewy.",
+        servings: 24,
+        prepTimeMinutes: 15,
+        cookTimeMinutes: 10,
+        cuisine: "American",
+        dietTags: ["dessert", "cookies"],
+        instructions: ["Mix.", "Bake."],
+        caloriesPerServing: "120",
+        proteinPerServing: "2",
+      });
+      expect(result.data.ingredients).toHaveLength(2);
+    });
+
+    it("does not cut a title in the middle of an emoji", () => {
+      const block = JSON.stringify({
+        "@type": "Recipe",
+        name: `${"T".repeat(199)}\u{1F370}`,
+        recipeIngredient: ["1 egg"],
+      });
+
+      const result = parseRecipeFromLdJson([block], "https://x.test/cake");
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.title).toBe("T".repeat(199));
     });
 
     it("skips invalid JSON blocks", () => {

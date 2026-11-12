@@ -25,7 +25,7 @@ import {
   stopNotificationScheduler,
 } from "./services/notification-scheduler";
 import { logger, rootLogger, toError } from "./lib/logger";
-import { urlPathOnly } from "./lib/log-url";
+import { loggedPath, requestLogFields } from "./lib/log-url";
 import {
   attachExpressErrorReporter,
   flushErrorReporter,
@@ -199,24 +199,15 @@ function setupRequestLogging(app: express.Application) {
           !req.url?.startsWith("/api") || req.url === "/api/health",
       },
       serializers: {
-        req(req) {
-          return {
-            method: req.method,
-            // Path only: query strings carry what the user typed (privacy audit M12).
-            url: urlPathOnly(req.url),
-            headers: {
-              "content-type": req.headers["content-type"],
-              "user-agent": req.headers["user-agent"],
-              "x-request-id": req.headers["x-request-id"],
-            },
-          };
-        },
+        // Path only, barcode replaced, and genReqId's id rather than the
+        // client's header (privacy audit M12; security audit 2026-11-12, L12).
+        req: requestLogFields,
         res(res) {
           return { statusCode: res.statusCode };
         },
       },
-      customSuccessMessage: (req) => `${req.method} ${urlPathOnly(req.url)}`,
-      customErrorMessage: (req) => `${req.method} ${urlPathOnly(req.url)}`,
+      customSuccessMessage: (req) => `${req.method} ${loggedPath(req.url)}`,
+      customErrorMessage: (req) => `${req.method} ${loggedPath(req.url)}`,
     }),
   );
 }

@@ -668,14 +668,16 @@ export function register(app: Express): void {
           prepTimeMinutes: z.number().int().min(0).max(1440),
           cookTimeMinutes: z.number().int().min(0).max(1440),
           difficulty: z.string().max(50).optional(),
-          ingredients: z.array(
-            z.object({
-              name: z.string().min(1).max(200),
-              quantity: z.coerce.string().optional().nullable(),
-              unit: z.string().max(50).optional().nullable(),
-            }),
-          ),
-          instructions: z.array(z.string()).max(100).optional(),
+          ingredients: z
+            .array(
+              z.object({
+                name: z.string().min(1).max(200),
+                quantity: z.coerce.string().optional().nullable(),
+                unit: z.string().max(50).optional().nullable(),
+              }),
+            )
+            .max(200),
+          instructions: z.array(z.string().max(2000)).max(100).optional(),
           dietTags: z.array(z.string().max(50)).max(20).optional(),
           caloriesPerServing: z.number().min(0),
           proteinPerServing: z.number().min(0),

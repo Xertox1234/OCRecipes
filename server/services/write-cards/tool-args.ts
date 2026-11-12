@@ -3,12 +3,23 @@ import {
   writeCardDaySchema,
   writeCardMealTypeSchema,
 } from "@shared/schemas/coach-write-cards";
+import { containsUnsafeCoachAdvice } from "../../lib/ai-safety";
 
 /**
  * Write-tool argument schemas (spec 2026-11-09). DB-FREE on purpose:
  * coach-tools.ts validates with these, and importing the card modules there
  * would pull storage and server/db.ts into every coach-tools importer.
  */
+
+/**
+ * Text the model writes for a card. The card shows and saves it without it
+ * ever passing through the reply's output screen, so that screen runs here:
+ * a hit fails the tool call, and the model is told the arguments were refused.
+ */
+const cardText = (text: z.ZodString) =>
+  text.refine((value) => !containsUnsafeCoachAdvice(value), {
+    message: "This text cannot go on a card.",
+  });
 
 const estimateSchema = z.object({
   calories: z.number().finite().min(0).max(5000),
@@ -21,9 +32,9 @@ export const logFoodCardArgsSchema = z.object({
   items: z
     .array(
       z.object({
-        name: z.string().trim().min(1).max(200),
+        name: cardText(z.string().trim().min(1).max(200)),
         count: z.number().int().min(1).max(20),
-        unitLabel: z.string().trim().min(1).max(60),
+        unitLabel: cardText(z.string().trim().min(1).max(60)),
         estimate: estimateSchema,
       }),
     )
@@ -38,15 +49,15 @@ export const addGroceryCardArgsSchema = z.object({
   items: z
     .array(
       z.object({
-        name: z.string().trim().min(1).max(200),
-        quantity: z.string().trim().max(40).optional(),
-        unit: z.string().trim().max(40).optional(),
+        name: cardText(z.string().trim().min(1).max(200)),
+        quantity: cardText(z.string().trim().max(40)).optional(),
+        unit: cardText(z.string().trim().max(40)).optional(),
         maybeHave: z.boolean().optional(),
       }),
     )
     .min(1)
     .max(40),
-  listName: z.string().trim().min(1).max(100).optional(),
+  listName: cardText(z.string().trim().min(1).max(100)).optional(),
 });
 export type AddGroceryCardArgs = z.infer<typeof addGroceryCardArgsSchema>;
 

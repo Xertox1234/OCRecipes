@@ -603,6 +603,36 @@ describe("Photos Routes", () => {
       expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
     });
 
+    // Security audit 2026-11-12, L8: the free-text fields had no length cap.
+    it.each([
+      ["a session id", { sessionId: "s".repeat(101) }, {}],
+      ["a meal type", { mealType: "m".repeat(51) }, {}],
+      ["a food name", {}, { name: "n".repeat(201) }],
+      ["a food quantity", {}, { quantity: "q".repeat(101) }],
+    ])("returns 400 for %s past its length cap", async (_label, body, food) => {
+      const res = await request(app)
+        .post("/api/photos/confirm")
+        .set("Authorization", "Bearer token")
+        .send({
+          sessionId: "test-session-id",
+          foods: [
+            {
+              name: "Apple",
+              quantity: "1 medium",
+              calories: 95,
+              protein: 0,
+              carbs: 25,
+              fat: 0,
+              ...food,
+            },
+          ],
+          ...body,
+        });
+
+      expect(res.status).toBe(400);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
     it("creates scanned item and daily log via storage", async () => {
       const mockItem = createMockScannedItem({
         id: 42,
@@ -718,6 +748,19 @@ describe("Photos Routes", () => {
   });
 
   describe("POST /api/photos/confirm-label", () => {
+    it.each([
+      ["a session id", { sessionId: "s".repeat(101) }],
+      ["a meal type", { sessionId: "label-session", mealType: "m".repeat(51) }],
+    ])("returns 400 for %s past its length cap", async (_label, body) => {
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(400);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
     it("logs (never swallows) a failed label cache seed and still saves the scan", async () => {
       const sessionId = storage.createLabelSession(
         "1",

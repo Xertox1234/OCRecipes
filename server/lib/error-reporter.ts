@@ -32,6 +32,7 @@ import * as Sentry from "@sentry/node";
 import type { Application } from "express";
 import { getRequestContext } from "./request-context";
 import { logger } from "./logger";
+import { loggedPath } from "./log-url";
 
 /**
  * In-process cap on reported events. A noisy error loop (e.g. a crashing
@@ -180,6 +181,16 @@ const PINO_CONTEXT_ALLOWLIST = new Set([
 ]);
 
 /**
+ * The request URL as Sentry keeps it: the origin, then the path the request
+ * log keeps (no query string or fragment, a scanned barcode replaced by its
+ * route parameter name).
+ */
+function scrubbedRequestUrl(url: string): string {
+  const origin = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i.exec(url)?.[0] ?? "";
+  return origin + loggedPath(url.slice(origin.length));
+}
+
+/**
  * PII scrubber for outbound events — the load-bearing control on this
  * external trust boundary (see the module doc: `sendDefaultPii: false`
  * does NOT withhold headers/cookies/query on the error-event path in v10).
@@ -208,10 +219,7 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
     delete request.cookies;
     delete request.query_string;
     if (typeof request.url === "string") {
-      const queryStart = request.url.indexOf("?");
-      if (queryStart !== -1) {
-        request.url = request.url.slice(0, queryStart);
-      }
+      request.url = scrubbedRequestUrl(request.url);
     }
   }
   // A failed Drizzle query's message ends with "\nparams: <every bound

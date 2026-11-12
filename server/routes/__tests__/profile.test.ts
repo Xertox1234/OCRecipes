@@ -158,6 +158,71 @@ describe("Profile Routes", () => {
       expect(res.status).toBe(400);
     });
 
+    // The two JSON columns are typed in TypeScript only; the generated schema
+    // accepts any JSON for them (security audit 2026-11-12, L7).
+    it.each([
+      ["reminderMutes that is not an object", { reminderMutes: "off" }],
+      ["an unknown reminderMutes key", { reminderMutes: { junk: true } }],
+      [
+        "a reminderMutes value that is not a boolean",
+        { reminderMutes: { "meal-log": "yes" } },
+      ],
+      [
+        "notificationPrefs with a wrong type and an extra key",
+        {
+          notificationPrefs: {
+            categories: {},
+            quietHours: { start: "21:00", end: "08:00" },
+            ambientPush: false,
+            transactionalEnabled: "x",
+            junk: [1, 2, 3],
+          },
+        },
+      ],
+      [
+        "quiet hours that are not a time",
+        {
+          notificationPrefs: {
+            categories: {},
+            quietHours: { start: "25:00", end: "8am" },
+            ambientPush: false,
+            transactionalEnabled: true,
+          },
+        },
+      ],
+    ])("returns 400 for %s, and saves nothing", async (_label, body) => {
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(400);
+      expect(storage.updateUserProfile).not.toHaveBeenCalled();
+    });
+
+    it("saves well-formed reminder mutes and notification preferences", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
+      const body = {
+        reminderMutes: { "meal-log": true, commitment: false },
+        notificationPrefs: {
+          categories: { "daily-checkin": true },
+          quietHours: { start: "21:00", end: "08:00" },
+          ambientPush: false,
+          transactionalEnabled: true,
+        },
+      };
+
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateUserProfile).mock.calls[0][1]).toEqual(
+        body,
+      );
+    });
+
     it("returns 500 when storage throws", async () => {
       vi.mocked(storage.updateUserProfile).mockRejectedValue(
         new Error("DB error"),

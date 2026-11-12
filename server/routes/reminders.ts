@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { handleRouteError } from "./_helpers";
+import { reminderMutesSchema } from "./_schemas";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -10,14 +11,6 @@ import {
   remindersAcknowledgeRateLimit,
   remindersMutesRateLimit,
 } from "./_rate-limiters";
-
-const mutesSchema = z
-  .object({
-    "meal-log": z.boolean().optional(),
-    commitment: z.boolean().optional(),
-    "daily-checkin": z.boolean().optional(),
-  })
-  .strict();
 
 export function register(app: Express): void {
   // GET /api/reminders/pending
@@ -87,7 +80,7 @@ export function register(app: Express): void {
     remindersMutesRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const parsed = mutesSchema.safeParse(req.body);
+        const parsed = reminderMutesSchema.safeParse(req.body);
         if (!parsed.success) {
           return sendError(
             res,

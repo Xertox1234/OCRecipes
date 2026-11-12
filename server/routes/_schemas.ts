@@ -276,6 +276,29 @@ export const profileUpdateSchema = z.object({
     .optional(),
 });
 
+/** The `reminder_mutes` column: the categories a user can mute, nothing else. */
+export const reminderMutesSchema = z
+  .object({
+    "meal-log": z.boolean().optional(),
+    commitment: z.boolean().optional(),
+    "daily-checkin": z.boolean().optional(),
+  })
+  .strict();
+
+const clockTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+/** The `notification_prefs` column, as `NotificationPrefs` types it. */
+const notificationPrefsSchema = z
+  .object({
+    categories: reminderMutesSchema,
+    quietHours: z
+      .object({ start: clockTimeSchema, end: clockTimeSchema })
+      .strict(),
+    ambientPush: z.boolean(),
+    transactionalEnabled: z.boolean(),
+  })
+  .strict();
+
 // Enhanced user profile schema with proper validation for nested objects
 export const userProfileInputSchema = insertUserProfileSchema
   .omit({
@@ -302,6 +325,10 @@ export const userProfileInputSchema = insertUserProfileSchema
     activityLevel: z.string().max(50).optional().nullable(),
     cookingSkillLevel: z.string().max(50).optional().nullable(),
     cookingTimeAvailable: z.string().max(50).optional().nullable(),
+    // JSON columns: the generated schema accepts any JSON for them (their
+    // TypeScript type is a cast), so their shape is checked here.
+    reminderMutes: reminderMutesSchema.optional(),
+    notificationPrefs: notificationPrefsSchema.optional(),
     // Boolean intent flag — `true` means the user accepted the consent screen.
     // The route translates this to a server-stamped `Date`. The actual
     // `healthDataConsentAt` timestamp column cannot be set or cleared by clients.

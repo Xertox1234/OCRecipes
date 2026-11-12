@@ -220,6 +220,25 @@ describe("Meal Plan Routes", () => {
   });
 
   describe("POST /api/meal-plan/recipes", () => {
+    // Security audit 2026-11-12, L8.
+    it.each([
+      ["a step past the length cap", { instructions: ["x".repeat(2001)] }],
+      [
+        "more ingredients than a recipe holds",
+        {
+          ingredients: Array.from({ length: 201 }, () => ({ name: "Salt" })),
+        },
+      ],
+    ])("returns 400 for %s, and saves nothing", async (_label, override) => {
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({ title: "Chicken Salad", ...override });
+
+      expect(res.status).toBe(400);
+      expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
+    });
+
     it("generates an auto-image for a premium user only until the daily cap is claimed", async () => {
       mockPremium();
       let used = 0;
@@ -1177,6 +1196,25 @@ describe("Meal Plan Routes", () => {
       fatPerServing: 10,
       plannedDate: "2026-03-15",
     };
+
+    // Security audit 2026-11-12, L8.
+    it.each([
+      ["a step past the length cap", { instructions: ["x".repeat(2001)] }],
+      [
+        "more ingredients than a recipe holds",
+        {
+          ingredients: Array.from({ length: 201 }, () => ({ name: "Salt" })),
+        },
+      ],
+    ])("returns 400 for %s, and saves nothing", async (_label, override) => {
+      const res = await request(app)
+        .post("/api/meal-plan/save-generated")
+        .set("Authorization", "Bearer token")
+        .send({ meals: [{ ...validMeal, ...override }] });
+
+      expect(res.status).toBe(400);
+      expect(storage.createMealPlanFromSuggestions).not.toHaveBeenCalled();
+    });
 
     it("creates recipes and plan items", async () => {
       vi.mocked(storage.createMealPlanFromSuggestions).mockResolvedValue([

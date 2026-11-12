@@ -1,14 +1,37 @@
-/** Classify a stored recipe image URL by ownership for the backfill. */
+/**
+ * True for the one shape every stored image name has: a single path segment
+ * of plain characters (`recipe-<uuid>.jpg`). No slash, no percent-escape, no
+ * name made only of dots — so a name that passes cannot point anywhere but
+ * the folder it is joined to.
+ */
+export function isSafeStoredFilename(filename: string): boolean {
+  return (
+    /^[A-Za-z0-9._-]+$/.test(filename) &&
+    !filename.includes("..") &&
+    !/^\.+$/.test(filename)
+  );
+}
+
+/**
+ * Classify a stored recipe image URL by ownership. "ours" is exactly what we
+ * store — `<base>/recipe-images/<one filename>`, with an optional `?v=`
+ * cache-busting query — not any URL that merely starts that way: the URL can
+ * come from a client, and "ours" is what lets it be saved unchanged.
+ */
 export function classifyRecipeImageUrl(
   url: string | null | undefined,
   r2PublicBase: string | null,
 ): "ours" | "external" | "none" {
   if (!url) return "none";
+  const folders = ["/api/recipe-images/"];
   if (r2PublicBase) {
-    const base = r2PublicBase.replace(/\/$/, "");
-    if (url.startsWith(`${base}/recipe-images/`)) return "ours";
+    folders.push(`${r2PublicBase.replace(/\/$/, "")}/recipe-images/`);
   }
-  if (url.startsWith("/api/recipe-images/")) return "ours";
+  for (const folder of folders) {
+    if (!url.startsWith(folder)) continue;
+    const filename = url.slice(folder.length).split("?")[0];
+    if (isSafeStoredFilename(filename)) return "ours";
+  }
   return "external";
 }
 

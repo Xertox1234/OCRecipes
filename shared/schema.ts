@@ -2229,8 +2229,9 @@ export const cookbookCoverCandidates = pgTable(
 );
 
 /**
- * One row per STORED cover-studio set — the daily cap's counter. Kept apart
- * from the candidates, which are deleted on replace and attach.
+ * One row per STORED cover-studio set. Kept apart from the candidates, which
+ * are deleted on replace and attach. The daily cap is not counted here: it is
+ * a claim made before generation (`cookbookCoverSet` in `AI_DAILY_CAPS`).
  */
 export const cookbookCoverGenerationLog = pgTable(
   "cookbook_cover_generation_log",

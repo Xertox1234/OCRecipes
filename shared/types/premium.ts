@@ -88,6 +88,8 @@ export const AI_DAILY_CAPS = {
   voiceTranscription: 50,
   /** Premium single cookbook cover generations (the cover studio has its own cap). */
   cookbookCover: 10,
+  /** Premium cover-studio sets: one claim buys a set of up to four images. */
+  cookbookCoverSet: 15,
   /** Premium recipe-chat photo analyses. */
   recipeChatImage: 20,
   /** Premium item suggestions + instructions, cache misses only. */

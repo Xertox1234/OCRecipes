@@ -122,7 +122,6 @@ vi.mock("../../lib/ai-safety", async (importOriginal) => {
   return {
     ...actual,
     sanitizeContextField: vi.fn((text: string) => text),
-    containsDangerousDietaryAdvice: vi.fn().mockReturnValue(false),
   };
 });
 
@@ -1043,6 +1042,32 @@ describe("handleCoachChat", () => {
       expect(generateCoachProResponse).not.toHaveBeenCalled();
       expect(generateCoachResponse).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ["a dietary phrase", "Fast for 3 days to reset."],
+      ["a medical phrase", "You likely have diabetes."],
+    ])(
+      "discards a cached response holding %s and generates afresh",
+      async (_label, cached) => {
+        // The cached reply gets the same screen as a live one
+        // (dietary AND medical), not the dietary half alone.
+        vi.mocked(storage.getCoachCachedResponse).mockResolvedValue(cached);
+        vi.mocked(storage.getChatMessages).mockResolvedValue([]);
+
+        const params = makeParams({
+          isCoachPro: false,
+          screenContext: undefined,
+        });
+        const events = await collectEvents(handleCoachChat(params));
+
+        expect(generateCoachResponse).toHaveBeenCalled();
+        const joined = events
+          .filter((e) => e.type === "content")
+          .map((e) => (e as { type: "content"; content: string }).content)
+          .join("");
+        expect(joined).not.toContain(cached);
+      },
+    );
   });
 
   // ── Auto-titling on first exchange ────────────────────────
@@ -2252,6 +2277,60 @@ describe("handleCoachChat — recipe finder (Coach Pro, flag on)", () => {
       content: "Here's a curry!",
     });
   });
+
+  // The generated recipe never passes through the coach reply's own screen.
+  it.each([
+    [
+      "the recipe card",
+      { content: "Here's a curry!\n```json\n{}\n```" },
+      { ...recipe, title: "Dry fast curry" },
+    ],
+    [
+      "the text beside the card",
+      { content: "Fast for 3 days first.\n```json\n{}\n```" },
+      recipe,
+    ],
+  ])(
+    "Generate: unsafe advice in %s saves and shows the safety message, with no card",
+    async (_where, textEvent, generated) => {
+      vi.mocked(generateRecipeChatResponse).mockImplementation(
+        async function* () {
+          yield textEvent;
+          yield { content: "", recipe: generated, allergenWarning: null };
+          yield { content: "", imageUrl: "https://img/curry.png" };
+          yield { done: true };
+        },
+      );
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({
+          role: "assistant",
+          metadata: { blocks: [listBlock] },
+        }),
+        createMockChatMessage({ id: 77, role: "user", content: "Generate" }),
+      ]);
+      const events = await collectEvents(
+        handleCoachChat(
+          makeParams({
+            content: "Generate",
+            finder: { ...finder, action: { type: "generate", flowId: FLOW } },
+          }),
+        ),
+      );
+      expect(storage.createChatMessage).toHaveBeenCalledTimes(1);
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        STANDARD_SAFETY_MESSAGE,
+        null,
+        undefined,
+      );
+      expect(events.at(-1)).toEqual({
+        type: "content",
+        content: STANDARD_SAFETY_MESSAGE,
+      });
+    },
+  );
 
   it("a claimed Generate finishes and persists even after the client left (#1151 — no paid work lost, no refund)", async () => {
     vi.mocked(storage.getChatMessages).mockResolvedValue([

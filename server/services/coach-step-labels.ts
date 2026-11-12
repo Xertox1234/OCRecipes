@@ -1,4 +1,4 @@
-import { sanitizeUserInput } from "../lib/ai-safety";
+import { containsUnsafeCoachAdvice, sanitizeUserInput } from "../lib/ai-safety";
 
 /**
  * What Coach shows while it works (show-the-work spec 2026-11-09).
@@ -34,11 +34,16 @@ export function plainStatusLabel(toolName: string): string {
   return PLAIN_LABELS[toolName] ?? FALLBACK_LABEL;
 }
 
-/** A user-derived value made safe and short enough for one status line. */
+/**
+ * A user-derived value made safe and short enough for one status line. The
+ * value is a tool argument the model wrote and the line is shown to the user,
+ * so one that trips the reply's unsafe-advice screen is dropped whole (the
+ * caller then uses its no-value label).
+ */
 function capValue(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const clean = sanitizeUserInput(raw).replace(/\s+/g, " ").trim();
-  if (!clean) return null;
+  if (!clean || containsUnsafeCoachAdvice(clean)) return null;
   if (clean.length <= VALUE_CAP) return clean;
   const cut = clean.slice(0, VALUE_CAP);
   const lastSpace = cut.lastIndexOf(" ");

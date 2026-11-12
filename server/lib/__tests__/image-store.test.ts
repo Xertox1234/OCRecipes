@@ -137,6 +137,28 @@ describe("image-store", () => {
     expect(cmd.input.Key).toBe("recipe-images/recipe-abc.png");
   });
 
+  // Security audit 2026-11-12, L11: every key we store is <prefix>/<one
+  // filename>. Anything else under the prefix is not an object we wrote.
+  it("deleteImage refuses an R2 key that is not one filename under the prefix", async () => {
+    setR2Env(true);
+    const { deleteImage } = await load();
+    await deleteImage(
+      "https://img.example.com/recipe-images/../avatars/victim.jpg",
+      "recipe",
+    );
+    await deleteImage(
+      "https://img.example.com/recipe-images/nested/recipe-abc.png",
+      "recipe",
+    );
+    await deleteImage(
+      "https://img.example.com/recipe-images/%2e%2e%2favatars%2fvictim.jpg",
+      "recipe",
+    );
+    await deleteImage("https://img.example.com/recipe-images/", "recipe");
+    await deleteImage("https://img.example.com/recipe-images/..", "recipe");
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   it("deleteImage refuses an R2 key outside the kind's prefix (no delete)", async () => {
     setR2Env(true);
     const { deleteImage } = await load();

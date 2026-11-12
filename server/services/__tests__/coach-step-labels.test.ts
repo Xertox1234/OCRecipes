@@ -63,6 +63,30 @@ describe("coach step labels (show-the-work spec 2026-11-09)", () => {
     expect(label.length).toBeLessThanOrEqual("Looking up ".length + 41 + 1);
   });
 
+  it("a value holding an unsafe-advice phrase is dropped for the no-value label", () => {
+    // The label and the trail are shown to the user; the value is model text.
+    expect(
+      toolStep(call("lookup_nutrition", { query: "Fast for 3 days" }), {
+        writeCards: true,
+      }),
+    ).toEqual({ label: "Looking up nutrition…", trail: "nutrition lookup" });
+    expect(
+      toolStep(
+        call("get_substitutions", { ingredients: [{ name: "a dry fast" }] }),
+        { writeCards: true },
+      ),
+    ).toEqual({ label: "Finding substitutes…", trail: "substitutes" });
+    // Unsafe text past the 40-character cut still drops the whole value.
+    expect(
+      toolStep(
+        call("search_recipes", {
+          query: "a".repeat(45) + " then fast for 3 days",
+        }),
+        { writeCards: true },
+      ),
+    ).toEqual({ label: "Searching recipes…", trail: "recipes" });
+  });
+
   it("a capped value ends in exactly one ellipsis", () => {
     const { label, trail } = toolStep(
       call("search_recipes", { query: "a".repeat(60) }),
