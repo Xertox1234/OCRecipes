@@ -54,6 +54,7 @@
     "seed:recipes": "tsx server/scripts/seed-recipes.ts",
     "cleanup:seeds": "tsx server/scripts/cleanup-seed-recipes.ts",
     "cleanup:retention": "tsx server/scripts/cleanup-retention.ts",
+    "delete:account": "tsx server/scripts/delete-account.ts",
     "migrate:images-r2": "tsx server/scripts/migrate-images-to-r2.ts",
     "preview:art-direction": "tsx server/scripts/preview-art-direction.ts",
     "backfill:recipe-images": "tsx server/scripts/backfill-recipe-images.ts",

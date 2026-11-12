@@ -17,10 +17,12 @@ import { revokeAppleIdentities } from "./auth-session";
  * 5. Fire-and-forget blob cleanup: it never delays or fails the caller.
  *
  * The caller owns re-auth and the second-factor gate; this function assumes
- * both passed.
+ * both passed. `awaitCleanup` makes step 5 finish before this returns — for
+ * `server/scripts/delete-account.ts`, never for a request.
  */
 export async function deleteAccount(
   user: Pick<User, "id" | "avatarUrl">,
+  options: { awaitCleanup?: boolean } = {},
 ): Promise<void> {
   // Revoke Apple tokens BEFORE the delete cascades the identity rows
   // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
@@ -49,19 +51,21 @@ export async function deleteAccount(
   // Clean up stored images (fire-and-forget; account is already gone, so a
   // storage cleanup failure must not affect the response or add ~50-300ms
   // of R2 latency to it)
-  fireAndForget(
-    "account-deletion-avatar-cleanup",
-    deleteImage(user.avatarUrl, "avatar"),
-  );
+  const avatarCleanup = deleteImage(user.avatarUrl, "avatar");
+  fireAndForget("account-deletion-avatar-cleanup", avatarCleanup);
   // Filter AFTER the delete: any reference left belongs to another
   // account (a shared copy, or a crafted meal-plan imageUrl), and
   // deleteImage keeps its per-kind prefix guard.
-  fireAndForget(
-    "account-deletion-image-cleanup",
-    storage
-      .filterUnreferencedImageUrls(ownedImages)
-      .then((images) =>
-        Promise.all(images.map((i) => deleteImage(i.url, i.kind))),
-      ),
-  );
+  const imageCleanup = storage
+    .filterUnreferencedImageUrls(ownedImages)
+    .then((images) =>
+      Promise.all(images.map((i) => deleteImage(i.url, i.kind))),
+    );
+  fireAndForget("account-deletion-image-cleanup", imageCleanup);
+
+  // A script exits when this returns, so it waits; a failure is already
+  // logged above and never fails the deletion.
+  if (options.awaitCleanup) {
+    await Promise.allSettled([avatarCleanup, imageCleanup]);
+  }
 }
