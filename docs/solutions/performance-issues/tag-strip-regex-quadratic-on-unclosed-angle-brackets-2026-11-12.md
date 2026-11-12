@@ -1,5 +1,5 @@
 ---
-title: "The tag-strip regex /<[^>]*>/g is quadratic on a run of \"<\" with no \">\" — strip only up to the last \">\"; excluding \"<\" from the class is fast but one pass leaves a reassembled tag"
+title: "The tag-strip regex /<[^>]*>/g is quadratic on a run of \"<\" with no \">\" — strip with an indexOf scan that stops at the first \"<\" with no \">\" after it; excluding \"<\" from the class is fast but one pass leaves a reassembled tag"
 track: bug
 category: performance-issues
 module: server
@@ -26,7 +26,7 @@ Measured on the audit laptop (node v24.20.0), `"<".repeat(n)`:
 | ------ | ------------ | --------------------- |
 | 20,000 | 264.5 ms     | under 0.1 ms          |
 | 40,000 | 1,020.7 ms   | under 0.1 ms          |
-| 80,000 | 3,767.3 ms   | 0.1 ms                |
+| 80,000 | 3,767.3 ms   | under 0.1 ms          |
 
 At the route's size limit the server would not answer for minutes. The 5-per-minute
 import limiter does not help: one request is enough.
@@ -50,22 +50,30 @@ replace that was linear before.
 
 ## Solution
 
-Keep the pattern, and run it only where it is linear — up to the last `>`. Inside that
-part every `<` has a `>` after it, so each scan from a `<` ends in a match and no
-character is read twice. After the last `>` nothing can match, so that tail is kept as
-it is:
+Do the same work as the pattern with a scan: find a `<`, find the next `>`, drop what
+is between them, go on from there. The first `<` with no `>` after it ends the scan, so
+no character is read twice, and that tail is kept as it is (as the pattern kept it):
 
 ```ts
 // server/services/recipe-import.ts
 function stripTags(text: string): string {
-  const last = text.lastIndexOf(">");
-  if (last === -1) return text;
-  return text.slice(0, last + 1).replace(/<[^>]*>/g, "") + text.slice(last + 1);
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf("<", from);
+    if (open === -1) break;
+    const close = text.indexOf(">", open);
+    if (close === -1) break;
+    out += text.slice(from, open);
+    from = close + 1;
+  }
+  return out + text.slice(from);
 }
 ```
 
 The output is the old output on every input: 0 differences over all 2,015,538 strings
-of 1–8 atoms from `<`, `>`, `b`, `/`, space and newline.
+of 1–8 atoms from `<`, `>`, `b`, `/`, space and newline. In the output no `<` stands in
+front of a `>` (0 of 2,015,538), so removed tags cannot join into a new one.
 
 ### The first fix, and why it was replaced
 
@@ -88,6 +96,18 @@ Repeating that replace until nothing changes removes the leftover tags and is qu
 again: 893 ms / 3,473 ms / 13,351 ms on `"<".repeat(n) + ">".repeat(n)` for
 n = 20k / 40k / 80k.
 
+### The second fix, and why CodeQL refused it
+
+The second fix kept the old pattern and ran it only up to the last `>`:
+`text.slice(0, last + 1).replace(/<[^>]*>/g, "") + text.slice(last + 1)`. Same output,
+linear, clean in two reviews. CodeQL then failed the PR on it
+(`js/incomplete-multi-character-sanitization`, high: "may still contain `<script`").
+The rule fires on any single-pass regex replace of a multi-character token; it had two
+open alerts on `main` for the original lines, and moving the pattern into a new function
+made the alert new. CodeQL is a required check here, so the regex went. The scan above
+has no regex for the rule to match and, unlike a repeat-until-stable loop (the rule's
+usual advice), stays linear.
+
 ### Tests
 
 - Timing, wide margin: 60,000 `<` must finish in under 500 ms (old pattern about
@@ -104,7 +124,8 @@ n = 20k / 40k / 80k.
 - **A faster pattern is a different pattern.** When a performance fix changes what a
   sanitising regex matches, compare old and new output over a generated corpus (every
   short string over the delimiters and two or three fillers), not over examples. Prefer
-  a fix that bounds the input and keeps the pattern.
+  a fix that keeps the old output exactly — and on a strip, a scan over a regex:
+  CodeQL flags a one-pass regex strip of tags whatever its output.
 - A strip must not be able to produce what it strips: check the output of the corpus
   for a complete match of the pattern.
 - When a replace is added in front of an existing one, re-time the existing one on the

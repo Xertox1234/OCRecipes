@@ -63,16 +63,28 @@ export function parseIsoDuration(duration: string | undefined): number | null {
 /**
  * Remove HTML tags: everything from a "<" to the next ">".
  *
- * The pattern alone is quadratic on a page-sized run of "<" that never closes
- * (each "<" is scanned to the end of the string), so it runs only up to the
- * last ">", where every "<" has a ">" after it. Do not swap in `/<[^<>]*>/g`:
- * one pass of it turns "<<b>script>" into "<script>", and repeating it until
- * nothing changes is quadratic again.
+ * Written as a scan, not as `text.replace(/<[^>]*>/g, "")`, which gives the
+ * same output but is quadratic on a page-sized run of "<" that never closes
+ * (each "<" is scanned to the end of the string). Here the first "<" with no
+ * ">" after it ends the scan. Do not swap in `/<[^<>]*>/g`: one pass of it
+ * turns "<<b>script>" into "<script>", and repeating it until nothing changes
+ * is quadratic again.
+ *
+ * No "<" is left in front of a ">" in the result, so removed tags cannot join
+ * into a new one. A "<" with no ">" after it is kept as text ("cook < 5 min").
  */
 function stripTags(text: string): string {
-  const last = text.lastIndexOf(">");
-  if (last === -1) return text;
-  return text.slice(0, last + 1).replace(/<[^>]*>/g, "") + text.slice(last + 1);
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf("<", from);
+    if (open === -1) break;
+    const close = text.indexOf(">", open);
+    if (close === -1) break;
+    out += text.slice(from, open);
+    from = close + 1;
+  }
+  return out + text.slice(from);
 }
 
 /**
