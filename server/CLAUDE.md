@@ -10,7 +10,7 @@
 
 **Expo push:** `EXPO_PUBLIC_DOMAIN` (API domain for client), `EXPO_ACCESS_TOKEN` (server-side; omit to disable server-driven push), `EXPO_PUBLIC_PROJECT_ID` (required alongside `EXPO_ACCESS_TOKEN`)
 
-**Apple IAP:** `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (PEM), `APPLE_BUNDLE_ID`, `APPLE_ENVIRONMENT` (sandbox/production), `APPLE_APP_ID` (numeric, required for prod JWS), `APPLE_ROOT_CA_DIR` (defaults to `server/certs/`), `RECEIPT_VALIDATION_STUB` (`"true"` for dev stub mode)
+**Apple IAP:** `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (PEM, `\n` for newlines — the App Store Connect In-App Purchase key; signs the App Store Server API call that checks a subscription's current status at its first claim, so a wrong key fails every first Apple claim with `STORE_API_ERROR`), `APPLE_BUNDLE_ID`, `APPLE_ENVIRONMENT` (sandbox/production), `APPLE_APP_ID` (numeric, required for prod JWS), `APPLE_ROOT_CA_DIR` (defaults to `server/certs/`), `RECEIPT_VALIDATION_STUB` (`"true"` for dev stub mode)
 
 **Google IAP:** `GOOGLE_PACKAGE_NAME`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_KEY` (PEM, `\n` for newlines)
 

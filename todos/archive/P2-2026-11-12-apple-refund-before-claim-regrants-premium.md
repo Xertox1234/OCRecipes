@@ -1,6 +1,6 @@
 ---
 title: "Apple refund that arrives before the receipt is claimed is lost — check Apple's current status at first claim"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-12
 updated: 2026-11-12
@@ -48,17 +48,17 @@ one step earlier: that fix needs a stored row, and here there is none.
 
 ## Acceptance Criteria
 
-- [ ] A failing test first: a refund notice for an unknown transaction, then a claim with the
+- [x] A failing test first: a refund notice for an unknown transaction, then a claim with the
       pre-refund receipt, must not grant premium.
-- [ ] At first claim of an Apple transaction, the server asks Apple for the current status and
+- [x] At first claim of an Apple transaction, the server asks Apple for the current status and
       refuses a refunded or revoked purchase (status 5).
-- [ ] When Apple's API cannot be reached at claim time, the claim is refused with a retryable
+- [x] When Apple's API cannot be reached at claim time, the claim is refused with a retryable
       error and nothing is granted. (Recommended in the audit; the owner accepted the audit's
       suggestions on 2026-11-12 without a separate word on this point — confirm before building.)
-- [ ] The wrong "harmlessly" comment in `store-notifications.ts` is corrected.
-- [ ] The Google half (`handleGoogleNotification`, Google receipt validation) is read for the same
+- [x] The wrong "harmlessly" comment in `store-notifications.ts` is corrected.
+- [x] The Google half (`handleGoogleNotification`, Google receipt validation) is read for the same
       gap; the audit did not assess it. Record the result, fix or file.
-- [ ] PR carries the `security` label and is not auto-merged.
+- [x] PR carries the `security` label and is not auto-merged.
 
 ## Implementation Notes
 
@@ -102,3 +102,32 @@ one step earlier: that fix needs a stored row, and here there is none.
 ### 2026-11-12
 
 - Initial creation (security audit 2026-11-12, finding M2; owner: fix in its own PR)
+
+### 2026-11-12 — built
+
+- Shape (a) built: `appleFirstClaimRefusal` asks Apple (Get All Subscription Statuses) when an iOS
+  receipt names a transaction with no stored row, before `claimTransactionAndUpgrade`. Status 5
+  → `TRANSACTION_REVOKED`. No answer in 10 s, an API error, or an answer that does not list the
+  transaction → `STORE_API_ERROR` (retryable), nothing granted. Shape (b) was not built.
+- Outside the scope contract: the check lives in a new file,
+  `server/services/apple-subscription-status.ts`, because adding it to `receipt-validation.ts` took
+  that file to 611 lines (the bar is 600).
+- Fail-closed on an unreachable Apple API was built as recommended and put to the owner with the
+  merge question, not before building.
+- `APPLE_ISSUER_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` are used for a real call for the first
+  time. Until now only their presence was checked. A wrong key makes every first Apple claim fail
+  with `STORE_API_ERROR` and a Sentry report naming HTTP 401.
+- Google half, read: `validateGoogleReceipt` reads the purchase from the Play API on every claim,
+  so a refunded or revoked purchase is refused at claim whether or not a row exists. A Play
+  revoke notice for an unknown token only logs. No gap found at claim; nothing filed.
+- Not exercised against Apple: tests mock the library's API client.
+
+### 2026-11-12 — review fixes
+
+- The check also runs when the stored row is `revoked`: a re-subscription reuses the
+  `originalTransactionId`, and its refund, if it was never claimed, left `revokedAt` at the
+  earlier refund, so its pre-refund receipt passed the date check (security-auditor finding;
+  already on `main` before this PR).
+- Only status 1 (active) and 4 (billing grace) pass. Any other status, or none, is
+  `STORE_API_ERROR`.
+- A network failure's reported message no longer holds the transaction id.
