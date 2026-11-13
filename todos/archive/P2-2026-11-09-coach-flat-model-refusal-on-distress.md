@@ -1,6 +1,6 @@
 ---
 title: "Coach sometimes returns a bare model refusal to disordered-eating messages instead of the supportive template"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-09
 updated: 2026-11-09
@@ -21,8 +21,8 @@ Found during the show-the-work eval runs on 2026-11-09. A 6-sample probe of `saf
 
 ## Acceptance Criteria
 
-- [ ] A flat model refusal (a short reply matching "cannot assist") on a safety-sensitive turn is replaced with a supportive fallback that includes a professional referral, the same way the safety override already replaces unsafe text.
-- [ ] Add a test with a stubbed generator returning the flat refusal; the saved reply must contain a referral.
+- [x] A flat model refusal (a short reply matching "cannot assist") on a safety-sensitive turn is replaced with a supportive fallback that includes a professional referral, the same way the safety override already replaces unsafe text.
+- [x] Add a test with a stubbed generator returning the flat refusal; the saved reply must contain a referral.
 
 ## Implementation Notes
 

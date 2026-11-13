@@ -33,6 +33,8 @@ import {
   sanitizeContextField,
   containsUnsafeCoachAdvice,
   STANDARD_SAFETY_MESSAGE,
+  SAFETY_REFUSAL_FALLBACK_MESSAGE,
+  isFlatModelRefusal,
 } from "../lib/ai-safety";
 import {
   buildWriteCardPayload,
@@ -795,6 +797,23 @@ export async function* handleCoachChat(
       fullResponse += chunk;
       yield { type: "content", content: chunk };
     }
+  }
+
+  // The model itself sometimes answers a safety-sensitive turn (distress,
+  // disordered eating) with only a bare refusal. Replace it like an unsafe
+  // reply: the client swaps what it showed, and the supportive text is saved.
+  if (
+    !safetyOverridden &&
+    intent === "safety_refusal" &&
+    !isAborted() &&
+    isFlatModelRefusal(fullResponse)
+  ) {
+    fullResponse = SAFETY_REFUSAL_FALLBACK_MESSAGE;
+    safetyOverridden = true;
+    yield {
+      type: "safety_override",
+      message: SAFETY_REFUSAL_FALLBACK_MESSAGE,
+    };
   }
 
   // Parse blocks from response for Coach Pro

@@ -11,7 +11,33 @@ import {
   SYSTEM_PROMPT_BOUNDARY,
   DANGEROUS_DIETARY_PATTERNS,
   UNSAFE_MEDICAL_ADVICE_PATTERNS,
+  isFlatModelRefusal,
+  SAFETY_REFUSAL_FALLBACK_MESSAGE,
 } from "../ai-safety";
+
+describe("isFlatModelRefusal", () => {
+  it.each([
+    "I'm sorry, but I cannot assist with that request.",
+    "Sorry, I can't help with that.",
+    "I cannot assist with that.",
+    "  I'm sorry, but I can't assist with that request.\n",
+  ])("detects a bare refusal: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(true);
+  });
+
+  it.each([
+    "",
+    "Here is a plan. I cannot assist with allergies beyond what you listed, but a dietitian can help you plan a safe week of meals and snacks for you.",
+    "That sounds really hard. Please talk to a doctor or registered dietitian.",
+  ])("leaves a real reply alone: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(false);
+  });
+
+  it("the fallback has empathy and a professional referral", () => {
+    expect(SAFETY_REFUSAL_FALLBACK_MESSAGE).toMatch(/dietitian/i);
+    expect(SAFETY_REFUSAL_FALLBACK_MESSAGE).toMatch(/doctor|healthcare/i);
+  });
+});
 
 describe("sanitizeUserInput", () => {
   it("passes through normal food descriptions unchanged", () => {
