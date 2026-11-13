@@ -370,6 +370,46 @@ describe("Subscription Routes", () => {
         expect(storage.claimTransactionAndUpgrade).toHaveBeenCalledTimes(1);
       });
 
+      // A re-subscription reuses the originalTransactionId, so a row revoked
+      // by an EARLIER refund lets a later purchase through on its date alone.
+      // If that later purchase was refunded before it was ever claimed, only
+      // Apple's current status can refuse its pre-refund receipt.
+      it("asks Apple when the stored row is revoked, and declines on a refund", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(
+          createMockTransaction({ status: "revoked" }),
+        );
+        vi.mocked(appleFirstClaimRefusal).mockResolvedValue(
+          "TRANSACTION_REVOKED",
+        );
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(appleFirstClaimRefusal).toHaveBeenCalledWith(
+          "apple-original-txn-9",
+        );
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe("TRANSACTION_REVOKED");
+        expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
+      });
+
+      it("lets a re-subscription over a revoked row reach the claim when Apple reports it in good standing", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(
+          createMockTransaction({ status: "revoked" }),
+        );
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(appleFirstClaimRefusal).toHaveBeenCalledTimes(1);
+        expect(res.body.success).toBe(true);
+        expect(storage.claimTransactionAndUpgrade).toHaveBeenCalledTimes(1);
+      });
+
       it("does not ask Apple when the transaction is already stored", async () => {
         vi.mocked(storage.getTransaction).mockResolvedValue(
           createMockTransaction(),

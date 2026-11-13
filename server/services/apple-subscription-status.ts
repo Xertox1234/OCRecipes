@@ -36,14 +36,23 @@ function getAppleApiClient(): AppStoreServerAPIClient {
   return appleApiClient;
 }
 
+/** The statuses that entitle the subscriber: active, or in billing grace. */
+const ENTITLED: ReadonlySet<unknown> = new Set([
+  Status.ACTIVE,
+  Status.BILLING_GRACE_PERIOD,
+]);
+
 /**
- * Why the FIRST claim of an Apple subscription must be refused, or null when
- * Apple reports it in good standing. A device receipt is a snapshot: one
- * signed before a refund carries no revocationDate, and the refund notice for
- * a purchase we had not stored yet was never recorded (store-notifications.ts).
- * For a transaction with no row, only Apple's current status can tell.
- * Fails closed: no answer, or an answer that does not list the transaction, is
- * STORE_API_ERROR, so the client keeps the transaction and retries.
+ * Why a claim of an Apple subscription must be refused, or null when Apple
+ * reports it entitled (active or in billing grace). A device receipt is a
+ * snapshot: one signed before a refund carries no revocationDate, and the
+ * refund notice for a purchase we had not stored yet was never recorded
+ * (store-notifications.ts). Where our own row cannot tell — there is none, or
+ * it is revoked and the receipt is a re-subscription — only Apple's current
+ * status can.
+ * Fails closed: no answer, an answer that does not list the transaction, or
+ * any status other than entitled or revoked is STORE_API_ERROR, so the client
+ * keeps the transaction and retries.
  */
 export async function appleFirstClaimRefusal(
   originalTransactionId: string,
@@ -68,19 +77,30 @@ export async function appleFirstClaimRefusal(
     if (!current) {
       throw new Error("Apple subscription status omits the transaction");
     }
-    return current.status === Status.REVOKED
-      ? ErrorCode.TRANSACTION_REVOKED
-      : null;
+    if (current.status === Status.REVOKED) return ErrorCode.TRANSACTION_REVOKED;
+    if (ENTITLED.has(current.status)) return null;
+    // The receipt that got here is signed as unexpired, so expired, billing
+    // retry or a missing status contradicts it. Grant nothing and report it.
+    throw new Error(
+      `Apple subscription status: unexpected status ${current.status}`,
+    );
   } catch (err) {
     // An outage, a wrong API key (HTTP 401) or an unknown transaction: every
     // first Apple purchase fails here until it is fixed, so report it. The
     // library's APIException has an empty message; name the status instead.
+    // Any other error is rebuilt without the transaction id: node-fetch puts
+    // the request URL, which ends in it, in a network failure's message.
+    const cause = toError(err);
     const error =
       err instanceof APIException
         ? new Error(
             `Apple subscription status: HTTP ${err.httpStatusCode}, apiError ${err.apiError ?? "none"}`,
           )
-        : toError(err);
+        : new Error(
+            `${cause.name}: ${cause.message}`
+              .split(originalTransactionId)
+              .join("[transaction]"),
+          );
     log.error({ err: error }, "Apple subscription status check failed");
     reportError(error, "apple-subscription-status");
     return "STORE_API_ERROR";

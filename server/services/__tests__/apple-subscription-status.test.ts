@@ -93,6 +93,61 @@ describe("appleFirstClaimRefusal", () => {
     expect(await refusal("txn-1")).toBe("TRANSACTION_REVOKED");
   });
 
+  it("does not refuse a subscription in its billing grace period", async () => {
+    mockGetAllSubscriptionStatuses.mockResolvedValue(
+      statusResponse(Status.BILLING_GRACE_PERIOD),
+    );
+    const refusal = await load();
+
+    expect(await refusal("txn-1")).toBeNull();
+  });
+
+  // Only an entitled status may pass. The receipt reaching this check is
+  // signed as unexpired, so any other answer contradicts it: grant nothing.
+  it.each([
+    ["expired", Status.EXPIRED],
+    ["in billing retry", Status.BILLING_RETRY],
+    ["with no status", undefined],
+    ["with an unknown status", 99],
+  ])(
+    "refuses with STORE_API_ERROR a subscription Apple lists as %s",
+    async (_label, status) => {
+      mockGetAllSubscriptionStatuses.mockResolvedValue(
+        statusResponse(status as Status),
+      );
+      const refusal = await load();
+
+      expect(await refusal("txn-1")).toBe("STORE_API_ERROR");
+      expect(mockReportError).toHaveBeenCalledTimes(1);
+      expect((mockReportError.mock.calls[0]?.[0] as Error).message).toContain(
+        String(status),
+      );
+    },
+  );
+
+  // node-fetch puts the request URL, which ends in the transaction id, in a
+  // network failure's message; it must not reach the log or Sentry.
+  it("keeps the transaction id out of a network failure's reported message", async () => {
+    mockGetAllSubscriptionStatuses.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "request to https://api.storekit.itunes.apple.com/inApps/v1/subscriptions/2000000999888777? failed, reason: socket hang up",
+        ),
+        { name: "FetchError" },
+      ),
+    );
+    const refusal = await load();
+
+    expect(await refusal("2000000999888777")).toBe("STORE_API_ERROR");
+    const reported = mockReportError.mock.calls[0]?.[0] as Error;
+    expect(reported.message).not.toContain("2000000999888777");
+    expect(reported.message).toContain("FetchError");
+    expect(reported.message).toContain("socket hang up");
+    expect(reported.stack ?? "").not.toContain("2000000999888777");
+    const logged = (mockLog.error.mock.calls[0]?.[0] as { err?: unknown })?.err;
+    expect(logged).toBe(reported);
+  });
+
   it("refuses with STORE_API_ERROR and reports one Error when Apple's API fails", async () => {
     mockGetAllSubscriptionStatuses.mockRejectedValue(new Error("HTTP 500"));
     const refusal = await load();

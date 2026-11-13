@@ -121,3 +121,13 @@ one step earlier: that fix needs a stored row, and here there is none.
   so a refunded or revoked purchase is refused at claim whether or not a row exists. A Play
   revoke notice for an unknown token only logs. No gap found at claim; nothing filed.
 - Not exercised against Apple: tests mock the library's API client.
+
+### 2026-11-12 — review fixes
+
+- The check also runs when the stored row is `revoked`: a re-subscription reuses the
+  `originalTransactionId`, and its refund, if it was never claimed, left `revokedAt` at the
+  earlier refund, so its pre-refund receipt passed the date check (security-auditor finding;
+  already on `main` before this PR).
+- Only status 1 (active) and 4 (billing grace) pass. Any other status, or none, is
+  `STORE_API_ERROR`.
+- A network failure's reported message no longer holds the transaction id.

@@ -68,20 +68,25 @@ async function applyValidatedReceipt(
     return;
   }
 
-  // First claim of an Apple purchase (no row yet): the receipt is a snapshot,
-  // and a refund notice that arrived before the row existed was never stored,
-  // so ask Apple for the current status before granting anything.
-  if (
-    platform === "ios" &&
-    !(await storage.getTransaction(validation.originalTransactionId))
-  ) {
+  // An Apple receipt is a snapshot, so ask Apple for the current status before
+  // granting anything where our own row cannot tell:
+  // - no row yet: a refund notice that arrived before the row existed was
+  //   never stored;
+  // - a revoked row: a re-subscription reuses the originalTransactionId and
+  //   passes the claim's date check, and its own refund, if it was never
+  //   claimed, left revokedAt at the earlier refund.
+  const existing =
+    platform === "ios"
+      ? await storage.getTransaction(validation.originalTransactionId)
+      : undefined;
+  if (platform === "ios" && (!existing || existing.status === "revoked")) {
     const refusal = await appleFirstClaimRefusal(
       validation.originalTransactionId,
     );
     if (refusal) {
       log.warn(
         { userId, code: refusal },
-        "first Apple claim refused on the App Store's current status",
+        "Apple claim refused on the App Store's current status",
       );
       res.json({
         success: false,
