@@ -159,7 +159,14 @@ jobs:
     # cache at all) has not itself been directly measured; that's fine here
     # specifically because the number being relied on (the cold build)
     # already assumes no cache benefit.
-    timeout-minutes: 160
+    #
+    # Re-bumped 160 -> 180 on 2026-11-12 together with the build step's bound
+    # (70 -> 90, see that step's comment): setup ~6m + build <=90m + pre-warm
+    # <=10m + flows <=64m = ~170m, plus the same ~10m margin. The build step
+    # bound moved because 3 of 38 measured iOS builds hit 70m (nightlies
+    # 42986537073 and 43182452033, dispatch 43299922691). GitHub's cap for a
+    # hosted job is 360m, so 180 is well inside it.
+    timeout-minutes: 180
 
     env:
       # Backend/credential env shared with the Android job lives in the
@@ -540,9 +547,38 @@ jobs:
       # is deliberately preserving. So the two numbers move together: re-derive
       # the job bound in the same change, or the margin is silently spent.
       # Keeping 70m here is what makes the 160m job bound's arithmetic hold.
+      #
+      # Re-measured 2026-11-12 (the revisit the paragraphs above ask for), from
+      # the Checks API step times and job logs of the last 40 runs of this
+      # workflow (38 builds ran): median 44.7m, mean 46.5m, range 24.8m-70.2m.
+      # By trigger: nightly (schedule) n=11, median 52.5m; dispatch n=27, median
+      # 43.5m. Three builds hit this 70m bound (nightlies 42986537073 and
+      # 43182452033, dispatch 43299922691), so 8% of runs failed before any flow
+      # ran. The step logs split the time: pod install 1-6m, xcodebuild compile
+      # 23-66m (always the same ~2031 compile units), install under 1m. Pods
+      # caching is not what varies; the same workload takes 1.7x-2.7x longer on
+      # a slow runner. Runs 43317178019 and 43329068850 built the identical
+      # sha (08f57e7f7) on the same evening in 42.2m and 24.8m. No compiler
+      # cache is in play ("[Ccache]: Removing Ccache" in all 38 build logs).
+      # The two nightly timeouts that were killed late were close: 43299922691
+      # was linking the app target and 43182452033 was still in the Pods
+      # packaging stage, so the true durations are somewhat above 70m (censored).
+      # Rule: 2x the dispatch median (43.5m) is ~87m, which also clears every
+      # observed value plus the slow tail the censored runs imply; 90m. The
+      # job bound moved with it (160 -> 180, see its comment). Trade-off: a
+      # build that is truly wedged now spends up to 90m before the diagnostic
+      # step below fires.
+      #
+      # The host-load fix (#1852, apsd stopped at simulator boot) landed
+      # after most of these runs; only 5 runs since (24.8-46.4m, none a
+      # nightly) are too few to say it changed anything. Re-measure after 5
+      # more runs and tighten this bound if it did. A compiler cache (ccache
+      # via USE_CCACHE=1) or DerivedData restore was not tried: DerivedData was
+      # already a net loss here (see above), and ccache needs runner
+      # measurements this change cannot make.
       - name: Build and install iOS app
         id: build-ios
-        timeout-minutes: 70
+        timeout-minutes: 90
         run: |
           npx expo run:ios --no-bundler || {
             echo "::warning::expo run:ios failed once - retrying (see run 33345540597 simctl-openurl timeout)"
