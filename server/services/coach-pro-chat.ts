@@ -25,7 +25,11 @@ import {
   SAFETY_OVERRIDE_SENTINEL,
   type CoachContext,
 } from "./nutrition-coach";
-import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
+import {
+  classifyIntent,
+  matchesDisorderedEating,
+  type CoachIntent,
+} from "./coach-intent-classifier";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "./coach-blocks";
 import { buildTrail, plainStatusLabel, toolStep } from "./coach-step-labels";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
@@ -808,12 +812,14 @@ export async function* handleCoachChat(
     !isAborted() &&
     isFlatModelRefusal(fullResponse)
   ) {
-    fullResponse = SAFETY_REFUSAL_FALLBACK_MESSAGE;
+    // The warm fallback is worded for distress; other safety turns (medical,
+    // injection, ...) get the generic referral message.
+    const replacement = matchesDisorderedEating(content)
+      ? SAFETY_REFUSAL_FALLBACK_MESSAGE
+      : STANDARD_SAFETY_MESSAGE;
+    fullResponse = replacement;
     safetyOverridden = true;
-    yield {
-      type: "safety_override",
-      message: SAFETY_REFUSAL_FALLBACK_MESSAGE,
-    };
+    yield { type: "safety_override", message: replacement };
   }
 
   // Parse blocks from response for Coach Pro
