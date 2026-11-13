@@ -103,18 +103,18 @@ export async function createNotebookEntries(
 }
 
 /**
- * Visible memory (spec 2026-11-08): a fact the model extracts again refreshes
- * the existing entry instead of piling up a duplicate, and a fact the user
- * rejected (Undo / Remove) is never re-saved. Returns the entries still to
- * insert. Matching: same user and type, `sameTip` on normalised text.
- */
-/**
  * Rows `refreshRepeats` compares against, newest first. Bounds the read so it
  * does not grow with a user's whole notebook history; a fact rejected so long
  * ago that it falls outside the window may be saved again.
  */
 export const REPEAT_SCAN_LIMIT = 200;
 
+/**
+ * Visible memory (spec 2026-11-08): a fact the model extracts again refreshes
+ * the existing entry instead of piling up a duplicate, and a fact the user
+ * rejected (Undo / Remove) is never re-saved. Returns the entries still to
+ * insert. Matching: same user and type, `sameTip` on normalised text.
+ */
 async function refreshRepeats(
   entries: InsertCoachNotebookEntry[],
 ): Promise<InsertCoachNotebookEntry[]> {
