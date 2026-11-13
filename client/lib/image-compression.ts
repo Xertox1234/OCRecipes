@@ -61,17 +61,26 @@ function settleWithin<T>(
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
 
-/** A resize that missed its deadline still writes a file: delete it. */
+/**
+ * A resize that missed its deadline still writes a file: delete it. Log when
+ * it arrived, so a slow resize can be told apart from one that never settles.
+ */
 function resizeWithin(
   uri: string,
   actions: Action[],
   compress: number,
 ): ReturnType<typeof manipulateAsync> {
+  const startedAt = Date.now();
   return settleWithin(
     manipulateAsync(uri, actions, { compress, format: SaveFormat.JPEG }),
     RESIZE_TIMEOUT_MS,
     "Image resize",
-    (late) => void cleanupImage(late.uri),
+    (late) => {
+      logger.warn(
+        `Image resize settled ${Date.now() - startedAt} ms after it started (deadline ${RESIZE_TIMEOUT_MS} ms)`,
+      );
+      void cleanupImage(late.uri);
+    },
   );
 }
 
