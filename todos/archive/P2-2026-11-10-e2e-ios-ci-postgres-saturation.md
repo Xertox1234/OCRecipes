@@ -78,6 +78,6 @@ Next: a workflow-only measurement PR (per-process host sampler, Postgres connect
 #### Closed 2026-11-12 (#1845 merged 4dc4d9e38)
 
 - Acceptance runs 43132429962 and 43143893480, both on head 4594bb773: **0 "connection timeout" lines** in server.log. Postgres received 11 and 12 connections over the whole run, against 175–210 before. Request p50 was 419 ms and 299 ms.
-- 43143893480 passed on iOS and Android. 43132429962 was red only in the receipt flow (the system photo picker stayed on "Loading…"), which is tracked in `todos/P2-2026-11-12-e2e-ios-receipt-image-resize-timeout.md`.
+- 43143893480 passed on iOS and Android. 43132429962 was red only in the receipt flow (the system photo picker stayed on "Loading…"), which is tracked in `todos/archive/P2-2026-11-12-e2e-ios-receipt-image-resize-timeout.md`.
 - The `log` process is `log stream --style syslog` inside the simulator (parent `launchd_sim`); the workflow does not start it.
 - Owner calls: "no request slower than 5 s" is host load, moved to `todos/archive/P2-2026-11-12-e2e-ios-runner-host-load.md`. The 31–70 min build time is tracked in `todos/P2-2026-11-12-e2e-ios-build-step-time-margin.md`.

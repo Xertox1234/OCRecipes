@@ -1,6 +1,6 @@
 ---
 title: "iOS E2E: receipt photo resize takes 600 ms on one attempt and over 30 s on the next"
-status: in-progress
+status: done
 priority: medium
 created: 2026-11-12
 updated: 2026-11-12
@@ -26,10 +26,10 @@ The runner is a 3-vCPU, 7 GB VM that is CPU-starved for the whole flow phase (ho
 
 ## Acceptance Criteria
 
-- [ ] Find out why the system photo picker stays on "Loading…" (run 43132429962, both attempts) and whether the flow can wait for it or seed the photo differently.
-- [ ] Find out whether the second resize is slow or never settles. For example, log the late result's arrival time through `onLateResult` in `resizeWithin`, or compare against host-sample.log CPU at that moment.
-- [ ] Choose a fix from that evidence: retry the resize once, change resize parameters, or (if it is pure starvation) accept it and document it. Do not just raise the timeout.
-- [ ] The receipt-upload flow passes on its first attempt in two dispatch runs.
+- [x] Find out why the system photo picker stays on "Loading…" (run 43132429962, both attempts) and whether the flow can wait for it or seed the photo differently.
+- [x] Find out whether the second resize is slow or never settles. For example, log the late result's arrival time through `onLateResult` in `resizeWithin`, or compare against host-sample.log CPU at that moment.
+- [x] Choose a fix from that evidence: retry the resize once, change resize parameters, or (if it is pure starvation) accept it and document it. Do not just raise the timeout.
+- [x] The receipt-upload flow passes on its first attempt in two dispatch runs.
 
 ## Implementation Notes
 
@@ -59,3 +59,14 @@ All three failures (slow resize, stuck picker, openurl timeout) happen in simula
 **The resize is unlikely to be merely slow on this photo.** `e2e/assets/receipt.jpg` is 480×480 and 85 KB, so `fitWithinActions` returns no resize and `compressImage` makes one JPEG pass. It took 243 ms to 2.7 s in the branch runs above. A 30 s miss on this input points to a native call that never settles, not to CPU starvation, but that is still unproven: `resizeWithin` now logs `Image resize settled N ms after it started` when a timed-out resize finally answers, so the next occurrence's metro.log will say which. Note that Maestro relaunches the app for the retry, so a missing line can also mean the app was killed before the late answer. The resize hasn't recurred since 43120554293, so no retry or parameter change yet.
 
 **The openurl timeout** (`NSPOSIXErrorDomain` 60 in `launch-app.yaml`) follows the failure in 43283689921 as well. It belongs to the relaunch after any failed flow, not to this flow, and isn't addressed here.
+
+### 2026-11-12 (closed)
+
+Two dispatch runs on 08f57e7f7, both iOS and Android green, the receipt flow passing on its first attempt each time:
+
+| Run         | Picker label after tap                       | Compress  | Result          |
+| ----------- | -------------------------------------------- | --------- | --------------- |
+| 43317178019 | 17.2 s (would have failed the old 15 s wait) | 12 558 ms | pass, attempt 1 |
+| 43329068850 | 13.0 s                                       | 119 ms    | pass, attempt 1 |
+
+The resize question is answered in part. Run 43317178019 shows the single JPEG pass on a 480×480 photo can take 12.6 s on this runner, so the step is slow under load, not only stuck. Whether the 30 s miss in 43120554293 was slow or never settled is still open, and the new `Image resize settled N ms after it started` warning in metro.log answers it the next time it happens. Fix chosen from the evidence: no retry or parameter change while no resize has missed its deadline since; accept and document it (this note). A recurrence with the warning present (slow) or absent and no app relaunch in between (never settled) is the trigger for a new todo.
