@@ -17,6 +17,7 @@ import {
   validateReceipt,
   type ReceiptValidationResult,
 } from "../services/receipt-validation";
+import { appleFirstClaimRefusal } from "../services/apple-subscription-status";
 import {
   UpgradeRequestSchema,
   RestoreRequestSchema,
@@ -65,6 +66,33 @@ async function applyValidatedReceipt(
       code: ErrorCode.MISSING_TRANSACTION_ID,
     });
     return;
+  }
+
+  // First claim of an Apple purchase (no row yet): the receipt is a snapshot,
+  // and a refund notice that arrived before the row existed was never stored,
+  // so ask Apple for the current status before granting anything.
+  if (
+    platform === "ios" &&
+    !(await storage.getTransaction(validation.originalTransactionId))
+  ) {
+    const refusal = await appleFirstClaimRefusal(
+      validation.originalTransactionId,
+    );
+    if (refusal) {
+      log.warn(
+        { userId, code: refusal },
+        "first Apple claim refused on the App Store's current status",
+      );
+      res.json({
+        success: false,
+        error:
+          refusal === ErrorCode.TRANSACTION_REVOKED
+            ? "This subscription was refunded or revoked."
+            : "Could not verify the subscription. Please try again.",
+        code: refusal,
+      });
+      return;
+    }
   }
 
   const expiresAt = validation.expiresAt || null;
