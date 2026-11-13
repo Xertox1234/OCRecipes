@@ -421,11 +421,10 @@ describe("error-reporter", () => {
       // technique as the boot-ordering tests below) instead of importing
       // "@sentry/node" — that specifier is aliased to test/mocks/sentry-node.ts
       // in vitest.config.mts, so a live import here would resolve to the stub,
-      // not the real SDK. Path is the same one cited in error-reporter.ts's
-      // own doc comment: node_modules/@sentry/node's OWN nested @sentry/core
-      // copy (10.65.0) — NOT the top-level node_modules/@sentry/core, which
-      // a different dependency pins to 10.12.0, a version that predates this
-      // file existing entirely.
+      // not the real SDK. The file is the one cited in error-reporter.ts's
+      // own doc comment: the @sentry/core copy that @sentry/node itself
+      // resolves (found below through module resolution, never a fixed
+      // path — other packages can install a different @sentry/core).
       //
       // Still loud: if the SDK moves the file, readFile throws and forces a
       // re-verification, rather than silently
@@ -469,6 +468,43 @@ describe("error-reporter", () => {
         const event = {
           type: undefined,
           request: { headers: { [headerName]: "sensitive-value" } },
+        };
+        const scrubbed = scrubEvent(event as ErrorEvent);
+        expect(scrubbed.request?.headers).not.toHaveProperty(headerName);
+      }
+    });
+
+    // Privacy audit 2026-11-10, L8: error-reporter.ts says our list is a
+    // superset of the SDK's own client-IP header names, but nothing checked
+    // it — an SDK bump that adds a name would leave that header on events
+    // the day the SDK's own (undocumented) strip stops applying.
+    it("strips every client-IP header name in the INSTALLED @sentry/core ipHeaderNames", async () => {
+      const { readFile } = await import("node:fs/promises");
+      const { createRequire } = await import("node:module");
+      const { dirname, join } = await import("node:path");
+      const nodePkgPath = createRequire(import.meta.url).resolve(
+        "@sentry/node/package.json",
+      );
+      const corePkgPath = createRequire(nodePkgPath).resolve(
+        "@sentry/core/package.json",
+      );
+      const source = await readFile(
+        join(dirname(corePkgPath), "build/cjs/vendor/getIpAddress.js"),
+        "utf8",
+      );
+      const match = source.match(/const ipHeaderNames = \[([\s\S]*?)\];/);
+      expect(match).not.toBeNull();
+      const sdkIpHeaders = [...match![1].matchAll(/"([^"]+)"/g)].map(
+        (m) => m[1],
+      );
+      // Sanity floor, as above: never pass vacuously over zero names.
+      expect(sdkIpHeaders.length).toBeGreaterThan(10);
+
+      const { scrubEvent } = await importReporter();
+      for (const headerName of sdkIpHeaders) {
+        const event = {
+          type: undefined,
+          request: { headers: { [headerName]: "203.0.113.7" } },
         };
         const scrubbed = scrubEvent(event as ErrorEvent);
         expect(scrubbed.request?.headers).not.toHaveProperty(headerName);

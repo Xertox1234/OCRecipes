@@ -15,7 +15,8 @@
  * SDK queues events to an async transport); nothing here blocks the
  * error-response path.
  *
- * PII posture (verified against the installed @sentry/node 10.65.0 source):
+ * PII posture (verified against the installed @sentry/node source: first at
+ * 10.65.0, again at 10.78.0 on 2026-11-12 — privacy audit L8):
  * `sendDefaultPii: false` only withholds IP/user data — including, as an
  * SDK-internal side effect (not a documented contract — see
  * SENSITIVE_HEADER_SNIPPETS below), a fixed 12-name exact-match set of
@@ -79,10 +80,12 @@ function underRateCap(): boolean {
  *
  * The credential-oriented entries below (through `"cookie"`) are a verified
  * reconciliation with the installed SDK's own deny-list — read directly from
- * `node_modules/@sentry/node/node_modules/@sentry/core/.../filtering-snippets.js`
- * `SENSITIVE_KEY_SNIPPETS` (@sentry/core 10.65.0, 2026-07-12), not from docs.
- * Do NOT assume future parity — re-diff against the installed source on any
- * @sentry/node major/minor bump.
+ * `build/cjs/utils/data-collection/filtering-snippets.js` in the @sentry/core
+ * copy that @sentry/node resolves, `SENSITIVE_KEY_SNIPPETS` (@sentry/core
+ * 10.65.0 on 2026-07-12; unchanged at 10.78.0, 2026-11-12), not from docs.
+ * Do NOT assume future parity: the drift-guard tests in
+ * `__tests__/error-reporter.test.ts` re-read that list, and the client-IP
+ * names below, from the installed SDK on every run.
  *
  * The client-IP entries after that are an OCRecipes-specific addition and
  * are NOT part of Sentry's SENSITIVE_KEY_SNIPPETS. Two OTHER SDK mechanisms
