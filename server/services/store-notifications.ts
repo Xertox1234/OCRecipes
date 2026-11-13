@@ -211,7 +211,9 @@ export async function handleAppleNotification(
     // revocationDate), so a refund dropped here could never be applied: a
     // later claim of that receipt would grant premium. Throw → 5xx → Apple
     // redelivers over the next hours, by when the receipt flow has stored the
-    // row. A purchase never claimed here exhausts Apple's retries harmlessly.
+    // row. Apple stops retrying after about 6.5 days; a purchase first claimed
+    // after that is caught by appleFirstClaimRefusal, which asks Apple for the
+    // current status before the first grant.
     throw new Error(
       `apple refund for an unknown transaction (${n.notificationType}, uuid ${n.notificationUUID ?? "none"}) — retry requested`,
     );

@@ -48,7 +48,7 @@ const HAS_GOOGLE_CREDENTIALS = !!(
  * no platform credentials configured. This prevents accidental auto-approve
  * in non-production environments.
  */
-const STUB_MODE =
+export const STUB_MODE =
   process.env.RECEIPT_VALIDATION_STUB === "true" &&
   !HAS_APPLE_CREDENTIALS &&
   !HAS_GOOGLE_CREDENTIALS;
@@ -56,8 +56,8 @@ const STUB_MODE =
 /** Play API statuses meaning the purchase token itself is unusable (permanent). */
 const PLAY_PERMANENT_TOKEN_STATUSES = new Set([400, 404, 410]);
 
-/** Timeout for outbound API requests to Google (10 seconds). */
-const FETCH_TIMEOUT_MS = 10_000;
+/** Timeout for outbound API requests to the stores (10 seconds). */
+export const FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Validate a purchase receipt from the appropriate platform store.
@@ -122,6 +122,13 @@ function loadAppleRootCAs(): Buffer[] {
   return certFiles.map((file) => fs.readFileSync(path.join(certDir, file)));
 }
 
+/** The App Store environment this deploy talks to (sandbox unless set). */
+export function appleEnvironment(): Environment {
+  return process.env.APPLE_ENVIRONMENT === "production"
+    ? Environment.PRODUCTION
+    : Environment.SANDBOX;
+}
+
 /** Lazy singleton for the Apple SignedDataVerifier. */
 let appleVerifier: SignedDataVerifier | null = null;
 
@@ -134,10 +141,7 @@ function getAppleVerifier(): SignedDataVerifier {
       "APPLE_BUNDLE_ID is required when Apple credentials are configured",
     );
   }
-  const environment =
-    process.env.APPLE_ENVIRONMENT === "production"
-      ? Environment.PRODUCTION
-      : Environment.SANDBOX;
+  const environment = appleEnvironment();
   const rawAppId = process.env.APPLE_APP_ID;
   const appAppleId = rawAppId ? Number(rawAppId) : undefined;
   if (appAppleId !== undefined && Number.isNaN(appAppleId)) {
