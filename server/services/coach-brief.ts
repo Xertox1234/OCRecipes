@@ -41,12 +41,19 @@ async function pickReminder(
   coachPro: boolean,
 ): Promise<ShowableReminder | null> {
   const showable: ShowableReminder[] = [];
+  // One batched read for every commitment reminder (was one query each).
+  const commitmentIds = coachPro
+    ? items.flatMap((i) => (i.type === "commitment" ? [i.notebookEntryId] : []))
+    : [];
+  const entries = new Map(
+    (commitmentIds.length > 0
+      ? await storage.getNotebookEntriesByIds(commitmentIds, userId)
+      : []
+    ).map((e) => [e.id, e]),
+  );
   for (const item of items) {
     if (item.type === "commitment" && coachPro) {
-      const entry = await storage.getNotebookEntryById(
-        item.notebookEntryId,
-        userId,
-      );
+      const entry = entries.get(item.notebookEntryId);
       if (entry?.status !== "active" || !entry.confirmedAt || !entry.label) {
         continue;
       }
@@ -84,7 +91,7 @@ export async function buildCoachBrief(
     await Promise.all([
       storage.getUser(userId),
       storage.getDailySummary(userId, now, tz),
-      storage.getMealPlanItems(userId, localToday, localToday),
+      storage.getMealPlanItemSummaries(userId, localToday, localToday),
       features.pantryTracking
         ? storage.getExpiringPantryItems(userId, EXPIRING_WITHIN_DAYS)
         : Promise.resolve([]),

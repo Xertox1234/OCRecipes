@@ -90,6 +90,113 @@ export async function getMealPlanItems(
   }));
 }
 
+/** Recipe columns the coach brief, `get_meal_plan` tool and suggestions read. */
+export type MealPlanRecipeSummary = Pick<
+  MealPlanRecipe,
+  | "id"
+  | "title"
+  | "caloriesPerServing"
+  | "proteinPerServing"
+  | "carbsPerServing"
+  | "fatPerServing"
+>;
+
+/** Scanned-item columns the same callers read. */
+export type ScannedItemSummary = Pick<
+  ScannedItem,
+  "id" | "productName" | "calories" | "protein" | "carbs" | "fat"
+>;
+
+/**
+ * Narrow variant of {@link getMealPlanItems}: the same user / date / soft-delete
+ * filters, but the joined recipe and scanned item carry only the nutrition
+ * summary columns (no `instructions`, `ingredients`, image URLs, ...). For
+ * server-side callers that never forward the full rows.
+ */
+export async function getMealPlanItemSummaries(
+  userId: string,
+  startDate: string,
+  endDate: string,
+): Promise<
+  (MealPlanItem & {
+    recipe: MealPlanRecipeSummary | null;
+    scannedItem: ScannedItemSummary | null;
+  })[]
+> {
+  const items = await db
+    .select()
+    .from(mealPlanItems)
+    .where(
+      and(
+        eq(mealPlanItems.userId, userId),
+        gte(mealPlanItems.plannedDate, startDate),
+        lte(mealPlanItems.plannedDate, endDate),
+      ),
+    )
+    .orderBy(mealPlanItems.plannedDate, mealPlanItems.createdAt);
+
+  const recipeIds = [
+    ...new Set(items.filter((i) => i.recipeId).map((i) => i.recipeId!)),
+  ];
+  const scannedItemIds = [
+    ...new Set(
+      items.filter((i) => i.scannedItemId).map((i) => i.scannedItemId!),
+    ),
+  ];
+
+  const [recipes, scanned] = await Promise.all([
+    recipeIds.length > 0
+      ? db
+          .select({
+            id: mealPlanRecipes.id,
+            title: mealPlanRecipes.title,
+            caloriesPerServing: mealPlanRecipes.caloriesPerServing,
+            proteinPerServing: mealPlanRecipes.proteinPerServing,
+            carbsPerServing: mealPlanRecipes.carbsPerServing,
+            fatPerServing: mealPlanRecipes.fatPerServing,
+          })
+          .from(mealPlanRecipes)
+          .where(
+            and(
+              inArray(mealPlanRecipes.id, recipeIds),
+              eq(mealPlanRecipes.userId, userId),
+              isNull(mealPlanRecipes.deletedAt),
+            ),
+          )
+      : Promise.resolve([] as MealPlanRecipeSummary[]),
+    scannedItemIds.length > 0
+      ? db
+          .select({
+            id: scannedItems.id,
+            productName: scannedItems.productName,
+            calories: scannedItems.calories,
+            protein: scannedItems.protein,
+            carbs: scannedItems.carbs,
+            fat: scannedItems.fat,
+          })
+          .from(scannedItems)
+          .where(
+            and(
+              inArray(scannedItems.id, scannedItemIds),
+              eq(scannedItems.userId, userId),
+              isNull(scannedItems.discardedAt),
+            ),
+          )
+      : Promise.resolve([] as ScannedItemSummary[]),
+  ]);
+
+  const recipesMap = new Map(recipes.map((r) => [r.id, r]));
+  const scannedItemsMap = new Map(scanned.map((s) => [s.id, s]));
+
+  return items.map((item) => ({
+    ...item,
+    recipe: item.recipeId ? recipesMap.get(item.recipeId) || null : null,
+    scannedItem: item.scannedItemId
+      ? scannedItemsMap.get(item.scannedItemId) || null
+      : null,
+  }));
+}
+
 export async function getMealPlanItemById(
   id: number,
   userId: string,

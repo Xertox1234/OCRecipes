@@ -29,6 +29,7 @@ vi.mock("../../storage", () => ({
     addGroceryListItem: vi.fn(),
     addGroceryListItems: vi.fn(),
     getGroceryListWithItems: vi.fn(),
+    getGroceryListItemForUser: vi.fn(),
     verifyGroceryListOwnership: vi.fn(),
     updateGroceryListItemChecked: vi.fn(),
     updateGroceryListItemPantryFlag: vi.fn(),
@@ -646,17 +647,14 @@ describe("Grocery Routes", () => {
         expiresAt: null,
       });
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
-        ...mockList,
-        items: [
-          createMockGroceryListItem({
-            name: "Milk",
-            quantity: "1",
-            unit: "gallon",
-            category: "dairy",
-          }),
-        ],
-      });
+      vi.mocked(storage.getGroceryListItemForUser).mockResolvedValue(
+        createMockGroceryListItem({
+          name: "Milk",
+          quantity: "1",
+          unit: "gallon",
+          category: "dairy",
+        }),
+      );
       vi.mocked(storage.addGroceryItemToPantryAtomically).mockResolvedValue(
         createMockPantryItem({ name: "Milk" }),
       );
@@ -674,10 +672,9 @@ describe("Grocery Routes", () => {
         expiresAt: null,
       });
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
-        ...mockList,
-        items: [createMockGroceryListItem({ name: "Milk" })],
-      });
+      vi.mocked(storage.getGroceryListItemForUser).mockResolvedValue(
+        createMockGroceryListItem({ name: "Milk" }),
+      );
       vi.mocked(storage.addGroceryItemToPantryAtomically).mockResolvedValue(
         undefined,
       );
@@ -696,10 +693,9 @@ describe("Grocery Routes", () => {
         expiresAt: null,
       });
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
-        ...mockList,
-        items: [createMockGroceryListItem({ name: "Milk" })],
-      });
+      vi.mocked(storage.getGroceryListItemForUser).mockResolvedValue(
+        createMockGroceryListItem({ name: "Milk" }),
+      );
       vi.mocked(storage.addGroceryItemToPantryAtomically).mockResolvedValue(
         "limit_reached",
       );
@@ -732,7 +728,7 @@ describe("Grocery Routes", () => {
         expiresAt: null,
       });
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(undefined);
+      vi.mocked(storage.getGroceryListItemForUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/999/items/1/add-to-pantry")
@@ -747,10 +743,7 @@ describe("Grocery Routes", () => {
         expiresAt: null,
       });
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
-        ...mockList,
-        items: [createMockGroceryListItem({ name: "Milk" })],
-      });
+      vi.mocked(storage.getGroceryListItemForUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/1/items/999/add-to-pantry")
@@ -765,10 +758,9 @@ describe("Grocery Routes", () => {
         expiresAt: null,
       });
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
-        ...mockList,
-        items: [createMockGroceryListItem({ name: "Milk" })],
-      });
+      vi.mocked(storage.getGroceryListItemForUser).mockResolvedValue(
+        createMockGroceryListItem({ name: "Milk" }),
+      );
       vi.mocked(storage.addGroceryItemToPantryAtomically).mockRejectedValue(
         new Error("DB error"),
       );

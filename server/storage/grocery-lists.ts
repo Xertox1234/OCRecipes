@@ -151,6 +151,29 @@ export async function createGroceryListWithLimitCheck(
   });
 }
 
+/** One item of a list, only if the list belongs to `userId`. */
+export async function getGroceryListItemForUser(
+  itemId: number,
+  groceryListId: number,
+  userId: string,
+): Promise<GroceryListItem | undefined> {
+  const [row] = await db
+    .select({ item: groceryListItems })
+    .from(groceryListItems)
+    .innerJoin(
+      groceryLists,
+      eq(groceryLists.id, groceryListItems.groceryListId),
+    )
+    .where(
+      and(
+        eq(groceryListItems.id, itemId),
+        eq(groceryListItems.groceryListId, groceryListId),
+        eq(groceryLists.userId, userId),
+      ),
+    );
+  return row?.item;
+}
+
 export async function updateGroceryListItemChecked(
   id: number,
   groceryListId: number,

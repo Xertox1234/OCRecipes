@@ -108,6 +108,13 @@ export async function createNotebookEntries(
  * rejected (Undo / Remove) is never re-saved. Returns the entries still to
  * insert. Matching: same user and type, `sameTip` on normalised text.
  */
+/**
+ * Rows `refreshRepeats` compares against, newest first. Bounds the read so it
+ * does not grow with a user's whole notebook history; a fact rejected so long
+ * ago that it falls outside the window may be saved again.
+ */
+export const REPEAT_SCAN_LIMIT = 200;
+
 async function refreshRepeats(
   entries: InsertCoachNotebookEntry[],
 ): Promise<InsertCoachNotebookEntry[]> {
@@ -128,7 +135,9 @@ async function refreshRepeats(
         inArray(coachNotebook.type, types),
         inArray(coachNotebook.status, ["active", "rejected"]),
       ),
-    );
+    )
+    .orderBy(desc(coachNotebook.updatedAt))
+    .limit(REPEAT_SCAN_LIMIT);
   const toRefresh: number[] = [];
   const fresh: InsertCoachNotebookEntry[] = [];
   for (const entry of entries) {
@@ -161,6 +170,20 @@ export async function getNotebookEntryById(
     .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
     .limit(1);
   return entry;
+}
+
+/** Batch form of {@link getNotebookEntryById}; ownership stays in the SQL. */
+export async function getNotebookEntriesByIds(
+  ids: number[],
+  userId: string,
+): Promise<CoachNotebookEntry[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(coachNotebook)
+    .where(
+      and(inArray(coachNotebook.id, ids), eq(coachNotebook.userId, userId)),
+    );
 }
 
 export async function updateNotebookEntryStatus(

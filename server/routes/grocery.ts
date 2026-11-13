@@ -221,14 +221,17 @@ export function register(app: Express): void {
           return;
         }
 
-        const list = await storage.getGroceryListWithItems(id, req.userId);
+        // Independent reads: run together (the profile is unused on a 404).
+        const [list, profile] = await Promise.all([
+          storage.getGroceryListWithItems(id, req.userId),
+          storage.getUserProfile(req.userId),
+        ]);
         if (!list) {
           sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         // Enrich with allergen flags if user has allergies
-        const profile = await storage.getUserProfile(req.userId);
         const userAllergies = parseUserAllergies(profile?.allergies);
 
         let allergenFlags: Record<
@@ -370,14 +373,13 @@ export function register(app: Express): void {
           return;
         }
 
-        // IDOR: verify list belongs to user
-        const list = await storage.getGroceryListWithItems(listId, req.userId);
-        if (!list) {
-          sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
-          return;
-        }
-
-        const groceryItem = list.items.find((i) => i.id === itemId);
+        // IDOR: the lookup joins the list's owner, so a foreign list or item
+        // is simply not found.
+        const groceryItem = await storage.getGroceryListItemForUser(
+          itemId,
+          listId,
+          req.userId,
+        );
         if (!groceryItem) {
           sendError(res, 404, "Grocery item not found", ErrorCode.NOT_FOUND);
           return;
