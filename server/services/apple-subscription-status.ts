@@ -58,7 +58,7 @@ export async function appleFirstClaimRefusal(
   originalTransactionId: string,
 ): Promise<string | null> {
   if (STUB_MODE) return null;
-  let timer: NodeJS.Timeout | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     // The library's HTTP call has no timeout of its own.
     const timeout = new Promise<never>((_, reject) => {
