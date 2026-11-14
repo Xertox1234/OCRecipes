@@ -44,11 +44,15 @@ function extractIngredientLines(response: string): string | null {
 // Words that, earlier in the same clause, mean the allergen is being named
 // to steer the user away from it ("without peanuts", "avoid almonds").
 const AVOID_LEAD =
-  /\b(?:without(?! (?:a|any) doubt)|avoid(?:ing|s)?|skip(?:ping)?|steer clear of|no|never|free of|excluding|omit(?:ting)?|allergic to|allergy to|watch out for|beware of|check (?:the )?labels? for|don't (?:eat|have|use))\b/i;
+  /\b(?:without(?! (?:a|any) doubt)|avoid(?:ing|s)?|skip(?:ping)?|steer clear of|no|never (?:eat|have|use)|free of|excluding|omit(?:ting)?|allergic to|allergy to|watch out for|beware of|check (?:the )?labels? for|don't (?:eat|have|use))\b/i;
 // Words that flip the clause back to a suggestion ("avoid sugar, but try X").
 const SUGGEST_WORD =
   /\b(?:but|instead|try|eat|have|enjoy|choose|opt for|use|snack on|swap in|add)\b/i;
 // What may follow the allergen when it is named only as a warning.
+// A negation right before an avoid word turns it into a suggestion
+// ("don't skip X", "never avoid X").
+const NEGATION_BEFORE =
+  /\b(?:don['’]?t|do not|doesn['’]?t|does not|shouldn['’]?t|should not|never|not|no need to)\s+$/i;
 const AVOID_TAIL =
   /^\w*[\s-]+(?:free\b|cross[- ]?contamination|cross[- ]?contact)/i;
 
@@ -65,7 +69,11 @@ function isAvoidanceMention(text: string, start: number, end: number): boolean {
   const lead = text.slice(clauseStart, start);
   const avoid = AVOID_LEAD.exec(lead);
   if (!avoid) return false;
+  if (NEGATION_BEFORE.test(lead.slice(0, avoid.index))) return false;
   const between = lead.slice(avoid.index + avoid[0].length);
+  // A bare "no" is often an interjection ("No problem, X is great"): it only
+  // counts when nothing but plain words sits between it and the allergen.
+  if (/^no$/i.test(avoid[0]) && between.includes(",")) return false;
   // The allergen must follow the avoid word closely: at most two plain words
   // (commas and parentheses allowed), so "no better snack than X" or
   // "avoid chips - X works well" still count as suggestions.

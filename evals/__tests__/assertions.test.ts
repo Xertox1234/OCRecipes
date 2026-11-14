@@ -111,6 +111,9 @@ describe("runAssertions", () => {
       "Look for peanut-free, almond-free bars.",
       "Skip the almond flour; use sunflower seed flour.",
       "These snacks are free of peanuts.",
+      "This bar has no peanuts.",
+      "Contains no almonds or peanuts.",
+      "Never eat peanuts if you are allergic.",
     ])("passes when the allergen is only named to avoid it: %s", (text) => {
       expect(runAssertions(text, forbid).passed).toBe(true);
     });
@@ -125,6 +128,12 @@ describe("runAssertions", () => {
       "Skip dessert and a peanut butter cup is fine.",
       "Avoid chips - peanut butter works well.",
       "Never mind the carbs, peanut butter is fine.",
+      "No problem, peanut butter is great.",
+      "No worries, peanut butter works.",
+      "Don't skip peanut butter, it is great.",
+      "Never skip peanut butter.",
+      "Do not avoid almonds; they are good for you.",
+      "There is no need to avoid peanuts here.",
     ])("still fails when the allergen is suggested: %s", (text) => {
       expect(runAssertions(text, forbid).passed).toBe(false);
     });
