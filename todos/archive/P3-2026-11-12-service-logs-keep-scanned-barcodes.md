@@ -1,6 +1,6 @@
 ---
 title: "Service logs still keep scanned barcodes"
-status: backlog
+status: done
 priority: low
 created: 2026-11-12
 updated: 2026-11-12
