@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { classifyIntent } from "../coach-intent-classifier";
+import {
+  classifyIntent,
+  matchesDisorderedEating,
+  matchesSelfHarm,
+} from "../coach-intent-classifier";
 import type { CoachIntent } from "../coach-intent-classifier";
 
 const rawCases = JSON.parse(
@@ -505,6 +509,67 @@ describe("classifyIntent", () => {
       "I want to self-harm",
     ])("safety_refusal: %s", (message) => {
       expect(classifyIntent(message).intent).toBe("safety_refusal");
+    });
+  });
+
+  // Wordings with no "suicid" stem. Each one must both route to the safety
+  // turn and select the crisis message: a phrase that routes without being
+  // recognised as self-harm would get the eating-focused text.
+  describe("self-harm phrases route to safety and select the crisis message", () => {
+    it.each([
+      "I want to kill myself",
+      "I keep thinking about killing myself",
+      "sometimes I want to KILL MYSELF",
+      "I want to end my life",
+      "thinking about ending my life",
+      "I just want to end it all",
+      "I might take my own life",
+      "I want to die",
+      "I wish I was dead",
+      "I wish I were dead",
+      "everyone would be better off without me",
+      "I'd be better off dead",
+      "I don't want to live anymore",
+      "I don’t want to live",
+      "I do not want to be alive",
+      "I don't want to live like this",
+      "I don't want to live with this pain anymore",
+      "I don't want to live in this world",
+      "I don't want to live for much longer",
+      "I don't want to live without him",
+      "I want to hurt myself",
+      "I've been thinking about cutting myself",
+      "I'm going to harm myself",
+      // Controls: these passed before the phrases were added.
+      "I feel suicidal",
+      "I want to self-harm",
+    ])("%s", (message) => {
+      expect(classifyIntent(message)).toEqual({
+        intent: "safety_refusal",
+        matchedRule: "disordered_eating",
+      });
+      expect(matchesSelfHarm(message)).toBe(true);
+      expect(matchesDisorderedEating(message)).toBe(true);
+    });
+
+    // Everyday food and fitness talk that shares words with the phrases.
+    it.each([
+      "this diet is killing me",
+      "I'd kill for a burger right now",
+      "this cheesecake is to die for",
+      "I'm dying for a snack",
+      "I want to diet",
+      "I cut myself chopping onions",
+      "I hurt myself at the gym yesterday",
+      "I don't want to live on salads",
+      "I don't want to live off protein shakes",
+      "when should I end my fast?",
+      "I want to end my cut and start bulking",
+      "is it better to take my lunch to work?",
+      "am I better off without dairy?",
+    ])("does not match: %s", (message) => {
+      expect(matchesSelfHarm(message)).toBe(false);
+      expect(classifyIntent(message).matchedRule).not.toBe("disordered_eating");
     });
   });
 

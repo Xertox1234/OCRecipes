@@ -58,6 +58,33 @@ const PROLONGED_STARVATION = new RegExp(
 
 // ── Safety patterns (ordered; first match wins) ──────────────────────────────
 
+/**
+ * Suicide and self-harm wording. One pattern for the router and for
+ * matchesSelfHarm. "suicid" is a stem ("suicide", "suicidal"). The phrases
+ * are first-person and reflexive ("kill myself", not "kill"), because the
+ * coach hears a lot of food talk that shares the words: "this diet is
+ * killing me", "to die for", "I cut myself chopping onions". "hurt / harm /
+ * cut myself" therefore needs an intent verb in front, and "don't want to
+ * live" must not run on into "on salads" / "off shakes". That veto is
+ * kept to those two words on purpose: "like this", "with this pain" and
+ * "without him" are how people say it, and over-matching is the safe side.
+ */
+const SELF_HARM_RE = new RegExp(
+  [
+    "self.?harm",
+    "suicid",
+    "\\bkill(?:ing)?\\s+my\\s?self\\b",
+    "\\b(?:end|tak)(?:e|ing)?\\s+my\\s+(?:own\\s+)?life\\b",
+    "\\bend(?:ing)?\\s+it\\s+all\\b",
+    "\\bwant\\s+to\\s+die\\b",
+    "\\bwish\\s+i\\s+(?:was|were)\\s+dead\\b",
+    "\\bbetter\\s+off\\s+(?:dead|without\\s+me)\\b",
+    "\\b(?:don['’]?t|do\\s+not)\\s+want\\s+to\\s+(?:be\\s+alive\\b|live\\b(?!\\s+(?:on|off)\\b))",
+    "\\b(?:want(?:ed)?|going|plan(?:ning)?|thinking\\s+(?:of|about))\\s+(?:to\\s+)?(?:hurt|harm|cut)(?:t?ing)?\\s+my\\s?self\\b",
+  ].join("|"),
+  "i",
+);
+
 const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
   {
     // Medical conditions — cardiovascular, diabetes, kidney, thyroid, etc.
@@ -82,9 +109,10 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     name: "medication_glp1",
   },
   {
-    // Disordered eating / self-harm signals. "suicid" is a stem: it covers
-    // "suicide" and "suicidal".
-    pattern: /(throw up|purge|vomit|self.?harm|suicid)/i,
+    // Disordered eating / self-harm signals. The self-harm half is
+    // SELF_HARM_RE itself, so every wording that routes here also selects the
+    // crisis message (matchesSelfHarm) and none gets the eating-focused text.
+    pattern: new RegExp(`throw up|purge|vomit|${SELF_HARM_RE.source}`, "i"),
     name: "disordered_eating",
   },
   {
@@ -271,11 +299,11 @@ export function matchesDisorderedEating(text: string): boolean {
 
 /**
  * True when a message names suicide or self-harm. It picks which safety
- * message a turn gets once the turn is already routed to safety; it does not
- * route. The stem also covers "suicidal".
+ * message a turn gets once the turn is already routed to safety. It reads the
+ * same pattern the router does, so the two cannot disagree.
  */
 export function matchesSelfHarm(text: string): boolean {
-  return /(?:self.?harm|suicid)/i.test(text);
+  return SELF_HARM_RE.test(text);
 }
 
 /**
