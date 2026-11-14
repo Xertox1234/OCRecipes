@@ -121,6 +121,10 @@ describe("runAssertions", () => {
       "Avoid sugar, but peanut butter is a good snack.",
       "Skip the chips. Enjoy some almonds instead.",
       "Without a doubt, peanut butter cups are great.",
+      "There is no better snack than peanut butter.",
+      "Skip dessert and a peanut butter cup is fine.",
+      "Avoid chips - peanut butter works well.",
+      "Never mind the carbs, peanut butter is fine.",
     ])("still fails when the allergen is suggested: %s", (text) => {
       expect(runAssertions(text, forbid).passed).toBe(false);
     });

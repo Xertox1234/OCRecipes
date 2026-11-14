@@ -65,7 +65,13 @@ function isAvoidanceMention(text: string, start: number, end: number): boolean {
   const lead = text.slice(clauseStart, start);
   const avoid = AVOID_LEAD.exec(lead);
   if (!avoid) return false;
-  return !SUGGEST_WORD.test(lead.slice(avoid.index + avoid[0].length));
+  const between = lead.slice(avoid.index + avoid[0].length);
+  // The allergen must follow the avoid word closely: at most two plain words
+  // (commas and parentheses allowed), so "no better snack than X" or
+  // "avoid chips - X works well" still count as suggestions.
+  if (!/^[a-z,()'\s]*$/i.test(between)) return false;
+  if (between.split(/[\s,()]+/).filter(Boolean).length > 2) return false;
+  return !SUGGEST_WORD.test(between);
 }
 
 /** True when `regex` matches `text` somewhere other than an avoidance mention. */
