@@ -542,6 +542,10 @@ describe("classifyIntent", () => {
       "I'm going to harm myself",
       "I want to cut myself",
       "thinking about cutting myself again",
+      "I want to cut myself a little",
+      "going to cut myself a bit tonight",
+      "thinking about cutting myself a lot",
+      "I want to cut myself down my arm",
       // Controls: these passed before the phrases were added.
       "I feel suicidal",
       "I want to self-harm",
@@ -564,6 +568,7 @@ describe("classifyIntent", () => {
       "I cut myself chopping onions",
       "I'm going to cut myself a slice of cake",
       "I want to cut myself some slack",
+      "I'm going to cut myself a big piece of pie",
       "thinking about cutting myself off from sugar",
       "I hurt myself at the gym yesterday",
       "I don't want to live on salads",
