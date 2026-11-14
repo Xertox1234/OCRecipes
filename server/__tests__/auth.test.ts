@@ -259,6 +259,30 @@ describe("Auth Middleware", () => {
       });
       expect(next).not.toHaveBeenCalled();
     });
+
+    // The client signs out on a 401 TOKEN_INVALID. A database that is slow or
+    // down says nothing about the token, so it must not end the session: E2E
+    // run 42810549290 signed a just-logged-in user out when this read hit a
+    // Postgres connection timeout.
+    it("returns 500, not a session-ending 401, when the user lookup fails", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockRejectedValue(
+        new Error("Connection terminated due to connection timeout"),
+      );
+      const res = makeRes();
+      const { next, promise } = callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
+        res,
+      );
+      await promise;
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Internal server error",
+        code: "INTERNAL_ERROR",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
   });
 
   describe("requireAuth — tokenVersion cache", () => {

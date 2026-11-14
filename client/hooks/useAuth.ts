@@ -219,7 +219,7 @@ export function useAuth() {
         const res = await apiRequest(
           "POST",
           "/api/auth/social/complete-sign-up",
-          // COPPA 13+ attestation — the person's actual checkbox state.
+          // Age attestation (14+) — the person's actual checkbox state.
           { ticket, username, ageConfirmed },
         );
         const { user, token } = await res.json();
@@ -277,7 +277,7 @@ export function useAuth() {
         username,
         password,
         email,
-        // COPPA 13+ age attestation — caller forwards user's actual checkbox
+        // Age attestation (14+) — caller forwards user's actual checkbox
         // state; server enforces with `z.literal(true)` (zero trust on client).
         ageConfirmed,
       });

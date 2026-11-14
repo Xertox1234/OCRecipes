@@ -29,6 +29,7 @@ const {
   createGroceryList: _createGroceryList,
   getGroceryLists,
   getGroceryListWithItems,
+  getGroceryListItemForUser,
   deleteGroceryList,
   addGroceryListItem,
   updateGroceryListItemChecked,
@@ -166,6 +167,33 @@ describe("grocery-lists storage", () => {
 
       const result = await getGroceryListWithItems(list.id, otherUser.id);
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe("getGroceryListItemForUser", () => {
+    it("returns the item for the owner and undefined for anyone else (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const list = await createGroceryList({
+        userId: testUser.id,
+        title: "Shop",
+        dateRangeStart: "2025-06-15",
+        dateRangeEnd: "2025-06-21",
+      });
+      const item = await addGroceryListItem({
+        groceryListId: list.id,
+        name: "Milk",
+        category: "dairy",
+      });
+
+      expect(
+        (await getGroceryListItemForUser(item.id, list.id, testUser.id))?.name,
+      ).toBe("Milk");
+      expect(
+        await getGroceryListItemForUser(item.id, list.id, otherUser.id),
+      ).toBeUndefined();
+      expect(
+        await getGroceryListItemForUser(item.id, list.id + 999, testUser.id),
+      ).toBeUndefined();
     });
   });
 

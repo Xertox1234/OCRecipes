@@ -63,6 +63,25 @@ describe("formatContextSummary", () => {
 });
 
 describe("resolveJudgeBackend", () => {
+  it("EVAL_JUDGE_BACKEND=anthropic judges on Anthropic even with an OpenRouter key", () => {
+    expect(
+      resolveJudgeBackend({
+        OPENROUTER_API_KEY: "k",
+        ANTHROPIC_API_KEY: "a",
+        EVAL_JUDGE_BACKEND: "anthropic",
+      }),
+    ).toEqual({ kind: "anthropic", model: "claude-sonnet-4-6" });
+  });
+
+  it("EVAL_JUDGE_BACKEND=anthropic without an Anthropic key is an error", () => {
+    expect(() =>
+      resolveJudgeBackend({
+        OPENROUTER_API_KEY: "k",
+        EVAL_JUDGE_BACKEND: "anthropic",
+      }),
+    ).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
   it("prefers OpenRouter with the OpenRouter-form default", () => {
     expect(
       resolveJudgeBackend({ OPENROUTER_API_KEY: "k", ANTHROPIC_API_KEY: "a" }),

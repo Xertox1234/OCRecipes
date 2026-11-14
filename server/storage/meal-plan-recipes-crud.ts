@@ -12,7 +12,7 @@ import {
   savedItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, sql, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
 import {
   addToIndex,
   removeFromIndex,
@@ -64,6 +64,25 @@ export async function getMealPlanRecipeWithIngredients(
   if (!recipe) return undefined;
 
   return { ...recipe, ingredients };
+}
+
+/** Batch read of the user's own (non-deleted) recipes, for the Coach plan card. */
+export async function getMealPlanRecipesByIds(
+  ids: number[],
+  userId: string,
+): Promise<MealPlanRecipe[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  return db
+    .select()
+    .from(mealPlanRecipes)
+    .where(
+      and(
+        inArray(mealPlanRecipes.id, unique),
+        eq(mealPlanRecipes.userId, userId),
+        isNull(mealPlanRecipes.deletedAt),
+      ),
+    );
 }
 
 export async function getUserMealPlanRecipes(
@@ -193,8 +212,26 @@ export interface MealPlanSuggestionInput {
  * Atomically creates multiple meal plan recipes with their ingredients
  * and plan items. Uses batch inserts to minimize DB round trips.
  */
+/**
+ * A caller inside a transaction (a Coach write-card save or undo) passes its
+ * `tx`; the inner `.transaction()` then runs as a savepoint on it.
+ */
+type TxExecutor = Pick<typeof db, "transaction">;
+
+/**
+ * With an outer `executor`, this function's own transaction is only a
+ * savepoint — the outer one can still roll back. A caller that passes one
+ * also passes `afterCommit`, which queues the search-index update to run once
+ * the OUTER transaction commits (database rules: external side effects after
+ * the outermost commit). Without it the update runs now, as before.
+ */
+export type AfterCommit = (fn: () => void) => void;
+const runNow: AfterCommit = (fn) => fn();
+
 export async function createMealPlanFromSuggestions(
   meals: MealPlanSuggestionInput[],
+  executor: TxExecutor = db,
+  afterCommit: AfterCommit = runNow,
 ): Promise<{ recipeId: number; mealPlanItemId: number }[]> {
   if (meals.length === 0) return [];
 
@@ -222,7 +259,7 @@ export async function createMealPlanFromSuggestions(
     }),
   }));
 
-  const result = await db.transaction(async (tx) => {
+  const result = await executor.transaction(async (tx) => {
     // Batch-insert all recipes at once, deriving each recipe's allergen and
     // diet-conflict caches from its ingredient names (pure shared functions —
     // no service deps).
@@ -267,12 +304,14 @@ export async function createMealPlanFromSuggestions(
   });
 
   // Update search index after transaction commits
-  for (const recipe of result.recipes) {
-    const ingNames = result.allIngredients
-      .filter((i) => i.recipeId === recipe.id)
-      .map((i) => i.name);
-    addToIndex(mealPlanToSearchable(recipe, ingNames));
-  }
+  afterCommit(() => {
+    for (const recipe of result.recipes) {
+      const ingNames = result.allIngredients
+        .filter((i) => i.recipeId === recipe.id)
+        .map((i) => i.name);
+      addToIndex(mealPlanToSearchable(recipe, ingNames));
+    }
+  });
 
   return result.recipes.map((recipe, i) => ({
     recipeId: recipe.id,
@@ -384,8 +423,10 @@ export async function updateMealPlanRecipe(
 export async function deleteMealPlanRecipe(
   id: number,
   userId: string,
+  executor: TxExecutor = db,
+  afterCommit: AfterCommit = runNow,
 ): Promise<boolean> {
-  const deletedRow = await db.transaction(async (tx) => {
+  const deletedRow = await executor.transaction(async (tx) => {
     const result = await tx
       .update(mealPlanRecipes)
       .set({ deletedAt: new Date() })
@@ -436,6 +477,6 @@ export async function deleteMealPlanRecipe(
   // references it (so deleteImagesIfUnreferenced would find it referenced
   // anyway), and it goes when the row is finally purged — by account
   // deletion today.
-  if (deletedRow) removeFromIndex(`personal:${id}`);
+  if (deletedRow) afterCommit(() => removeFromIndex(`personal:${id}`));
   return deletedRow !== null;
 }

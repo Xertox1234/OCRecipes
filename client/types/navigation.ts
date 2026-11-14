@@ -188,6 +188,18 @@ export type RecipeImportScreenNavigationProp = CompositeNavigationProp<
 >;
 
 /**
+ * Navigation prop for RecipeImportBrowserScreen
+ * Can navigate within meal plan stack and bounce back to Home
+ */
+export type RecipeImportBrowserScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<MealPlanStackParamList, "RecipeImportBrowser">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
+>;
+
+/**
  * Navigation prop for RecipePhotoImportScreen
  * Can navigate within meal plan stack
  */

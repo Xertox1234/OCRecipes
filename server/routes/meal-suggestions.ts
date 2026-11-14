@@ -22,6 +22,7 @@ import {
   handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   parseTimezone,
 } from "./_helpers";
 
@@ -105,7 +106,7 @@ export function register(app: Express): void {
           await Promise.all([
             storage.getUserProfile(req.userId),
             storage.getUser(req.userId),
-            storage.getMealPlanItems(
+            storage.getMealPlanItemSummaries(
               req.userId,
               parsed.data.date,
               parsed.data.date,
@@ -227,6 +228,7 @@ export function register(app: Express): void {
           .filter((t): t is string => t !== undefined);
 
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         const suggestions = await generateMealSuggestions({
           userId: req.userId,

@@ -1,10 +1,16 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import type {
   MealPlanRecipe,
   RecipeIngredient,
   CommunityRecipe,
 } from "@shared/schema";
+import type { ParsePageParams } from "@shared/schemas/recipe";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
 
 type RecipeWithIngredients = MealPlanRecipe & {
@@ -23,21 +29,23 @@ export function useUnifiedRecipes(params?: {
   diet?: string;
   mealType?: string;
 }) {
-  const qs = params
-    ? new URLSearchParams(
-        Object.entries(params)
-          .filter(([, v]) => v !== undefined && v !== "")
-          .map(([k, v]) => [k, String(v)]),
-      ).toString()
-    : "";
-
   return useQuery<UnifiedRecipesResponse>({
     queryKey: ["/api/recipes/browse", params ?? {}],
     queryFn: async () => {
+      const qs = params
+        ? new URLSearchParams(
+            Object.entries(params)
+              .filter(([, v]) => v !== undefined && v !== "")
+              .map(([k, v]) => [k, String(v)]),
+          ).toString()
+        : "";
       const url = qs ? `/api/recipes/browse?${qs}` : "/api/recipes/browse";
       const res = await apiRequest("GET", url);
       return res.json();
     },
+    // Each search term is its own key; show the last results while the next
+    // term loads instead of dropping to the skeleton (perf audit L3).
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -120,6 +128,25 @@ export function useImportRecipeFromUrl() {
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
+  });
+}
+
+export function useParseRecipeFromPage() {
+  return useMutation({
+    mutationFn: async ({
+      url,
+      ldJson,
+    }: ParsePageParams): Promise<ImportedRecipeData> => {
+      const res = await apiRequest(
+        "POST",
+        "/api/meal-plan/recipes/parse-page",
+        { url, ldJson },
+      );
+      return res.json();
+    },
+    // Both call sites show their own failure UI: RecipeImportScreen falls back
+    // to a sign-in panel, RecipeImportBrowserScreen shows an inline message.
+    meta: { silentError: true },
   });
 }
 

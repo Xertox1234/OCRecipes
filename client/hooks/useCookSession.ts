@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { raiseIfAiSharingRefusal } from "@/lib/ai-sharing-events";
 import { tokenStorage } from "@/lib/token-storage";
 import { createUploadFilePart } from "@/lib/upload-file-part";
 import { cleanupImage, compressImage } from "@/lib/image-compression";
@@ -93,6 +94,7 @@ export function useAddCookPhoto() {
 
         if (!response.ok) {
           const text = await response.text();
+          raiseIfAiSharingRefusal(text);
           throw new Error(`${response.status}: ${text}`);
         }
         return response.json();

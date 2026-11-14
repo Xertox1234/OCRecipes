@@ -318,6 +318,53 @@ describe("Nutrition Routes", () => {
       expectResponseToMatch(res.body, barcodeLookupResponseSchema);
     });
 
+    // Privacy audit M1: the phone loads product photos through our server.
+    it("sends the product photo as our proxy path, never the OFF URL", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Nutella",
+        barcode: "3017620422003",
+        imageUrl:
+          "https://images.openfoodfacts.org/images/products/301/762/042/2003/front_en.879.400.jpg",
+        per100g: { calories: 539 },
+        perServing: { calories: 81 },
+        servingInfo: { displayLabel: "15 g", grams: 15, wasCorrected: false },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenDataAvailable: false,
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/3017620422003")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.imageUrl).toBe(
+        "/api/product-image?path=%2Fimages%2Fproducts%2F301%2F762%2F042%2F2003%2Ffront_en.879.400.jpg",
+      );
+      expectResponseToMatch(res.body, barcodeLookupResponseSchema);
+    });
+
+    it("drops a product photo from any other host", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Mystery",
+        barcode: "1234567890",
+        imageUrl: "https://tracker.example/pixel.jpg",
+        per100g: { calories: 1 },
+        perServing: { calories: 1 },
+        servingInfo: { displayLabel: "1 g", grams: 1, wasCorrected: false },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenDataAvailable: false,
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.imageUrl).toBeUndefined();
+    });
+
     it("returns 400 for non-numeric barcode", async () => {
       const res = await request(app)
         .get("/api/nutrition/barcode/abc123")
@@ -840,6 +887,46 @@ describe("Nutrition Routes", () => {
           productName: "Greek Yogurt",
           brandName: "Fage",
         }),
+      );
+    });
+
+    it("stores a raw OFF photo URL from an older app as our proxy path (privacy audit M1)", async () => {
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        mockScannedItem,
+      );
+
+      await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .send({
+          productName: "Nutella",
+          imageUrl:
+            "https://images.openfoodfacts.org/images/products/301/762/042/2003/front_en.879.400.jpg",
+        });
+
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageUrl:
+            "/api/product-image?path=%2Fimages%2Fproducts%2F301%2F762%2F042%2F2003%2Ffront_en.879.400.jpg",
+        }),
+      );
+    });
+
+    it("stores no photo for a URL on any other host (privacy audit M1)", async () => {
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        mockScannedItem,
+      );
+
+      await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .send({
+          productName: "Nutella",
+          imageUrl: "https://tracker.example/pixel.jpg",
+        });
+
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({ imageUrl: null }),
       );
     });
 

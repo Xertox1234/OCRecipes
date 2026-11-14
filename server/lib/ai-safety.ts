@@ -88,7 +88,7 @@ export function validateAiResponse<T>(
 
 // --- Dangerous dietary advice patterns ---
 
-const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
+export const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
   // Extreme calorie restriction
   /eat\s+(less\s+than|under|only)\s+[1-7]\d{2}\s*cal/i, // under 800 cal
   /\b(?:1[01]\d{2}|[1-7]\d{2})\s*calories?\s*(per\s+)?day\b/i, // 100-799 or 1000-1199 cal per day
@@ -126,7 +126,7 @@ export function containsDangerousDietaryAdvice(text: string): boolean {
   return DANGEROUS_DIETARY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-const UNSAFE_MEDICAL_ADVICE_PATTERNS: RegExp[] = [
+export const UNSAFE_MEDICAL_ADVICE_PATTERNS: RegExp[] = [
   /\byou\s+(?:likely|probably|definitely)\s+have\s+(?:diabetes|prediabetes|an\s+eating\s+disorder|anorexia|bulimia|cancer|thyroid\s+disease)\b/i,
   /\bthis\s+(?:means|indicates|proves|confirms)\s+you\s+have\s+(?:diabetes|prediabetes|an\s+eating\s+disorder|anorexia|bulimia|cancer|thyroid\s+disease)\b/i,
   /\bi\s+(?:diagnose|diagnosed)\s+you\s+with\b/i,
@@ -137,10 +137,116 @@ export function containsUnsafeMedicalAdvice(text: string): boolean {
   return UNSAFE_MEDICAL_ADVICE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-export function containsUnsafeCoachAdvice(text: string): boolean {
+function isUnsafeCoachText(text: string): boolean {
   return (
     containsDangerousDietaryAdvice(text) || containsUnsafeMedicalAdvice(text)
   );
+}
+
+/**
+ * True when any string inside a decoded JSON value (a recipe card, a list of
+ * coach blocks) trips the unsafe-advice screen. Use it on a value the user is
+ * shown after JSON.parse: a JSON escape for a space decodes to a space, so
+ * the raw reply text can pass the screen while the card does not.
+ *
+ * Values only, never keys. Each string is screened on its own: they are
+ * separate fields on screen, so joining them would flag phrases no user reads.
+ */
+export function containsUnsafeCoachAdviceInValue(value: unknown): boolean {
+  // Explicit stack: model output decides the nesting depth.
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      if (isUnsafeCoachText(current)) return true;
+    } else if (typeof current === "object" && current !== null) {
+      for (const child of Object.values(current)) pending.push(child);
+    }
+  }
+  return false;
+}
+
+/**
+ * Every JSON value a reader of a reply can decode from `text`:
+ *
+ * - each piece between ``` markers, from its first bracket. Every piece is
+ *   tried, not every second one: each fence reader looks for its own opening
+ *   tag, so a stray marker earlier in the reply shifts which pieces are
+ *   fences. Starting at the first bracket and trimming accepts everything
+ *   the two fence readers accept (`coach_blocks` needs a line break after
+ *   the tag; the recipe `json` fence does not, and trims its body);
+ * - the first "{" to the last "}" of the whole text, which is how recipe chat
+ *   reads a recipe written with no fence and with text around it.
+ *
+ * A piece that holds no JSON yields nothing: it is shown as written, and the
+ * raw text is screened as written.
+ */
+function decodedJson(text: string): unknown[] {
+  const candidates: string[] = [];
+  for (const segment of text.split("```")) {
+    const start = segment.search(/[[{]/);
+    if (start !== -1) candidates.push(segment.slice(start));
+  }
+  const open = text.indexOf("{");
+  const close = text.lastIndexOf("}");
+  if (open !== -1 && close > open) candidates.push(text.slice(open, close + 1));
+
+  const decoded: unknown[] = [];
+  for (const candidate of candidates) {
+    try {
+      // Trimmed, as recipe chat trims a fence body: trim() drops characters
+      // JSON.parse refuses (no-break space, BOM, line separator).
+      decoded.push(JSON.parse(candidate.trim()));
+    } catch {
+      // Not JSON: nothing is decoded from it for the user either.
+    }
+  }
+  return decoded;
+}
+
+/**
+ * The output screen for a coach or recipe-chat reply: the text as written,
+ * plus the decoded strings of any JSON in it.
+ */
+export function containsUnsafeCoachAdvice(text: string): boolean {
+  return (
+    isUnsafeCoachText(text) ||
+    decodedJson(text).some(containsUnsafeCoachAdviceInValue)
+  );
+}
+
+/** What the user is shown, and what is saved, in place of a reply that fails the screen. */
+export const STANDARD_SAFETY_MESSAGE =
+  "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
+
+/**
+ * Shown, and saved, in place of a bare model refusal on a safety-sensitive
+ * turn (distress, disordered eating): warm, and names who can help.
+ */
+export const SAFETY_REFUSAL_FALLBACK_MESSAGE =
+  "That sounds really hard, and I'm glad you said it out loud. I can't help with making up for what you ate, and you don't need to. Eating doesn't have to be undone or earned back. If this feels hard to carry, please talk to a doctor or a registered dietitian who can support you. If you ever feel unsafe, contact local emergency services or a crisis line right away.";
+
+/**
+ * Shown, and saved, in place of a bare model refusal when the user wrote
+ * about suicide or self-harm: urgent help first, and nothing about food.
+ */
+export const SAFETY_CRISIS_FALLBACK_MESSAGE =
+  "I'm really glad you told me. I'm not able to help with this myself, but you deserve support right now. If you are in danger or think you might act on these thoughts, please call your local emergency number now. You can also call or text a crisis line at any time to talk with someone. If you can, tell someone you trust how you are feeling.";
+
+/**
+ * A reply that is only the model's own "I can't help with that". The ending
+ * is a closed list ("you", "with", "that/this/it", "request"), so a refusal
+ * that goes on to anything else, such as "..., but please call a crisis
+ * line", does not match and is kept. A miss leaves the model's reply as it
+ * was; a wrong match would delete a referral.
+ */
+const FLAT_REFUSAL_RE =
+  /^(?:i['’]?m\s+)?(?:sorry|apologi[sz]e)?[,.\s]*(?:but\s+)?i\s+(?:can(?:'|’)?t|cannot|can\s+not|am\s+unable\s+to|won(?:'|’)?t)\s+(?:assist|help|comply|provide|do)(?:\s+you)?(?:\s+with)?(?:\s+(?:that|this|it))?(?:\s+request)?[.!]?$/i;
+
+/** True when the whole reply is a bare "I can't help with that" refusal. */
+export function isFlatModelRefusal(text: string): boolean {
+  const t = text.trim();
+  return t.length > 0 && t.length <= 120 && FLAT_REFUSAL_RE.test(t);
 }
 
 /**

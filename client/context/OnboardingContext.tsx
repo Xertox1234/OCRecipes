@@ -9,7 +9,11 @@ import React, {
 import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { useAuthContext } from "@/context/AuthContext";
-import { ONBOARDING_SCREENS } from "@/context/onboarding-steps";
+import {
+  ONBOARDING_SCREENS,
+  nextStepIndex,
+  prevStepIndex,
+} from "@/context/onboarding-steps";
 
 export interface Allergy {
   name: string;
@@ -43,8 +47,18 @@ interface OnboardingContextType {
   updateData: (updates: Partial<OnboardingData>) => void;
   nextStep: () => void;
   prevStep: () => void;
+  /**
+   * Answers the health-data consent screen and moves on. Declining skips the
+   * health questions and drops any health answers already given, so nothing
+   * health-related is sent without the consent.
+   */
+  answerConsent: (agreed: boolean) => void;
   skipOnboarding: () => Promise<void>;
-  completeOnboarding: () => Promise<void>;
+  /**
+   * Saves the onboarding profile, then the optional taste picks, then marks
+   * the user onboarded. Throws on failure so the caller can surface it.
+   */
+  completeOnboarding: (tastePickIds?: number[]) => Promise<void>;
   isSubmitting: boolean;
 }
 
@@ -76,12 +90,35 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, ...updates }));
   }, []);
 
+  // Without the health-data consent the health questions are skipped in both
+  // directions (onboarding-steps.ts → HEALTH_SCREENS).
+  const consented = data.healthDataConsent;
+
   const nextStep = useCallback(() => {
-    setCurrentStep((prev) => (prev < TOTAL_STEPS - 1 ? prev + 1 : prev));
-  }, []);
+    setCurrentStep((prev) => nextStepIndex(prev, consented));
+  }, [consented]);
 
   const prevStep = useCallback(() => {
-    setCurrentStep((prev) => (prev > 0 ? prev - 1 : prev));
+    setCurrentStep((prev) => prevStepIndex(prev, consented));
+  }, [consented]);
+
+  const answerConsent = useCallback((agreed: boolean) => {
+    setData((prev) =>
+      agreed
+        ? { ...prev, healthDataConsent: true }
+        : {
+            ...prev,
+            healthDataConsent: false,
+            allergies: [],
+            healthConditions: [],
+            dietType: null,
+            primaryGoal: null,
+            activityLevel: null,
+          },
+    );
+    // `agreed` is passed straight in: the state update above has not landed
+    // yet, so `consented` is still the previous answer here.
+    setCurrentStep((prev) => nextStepIndex(prev, agreed));
   }, []);
 
   // Recovery model for skipOnboarding / completeOnboarding:
@@ -123,28 +160,40 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     }
   }, [updateUser, resyncAfterPartialSuccess]);
 
-  const completeOnboarding = useCallback(async () => {
-    setIsSubmitting(true);
-    let profileSaved = false;
-    try {
-      await apiRequest("POST", "/api/user/dietary-profile", data);
-      profileSaved = true;
-      await updateUser({ onboardingCompleted: true });
-    } catch (err) {
-      logger.error(
-        profileSaved
-          ? "completeOnboarding: server saved but client sync failed (resyncing):"
-          : "completeOnboarding: profile save failed:",
-        err,
-      );
-      if (profileSaved) {
-        await resyncAfterPartialSuccess();
+  const completeOnboarding = useCallback(
+    async (tastePickIds: number[] = []) => {
+      setIsSubmitting(true);
+      let profileSaved = false;
+      try {
+        await apiRequest("POST", "/api/user/dietary-profile", data);
+        // Picks go after the profile row exists: saving them writes through to
+        // its cuisinePreferences. A failure here rethrows WITHOUT the resync
+        // below, so the user stays on the picks step and can retry (the POST is
+        // an idempotent upsert).
+        if (tastePickIds.length > 0) {
+          await apiRequest("PUT", "/api/taste-picks", {
+            recipeIds: tastePickIds,
+          });
+        }
+        profileSaved = true;
+        await updateUser({ onboardingCompleted: true });
+      } catch (err) {
+        logger.error(
+          profileSaved
+            ? "completeOnboarding: server saved but client sync failed (resyncing):"
+            : "completeOnboarding: profile or taste-picks save failed:",
+          err,
+        );
+        if (profileSaved) {
+          await resyncAfterPartialSuccess();
+        }
+        throw err;
+      } finally {
+        setIsSubmitting(false);
       }
-      throw err;
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [data, updateUser, resyncAfterPartialSuccess]);
+    },
+    [data, updateUser, resyncAfterPartialSuccess],
+  );
 
   const value = useMemo<OnboardingContextType>(
     () => ({
@@ -154,6 +203,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       updateData,
       nextStep,
       prevStep,
+      answerConsent,
       skipOnboarding,
       completeOnboarding,
       isSubmitting,
@@ -164,6 +214,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       updateData,
       nextStep,
       prevStep,
+      answerConsent,
       skipOnboarding,
       completeOnboarding,
       isSubmitting,

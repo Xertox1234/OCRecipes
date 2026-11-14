@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["WebviewSiteDataModule"]
+  },
+  "android": {
+    "modules": ["com.ocrecipes.webviewsitedata.WebviewSiteDataModule"]
+  }
+}

@@ -7,19 +7,15 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TastePicksGrid } from "@/components/TastePicksGrid";
 import { useTheme } from "@/hooks/useTheme";
+import { useTastePickCandidates } from "@/hooks/useTastePicks";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { getStepLabel } from "@/context/onboarding-steps";
-import { useAuthContext } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
-import type { RecipeCandidate } from "@shared/types/taste-picks";
-import { tastePickCandidatesResponseSchema } from "@shared/schemas/taste-picks";
 
 const MIN_PICKS = 5;
-const PAGE_LIMIT = 30;
 // Fired after updateUser resolves: that swaps the onboarding navigator for
 // the main app, and the root-mounted toast carries the moment across.
 const ONBOARDING_DONE_MESSAGE = "You're all set — let's get cooking!";
@@ -28,54 +24,17 @@ const SUBMIT_ERROR_MESSAGE = "Something went wrong. Please try again.";
 export default function TastePicksScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data, prevStep, currentStep } = useOnboarding();
-  const { updateUser } = useAuthContext();
+  const { data, prevStep, currentStep, completeOnboarding } = useOnboarding();
   const toast = useToast();
 
-  const [candidates, setCandidates] = useState<RecipeCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-
-  const loadCandidates = useCallback(
-    async (pageNum: number) => {
-      setLoadError(false);
-      try {
-        const params = new URLSearchParams({
-          page: String(pageNum),
-          limit: String(PAGE_LIMIT),
-        });
-        if (data.dietType) params.set("dietType", data.dietType);
-
-        const res = await apiRequest(
-          "GET",
-          `/api/taste-picks/candidates?${params}`,
-        );
-        const json = await res.json();
-        const parsed = tastePickCandidatesResponseSchema.safeParse(json);
-        if (!parsed.success) {
-          logger.error("loadCandidates: invalid response shape", parsed.error);
-          setLoadError(true);
-          return;
-        }
-        const body = parsed.data;
-        setCandidates((prev) =>
-          pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
-        );
-        setHasMore(body.candidates.length === PAGE_LIMIT);
-      } catch (err) {
-        logger.error("loadCandidates failed:", err);
-        setLoadError(true);
-      }
-    },
-    [data.dietType],
-  );
-
-  useEffect(() => {
-    void loadCandidates(1);
-  }, [loadCandidates]);
+  const {
+    candidates,
+    loadMore,
+    isError: loadError,
+    refetch: refetchCandidates,
+  } = useTastePickCandidates(data.dietType);
 
   const handleToggle = useCallback((recipeId: number) => {
     setSelectedIds((prev) => {
@@ -89,32 +48,16 @@ export default function TastePicksScreen() {
     });
   }, []);
 
-  const handleEndReached = useCallback(() => {
-    if (!hasMore) return;
-    const nextPage = page + 1;
-    setPage(nextPage);
-    void loadCandidates(nextPage);
-  }, [hasMore, page, loadCandidates]);
-
   const handleRetry = useCallback(() => {
-    setPage(1);
-    setHasMore(true);
-    void loadCandidates(1);
-  }, [loadCandidates]);
+    void refetchCandidates();
+  }, [refetchCandidates]);
 
   const handleContinue = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      // 1. Persist profile (creates the profile row for write-through)
-      await apiRequest("POST", "/api/user/dietary-profile", data);
-      // 2. Save picks — triggers cuisinePreferences write-through
-      if (selectedIds.size > 0) {
-        await apiRequest("PUT", "/api/taste-picks", {
-          recipeIds: [...selectedIds],
-        });
-      }
-      // 3. Mark onboarding complete
-      await updateUser({ onboardingCompleted: true });
+      // Profile, then picks, then onboarded — OnboardingContext owns the
+      // sequence and its partial-success resync.
+      await completeOnboarding([...selectedIds]);
       toast.success(ONBOARDING_DONE_MESSAGE);
     } catch (err) {
       logger.error("handleContinue failed:", err);
@@ -122,13 +65,12 @@ export default function TastePicksScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [data, selectedIds, updateUser, toast]);
+  }, [selectedIds, completeOnboarding, toast]);
 
   const handleSkip = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      await apiRequest("POST", "/api/user/dietary-profile", data);
-      await updateUser({ onboardingCompleted: true });
+      await completeOnboarding();
       toast.success(ONBOARDING_DONE_MESSAGE);
     } catch (err) {
       logger.error("handleSkip failed:", err);
@@ -136,7 +78,7 @@ export default function TastePicksScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [data, updateUser, toast]);
+  }, [completeOnboarding, toast]);
 
   const isFirstRender = React.useRef(true);
   useEffect(() => {
@@ -177,7 +119,7 @@ export default function TastePicksScreen() {
             type="small"
             style={{ color: theme.success, fontWeight: "600" }}
           >
-            {getStepLabel(currentStep)}
+            {getStepLabel(currentStep, data.healthDataConsent)}
           </ThemedText>
         </View>
         <ThemedText type="h3" style={styles.title}>
@@ -223,6 +165,7 @@ export default function TastePicksScreen() {
               onPress={handleRetry}
               accessibilityLabel="Retry loading recipes"
               accessibilityRole="button"
+              style={styles.textLink}
             >
               <ThemedText type="body" style={{ color: theme.link }}>
                 Try again
@@ -234,7 +177,7 @@ export default function TastePicksScreen() {
             candidates={candidates}
             selectedIds={selectedIds}
             onToggle={handleToggle}
-            onEndReached={handleEndReached}
+            onEndReached={loadMore}
           />
         )}
       </View>
@@ -290,6 +233,13 @@ export default function TastePicksScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ≥44pt tap target for a text link (no hitSlop; see touch-targets tests).
+  textLink: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   container: { flex: 1 },
   header: {
     paddingHorizontal: Spacing.xl,
@@ -337,7 +287,11 @@ const styles = StyleSheet.create({
   },
   continueButton: { flex: 1 },
   skipButton: {
+    alignSelf: "center",
+    minWidth: 44,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: Spacing.xs,
   },
 });

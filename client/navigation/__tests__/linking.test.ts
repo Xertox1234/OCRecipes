@@ -178,11 +178,12 @@ describe("linking config", () => {
     expect(route?.params).toEqual({ mode: "label", initialMessage: "x" });
   });
 
-  // Query values are decoded by query-string → decode-uri-component. Its
-  // fallback decoder for malformed input (GHSA-vcc3-ghjq-m6fr, <= 0.4.2) is
-  // super-linear: 400 invalid `%C0` tokens took ~2.4s under Node's JIT, so a
-  // crafted link could freeze the app. Pin both the fix and that ordinary
-  // percent-encoding still decodes after the ESM-only 0.5.0 bump.
+  // Query values were decoded by query-string → decode-uri-component until
+  // @react-navigation/core 7.24 dropped query-string. That decoder's fallback
+  // for malformed input (GHSA-vcc3-ghjq-m6fr, <= 0.4.2) was super-linear: 400
+  // invalid `%C0` tokens took ~2.4s under Node's JIT, so a crafted link could
+  // freeze the app. Pin that ordinary percent-encoding still decodes with
+  // whatever parser getStateFromPath now uses.
   it("decodes a percent-encoded query param from a deep link", () => {
     const state = getStateFromPath(
       "verify-email?token=caf%C3%A9%20au%20lait",

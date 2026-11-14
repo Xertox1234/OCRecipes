@@ -65,21 +65,24 @@ describe("notebook-budget", () => {
       );
     });
 
-    it("appends recency label when updatedAt is provided", () => {
-      // Use a fixed updatedAt far enough in the past to be deterministic.
-      // getRecencyLabel uses its own `now` default, so we pick a date that
-      // will always be "older" (> 30 days ago from any real run date in 2026+).
-      const updatedAt = new Date("2020-01-01T00:00:00Z");
+    it("never adds a time claim, even when updatedAt is provided", () => {
+      // Visible memory (2026-11-08): repeats refresh updatedAt, so it is not
+      // a reliable "when you said it" — no recency words reach the prompt.
       const line = formatNotebookLine({
         type: "commitment",
         content: "walk 10k steps daily",
-        updatedAt,
+        updatedAt: new Date("2020-01-01T00:00:00Z"),
       });
-      // Should include a recency label in the type tag
-      expect(line).toMatch(
-        /\[commitment \((recent|this week|this month|older)\)\]/,
+      expect(line).toBe(
+        `[commitment] ${NOTEBOOK_ENTRY_OPEN}walk 10k steps daily${NOTEBOOK_ENTRY_CLOSE}`,
       );
-      expect(line).toContain("walk 10k steps daily");
+    });
+
+    it("prefixes the entry id so a reply can cite it", () => {
+      const line = formatNotebookLine({ id: 42, type: "goal", content: "x" });
+      expect(line).toBe(
+        `[#42 goal] ${NOTEBOOK_ENTRY_OPEN}x${NOTEBOOK_ENTRY_CLOSE}`,
+      );
     });
 
     it("does not append recency label when updatedAt is absent", () => {

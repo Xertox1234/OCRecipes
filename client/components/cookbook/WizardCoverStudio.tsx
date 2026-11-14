@@ -107,7 +107,9 @@ export function WizardCoverStudio({
       </View>
 
       <View style={styles.section}>
-        <ThemedText style={styles.sectionLabel}>Style</ThemedText>
+        <ThemedText accessibilityRole="header" style={styles.sectionLabel}>
+          Style
+        </ThemedText>
         <View
           style={styles.styles}
           accessibilityRole="radiogroup"
@@ -158,7 +160,9 @@ export function WizardCoverStudio({
 
       {generating || hasCandidates ? (
         <View style={styles.section}>
-          <ThemedText style={styles.sectionLabel}>Pick a cover</ThemedText>
+          <ThemedText accessibilityRole="header" style={styles.sectionLabel}>
+            Pick a cover
+          </ThemedText>
           {generating ? (
             <View style={styles.tiles} accessible={false}>
               {Array.from({ length: TILE_COUNT }, (_, i) => (

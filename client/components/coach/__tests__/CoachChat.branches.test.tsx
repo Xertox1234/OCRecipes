@@ -15,18 +15,11 @@
  * needs before render.
  */
 import React from "react";
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  beforeAll,
-  afterAll,
-} from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
+import { renderOpeningBrief } from "@shared/lib/opening-brief";
 import type { ChatMessage } from "@/hooks/useChat";
 import { ApiError } from "@/lib/api-error";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
@@ -67,6 +60,10 @@ const state = vi.hoisted(() => ({
   // Captured from the mocked BlockRenderer's onAction prop so tests can fire
   // an arbitrary action without a canned block.action.
   onAction: null as ((action: Record<string, unknown>) => void) | null,
+  // Coach write cards: captured from the mocked BlockRenderer.
+  onWriteCardEdit: null as
+    | ((cardId: string, edits: Record<string, unknown>) => void)
+    | null,
   // The plan-status check (usePlanCheck): known by default.
   planUnknown: false,
   recheckPlan: vi.fn(),
@@ -106,6 +103,12 @@ vi.mock("@/hooks/useCoachStream", () => ({
       isStreaming: state.isStreaming,
     };
   },
+}));
+
+vi.mock("@/components/coach/MemoryRefsTag", () => ({
+  default: ({ ids }: { ids: number[] }) => (
+    <div data-testid="memory-refs">{ids.join(",")}</div>
+  ),
 }));
 
 vi.mock("@/hooks/useChat", () => ({
@@ -237,7 +240,9 @@ vi.mock("@/components/coach/blocks", () => ({
     expiredFinderFlowIds,
     lockedFinderButtons,
     isActive,
+    onWriteCardEdit,
   }: {
+    onWriteCardEdit?: (cardId: string, edits: Record<string, unknown>) => void;
     lockedFinderButtons?: string[];
     block: { type: string; [k: string]: unknown };
     onFinderAction?: (a: unknown, label: string) => void;
@@ -257,6 +262,7 @@ vi.mock("@/components/coach/blocks", () => ({
     // Captured so tests can fire an arbitrary action (not just the one fixed
     // block.action a given render was mounted with) via `state.onAction?.(...)`.
     state.onAction = onAction ?? null;
+    if (onWriteCardEdit) state.onWriteCardEdit = onWriteCardEdit;
     state.onFinderAction = onFinderAction ?? null;
     state.lockedFinderButtons = lockedFinderButtons;
     state.onOpenFinderItem = onOpenFinderItem ?? null;
@@ -264,7 +270,11 @@ vi.mock("@/components/coach/blocks", () => ({
     state.makingFinderItemId = makingFinderItemId;
     state.expiredFinderFlowIds = expiredFinderFlowIds;
     return (
-      <div data-testid={`block-${block.type}`} data-active={String(isActive)}>
+      <div
+        data-testid={`block-${block.type}`}
+        data-active={String(isActive)}
+        data-status={block.status as string | undefined}
+      >
         <button
           data-testid="block-action"
           onClick={() => onAction?.(block.action as Record<string, unknown>)}
@@ -467,6 +477,7 @@ describe("CoachChat — handleSend", () => {
     fireEvent.click(screen.getByTestId("send"));
     expect(state.startStream).toHaveBeenCalledWith(7, "what should I eat", {
       warmUpId: null,
+      writeCards: true,
     });
   });
 
@@ -492,6 +503,7 @@ describe("CoachChat — handleSend", () => {
     expect(onCreateConversation).toHaveBeenCalled();
     expect(state.startStream).toHaveBeenCalledWith(55, "new convo", {
       warmUpId: null,
+      writeCards: true,
     });
   });
 
@@ -524,6 +536,7 @@ describe("CoachChat — handleSend", () => {
     fireEvent.click(screen.getByTestId("send"));
     expect(state.startStream).toHaveBeenCalledWith(7, "pro message", {
       warmUpId: "warm-123",
+      writeCards: true,
     });
     expect(warmUpHook.reset).toHaveBeenCalled();
   });
@@ -803,7 +816,10 @@ describe("CoachChat — handleBlockAction", () => {
     renderCoachChat({ conversationId: 7 });
   }
 
-  it("log_food action triggers a send", () => {
+  // Re-sending "Please log: …" only drew another unsaved proposal from the
+  // coach's log tool, which then pointed back at Quick Log — a loop. The card
+  // now opens Quick Log with the food filled in (2026-11-08).
+  it("log_food action opens Quick Log with the food filled in", () => {
     renderWithBlock({
       type: "log_food",
       description: "an apple",
@@ -813,11 +829,10 @@ describe("CoachChat — handleBlockAction", () => {
       fat: 0,
     });
     fireEvent.click(screen.getByTestId("block-action"));
-    expect(state.startStream).toHaveBeenCalledWith(
-      7,
-      "Please log: an apple",
-      expect.anything(),
-    );
+    expect(state.navigate).toHaveBeenCalledWith("QuickLog", {
+      initialText: "an apple",
+    });
+    expect(state.startStream).not.toHaveBeenCalled();
   });
 
   // Each row: [screen, params-on-block, expected-navigate-args].
@@ -866,6 +881,14 @@ describe("CoachChat — handleBlockAction", () => {
     renderWithBlock({ type: "add_grocery_list", items: [] });
     fireEvent.click(screen.getByTestId("block-action"));
     expect(state.navigate).toHaveBeenCalledWith("GroceryLists");
+  });
+
+  it("add_allergy opens the dietary profile with that allergen picked", () => {
+    renderWithBlock({ type: "add_allergy", allergen: "shellfish" });
+    fireEvent.click(screen.getByTestId("block-action"));
+    expect(state.navigate).toHaveBeenCalledWith("EditDietaryProfile", {
+      addAllergen: "shellfish",
+    });
   });
 
   it("set_goal navigates to GoalSetup", () => {
@@ -1067,6 +1090,7 @@ describe("CoachChat — recipe finder", () => {
     });
     expect(state.startStream).toHaveBeenCalledWith(1, "Generate", {
       finderAction: { type: "generate", flowId: FLOW },
+      writeCards: true,
     });
   });
 
@@ -1113,6 +1137,7 @@ describe("CoachChat — recipe finder", () => {
     expect(state.recheckPlan).toHaveBeenCalledTimes(1);
     expect(state.startStream).toHaveBeenCalledWith(1, "None of these", {
       finderAction: { type: "none_of_these", flowId: FLOW },
+      writeCards: true,
     });
   });
 
@@ -1429,5 +1454,300 @@ describe("CoachChat — recipe finder", () => {
       });
       expect(state.navigate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("CoachChat — opening brief", () => {
+  beforeEach(resetState);
+
+  const brief = renderOpeningBrief(
+    {
+      localHour: 14,
+      name: null,
+      consumedCalories: 0,
+      calorieGoal: 1949,
+      consumedProtein: 0,
+      proteinGoal: null,
+      tonightPlan: null,
+      expiringPantry: [],
+      suggestions: [],
+      reminder: { type: "meal-log" },
+    },
+    "full",
+  );
+
+  it("shows the brief in a new chat and flags the first send", async () => {
+    const onCreateConversation = vi.fn().mockResolvedValue(99);
+    renderCoachChat({
+      conversationId: null,
+      onCreateConversation,
+      openingBrief: { brief, form: "full" },
+    });
+    expect(screen.getByText("Good afternoon.")).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "hello" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+
+    await waitFor(() =>
+      expect(state.startStream).toHaveBeenCalledWith(99, "hello", {
+        warmUpId: null,
+        openingBrief: "full",
+        writeCards: true,
+      }),
+    );
+  });
+
+  it("leaves clearing reminders to the server on a brief send, then refreshes the dot", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const onMessageSent = vi.fn();
+    renderCoachChat({
+      conversationId: null,
+      onCreateConversation: vi.fn().mockResolvedValue(99),
+      openingBrief: { brief, form: "full" },
+      onMessageSent,
+    });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "It went well" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    await waitFor(() => expect(state.startStream).toHaveBeenCalled());
+    expect(onMessageSent).not.toHaveBeenCalled();
+
+    act(() => state.onDone?.("Great!"));
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/reminders/pending"],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/coach/brief"],
+    });
+    invalidate.mockRestore();
+  });
+
+  it("sends no flag into a conversation that already exists", async () => {
+    state.messages = [makeMessage({ id: 5 })];
+    renderCoachChat({
+      conversationId: 1,
+      openingBrief: { brief, form: "full" },
+    });
+    expect(screen.queryByText("Good afternoon.")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "again" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+
+    await waitFor(() =>
+      expect(state.startStream).toHaveBeenCalledWith(1, "again", {
+        warmUpId: null,
+        writeCards: true,
+      }),
+    );
+  });
+
+  it("opens Quick Log from the brief's missed-meal button and reports the reminder handled", () => {
+    const onReminderHandled = vi.fn();
+    renderCoachChat({
+      conversationId: null,
+      openingBrief: { brief, form: "full" },
+      onReminderHandled,
+    });
+    fireEvent.click(screen.getByLabelText("Log lunch, Want to log lunch?"));
+    expect(state.navigate).toHaveBeenCalledWith("QuickLog");
+    expect(onReminderHandled).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CoachChat — reply finished", () => {
+  beforeEach(resetState);
+
+  it("tells the host when a reply finishes, so it can look for new saves", () => {
+    const onReplyDone = vi.fn();
+    renderCoachChat({ onReplyDone });
+    act(() => state.onDone?.("All set."));
+    expect(onReplyDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CoachChat — From your notebook", () => {
+  beforeEach(resetState);
+
+  it("tags only the reply that used memories", () => {
+    state.messages = [
+      makeMessage({ id: 1, role: "user", content: "breakfast?" }),
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Tofu scramble.",
+        metadata: { blocks: [{ type: "memory_refs", ids: [5, 6] }] },
+      }),
+      makeMessage({ id: 3, role: "assistant", content: "Anything else?" }),
+    ];
+    renderCoachChat();
+    const tags = screen.getAllByTestId("memory-refs");
+    expect(tags).toHaveLength(1);
+    expect(tags[0].textContent).toBe("5,6");
+  });
+});
+
+describe("CoachChat — brief Not today / Drop it", () => {
+  beforeEach(resetState);
+
+  it("Not today hands the reminder type to the host and sends nothing", () => {
+    const onDismissReminder = vi.fn();
+    const brief = renderOpeningBrief(
+      {
+        localHour: 13,
+        name: null,
+        consumedCalories: 0,
+        calorieGoal: null,
+        consumedProtein: 0,
+        proteinGoal: null,
+        tonightPlan: null,
+        expiringPantry: [],
+        suggestions: [],
+        reminder: { type: "meal-log" },
+      },
+      "full",
+    );
+    renderCoachChat({
+      conversationId: null,
+      openingBrief: { brief, form: "full" },
+      onDismissReminder,
+    });
+    fireEvent.click(screen.getByLabelText("Not today, Want to log lunch?"));
+    expect(onDismissReminder).toHaveBeenCalledWith("meal-log");
+    expect(state.startStream).not.toHaveBeenCalled();
+  });
+
+  it("Drop it archives the commitment and sends the message", async () => {
+    const brief = renderOpeningBrief(
+      {
+        localHour: 13,
+        name: null,
+        consumedCalories: 0,
+        calorieGoal: null,
+        consumedProtein: 0,
+        proteinGoal: null,
+        tonightPlan: null,
+        expiringPantry: [],
+        suggestions: [],
+        reminder: { type: "commitment", notebookEntryId: 3, label: "oats" },
+      },
+      "full",
+    );
+    renderCoachChat({
+      conversationId: 1,
+      openingBrief: { brief, form: "full" },
+    });
+    fireEvent.click(
+      screen.getByLabelText(
+        "Drop it, You were going to try oats. How's that going?",
+      ),
+    );
+    expect(state.apiRequest).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/coach/notebook/3",
+      { status: "archived" },
+    );
+    await waitFor(() =>
+      expect(state.startStream).toHaveBeenCalledWith(1, "I want to drop it", {
+        warmUpId: null,
+        writeCards: true,
+      }),
+    );
+  });
+});
+
+describe("CoachChat — write cards (spec 2026-11-09)", () => {
+  const A = "11111111-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+  const B = "22222222-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+  const card = (cardId: string, replacesCardId?: string) => ({
+    type: "write_card",
+    cardId,
+    kind: "food",
+    status: "live",
+    ...(replacesCardId && { replacesCardId }),
+    payload: {
+      items: [
+        {
+          name: "egg",
+          unitLabel: "egg",
+          perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+          count: 2,
+          source: "lookup",
+        },
+      ],
+      mealType: "breakfast",
+      day: "today",
+    },
+  });
+
+  it("edits to the live card ride along with the next message", () => {
+    state.messages = [
+      makeMessage({ id: 1, role: "user", content: "two eggs" }),
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Here's what I've got.",
+        metadata: { blocks: [card(A)] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+    act(() => state.onWriteCardEdit?.(A, { counts: [3] }));
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "make it toast too" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(state.startStream).toHaveBeenCalledWith(7, "make it toast too", {
+      warmUpId: null,
+      writeCards: true,
+      liveCard: { cardId: A, edits: { counts: [3] } },
+    });
+  });
+
+  it("no liveCard when the card was never edited", () => {
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "x",
+        metadata: { blocks: [card(A)] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "hi" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(state.startStream).toHaveBeenCalledWith(7, "hi", {
+      warmUpId: null,
+      writeCards: true,
+    });
+  });
+
+  it("an older live card shows locked once a newer card is in the chat", () => {
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "x",
+        metadata: { blocks: [card(A)] },
+      }),
+      makeMessage({
+        id: 4,
+        role: "assistant",
+        content: "Updated.",
+        metadata: { blocks: [card(B, A)] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+    const cards = screen.getAllByTestId("block-write_card");
+    expect(cards.map((c) => c.getAttribute("data-status"))).toEqual([
+      "replaced",
+      "live",
+    ]);
   });
 });

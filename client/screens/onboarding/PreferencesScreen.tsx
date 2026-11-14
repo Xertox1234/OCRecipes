@@ -81,7 +81,7 @@ export default function PreferencesScreen() {
               type="small"
               style={{ color: theme.success, fontWeight: "600" }}
             >
-              {getStepLabel(currentStep)}
+              {getStepLabel(currentStep, data.healthDataConsent)}
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
@@ -97,7 +97,11 @@ export default function PreferencesScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="body" style={styles.sectionTitle}>
+          <ThemedText
+            accessibilityRole="header"
+            type="body"
+            style={styles.sectionTitle}
+          >
             Favorite Cuisines
           </ThemedText>
           <View style={styles.cuisinesGrid}>
@@ -137,7 +141,11 @@ export default function PreferencesScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="body" style={styles.sectionTitle}>
+          <ThemedText
+            accessibilityRole="header"
+            type="body"
+            style={styles.sectionTitle}
+          >
             Food Dislikes
           </ThemedText>
           <ThemedText
@@ -183,7 +191,11 @@ export default function PreferencesScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="body" style={styles.sectionTitle}>
+          <ThemedText
+            accessibilityRole="header"
+            type="body"
+            style={styles.sectionTitle}
+          >
             Cooking Skill Level
           </ThemedText>
           <View
@@ -243,7 +255,11 @@ export default function PreferencesScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="body" style={styles.sectionTitle}>
+          <ThemedText
+            accessibilityRole="header"
+            type="body"
+            style={styles.sectionTitle}
+          >
             Time for Cooking
           </ThemedText>
           <View

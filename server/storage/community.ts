@@ -4,6 +4,7 @@
  *
  * Sub-modules:
  *   community-recipes.ts        — recipe CRUD, browse/featured columns, sharing
+ *   community-recipe-queries.ts — user recipes, share payload, titles, trending
  *   community-generation-log.ts — daily generation-quota log + atomic limit check
  *   community-meal-types.ts     — meal-type backfill helpers
  *
@@ -11,5 +12,6 @@
  * import from "./community" continue to work without modification.
  */
 export * from "./community-recipes";
+export * from "./community-recipe-queries";
 export * from "./community-generation-log";
 export * from "./community-meal-types";

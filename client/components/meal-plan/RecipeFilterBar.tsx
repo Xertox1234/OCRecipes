@@ -11,7 +11,7 @@ import {
   Spacing,
   withOpacity,
 } from "@/constants/theme";
-import type { RecipeFilters } from "@/screens/meal-plan/recipe-browser-utils";
+import type { RecipeFilters } from "@/components/meal-plan/recipe-browser-utils";
 
 const CUISINE_PRESETS = [
   "Italian",

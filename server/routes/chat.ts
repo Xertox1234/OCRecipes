@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -9,8 +10,15 @@ import {
   parseQueryInt,
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
 } from "./_helpers";
-import { chatRateLimit, chatReadRateLimit } from "./_rate-limiters";
+import {
+  chatRateLimit,
+  chatReadRateLimit,
+  ipKeyGenerator,
+  resolveRateLimitMax,
+} from "./_rate-limiters";
+import { CHAT_MESSAGE_REPORT_REASON_IDS } from "@shared/constants/chat-message-report";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -18,12 +26,13 @@ import { logger, toError } from "../lib/logger";
 import { tryArchiveNotebook } from "../services/coach-pro-chat";
 import { sanitizeUserInput } from "../lib/ai-safety";
 import { finderActionSchema } from "@shared/schemas/recipe-finder";
+import { enrichWriteCardBlocks } from "../services/write-cards/enrich";
 import { admitTurn } from "./chat-admit";
 import {
   CONVERSATION_CONFIG,
   runTurn,
   type ConversationType,
-} from "./chat-stream";
+} from "../services/chat-turn";
 
 export function register(app: Express): void {
   // GET /api/chat/conversations - List conversations
@@ -236,7 +245,10 @@ export function register(app: Express): void {
             ErrorCode.NOT_FOUND,
           );
 
-        const messages = await storage.getChatMessages(id, 100, req.userId);
+        const messages = await enrichWriteCardBlocks(
+          await storage.getChatMessages(id, 100, req.userId),
+          req.userId,
+        );
         fireAndForget(
           "coach-notebook-archival",
           tryArchiveNotebook(req.userId),
@@ -281,6 +293,21 @@ export function register(app: Express): void {
           // Recipe finder button taps (R2): structured, never parsed from
           // `content`, and never from route params (#1147/#1148).
           finderAction: finderActionSchema.optional(),
+          // First send from a new coach chat that showed the opening brief:
+          // only WHICH form was shown. The server re-renders and saves the
+          // brief itself; the client never supplies assistant text.
+          openingBrief: z.enum(["full", "short"]).optional(),
+          // Coach write cards (spec 2026-11-09): the app can show them, and
+          // the card on screen with the user's edits. Only edits — the
+          // server never takes numbers or ids from here.
+          writeCards: z.literal(true).optional(),
+          liveCard: z
+            .object({
+              cardId: z.string().uuid(),
+              edits: z.record(z.string(), z.unknown()),
+            })
+            .strict()
+            .optional(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
@@ -293,6 +320,7 @@ export function register(app: Express): void {
 
         // Premium gate — fail fast before DB queries
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Dispatch based on conversation type
         const conversationType: ConversationType =
@@ -333,6 +361,7 @@ export function register(app: Express): void {
           features,
           sanitizedContent,
           finderAction: parsed.data.finderAction,
+          openingBrief: parsed.data.openingBrief,
         });
         if (!admitted) return;
 
@@ -455,6 +484,63 @@ export function register(app: Express): void {
         res.status(204).send();
       } catch (error) {
         handleRouteError(res, error, "delete chat message");
+      }
+    },
+  );
+
+  // POST /api/chat/messages/:id/report - Report an AI reply (privacy audit
+  // 2026-11-10, G7: Google Play asks for an in-app report control on
+  // AI-generated content). Saves the reply id, the reason and who reported,
+  // never the text; `.strict()` keeps free text out. No premium or AI-sharing
+  // gate: someone who turned AI off can still report an old reply. Its own
+  // limiter, inline so CodeQL's js/missing-rate-limiting can see it, and so
+  // reports never spend the chat send budget.
+  const reportSchema = z
+    .object({ reason: z.enum(CHAT_MESSAGE_REPORT_REASON_IDS) })
+    .strict();
+
+  app.post(
+    "/api/chat/messages/:id/report",
+    requireAuth,
+    rateLimit({
+      windowMs: 60_000,
+      max: resolveRateLimitMax(10, process.env),
+      message: {
+        error: "Too many reports. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid message ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const parsed = reportSchema.safeParse(req.body);
+        if (!parsed.success)
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const saved = await storage.reportChatMessage(
+          id,
+          req.userId,
+          parsed.data.reason,
+        );
+        if (!saved)
+          return sendError(res, 404, "Message not found", ErrorCode.NOT_FOUND);
+        res.status(204).send();
+      } catch (error) {
+        handleRouteError(res, error, "report chat message");
       }
     },
   );

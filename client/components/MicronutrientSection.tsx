@@ -102,6 +102,7 @@ const NutrientGroup = React.memo(function NutrientGroup({
   return (
     <View style={styles.group}>
       <ThemedText
+        accessibilityRole="header"
         type="small"
         style={[styles.groupTitle, { color: theme.textSecondary }]}
       >

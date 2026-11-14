@@ -206,7 +206,7 @@ export default function FrontLabelConfirmScreen() {
 
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const confirmMutation = useMutation({
+  const { mutate: confirmSave, isPending: isConfirming } = useMutation({
     mutationFn: () => confirmFrontLabel(sessionId!, barcode),
     onSuccess: () => {
       // Publish the save BEFORE pop(2): LabelAnalysis's focus effect reads it
@@ -239,8 +239,8 @@ export default function FrontLabelConfirmScreen() {
   const handleConfirm = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     setConfirmError(null);
-    confirmMutation.mutate();
-  }, [confirmMutation, haptics]);
+    confirmSave();
+  }, [confirmSave, haptics]);
 
   const handleRetake = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -256,8 +256,7 @@ export default function FrontLabelConfirmScreen() {
   const hasAnyData =
     data.brand || data.productName || data.netWeight || data.claims.length > 0;
 
-  const isConfirmDisabled =
-    !sessionId || confirmMutation.isPending || !!uploadError;
+  const isConfirmDisabled = !sessionId || isConfirming || !!uploadError;
 
   return (
     <ThemedView
@@ -354,7 +353,9 @@ export default function FrontLabelConfirmScreen() {
 
         {/* Extracted data card */}
         <Card style={styles.dataCard}>
-          <ThemedText style={styles.sectionTitle}>Product Details</ThemedText>
+          <ThemedText accessibilityRole="header" style={styles.sectionTitle}>
+            Product Details
+          </ThemedText>
 
           <DataRow label="Brand" value={data.brand} theme={theme} />
           <DataRow label="Product" value={data.productName} theme={theme} />
@@ -415,7 +416,7 @@ export default function FrontLabelConfirmScreen() {
         </Button>
         <Button
           onPress={handleConfirm}
-          loading={confirmMutation.isPending}
+          loading={isConfirming}
           disabled={isConfirmDisabled}
           style={styles.confirmButton}
           accessibilityLabel={

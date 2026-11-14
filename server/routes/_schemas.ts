@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 import { measurementUnitSchema } from "@shared/lib/units";
+import { AGE_ATTESTATION_ERROR } from "@shared/constants/minimum-age";
 import { parseTimezone } from "../lib/civil-date";
 import {
   PASSWORD_MAX,
@@ -50,15 +51,15 @@ const DECIMAL_STRING = /^\d*\.?\d+(e[-+]?\d+)?$/i;
 export function boundedNumericStringField(
   max: number,
   options: { nullable: true },
-): z.ZodType<string | null, z.ZodTypeDef, unknown>;
+): z.ZodType<string | null, unknown>;
 export function boundedNumericStringField(
   max: number,
   options?: { nullable?: false },
-): z.ZodType<string | undefined, z.ZodTypeDef, unknown>;
+): z.ZodType<string | undefined, unknown>;
 export function boundedNumericStringField(
   max: number,
   options: { nullable?: boolean } = {},
-): z.ZodType<string | null | undefined, z.ZodTypeDef, unknown> {
+): z.ZodType<string | null | undefined, unknown> {
   const value = z
     .union([z.number(), z.string().regex(DECIMAL_STRING).transform(Number)])
     .pipe(z.number().finite().min(0).max(max));
@@ -131,12 +132,11 @@ export const registerSchema = z.object({
     .toLowerCase()
     .email("Please enter a valid email address")
     .max(254),
-  // COPPA 13+ age attestation — legal attestation at registration time,
+  // Age attestation (14+, `shared/constants/minimum-age.ts`) — legal
+  // attestation at registration time,
   // not persisted to the DB. z.literal(true) rejects false/undefined/missing.
   ageConfirmed: z.literal(true, {
-    errorMap: () => ({
-      message: "You must confirm you are 13 years of age or older",
-    }),
+    error: AGE_ATTESTATION_ERROR,
   }),
   // The "Use two-step verification" switch (password policy spec P4): sets
   // the minimum only (8 on, 15 off) and is never stored.
@@ -321,6 +321,29 @@ export const profileUpdateSchema = z.object({
     .optional(),
 });
 
+/** The `reminder_mutes` column: the categories a user can mute, nothing else. */
+export const reminderMutesSchema = z
+  .object({
+    "meal-log": z.boolean().optional(),
+    commitment: z.boolean().optional(),
+    "daily-checkin": z.boolean().optional(),
+  })
+  .strict();
+
+const clockTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+/** The `notification_prefs` column, as `NotificationPrefs` types it. */
+const notificationPrefsSchema = z
+  .object({
+    categories: reminderMutesSchema,
+    quietHours: z
+      .object({ start: clockTimeSchema, end: clockTimeSchema })
+      .strict(),
+    ambientPush: z.boolean(),
+    transactionalEnabled: z.boolean(),
+  })
+  .strict();
+
 // Enhanced user profile schema with proper validation for nested objects
 export const userProfileInputSchema = insertUserProfileSchema
   .omit({
@@ -328,6 +351,13 @@ export const userProfileInputSchema = insertUserProfileSchema
     // server-side when `healthDataConsent === true`. Prevents client clock spoofing
     // and accidental erasure via profile updates.
     healthDataConsentAt: true,
+    // Server-written only: the consent version and withdrawal time come from
+    // the consent and withdrawal paths, and the mood signal from Coach.
+    healthDataConsentVersion: true,
+    healthDataConsentWithdrawnAt: true,
+    healthDataConsentHistory: true,
+    moodScore: true,
+    moodUpdatedAt: true,
   })
   .extend({
     allergies: z.array(allergySchema).max(30).optional(),
@@ -340,6 +370,10 @@ export const userProfileInputSchema = insertUserProfileSchema
     activityLevel: z.string().max(50).optional().nullable(),
     cookingSkillLevel: z.string().max(50).optional().nullable(),
     cookingTimeAvailable: z.string().max(50).optional().nullable(),
+    // JSON columns: the generated schema accepts any JSON for them (their
+    // TypeScript type is a cast), so their shape is checked here.
+    reminderMutes: reminderMutesSchema.optional(),
+    notificationPrefs: notificationPrefsSchema.optional(),
     // Boolean intent flag — `true` means the user accepted the consent screen.
     // The route translates this to a server-stamped `Date`. The actual
     // `healthDataConsentAt` timestamp column cannot be set or cleared by clients.

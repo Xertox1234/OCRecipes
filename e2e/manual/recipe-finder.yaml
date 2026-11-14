@@ -96,15 +96,6 @@ env:
     visible: "Start a new coach conversation"
     timeout: 20000
 - tapOn: "Start a new coach conversation"
-# Fold the dashboard so the chat list fills the screen. Maestro's scrolls swipe
-# through the middle of the screen; with the dashboard open that is the
-# dashboard, not the list, and nothing scrolls (Galaxy A37, 2026-11-02). The
-# fold is the user's choice, so it stays folded after the keyboard closes.
-- runFlow:
-    when:
-      visible: "Collapse dashboard"
-    commands:
-      - tapOn: "Collapse dashboard"
 # iOS reads the input as its label plus placeholder; Maestro text is a
 # full-string regex.
 - tapOn: "Message your nutrition coach.*"

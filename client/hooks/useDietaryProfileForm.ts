@@ -1,8 +1,4 @@
-// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
-// enabled here so the justified disables below count as used and survive `eslint --fix`.
-// Delete these four lines when the rule is turned on globally.
-/* eslint react-hooks/set-state-in-effect: "error" */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -12,6 +8,8 @@ import { logger } from "@/lib/logger";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
+import { needsHealthConsent } from "@/lib/health-consent";
 import {
   isPrimaryGoal,
   isActivityLevel,
@@ -24,19 +22,13 @@ interface Allergy {
   severity: "mild" | "moderate" | "severe";
 }
 
-interface DietaryProfile {
-  allergies?: Allergy[];
-  healthConditions?: string[];
-  dietType?: string | null;
-  foodDislikes?: string[];
-  primaryGoal?: string | null;
-  activityLevel?: string | null;
-  cuisinePreferences?: string[];
-  cookingSkillLevel?: string | null;
-  cookingTimeAvailable?: string | null;
-}
-
-export function useDietaryProfileForm() {
+export function useDietaryProfileForm(
+  options: {
+    /** An allergen the Coach offered to add: open its severity choice once. */
+    addAllergen?: string;
+  } = {},
+) {
+  const { addAllergen } = options;
   const navigation = useNavigation();
   const haptics = useHaptics();
   const toast = useToast();
@@ -44,6 +36,9 @@ export function useDietaryProfileForm() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [selectedAllergen, setSelectedAllergen] = useState<string | null>(null);
+  // The Coach hand-off opens the severity choice only on the first hydration,
+  // never again after a refetch.
+  const handedInApplied = useRef(false);
 
   // Form state
   const [allergies, setAllergies] = useState<Allergy[]>([]);
@@ -69,9 +64,7 @@ export function useDietaryProfileForm() {
     isError,
     error,
     refetch,
-  } = useQuery<DietaryProfile>({
-    queryKey: QUERY_KEYS.dietaryProfile,
-  });
+  } = useQuery(dietaryProfileQueryOptions);
 
   // Initialize form state from fetched profile
   useEffect(() => {
@@ -96,8 +89,16 @@ export function useDietaryProfileForm() {
       setCuisinePreferences(profile.cuisinePreferences || []);
       setCookingSkillLevel(profile.cookingSkillLevel || null);
       setCookingTimeAvailable(profile.cookingTimeAvailable || null);
+      if (
+        addAllergen &&
+        !handedInApplied.current &&
+        !(profile.allergies || []).some((a) => a.name === addAllergen)
+      ) {
+        setSelectedAllergen(addAllergen);
+      }
+      handedInApplied.current = true;
     }
-  }, [profile]);
+  }, [profile, addAllergen]);
 
   const toggleAllergen = (allergenId: string) => {
     const existing = allergies.find((a) => a.name === allergenId);
@@ -140,20 +141,28 @@ export function useDietaryProfileForm() {
     }
   };
 
-  const handleSave = async () => {
+  const payload = {
+    allergies,
+    healthConditions,
+    dietType,
+    foodDislikes,
+    primaryGoal,
+    activityLevel,
+    cuisinePreferences,
+    cookingSkillLevel,
+    cookingTimeAvailable,
+  };
+  // No consent, no health data: the screen asks for the consent before a save
+  // that would store a health detail, then calls `handleSave(true)`.
+  const needsConsent = needsHealthConsent(profile, payload);
+
+  const handleSave = async (withConsent = false) => {
     setIsSaving(true);
     setSaveError(null);
     try {
       await apiRequest("PUT", "/api/user/dietary-profile", {
-        allergies,
-        healthConditions,
-        dietType,
-        foodDislikes,
-        primaryGoal,
-        activityLevel,
-        cuisinePreferences,
-        cookingSkillLevel,
-        cookingTimeAvailable,
+        ...payload,
+        ...(withConsent && { healthDataConsent: true }),
       });
 
       // Invalidate the dietary profile query to refresh data
@@ -202,6 +211,7 @@ export function useDietaryProfileForm() {
     toggleHealthCondition,
     toggleDislike,
     toggleCuisine,
+    needsConsent,
     handleSave,
   };
 }

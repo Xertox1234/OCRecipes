@@ -20,7 +20,7 @@ Home's "Scan Menu" action (`client/components/home/action-config.ts:26-27`) open
 
 ## Background
 
-Found 2026-10-28 while looking for a device route to `RecipeGenerationModal` for the Android modal-toast check (`todos/P3-2026-10-18-modal-toast-host-android-check.md`). Out of scope there.
+Found 2026-10-28 while looking for a device route to `RecipeGenerationModal` for the Android modal-toast check (`todos/archive/P3-2026-10-18-modal-toast-host-android-check.md`). Out of scope there.
 
 ## Acceptance Criteria
 

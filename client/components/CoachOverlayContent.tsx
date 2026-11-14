@@ -17,15 +17,17 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ChatBubble } from "@/components/ChatBubble";
+import ReportReplyButton from "@/components/coach/ReportReplyButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
 import { useCoachStream } from "@/hooks/useCoachStream";
-import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
+import { filterValidBlocks } from "@/components/coach/coach-chat-utils";
+import { openCoachConversation } from "@/navigation/openCoachConversation";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
-import { logger } from "@/lib/logger";
+import { chatMessagesKey } from "@/lib/query-keys";
 import {
   isCoachDisclaimerDismissed,
   setCoachDisclaimerDismissed,
@@ -33,6 +35,16 @@ import {
 
 const COACH_DISCLAIMER_TEXT =
   "OCRecipes provides general nutrition information, not medical advice. Always consult a qualified healthcare professional before making changes to your diet or medication.";
+
+/** Whether a saved reply carries cards — the same check the Coach tab draws
+ *  by. The "Checked:" trail is a line of text, not a card. */
+function hasCards(metadata: unknown): boolean {
+  const raw = (metadata as { blocks?: unknown } | null | undefined)?.blocks;
+  return (
+    Array.isArray(raw) &&
+    filterValidBlocks(raw).some((b) => b.type !== "checked_trail")
+  );
+}
 
 export interface CoachQuestion {
   readonly text: string;
@@ -115,10 +127,9 @@ export function CoachOverlayContent({
   // double it.
   const createConversation = useCreateConversation({ silentError: true });
   const { data: messages } = useChatMessages(conversationId);
-  const { acknowledge } = useAcknowledgeReminders();
-  // Reminders clear when the user actually sends a follow-up, not on the
-  // auto-sent initial question — fire at most once per mount.
-  const hasAcknowledgedRef = useRef(false);
+  // Set by onDone; read by the stream-finish announcement so a failed
+  // stream isn't announced as a received reply.
+  const replyArrivedRef = useRef(false);
 
   const {
     startStream,
@@ -127,10 +138,15 @@ export function CoachOverlayContent({
     statusText,
     isStreaming,
   } = useCoachStream({
-    onDone: (_fullText, _blocks) => {
+    onDone: (fullText, blocks) => {
+      // useCoachStream clears isStreaming in the same tick, so the finish
+      // effect below sees this before it decides what to announce. A
+      // dead-socket abort also lands here, possibly with nothing received.
+      replyArrivedRef.current =
+        fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
       if (conversationId !== null) {
         void queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+          queryKey: chatMessagesKey(conversationId),
         });
         void queryClient.invalidateQueries({
           queryKey: ["/api/chat/conversations"],
@@ -139,10 +155,13 @@ export function CoachOverlayContent({
     },
     onError: () => {
       setStreamError(true);
-      // accessibilityLiveRegion is Android-only — announce for iOS VoiceOver
-      AccessibilityInfo.announceForAccessibility(
-        "Response interrupted. Try sending again.",
-      );
+      // The banner's assertive live region speaks this on Android; announce
+      // only for iOS VoiceOver so TalkBack doesn't read it twice.
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          "Response interrupted. Try sending again.",
+        );
+      }
     },
   });
 
@@ -185,7 +204,7 @@ export function CoachOverlayContent({
       // staleTime. `refetchType: "none"` defers the refetch to the next
       // mount instead of racing the server's post-disconnect write.
       void queryClient.invalidateQueries({
-        queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+        queryKey: chatMessagesKey(conversationId),
         refetchType: "none",
       });
       void queryClient.invalidateQueries({
@@ -248,9 +267,13 @@ export function CoachOverlayContent({
   const prevStreamingRef = useRef(false);
   useEffect(() => {
     if (isStreaming && !prevStreamingRef.current) {
+      replyArrivedRef.current = false;
       AccessibilityInfo.announceForAccessibility("Coach is typing a response");
     }
-    if (!isStreaming && prevStreamingRef.current) {
+    // Only a reply that arrived is "received" — a failed stream also ends
+    // here, and on iOS this later announcement would cut off the error.
+    if (!isStreaming && prevStreamingRef.current && replyArrivedRef.current) {
+      replyArrivedRef.current = false;
       AccessibilityInfo.announceForAccessibility("Coach response received");
     }
     prevStreamingRef.current = isStreaming;
@@ -261,15 +284,10 @@ export function CoachOverlayContent({
     const text = inputText.trim();
     setInputText("");
     setStreamError(false);
+    // No reminder clear here: this sheet never shows why the Coach tab dot is
+    // lit, so a send must not erase that reason (opening-brief spec).
     startStream(conversationId, text);
-    if (!hasAcknowledgedRef.current) {
-      hasAcknowledgedRef.current = true;
-      acknowledge().catch((err) => {
-        hasAcknowledgedRef.current = false;
-        logger.warn("[CoachOverlayContent] acknowledge failed", err);
-      });
-    }
-  }, [inputText, isStreaming, conversationId, startStream, acknowledge]);
+  }, [inputText, isStreaming, conversationId, startStream]);
 
   const handleRetry = useCallback(() => {
     setCreateError(false);
@@ -423,16 +441,53 @@ export function CoachOverlayContent({
             </View>
           )}
           {displayMessages.map((msg) => (
-            <ChatBubble
-              key={msg.id}
-              role={msg.role}
-              content={msg.content}
-              isStreaming={msg.id === -1}
-              animateEntry={msg.id < 0}
-            />
+            <View key={msg.id}>
+              <ChatBubble
+                role={msg.role}
+                content={msg.content}
+                isStreaming={msg.id === -1}
+                animateEntry={msg.id < 0}
+              />
+              {/* Saved AI replies only (privacy audit G7): live rows have
+                  negative ids. */}
+              {msg.role === "assistant" && msg.id > 0 ? (
+                <ReportReplyButton messageId={msg.id} />
+              ) : null}
+              {/* The sheet draws text only; a reply's cards work in the
+                  Coach tab, so offer the whole reply there. */}
+              {msg.role === "assistant" &&
+              conversationId !== null &&
+              hasCards(msg.metadata) ? (
+                <Pressable
+                  onPress={() => {
+                    onDismiss();
+                    openCoachConversation(conversationId);
+                  }}
+                  style={({ pressed }) => [
+                    styles.fullReplyLink,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="See the full reply in Coach"
+                >
+                  <ThemedText type="small" style={{ color: theme.link }}>
+                    See the full reply in Coach
+                  </ThemedText>
+                  <Feather
+                    name="arrow-right"
+                    size={14}
+                    color={theme.link}
+                    accessible={false}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
           ))}
-          {isStreaming && !streamingContent && statusText ? (
-            <CoachStatusRow statusText={statusText} />
+          {isStreaming && statusText ? (
+            <CoachStatusRow
+              statusText={statusText}
+              announceOnMount={!!streamingContent}
+            />
           ) : null}
           {/* Error banner is intentionally placed inside the scroll area (adjacent
               to the failed message) rather than using CoachChatBase's streamingError
@@ -461,6 +516,13 @@ export function CoachOverlayContent({
 }
 
 const styles = StyleSheet.create({
+  fullReplyLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    minHeight: 44,
+    alignSelf: "flex-start",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

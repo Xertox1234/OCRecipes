@@ -5,7 +5,7 @@ import express, {
 } from "express";
 import request from "supertest";
 import { MulterError } from "multer";
-import { createImageUpload, audioUpload } from "../_upload";
+import { createImageUpload, audioUpload, handleUploadError } from "../_upload";
 
 // GHSA-535w-7cp7-47q4: a field name like `items[4294967294]` makes multer's
 // append-field allocate a max-length sparse array and then iterate it, pinning
@@ -139,5 +139,76 @@ describe("multipart field-name limits", () => {
       .attach("photos", PNG, { filename: "c.png", contentType: "image/png" });
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe("handleUploadError", () => {
+  function appWithHandler(middleware: express.RequestHandler) {
+    const app = express();
+    app.post("/upload", middleware, (_req, res) => {
+      res.status(200).json({ ok: true });
+    });
+    app.use(handleUploadError);
+    app.use(
+      (_err: Error, _req: Request, res: Response, _next: NextFunction) => {
+        res.sendStatus(500);
+      },
+    );
+    return app;
+  }
+
+  it("maps an image of the wrong type to a 400 with a VALIDATION_ERROR code", async () => {
+    const res = await request(
+      appWithHandler(createImageUpload(1024 * 1024).single("photo")),
+    )
+      .post("/upload")
+      .attach("photo", PNG, { filename: "a.gif", contentType: "image/gif" });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "Invalid file type. Only JPEG, PNG, and WebP allowed.",
+      code: "VALIDATION_ERROR",
+    });
+  });
+
+  it("maps audio of the wrong type to a 400 with a VALIDATION_ERROR code", async () => {
+    const res = await request(appWithHandler(audioUpload.single("audio")))
+      .post("/upload")
+      .attach("audio", M4A, { filename: "a.txt", contentType: "text/plain" });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "Invalid file type. Only audio files are accepted.",
+      code: "VALIDATION_ERROR",
+    });
+  });
+
+  it("keeps multer's own code on a multer limit error", async () => {
+    const res = await request(
+      appWithHandler(createImageUpload(1024 * 1024).single("photo")),
+    )
+      .post("/upload")
+      .field("items[5]", "x")
+      .attach("photo", PNG, { filename: "a.png", contentType: "image/png" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("LIMIT_FIELD_NESTING");
+    expect(typeof res.body.error).toBe("string");
+  });
+
+  it("passes an unrelated error on, even one whose message mentions a file type", async () => {
+    const app = express();
+    app.post("/upload", (_req, _res, next) => {
+      next(new Error("Invalid file type in some other layer"));
+    });
+    app.use(handleUploadError);
+    app.use(
+      (_err: Error, _req: Request, res: Response, _next: NextFunction) => {
+        res.sendStatus(500);
+      },
+    );
+
+    const res = await request(app).post("/upload");
+    expect(res.status).toBe(500);
   });
 });

@@ -26,3 +26,27 @@ export function getCookPhotoAllergenState(result: {
     checkFailed: result.allergenCheckFailed === true && warnings.length === 0,
   };
 }
+
+/**
+ * What a screen reader hears when a cook photo finishes analysing — the
+ * screen's only other result signal is a haptic. The allergen-check-failed
+ * notice carries an assertive live region, which only Android speaks, so the
+ * notice is appended on iOS alone (no double announce on Android). Allergen
+ * matches are announced by AllergenWarningBanner itself — on iOS from an
+ * effect a commit later, and VoiceOver does not queue, so it would cut this
+ * off: return null there and let the safety warning speak alone.
+ */
+export function getCookPhotoResultAnnouncement(
+  ingredientCount: number,
+  allergenState: CookPhotoAllergenState,
+  platform: string,
+): string | null {
+  if (platform === "ios" && allergenState.warnings.length > 0) return null;
+  const count =
+    ingredientCount === 0
+      ? "No ingredients detected."
+      : `${ingredientCount} ingredient${ingredientCount === 1 ? "" : "s"} detected.`;
+  return allergenState.checkFailed && platform === "ios"
+    ? `${count} ${ALLERGEN_CHECK_FAILED_NOTICE}`
+    : count;
+}

@@ -214,7 +214,7 @@ export async function sendVerificationEmail(
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to)) {
-    logger.warn({ to }, "verification email throttled (per-recipient cap)");
+    logger.warn("verification email throttled (per-recipient cap)");
     return;
   }
   const url = `${APP_URL}/verify-email?token=${encodeURIComponent(token)}`;
@@ -250,7 +250,7 @@ export async function sendFinishSignupNotice(to: string): Promise<void> {
   // per IP only, so spending the account-security bucket here would let anyone
   // starve the very reset code this notice points to.
   if (!canSendTo(to)) {
-    logger.warn({ to }, "finish-signup notice throttled (per-recipient cap)");
+    logger.warn("finish-signup notice throttled (per-recipient cap)");
     return;
   }
   const error = await sendWithRetry(resend, {
@@ -275,7 +275,7 @@ export async function sendSignupAttemptNotice(
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to)) {
-    logger.warn({ to }, "signup-attempt notice throttled (per-recipient cap)");
+    logger.warn("signup-attempt notice throttled (per-recipient cap)");
     return;
   }
   const error = await sendWithRetry(resend, {
@@ -300,8 +300,8 @@ export async function sendPasswordResetCode(
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to, "account-security")) {
-    // Never log the code — only the recipient.
-    logger.warn({ to }, "reset code throttled (account-security cap)");
+    // Never log the code or the recipient (privacy audit 2026-11-10, M12).
+    logger.warn("reset code throttled (account-security cap)");
     return;
   }
   const error = await sendWithRetry(resend, {
@@ -334,8 +334,8 @@ export async function sendPasswordChangeCode(
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to, "signed-in")) {
-    // Never log the code — only the recipient.
-    logger.warn({ to }, "change-password code throttled (signed-in cap)");
+    // Never log the code or the recipient (privacy audit 2026-11-10, M12).
+    logger.warn("change-password code throttled (signed-in cap)");
     return;
   }
   const error = await sendWithRetry(resend, {
@@ -364,8 +364,8 @@ export async function sendSignInCode(to: string, code: string): Promise<void> {
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to, "sign-in-code")) {
-    // Never log the code — only the recipient.
-    logger.warn({ to }, "two-step code throttled (sign-in-code cap)");
+    // Never log the code or the recipient (privacy audit 2026-11-10, M12).
+    logger.warn("two-step code throttled (sign-in-code cap)");
     return;
   }
   const safe = escapeHtml(code);
@@ -401,10 +401,7 @@ export async function sendPasswordChangedNotice(
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to, "account-security")) {
-    logger.warn(
-      { to },
-      "password-changed notice throttled (account-security cap)",
-    );
+    logger.warn("password-changed notice throttled (account-security cap)");
     return;
   }
   const error = await sendWithRetry(resend, {
@@ -466,10 +463,7 @@ export async function sendTwoFactorNotice(
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to, "account-security")) {
-    logger.warn(
-      { to, kind },
-      "two-step notice throttled (account-security cap)",
-    );
+    logger.warn({ kind }, "two-step notice throttled (account-security cap)");
     return;
   }
   const notice = TWO_FACTOR_NOTICES[kind];
@@ -518,7 +512,7 @@ export async function sendEmailChangeNotice(
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to, "account-security")) {
     logger.warn(
-      { to, kind },
+      { kind },
       "email-change notice throttled (account-security cap)",
     );
     return;

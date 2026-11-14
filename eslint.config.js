@@ -3,17 +3,19 @@ const { defineConfig } = require("eslint/config");
 const expoConfig = require("eslint-config-expo/flat");
 const eslintPluginPrettierRecommended = require("eslint-plugin-prettier/recommended");
 const ocrecipesPlugin = require("./eslint-plugin-ocrecipes");
+const tanstackQueryPlugin = require("@tanstack/eslint-plugin-query");
 const tseslint = require("typescript-eslint");
 const path = require("path");
 
 // eslint-plugin-react-hooks 7 (from eslint-config-expo 56) puts the React
 // Compiler rules in its recommended set, which expoConfig spreads in. They
-// flagged ~100 existing call sites at the SDK 56 upgrade, so they stay off
-// until adopted one by one; the two pre-compiler hooks rules plus each adopted
-// compiler rule (globals, preserve-manual-memoization, refs) stay on. Rules
-// left off, and why:
-//   set-state-in-effect (50), immutability (27): behavioural rewrites
-//     (derive/key changes) that need per-site judgement and a UI check.
+// flagged ~100 existing call sites at the SDK 56 upgrade; the ones adopted
+// since, one by one, with their sites fixed, are globals, immutability,
+// preserve-manual-memoization, refs and set-state-in-effect. Those plus the two
+// pre-compiler hooks rules are on. Every other rule in that set
+// (static-components, use-memo, purity, set-state-in-render, error-boundaries,
+// incompatible-library, unsupported-syntax, config, gating, and any a plugin
+// upgrade adds) is turned off below until it is adopted here.
 // The plugin is read from expoConfig, which owns that dependency.
 const KEPT_REACT_HOOKS_RULES = new Set([
   "react-hooks/rules-of-hooks",
@@ -22,6 +24,7 @@ const KEPT_REACT_HOOKS_RULES = new Set([
   "react-hooks/immutability",
   "react-hooks/preserve-manual-memoization",
   "react-hooks/refs",
+  "react-hooks/set-state-in-effect",
 ]);
 const reactHooksPlugin = expoConfig.find((c) => c.plugins?.["react-hooks"])
   .plugins["react-hooks"];
@@ -292,6 +295,27 @@ module.exports = defineConfig([
       "ocrecipes/no-error-message-in-ui": "error",
       "ocrecipes/no-dead-apiRequest-guard": "error",
       "ocrecipes/no-shadowed-route-paramlist": "error",
+    },
+  },
+  {
+    // TanStack Query rules, adopted by name like the react-hooks set above, so
+    // a plugin upgrade cannot switch a new rule on unreviewed. These are the
+    // plugin's flat/recommended rules (no-rest-destructuring raised from warn
+    // to error); every site they flagged was fixed when they were adopted
+    // (2026-11-09). no-unstable-deps is the one docs/rules/hooks.md states:
+    // a useQuery/useMutation result in a hook deps array is a new object every
+    // render. prefer-query-options is not adopted: 136 hits in 49 files, a
+    // style migration (queryOptions() factories), not a defect.
+    files: ["client/**/*.{ts,tsx}"],
+    plugins: { "@tanstack/query": tanstackQueryPlugin },
+    rules: {
+      "@tanstack/query/exhaustive-deps": "error",
+      "@tanstack/query/no-rest-destructuring": "error",
+      "@tanstack/query/stable-query-client": "error",
+      "@tanstack/query/no-unstable-deps": "error",
+      "@tanstack/query/infinite-query-property-order": "error",
+      "@tanstack/query/no-void-query-fn": "error",
+      "@tanstack/query/mutation-property-order": "error",
     },
   },
   {

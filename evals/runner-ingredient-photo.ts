@@ -70,7 +70,7 @@ try {
 const validation = ingredientPhotoCasesSchema.safeParse(parsedJson);
 if (!validation.success) {
   console.error("Error: ingredient-photo-cases.json failed schema validation:");
-  for (const issue of validation.error.errors) {
+  for (const issue of validation.error.issues) {
     console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
   }
   process.exit(1);

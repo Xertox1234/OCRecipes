@@ -1,8 +1,10 @@
-// The rule is still off globally until every batch lands (todo
-// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
-// eslint-disable below counts as used and lint-staged --fix keeps it.
-/* eslint react-hooks/set-state-in-effect: "error" */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -11,6 +13,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -18,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { useBatchScan } from "@/context/BatchScanContext";
+import { getBatchSettledAnnouncement } from "./BatchSummaryScreen-utils";
 import { useBatchConfirm } from "@/hooks/useBatchConfirm";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { PressableScale } from "@/components/PressableScale";
@@ -122,6 +126,18 @@ export default function BatchSummaryScreen() {
   );
   const canConfirm =
     resolvedItems.length > 0 && pendingCount === 0 && !isSaving;
+
+  // Speak once when the last pending lookup settles (prev-value edge guard).
+  const prevPendingRef = useRef(pendingCount);
+  useEffect(() => {
+    const message = getBatchSettledAnnouncement(
+      prevPendingRef.current,
+      pendingCount,
+      unverifiedCount,
+    );
+    prevPendingRef.current = pendingCount;
+    if (message) AccessibilityInfo.announceForAccessibility(message);
+  }, [pendingCount, unverifiedCount]);
 
   // Back gesture interception
   useEffect(() => {

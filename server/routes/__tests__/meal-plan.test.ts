@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { generateRecipeImage } from "../../services/recipe-generation";
 import express from "express";
@@ -160,7 +160,85 @@ describe("Meal Plan Routes", () => {
     });
   });
 
+  // Privacy audit M1: a saved recipe photo may only be ours (R2 or our disk
+  // path), so the phone never loads a recipe photo from another host.
+  describe("recipe photo URL (privacy audit M1)", () => {
+    const R2 = "https://cdn.ocrecipes.test";
+    let savedBase: string | undefined;
+    beforeEach(() => {
+      savedBase = process.env.R2_PUBLIC_BASE_URL;
+      process.env.R2_PUBLIC_BASE_URL = R2;
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
+      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(mockRecipe);
+    });
+    afterEach(() => {
+      if (savedBase === undefined) delete process.env.R2_PUBLIC_BASE_URL;
+      else process.env.R2_PUBLIC_BASE_URL = savedBase;
+    });
+
+    it("stores no photo for a URL on another host", async () => {
+      await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Soup",
+          ingredients: [{ name: "Leek", quantity: "1", unit: null }],
+          imageUrl: "https://tracker.example/p.jpg",
+        });
+
+      expect(vi.mocked(storage.createMealPlanRecipe).mock.calls[0][0]).toEqual(
+        expect.objectContaining({ imageUrl: null }),
+      );
+    });
+
+    it("keeps a photo on our storage", async () => {
+      const ours = `${R2}/recipe-images/recipe-1.jpg`;
+      await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Soup",
+          ingredients: [{ name: "Leek", quantity: "1", unit: null }],
+          imageUrl: ours,
+        });
+
+      expect(vi.mocked(storage.createMealPlanRecipe).mock.calls[0][0]).toEqual(
+        expect.objectContaining({ imageUrl: ours }),
+      );
+    });
+
+    it("drops another host's photo on update too", async () => {
+      await request(app)
+        .put("/api/meal-plan/recipes/1")
+        .set("Authorization", "Bearer token")
+        .send({ imageUrl: "https://tracker.example/p.jpg" });
+
+      expect(vi.mocked(storage.updateMealPlanRecipe).mock.calls[0][2]).toEqual({
+        imageUrl: null,
+      });
+    });
+  });
+
   describe("POST /api/meal-plan/recipes", () => {
+    // Security audit 2026-11-12, L8.
+    it.each([
+      ["a step past the length cap", { instructions: ["x".repeat(2001)] }],
+      [
+        "more ingredients than a recipe holds",
+        {
+          ingredients: Array.from({ length: 201 }, () => ({ name: "Salt" })),
+        },
+      ],
+    ])("returns 400 for %s, and saves nothing", async (_label, override) => {
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({ title: "Chicken Salad", ...override });
+
+      expect(res.status).toBe(400);
+      expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
+    });
+
     it("generates an auto-image for a premium user only until the daily cap is claimed", async () => {
       mockPremium();
       let used = 0;
@@ -356,6 +434,24 @@ describe("Meal Plan Routes", () => {
         .send({ title: "Updated" });
 
       expect(res.status).toBe(200);
+    });
+
+    // zod 4 applies a field's .default() even inside .partial(), so a
+    // title-only edit silently reset sourceType to "user_created".
+    it("passes only the sent fields to storage (no defaulted sourceType)", async () => {
+      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({ title: "Updated" }),
+      );
+
+      const res = await request(app)
+        .put("/api/meal-plan/recipes/1")
+        .set("Authorization", "Bearer token")
+        .send({ title: "Updated" });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateMealPlanRecipe).mock.calls[0][2]).toEqual({
+        title: "Updated",
+      });
     });
 
     it("returns 404 for not found", async () => {
@@ -803,7 +899,6 @@ describe("Meal Plan Routes", () => {
         recipe: null,
         scannedItem: null,
       });
-      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
       vi.mocked(storage.createDailyLog).mockResolvedValue(createMockDailyLog());
 
       const res = await request(app)
@@ -813,93 +908,23 @@ describe("Meal Plan Routes", () => {
       expect(res.status).toBe(201);
     });
 
-    // The duplicate pre-check bounds `daily_logs.logged_at` by the civil day of
-    // the item's `plannedDate`. That day only means anything once it is resolved
-    // IN THE USER'S ZONE: `new Date("2025-01-01")` is UTC midnight, whose civil
-    // day at any negative offset is 2024-12-31.
-    it.each([
-      "America/Los_Angeles",
-      "Pacific/Auckland",
-      "Europe/Berlin",
-      "UTC",
-    ])(
-      "resolves the item's plannedDate in the request's zone (%s)",
-      async (tz) => {
-        mockPremium();
-        vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
-          ...createMockMealPlanItem({
-            plannedDate: "2025-01-01",
-            mealType: "dinner",
-          }),
-          recipe: null,
-          scannedItem: null,
-        });
-        vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
-        vi.mocked(storage.createDailyLog).mockResolvedValue(
-          createMockDailyLog(),
-        );
-
-        await request(app)
-          .post("/api/meal-plan/items/1/confirm")
-          .set("Authorization", "Bearer token")
-          .set("X-Timezone", tz)
-          .expect(201);
-
-        const [, dateArg, tzArg] = vi.mocked(
-          storage.getConfirmedMealPlanItemIds,
-        ).mock.calls[0];
-        expect(tzArg).toBe(tz);
-        expect(
-          new Intl.DateTimeFormat("en-CA", {
-            timeZone: tz,
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-          }).format(dateArg as Date),
-        ).toBe("2025-01-01");
-      },
-    );
-
-    // The no-regression guarantee for clients that predate the header.
-    it("falls back to UTC bounds when no X-Timezone is sent", async () => {
-      mockPremium();
-      vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
-        ...createMockMealPlanItem({
-          plannedDate: "2025-01-01",
-          mealType: "dinner",
-        }),
-        recipe: null,
-        scannedItem: null,
-      });
-      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
-      vi.mocked(storage.createDailyLog).mockResolvedValue(createMockDailyLog());
-
-      await request(app)
-        .post("/api/meal-plan/items/1/confirm")
-        .set("Authorization", "Bearer token")
-        .expect(201);
-
-      const [, dateArg, tzArg] = vi.mocked(storage.getConfirmedMealPlanItemIds)
-        .mock.calls[0];
-      expect(tzArg).toBe("UTC");
-      // Byte-identical to the pre-change `new Date(plannedDate)` window.
-      expect((dateArg as Date).toISOString()).toBe("2025-01-01T00:00:00.000Z");
-    });
-
-    it("returns 409 for already confirmed", async () => {
+    it("returns 409 when the unique index rejects a duplicate confirm", async () => {
       mockPremium();
       vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
         ...createMockMealPlanItem({ plannedDate: "2025-01-01" }),
         recipe: null,
         scannedItem: null,
       });
-      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([1]);
+      vi.mocked(storage.createDailyLog).mockRejectedValue(
+        Object.assign(new Error("duplicate key"), { code: "23505" }),
+      );
 
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(409);
+      expect(res.body.code).toBe("ALREADY_CONFIRMED");
     });
 
     it("returns 404 when item not found", async () => {
@@ -1100,6 +1125,25 @@ describe("Meal Plan Routes", () => {
       fatPerServing: 10,
       plannedDate: "2026-03-15",
     };
+
+    // Security audit 2026-11-12, L8.
+    it.each([
+      ["a step past the length cap", { instructions: ["x".repeat(2001)] }],
+      [
+        "more ingredients than a recipe holds",
+        {
+          ingredients: Array.from({ length: 201 }, () => ({ name: "Salt" })),
+        },
+      ],
+    ])("returns 400 for %s, and saves nothing", async (_label, override) => {
+      const res = await request(app)
+        .post("/api/meal-plan/save-generated")
+        .set("Authorization", "Bearer token")
+        .send({ meals: [{ ...validMeal, ...override }] });
+
+      expect(res.status).toBe(400);
+      expect(storage.createMealPlanFromSuggestions).not.toHaveBeenCalled();
+    });
 
     it("creates recipes and plan items", async () => {
       vi.mocked(storage.createMealPlanFromSuggestions).mockResolvedValue([

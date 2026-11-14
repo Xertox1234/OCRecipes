@@ -44,6 +44,19 @@ describe("GET /api/curated-recipes", () => {
     expect(res.body.recipes[0].id).toBe(1);
   });
 
+  it("never sends the author's user id (privacy audit M2)", async () => {
+    const mockRecipe = createMockCommunityRecipe({
+      id: 1,
+      isCanonical: true,
+      authorId: "author-user-1",
+    });
+    vi.mocked(storage.getCuratedRecipes).mockResolvedValue([mockRecipe]);
+    const res = await request(app).get("/api/curated-recipes");
+    expect(res.status).toBe(200);
+    expect(res.body.recipes[0]).not.toHaveProperty("authorId");
+    expect(JSON.stringify(res.body)).not.toContain("author-user-1");
+  });
+
   it("passes limit and offset from query params", async () => {
     vi.mocked(storage.getCuratedRecipes).mockResolvedValue([]);
     await request(app).get("/api/curated-recipes?limit=10&offset=5");

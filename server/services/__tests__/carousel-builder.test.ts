@@ -14,6 +14,8 @@ const mockProfile: UserProfile = {
   id: 1,
   userId: "1",
   allergies: [{ name: "peanuts", severity: "severe" as const }],
+  moodScore: 0,
+  moodUpdatedAt: null,
   healthConditions: [],
   dietType: "keto",
   foodDislikes: [],
@@ -27,6 +29,9 @@ const mockProfile: UserProfile = {
   glp1Medication: null,
   glp1StartDate: null,
   healthDataConsentAt: null,
+  healthDataConsentVersion: null,
+  healthDataConsentWithdrawnAt: null,
+  healthDataConsentHistory: [],
   reminderMutes: {},
   notificationPrefs: {
     categories: {},

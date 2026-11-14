@@ -79,7 +79,7 @@ if (!validation.success) {
   console.error(
     "Error: inspired-suggestions-cases.json failed schema validation:",
   );
-  for (const issue of validation.error.errors) {
+  for (const issue of validation.error.issues) {
     console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
   }
   process.exit(1);

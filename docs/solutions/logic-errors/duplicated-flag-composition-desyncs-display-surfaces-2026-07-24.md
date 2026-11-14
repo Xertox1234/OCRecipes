@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [scan, flags, composition, duplication, refactor-drift, accessibility]
 module: client
-applies_to: ["client/screens/ScanScreen.tsx", "client/screens/ScanScreenConfirmOverlay-utils.ts", "shared/types/scan-flags.ts"]
+applies_to: ["client/screens/ScanScreen.tsx", "client/components/scan/ScanScreenConfirmOverlay-utils.ts", "shared/types/scan-flags.ts"]
 symptoms: ["Two UI surfaces that are supposed to show the same derived value diverge after an unrelated refactor", "A confirm/summary overlay shows fewer or different badges/flags than the equivalent lock-screen or chip surface for the identical underlying data", "The bug has no failing data path — the raw flags array is identical at both call sites; only the DERIVED single-value selection differs"]
 created: 2026-07-24
 severity: medium
@@ -103,7 +103,7 @@ moment it's copy-pasted rather than imported.
 
 - `shared/types/scan-flags.ts` — `pickTopDisplayFlag`, the shared composition
 - `client/screens/ScanScreen.tsx` — `fetchProductInfo`'s `topFlag` (chip)
-- `client/screens/ScanScreenConfirmOverlay-utils.ts` — `buildLoadedConfirmCard`'s `safetyFlag` field (confirm-card, despite the field name — see its doc comment)
+- `client/components/scan/ScanScreenConfirmOverlay-utils.ts` — `buildLoadedConfirmCard`'s `safetyFlag` field (confirm-card, despite the field name — see its doc comment)
 - `shared/types/__tests__/scan-flags.test.ts` — `pickTopDisplayFlag` unit tests
 - `client/screens/__tests__/ScanScreenConfirmOverlay-utils.flags.test.ts` — confirm-card parity tests
 

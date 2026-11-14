@@ -6,7 +6,7 @@ import { renderComponent } from "../../../test/utils/render-component";
 import { SwipeableRow } from "../SwipeableRow";
 
 // Mock useAccessibility to control reducedMotion
-const mockReducedMotion = { reducedMotion: false };
+const mockReducedMotion = { reducedMotion: false, screenReaderEnabled: false };
 vi.mock("@/hooks/useAccessibility", () => ({
   useAccessibility: () => mockReducedMotion,
 }));
@@ -14,6 +14,37 @@ vi.mock("@/hooks/useAccessibility", () => ({
 describe("SwipeableRow", () => {
   beforeEach(() => {
     mockReducedMotion.reducedMotion = false;
+    mockReducedMotion.screenReaderEnabled = false;
+  });
+
+  // Accessibility audit 2026-11-06 M3: swipe actions were gesture-only for a
+  // screen-reader user (a one-finger swipe navigates instead), and custom
+  // accessibilityActions can't attach to a caller-owned child safely.
+  it("renders inline action buttons when a screen reader is on", () => {
+    mockReducedMotion.screenReaderEnabled = true;
+    const onUsed = vi.fn();
+    renderComponent(
+      <SwipeableRow
+        rightAction={{
+          icon: "trash-2",
+          label: "Delete",
+          backgroundColor: "#D32F2F",
+          onAction: vi.fn(),
+        }}
+        leftAction={{
+          icon: "check",
+          label: "Used",
+          backgroundColor: "#2E7D32",
+          onAction: onUsed,
+        }}
+      >
+        <Text>Screen reader content</Text>
+      </SwipeableRow>,
+    );
+
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
+    screen.getByRole("button", { name: "Used" }).click();
+    expect(onUsed).toHaveBeenCalledTimes(1);
   });
 
   it("renders children content", () => {

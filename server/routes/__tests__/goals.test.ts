@@ -4,7 +4,10 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../goals";
-import { createMockUser } from "../../__tests__/factories";
+import {
+  createMockUser,
+  createMockUserProfile,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -43,6 +46,52 @@ describe("Goals Routes", () => {
 
   beforeEach(() => {
     app = createApp();
+    // Default: consent on record, so the body-metrics gate is open.
+    vi.mocked(storage.getUserProfile).mockResolvedValue(
+      createMockUserProfile({
+        healthDataConsentAt: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+  });
+
+  describe("POST /api/goals/calculate — health-data consent gate", () => {
+    const body = {
+      weight: 80,
+      height: 180,
+      age: 35,
+      gender: "male",
+      activityLevel: "moderate",
+      primaryGoal: "maintain",
+    };
+
+    it("refuses body metrics from a user who has not consented", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({ healthDataConsentAt: null }),
+      );
+      vi.mocked(storage.updateUserGoalsAndProfile).mockClear();
+
+      const res = await request(app)
+        .post("/api/goals/calculate")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+      expect(storage.updateUserGoalsAndProfile).not.toHaveBeenCalled();
+    });
+
+    it("refuses body metrics when the user has no profile row", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.updateUserGoalsAndProfile).mockClear();
+
+      const res = await request(app)
+        .post("/api/goals/calculate")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(403);
+      expect(storage.updateUserGoalsAndProfile).not.toHaveBeenCalled();
+    });
   });
 
   describe("GET /api/goals", () => {

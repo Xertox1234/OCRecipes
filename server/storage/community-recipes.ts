@@ -2,7 +2,6 @@ import {
   type CommunityRecipe,
   type InsertCommunityRecipe,
   communityRecipes,
-  mealPlanRecipes,
   recipeGenerationLog,
   cookbookRecipes,
   favouriteRecipes,
@@ -10,18 +9,7 @@ import {
   recipeDismissals,
 } from "@shared/schema";
 import { db } from "../db";
-import {
-  eq,
-  desc,
-  and,
-  gte,
-  lt,
-  sql,
-  or,
-  ilike,
-  inArray,
-  isNull,
-} from "drizzle-orm";
+import { eq, desc, and, gte, lt, sql, or, ilike, inArray } from "drizzle-orm";
 import { escapeLike } from "./helpers";
 import { quotaDayBounds } from "./quota-day";
 import {
@@ -32,7 +20,7 @@ import {
 } from "../lib/search-index";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
 import { deriveRecipeDietConflicts } from "@shared/constants/diet-conflicts";
-import { deleteImage } from "../lib/image-store";
+import { deleteImagesIfUnreferenced } from "./account-images";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
@@ -225,10 +213,11 @@ export async function updateCommunityRecipeImageUrl( // idor-safe: internal back
   // The replaced object is orphaned (durable, billed) — clean it up
   // fire-and-forget. In practice this patcher fills a NULL imageUrl, so the
   // delete is usually a no-op; the "recipe" kind scopes it to recipe-images/.
+  // Only unreferenced images go: a meal-plan recipe may share the URL.
   if (existing?.imageUrl && existing.imageUrl !== imageUrl) {
     fireAndForget(
       "community-recipe-image-replace-cleanup",
-      deleteImage(existing.imageUrl, "recipe"),
+      deleteImagesIfUnreferenced([{ url: existing.imageUrl, kind: "recipe" }]),
     );
   }
 }
@@ -259,6 +248,30 @@ export async function getCommunityRecipe(
       ),
     );
   return recipe || undefined;
+}
+
+/**
+ * Batch form of `getCommunityRecipe` for the Coach plan card: the recipes with
+ * these ids that this user may see (public, or their own).
+ */
+export async function getVisibleCommunityRecipesByIds(
+  ids: number[],
+  userId: string,
+): Promise<CommunityRecipe[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  return db
+    .select()
+    .from(communityRecipes)
+    .where(
+      and(
+        inArray(communityRecipes.id, unique),
+        or(
+          eq(communityRecipes.isPublic, true),
+          eq(communityRecipes.authorId, userId),
+        ),
+      ),
+    );
 }
 
 /**
@@ -442,158 +455,16 @@ export async function deleteCommunityRecipe(
     removeFromIndex(`community:${recipeId}`);
     // Delete the stored image object AFTER the tx commits (rollback safety)
     // and fire-and-forget — an object-store failure must not break the
-    // deletion. The "recipe" kind scopes the delete to recipe-images/ keys.
+    // deletion. The "recipe" kind scopes the delete to recipe-images/ keys, and
+    // an image another row still references is kept.
     fireAndForget(
       "community-recipe-image-cleanup",
-      deleteImage(deletedRow.imageUrl, "recipe"),
+      deleteImagesIfUnreferenced(
+        deletedRow.imageUrl
+          ? [{ url: deletedRow.imageUrl, kind: "recipe" }]
+          : [],
+      ),
     );
   }
   return deletedRow !== null;
-}
-
-export async function getUserRecipes(
-  userId: string,
-  limit = 50,
-  offset = 0,
-): Promise<{ items: FeaturedRecipe[]; total: number }> {
-  const [items, countResult] = await Promise.all([
-    db
-      .select(FEATURED_COLUMNS)
-      .from(communityRecipes)
-      .where(eq(communityRecipes.authorId, userId))
-      .orderBy(desc(communityRecipes.createdAt))
-      .limit(limit)
-      .offset(offset),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(communityRecipes)
-      .where(eq(communityRecipes.authorId, userId)),
-  ]);
-  return { items, total: Number(countResult[0]?.count ?? 0) };
-}
-
-/** Fetch recipe data for sharing. Returns null if not found or not accessible. */
-export async function getRecipeSharePayload(
-  recipeId: number,
-  recipeType: "mealPlan" | "community",
-  userId: string,
-): Promise<{
-  title: string;
-  description: string;
-  imageUrl: string | null;
-} | null> {
-  if (recipeType === "community") {
-    // Community recipes must be public OR owned by the requesting user
-    const [recipe] = await db
-      .select({
-        title: communityRecipes.title,
-        description: communityRecipes.description,
-        imageUrl: communityRecipes.imageUrl,
-      })
-      .from(communityRecipes)
-      .where(
-        and(
-          eq(communityRecipes.id, recipeId),
-          or(
-            eq(communityRecipes.isPublic, true),
-            eq(communityRecipes.authorId, userId),
-          ),
-        ),
-      );
-    if (!recipe) return null;
-    return {
-      title: recipe.title,
-      description: recipe.description ?? "",
-      imageUrl: recipe.imageUrl ?? null,
-    };
-  } else {
-    // mealPlan recipes are personal — verify ownership
-    const [recipe] = await db
-      .select({
-        title: mealPlanRecipes.title,
-        description: mealPlanRecipes.description,
-        imageUrl: mealPlanRecipes.imageUrl,
-      })
-      .from(mealPlanRecipes)
-      .where(
-        and(
-          eq(mealPlanRecipes.id, recipeId),
-          eq(mealPlanRecipes.userId, userId),
-          isNull(mealPlanRecipes.deletedAt),
-        ),
-      );
-    if (!recipe) return null;
-    return {
-      title: recipe.title,
-      description: recipe.description ?? "",
-      imageUrl: recipe.imageUrl ?? null,
-    };
-  }
-}
-
-/**
- * Resolve a batch of community recipe IDs → display titles, scoped to recipes
- * the given user has dismissed. Used to build the dismissed-recipe context for
- * the meal-suggestion prompt (so the LLM does not re-suggest rejected recipes).
- *
- * Visibility is intentionally NOT filtered by `isPublic`: a recipe that was
- * public when dismissed but later made private must still resolve its title, or
- * the dismissed-context map silently loses entries. Instead the query is scoped
- * by an INNER JOIN through `recipe_dismissals` (source `community`, the same
- * user) — the dismissal record is the authorization. This makes the function
- * self-enforcing: it can only ever return titles for recipes THIS user has
- * dismissed, so a caller cannot pass arbitrary ids and read another user's
- * private recipe titles. Returns a Map for order-preserving id→title lookup.
- */
-export async function getCommunityRecipeTitlesByIds(
-  ids: number[],
-  userId: string,
-): Promise<Map<number, string>> {
-  if (ids.length === 0) return new Map();
-  const rows = await db
-    .select({ id: communityRecipes.id, title: communityRecipes.title })
-    .from(communityRecipes)
-    .innerJoin(
-      recipeDismissals,
-      and(
-        eq(
-          recipeDismissals.recipeIdentifier,
-          sql`${communityRecipes.id}::text`,
-        ),
-        eq(recipeDismissals.userId, userId),
-        eq(recipeDismissals.source, "community"),
-      ),
-    )
-    .where(inArray(communityRecipes.id, ids));
-  return new Map(rows.map((r) => [r.id, r.title]));
-}
-
-/**
- * Top "trending search" terms derived from the popular public recipe set:
- * unnested diet tags + cuisine origins, ranked by summed popularityScore.
- * Returns display-ready term strings (original casing). Powers the Home
- * search drawer's trending carousel.
- */
-export async function getTrendingSearchTerms(limit = 8): Promise<string[]> {
-  const result = await db.execute(sql`
-    WITH terms AS (
-      SELECT tag AS term, popularity_score AS score
-      FROM community_recipes,
-           jsonb_array_elements_text(diet_tags) AS tag
-      WHERE is_public = true AND tag <> ''
-      UNION ALL
-      SELECT cuisine_origin AS term, popularity_score AS score
-      FROM community_recipes
-      WHERE is_public = true
-        AND cuisine_origin IS NOT NULL
-        AND cuisine_origin <> ''
-    )
-    SELECT term, SUM(score) AS weight, COUNT(*) AS n
-    FROM terms
-    GROUP BY term
-    ORDER BY SUM(score) DESC, COUNT(*) DESC, term ASC
-    LIMIT ${limit}
-  `);
-  const rows = result.rows as { term: string }[];
-  return rows.map((r) => r.term);
 }

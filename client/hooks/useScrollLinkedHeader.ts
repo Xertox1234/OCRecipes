@@ -49,6 +49,7 @@ export function useScrollLinkedHeader({
   useEffect(() => {
     const visible = !reducedMotion && scrollY.value > collapseThreshold * 0.5;
     lastBarVisible.value = visible;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resyncs from a Reanimated shared value (the scroll offset), which cannot be read during render; deriving from reducedMotion alone would reintroduce the frozen-visibility bug above
     setIsBarVisible(visible);
     // scrollY/lastBarVisible are stable shared-value refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps

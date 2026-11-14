@@ -84,13 +84,17 @@ onFlowComplete:
 # no year, so the full-match regex picks the photo added above and not the simulator's stock ones
 # (nor the grid, whose label joins them all). iOS puts a narrow no-break space before AM/PM, hence
 # the "." there. The check button is "Done".
+# The picker runs in its own process and labels its cells late: on the CI runner the photo's label
+# appeared 10.0-14.7 s after the tap in four passing runs, and after 15 s in run 43283689921 (it is
+# in the hierarchy dumped at 22 s). The wait ends as soon as the label shows, so a fast picker
+# costs nothing.
 - runFlow:
     when:
       platform: iOS
     commands:
       - extendedWaitUntil:
           visible: 'Photo, \w+ \d{2}, \d{1,2}:\d{2}.[AP]M'
-          timeout: 15000
+          timeout: 60000
       - tapOn: 'Photo, \w+ \d{2}, \d{1,2}:\d{2}.[AP]M'
       - tapOn: "Done"
 # Android labels the cell "Photo taken on <date>" (the "Photos" tab above it must not match), and

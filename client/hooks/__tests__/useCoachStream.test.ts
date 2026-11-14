@@ -3,66 +3,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
 import {
-  charsToRelease,
-  parseErrorCode,
   HOLD_GATE_MS,
-  CHARS_PER_TICK,
   DRAIN_INTERVAL_MS,
   STREAM_INACTIVITY_MS,
   XHR_TIMEOUT_MS,
   type UseCoachStreamReturn,
 } from "../useCoachStream";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import { coachRevealPacing } from "@/constants/animations";
 import { AppState } from "react-native";
 import { onlineManager } from "@tanstack/react-query";
 import { RESUME_DEAD_SOCKET_MS } from "@/lib/sse-xhr";
 
+// A lone word with nothing after it ("Hello", stream not done) may be half
+// of a token-split word, so the reveal holds it up to tailFlushMs before
+// showing it anyway. Advance this far to see it.
+const TAIL_SHOWN_MS =
+  HOLD_GATE_MS + coachRevealPacing.tailFlushMs + DRAIN_INTERVAL_MS;
+
 // ── Pure helper tests (no timers, no XHR) ────────────────────────
-
-describe("charsToRelease", () => {
-  it("returns empty string when elapsed < holdGateMs", () => {
-    expect(charsToRelease("hello world", 300, 700, CHARS_PER_TICK)).toBe("");
-    expect(charsToRelease("hello world", 699, 700, CHARS_PER_TICK)).toBe("");
-  });
-
-  it("returns up to charsPerTick when elapsed >= holdGateMs", () => {
-    expect(charsToRelease("hello world", 700, 700, CHARS_PER_TICK)).toBe(
-      "hello world".slice(0, CHARS_PER_TICK),
-    );
-    expect(charsToRelease("hello world", 1500, 700, CHARS_PER_TICK)).toBe(
-      "hello world".slice(0, CHARS_PER_TICK),
-    );
-  });
-
-  it("returns entire buffer when buffer shorter than charsPerTick", () => {
-    expect(charsToRelease("x", 700, 700, CHARS_PER_TICK)).toBe("x");
-  });
-
-  it("returns empty string for empty buffer regardless of elapsed", () => {
-    expect(charsToRelease("", 5000, 700, CHARS_PER_TICK)).toBe("");
-  });
-});
-
-describe("parseErrorCode", () => {
-  it("extracts the code from a standard error body", () => {
-    expect(
-      parseErrorCode('{"error":"Daily limit","code":"DAILY_LIMIT_REACHED"}'),
-    ).toBe("DAILY_LIMIT_REACHED");
-  });
-
-  it("returns undefined when the body has no code field", () => {
-    expect(parseErrorCode('{"error":"oops"}')).toBeUndefined();
-  });
-
-  it("returns undefined for a non-JSON body", () => {
-    expect(parseErrorCode("Internal Server Error")).toBeUndefined();
-    expect(parseErrorCode("")).toBeUndefined();
-  });
-
-  it("returns undefined when code is not a string", () => {
-    expect(parseErrorCode('{"code":123}')).toBeUndefined();
-  });
-});
+// The reveal pacing itself is unit-tested in
+// client/components/coach/__tests__/stream-reveal-utils.test.ts.
 
 // ── Hook behaviour tests (fake timers + XHR mock) ─────────────────
 
@@ -255,31 +216,197 @@ describe("useCoachStream hold gate", () => {
   });
 });
 
-describe("useCoachStream throttle rate", () => {
-  it("drains approximately CHARS_PER_TICK chars per DRAIN_INTERVAL_MS tick", async () => {
+describe("useCoachStream reveal pacing", () => {
+  it("reveals whole words, gradually, never cutting a finished word", async () => {
     const { result } = await setupHook();
 
     await startAndFlush(result);
+    const text = "steady words arrive ".repeat(10); // 200 chars
     act(() => {
-      mockXhr.emit({ content: "A".repeat(400) });
+      mockXhr.emit({ content: text });
     });
 
-    // Advance past hold gate — the tick firing exactly at HOLD_GATE_MS also
-    // releases chars (elapsed >= holdGateMs), so we get 1 extra tick here.
     act(() => {
-      vi.advanceTimersByTime(HOLD_GATE_MS);
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 5);
     });
-    const afterGate = result.current.streamingContent.length;
+    const shown = result.current.streamingContent;
 
-    // Now advance 5 drain ticks beyond the gate
+    // Some text is up, but not the whole reply in a quarter second.
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.length).toBeLessThan(text.length / 2);
+    // It stops at a word boundary: the next unshown char is whitespace.
+    expect(text.startsWith(shown)).toBe(true);
+    expect(/\s/.test(text.charAt(shown.length))).toBe(true);
+  });
+
+  it("finishes the whole reply and calls onDone", async () => {
+    const { result, onDone } = await setupHook();
+
+    await startAndFlush(result);
+    const text = "steady words arrive ".repeat(10).trim();
     act(() => {
-      vi.advanceTimersByTime(DRAIN_INTERVAL_MS * 5);
+      mockXhr.emit({ content: text });
+      mockXhr.emit({ done: true });
     });
 
-    // Should have drained exactly 5 additional CHARS_PER_TICK chars after gate
-    expect(result.current.streamingContent.length).toBe(
-      afterGate + 5 * CHARS_PER_TICK,
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + 10_000);
+    });
+    expect(onDone).toHaveBeenCalledWith(text, undefined);
+    expect(result.current.isStreaming).toBe(false);
+  });
+});
+
+describe("useCoachStream paced steps (show-the-work spec 2026-11-09)", () => {
+  it("steps hold the reveal until each has shown 1000 ms", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ step: "B" });
+      mockXhr.emit({ content: "Hi there " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current.statusText).toBe("A");
+    act(() => {
+      vi.advanceTimersByTime(1000); // t = 1100
+    });
+    expect(result.current.statusText).toBe("B");
+    act(() => {
+      vi.advanceTimersByTime(800); // t = 1900: B has not had its full second
+    });
+    expect(result.current.streamingContent).toBe("");
+    act(() => {
+      vi.advanceTimersByTime(400); // t = 2300
+    });
+    expect(result.current.streamingContent).not.toBe("");
+    expect(result.current.statusText).toBe("");
+  });
+
+  it("with no steps, text starts after the 700 ms gate as before", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ content: "Hi there " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(650);
+    });
+    expect(result.current.streamingContent).toBe("");
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(result.current.streamingContent).not.toBe("");
+  });
+
+  it("a step after text started shows under the text and does not pause it", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ content: "Let me see what fits your day today. " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+    const before = result.current.streamingContent;
+    expect(before).not.toBe("");
+    act(() => {
+      mockXhr.emit({ step: "Checking your pantry…" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(result.current.statusText).toBe("Checking your pantry…");
+    expect(result.current.streamingContent.length).toBeGreaterThan(
+      before.length,
     );
+  });
+
+  it("late steps each get their full second before the reply finishes", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ content: "Let me see. " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ step: "B" });
+      mockXhr.emit({ content: "Done. " });
+      mockXhr.emit({ done: true });
+    });
+    const seen: string[] = [];
+    for (let t = 0; t < 4000 && result.current.isStreaming; t += 50) {
+      act(() => {
+        vi.advanceTimersByTime(50);
+      });
+      if (
+        result.current.statusText &&
+        !seen.includes(result.current.statusText)
+      )
+        seen.push(result.current.statusText);
+      if (result.current.statusText === "B" && t < 1900) {
+        expect(result.current.isStreaming).toBe(true);
+      }
+    }
+    expect(seen).toEqual(["A", "B"]);
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("a reply with steps and no text still plays every step before it ends", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ done: true });
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.isStreaming).toBe(true);
+    expect(result.current.statusText).toBe("A");
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("status events are ignored once a step arrived", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ status: "Checking your pantry…" });
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ status: "Looking up nutrition…" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current.statusText).toBe("A");
+  });
+
+  it("an error while steps are queued clears the line", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ step: "B" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current.statusText).toBe("A");
+    act(() => {
+      mockXhr.emit({ error: "Response timeout" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(result.current.statusText).toBe("");
   });
 });
 
@@ -309,7 +436,7 @@ describe("useCoachStream status text", () => {
     expect(result.current.statusText).toBe("Thinking…");
 
     act(() => {
-      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS);
+      vi.advanceTimersByTime(TAIL_SHOWN_MS);
     });
     expect(result.current.statusText).toBe("");
   });
@@ -323,7 +450,7 @@ describe("useCoachStream status text", () => {
 
     // Drain the first char
     act(() => {
-      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS);
+      vi.advanceTimersByTime(TAIL_SHOWN_MS);
     });
     expect(result.current.statusText).toBe("");
 
@@ -905,6 +1032,20 @@ describe("useCoachStream recipe finder actions", () => {
     };
     expect(body.content).toBe("Generate");
     expect(body.finderAction).toEqual(finderAction);
+  });
+});
+
+describe("useCoachStream opening brief", () => {
+  it("sends the brief form in the request body", async () => {
+    const { result } = await setupHook();
+    await act(async () => {
+      result.current.startStream(7, "It went well", { openingBrief: "full" });
+      await Promise.resolve();
+    });
+    const body = JSON.parse(mockXhr.sentBody ?? "{}") as {
+      openingBrief?: unknown;
+    };
+    expect(body.openingBrief).toBe("full");
   });
 });
 

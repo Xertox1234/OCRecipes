@@ -51,7 +51,7 @@ export function SwipeableRow({
   leftAction,
 }: SwipeableRowProps) {
   const haptics = useHaptics();
-  const { reducedMotion } = useAccessibility();
+  const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const swipeableRef = useRef<SwipeableMethods>(null);
 
   const handleSwipeableOpen = useCallback(
@@ -102,8 +102,11 @@ export function SwipeableRow({
     [leftAction],
   );
 
-  // When reduced motion is enabled, show inline action buttons instead of swipe
-  if (reducedMotion) {
+  // Show inline action buttons instead of the swipe when reduced motion is on,
+  // or when a screen reader is on — a one-finger swipe navigates there, so the
+  // gesture is unreachable, and custom accessibilityActions would need the
+  // caller's child to be the focused element.
+  if (reducedMotion || screenReaderEnabled) {
     const hasActions = leftAction || rightAction;
     if (!hasActions) return <View>{children}</View>;
 

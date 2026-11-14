@@ -32,6 +32,7 @@ vi.mock("../../db", () => ({
 
 const {
   getMealPlanItems,
+  getMealPlanItemSummaries,
   getMealPlanItemById,
   addMealPlanItem,
   removeMealPlanItem,
@@ -136,6 +137,42 @@ describe("meal-plan-items storage", () => {
       expect(rows).toHaveLength(0);
     });
 
+    // A Coach write-card save passes its own transaction: the live-recipe
+    // check must run there too, not only on the default path.
+    it("refuses a soft-deleted recipe when the caller passes its transaction", async () => {
+      const recipe = await createRecipe(testUser.id);
+      await tx
+        .update(mealPlanRecipes)
+        .set({ deletedAt: new Date() })
+        .where(eq(mealPlanRecipes.id, recipe.id));
+
+      const item = await addMealPlanItem(
+        {
+          userId: testUser.id,
+          recipeId: recipe.id,
+          plannedDate: "2026-05-15",
+          mealType: "lunch",
+        },
+        tx,
+      );
+
+      expect(item).toBeUndefined();
+    });
+
+    it("inserts through the caller's transaction for a live recipe", async () => {
+      const recipe = await createRecipe(testUser.id);
+      const item = await addMealPlanItem(
+        {
+          userId: testUser.id,
+          recipeId: recipe.id,
+          plannedDate: "2026-05-15",
+          mealType: "lunch",
+        },
+        tx,
+      );
+      expect(item?.recipeId).toBe(recipe.id);
+    });
+
     it("refuses another user's recipe", async () => {
       const other = await createTestUser(tx);
       const recipe = await createRecipe(other.id);
@@ -148,6 +185,90 @@ describe("meal-plan-items storage", () => {
       });
 
       expect(item).toBeUndefined();
+    });
+  });
+
+  describe("getMealPlanItemSummaries", () => {
+    it("returns narrow recipe / scanned-item rows with no heavy columns", async () => {
+      const recipe = await createRecipe(testUser.id, {
+        title: "Pasta",
+        caloriesPerServing: "500",
+        proteinPerServing: "20",
+        carbsPerServing: "60",
+        fatPerServing: "10",
+      });
+      const scanned = await createScannedItem(testUser.id, {
+        productName: "Cheese",
+        calories: "100",
+      });
+      await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "dinner",
+      });
+      await addMealPlanItem({
+        userId: testUser.id,
+        scannedItemId: scanned.id,
+        plannedDate: "2026-05-15",
+        mealType: "lunch",
+      });
+
+      const items = await getMealPlanItemSummaries(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-15",
+      );
+      expect(items).toHaveLength(2);
+      const withRecipe = items.find((i) => i.recipeId === recipe.id);
+      expect(withRecipe?.recipe).toEqual({
+        id: recipe.id,
+        title: "Pasta",
+        caloriesPerServing: "500.00",
+        proteinPerServing: "20.00",
+        carbsPerServing: "60.00",
+        fatPerServing: "10.00",
+      });
+      expect(withRecipe?.recipe).not.toHaveProperty("instructions");
+      const withScanned = items.find((i) => i.scannedItemId === scanned.id);
+      expect(withScanned?.scannedItem).toEqual({
+        id: scanned.id,
+        productName: "Cheese",
+        calories: "100.00",
+        protein: null,
+        carbs: null,
+        fat: null,
+      });
+    });
+
+    it("excludes other users' items and soft-deleted / discarded relations", async () => {
+      const other = await createTestUser(tx);
+      const otherRecipe = await createRecipe(other.id, { title: "Theirs" });
+      await addMealPlanItem({
+        userId: other.id,
+        recipeId: otherRecipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "dinner",
+      });
+      const gone = await createRecipe(testUser.id, { title: "Gone" });
+      await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: gone.id,
+        plannedDate: "2026-05-15",
+        mealType: "lunch",
+      });
+      await tx
+        .update(mealPlanRecipes)
+        .set({ deletedAt: new Date() })
+        .where(eq(mealPlanRecipes.id, gone.id));
+
+      const items = await getMealPlanItemSummaries(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-15",
+      );
+      expect(items).toHaveLength(1);
+      expect(items[0].recipe).toBeNull();
     });
   });
 

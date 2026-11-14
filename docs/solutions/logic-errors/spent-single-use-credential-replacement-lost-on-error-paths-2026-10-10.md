@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [security, api, react-native]
 module: server
-applies_to: ["server/routes/auth*.ts", "server/lib/mfa/**", "client/components/*Modal.tsx", "client/screens/TwoStep*.tsx"]
+applies_to: ["server/routes/auth*.ts", "server/services/mfa/**", "server/lib/mfa/**", "client/components/*Modal.tsx", "client/screens/TwoStep*.tsx"]
 symptoms: ["A recovery code is used, the request then fails (409, 401, 500), and the error body has no replacementRecoveryCode", "A replacement-code card can be closed by Cancel, a backdrop tap or Android back before 'I've saved it'", "The person ends up with fewer usable recovery codes than they think, with no error anywhere"]
 created: 2026-10-10
 last_updated: 2026-10-11

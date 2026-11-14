@@ -7,6 +7,7 @@ import {
   integer,
   timestamp,
   decimal,
+  real,
   boolean,
   jsonb,
   index,
@@ -14,6 +15,7 @@ import {
   unique,
   check,
   date,
+  uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -21,6 +23,7 @@ import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { DietConflictId } from "./constants/diet-conflicts";
+import type { ChatMessageReportReason } from "./constants/chat-message-report";
 import type { SpiceLevel } from "./schemas/recipe-finder";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type {
@@ -29,6 +32,12 @@ import type {
   NotificationPrefs,
 } from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
+import type { HealthConsentEvent } from "./lib/health-consent";
+import type { AiSharingEvent } from "./lib/ai-sharing";
+import type {
+  WeeklyFacts,
+  WeeklyReportContent,
+} from "./schemas/coach-weekly-report";
 import type {
   ConsensusNutritionData,
   VerificationNutrition,
@@ -121,6 +130,22 @@ export const users = pgTable(
      * the last 30 days as active. NULL = not seen since this column shipped.
      */
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+    /**
+     * AI-sharing permission (privacy audit H3). Set while the user allows
+     * their data to go to the AI companies named in `shared/lib/ai-sharing.ts`;
+     * NULL = not allowed, and the server makes no AI call for them. Written
+     * only by `server/storage/ai-sharing.ts`.
+     */
+    aiSharingAllowedAt: timestamp("ai_sharing_allowed_at", {
+      withTimezone: true,
+    }),
+    /** The disclosure version the current permission was given against. */
+    aiSharingVersion: text("ai_sharing_version"),
+    /** Append-only log of every answer; empty = never asked. */
+    aiSharingHistory: jsonb("ai_sharing_history")
+      .$type<AiSharingEvent[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -394,6 +419,9 @@ export const userProfiles = pgTable("user_profiles", {
     .notNull()
     .unique(),
   allergies: jsonb("allergies").$type<Allergy[]>().default([]).notNull(),
+  /** Coach mood score −2…+2, decayed on read (shared/lib/mood.ts). Never shown. */
+  moodScore: real("mood_score").default(0).notNull(),
+  moodUpdatedAt: timestamp("mood_updated_at", { withTimezone: true }),
   healthConditions: jsonb("health_conditions")
     .$type<string[]>()
     .default([])
@@ -422,6 +450,17 @@ export const userProfiles = pgTable("user_profiles", {
   healthDataConsentAt: timestamp("health_data_consent_at", {
     withTimezone: true,
   }),
+  /** Privacy-policy version the current consent was given against. */
+  healthDataConsentVersion: text("health_data_consent_version"),
+  /** When the user last withdrew the health-data consent (health fields are cleared then). */
+  healthDataConsentWithdrawnAt: timestamp("health_data_consent_withdrawn_at", {
+    withTimezone: true,
+  }),
+  /** Append-only log of every consent and withdrawal; written only by storage. */
+  healthDataConsentHistory: jsonb("health_data_consent_history")
+    .$type<HealthConsentEvent[]>()
+    .default(sql`'[]'::jsonb`)
+    .notNull(),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
     .default(sql`'{}'::jsonb`)
@@ -1406,6 +1445,69 @@ export const chatMessages = pgTable(
 );
 
 /**
+ * Coach write cards (spec docs/superpowers/specs/2026-11-09-coach-write-cards-design.md).
+ * SERVER-BUILT from a write tool call: `payload` holds the numbers the server
+ * resolved, `edits` the user's counts/ticks/choices, `saved_refs` the rows a
+ * save wrote (so Undo removes exactly those). At most one LIVE card per
+ * conversation — the partial unique index enforces it.
+ */
+export const coachWriteCards = pgTable(
+  "coach_write_cards",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    conversationId: integer("conversation_id")
+      .references(() => chatConversations.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: text("kind").notNull().$type<"food" | "grocery" | "plan">(),
+    payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+    edits: jsonb("edits")
+      .notNull()
+      .default(sql`'{}'::jsonb`)
+      .$type<Record<string, unknown>>(),
+    status: text("status")
+      .notNull()
+      .default("live")
+      .$type<"live" | "saved" | "replaced" | "expired">(),
+    savedRefs: jsonb("saved_refs").$type<CoachWriteCardSavedRefs>(),
+    savedAt: timestamp("saved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "coach_write_cards_kind_check",
+      sql`${table.kind} IN ('food', 'grocery', 'plan')`,
+    ),
+    check(
+      "coach_write_cards_status_check",
+      sql`${table.status} IN ('live', 'saved', 'replaced', 'expired')`,
+    ),
+    uniqueIndex("coach_write_cards_one_live")
+      .on(table.conversationId)
+      .where(sql`${table.status} = 'live'`),
+    index("coach_write_cards_conv_created_idx").on(
+      table.conversationId,
+      table.createdAt,
+    ),
+  ],
+);
+
+/** The rows a write-card save wrote — Undo removes exactly these. */
+export interface CoachWriteCardSavedRefs {
+  scannedItemIds?: number[];
+  groceryItemIds?: number[];
+  createdListId?: number;
+  /** The list the grocery items went to (receipt + undo). */
+  listId?: number;
+  mealPlanItemIds?: number[];
+  copiedRecipeIds?: number[];
+}
+
+/**
  * Paid recipe-finder claims (spec 2026-09-28 §6, D9). Append-only and kept
  * apart from chat rows: a user may delete a message or a whole conversation
  * (which cascades its rows), and neither may hand a claimed slot back. No
@@ -1440,6 +1542,43 @@ export const recipeFinderClaims = pgTable(
       table.messageId,
       table.kind,
     ),
+  ],
+);
+
+/**
+ * A person's report on an AI reply (privacy audit 2026-11-10, G7). Holds the
+ * reply's id, a reason from a fixed list and who reported — never the text
+ * (owner ruling 2026-11-11). Both FKs cascade: a report means nothing once its
+ * reply is gone, so deleting a chat, the retention purge and account deletion
+ * all remove it with no code of their own.
+ */
+export const chatMessageReports = pgTable(
+  "chat_message_reports",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    messageId: integer("message_id")
+      .references(() => chatMessages.id, { onDelete: "cascade" })
+      .notNull(),
+    reason: text("reason").notNull().$type<ChatMessageReportReason>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "chat_message_reports_reason_check",
+      sql`${table.reason} IN ('inaccurate', 'harmful', 'offensive', 'other')`,
+    ),
+    // One report per person per reply: a second tap changes nothing.
+    uniqueIndex("chat_message_reports_user_message_idx").on(
+      table.userId,
+      table.messageId,
+    ),
+    // The FK's own index: deleting a reply looks its reports up by this.
+    index("chat_message_reports_message_idx").on(table.messageId),
   ],
 );
 
@@ -1810,6 +1949,11 @@ export const mealSuggestionCache = pgTable(
   (table) => [
     index("meal_suggestion_cache_key_idx").on(table.cacheKey),
     index("meal_suggestion_cache_expires_idx").on(table.expiresAt),
+    // getDailyMealSuggestionCount (per-user, createdAt range) + user FK cascade
+    index("meal_suggestion_cache_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
   ],
 );
 
@@ -1894,6 +2038,16 @@ export const coachNotebook = pgTable(
      * Mapped to the pre-existing `turn_fingerprint` column in Postgres.
      */
     dedupeKey: text("turn_fingerprint"),
+    /**
+     * Visible memory (spec 2026-11-08): set when the user saw the save and
+     * didn't undo it, or confirmed/edited it on the "What Coach knows" page.
+     * Only confirmed entries may be spoken by the coach.
+     */
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    /** Short second-person label for a commitment ("pumpkin seeds on your salad"). */
+    label: text("label"),
+    /** When the save popup showed this entry; null = not shown yet. */
+    shownAt: timestamp("shown_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -1929,7 +2083,7 @@ export const coachNotebook = pgTable(
     ),
     check(
       "coach_notebook_status_check",
-      sql`${table.status} IN ('active', 'completed', 'expired', 'archived')`,
+      sql`${table.status} IN ('active', 'completed', 'expired', 'archived', 'rejected')`,
     ),
   ],
 );
@@ -2008,6 +2162,7 @@ export type FavouriteScannedItem = typeof favouriteScannedItems.$inferSelect;
 export type ChatConversation = typeof chatConversations.$inferSelect;
 export type InsertChatConversation = typeof chatConversations.$inferInsert;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type CoachWriteCard = typeof coachWriteCards.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
 
 // ============================================================================
@@ -2084,8 +2239,9 @@ export const cookbookCoverCandidates = pgTable(
 );
 
 /**
- * One row per STORED cover-studio set — the daily cap's counter. Kept apart
- * from the candidates, which are deleted on replace and attach.
+ * One row per STORED cover-studio set. Kept apart from the candidates, which
+ * are deleted on replace and attach. The daily cap is not counted here: it is
+ * a claim made before generation (`cookbookCoverSet` in `AI_DAILY_CAPS`).
  */
 export const cookbookCoverGenerationLog = pgTable(
   "cookbook_cover_generation_log",
@@ -2470,6 +2626,81 @@ export const notificationSends = pgTable(
 
 export type NotificationSend = typeof notificationSends.$inferSelect;
 export type InsertNotificationSend = typeof notificationSends.$inferInsert;
+
+/**
+ * Coach weekly report — one row per (user, week). Facts are frozen when the
+ * report is made; content is Coach's sentences or the template fallback.
+ * Delivery is claimed once (delivered_via) so a push and a popup never both
+ * fire. NOT pending_reminders: that table lights the Coach dot.
+ * Spec: docs/superpowers/specs/2026-11-10-coach-weekly-report-design.md.
+ */
+export const coachWeeklyReports = pgTable(
+  "coach_weekly_reports",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    weekStart: date("week_start").notNull(),
+    weekEnd: date("week_end").notNull(),
+    facts: jsonb("facts").notNull().$type<WeeklyFacts>(),
+    content: jsonb("content").notNull().$type<WeeklyReportContent>(),
+    source: text("source").notNull().$type<"ai" | "template">(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    celebrationShownAt: timestamp("celebration_shown_at", {
+      withTimezone: true,
+    }),
+    pushDueAt: timestamp("push_due_at", { withTimezone: true }),
+    deliveredVia: text("delivered_via").$type<"push" | "popup">(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "coach_weekly_reports_source_check",
+      sql`${table.source} IN ('ai', 'template')`,
+    ),
+    check(
+      "coach_weekly_reports_delivered_via_check",
+      sql`${table.deliveredVia} IS NULL OR ${table.deliveredVia} IN ('push', 'popup')`,
+    ),
+    unique("coach_weekly_reports_user_week_unique").on(
+      table.userId,
+      table.weekStart,
+    ),
+    index("coach_weekly_reports_user_week_idx").on(
+      table.userId,
+      table.weekStart.desc().nullsFirst(),
+    ),
+    index("coach_weekly_reports_push_due_idx")
+      .on(table.pushDueAt)
+      .where(
+        sql`${table.deliveredVia} IS NULL AND ${table.pushDueAt} IS NOT NULL`,
+      ),
+  ],
+);
+
+export type CoachWeeklyReport = typeof coachWeeklyReports.$inferSelect;
+export type InsertCoachWeeklyReport = typeof coachWeeklyReports.$inferInsert;
+
+export const coachWeeklyReportSettings = pgTable(
+  "coach_weekly_report_settings",
+  {
+    userId: varchar("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reportEnabled: boolean("report_enabled").notNull().default(true),
+    pushEnabled: boolean("push_enabled").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+);
+
+export type CoachWeeklyReportSetting =
+  typeof coachWeeklyReportSettings.$inferSelect;
 
 /**
  * Scheduler run claims — one row per (job, run slot) that some server instance

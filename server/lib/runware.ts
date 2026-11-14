@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { logger } from "./logger";
+import { assertAiSharingAllowed } from "./ai-sharing-gate";
 import { saveRecipeImage } from "./image-store";
 import { detectImageMimeType } from "./image-mime";
 import { z } from "zod";
@@ -83,6 +84,9 @@ export async function generateImage(
   options: GenerateImageOptions,
 ): Promise<Buffer | null> {
   if (!apiKey) return null;
+  // Privacy audit H3: Runware is one of the AI companies the app names, so a
+  // signed-in user with AI features off sends it nothing.
+  await assertAiSharingAllowed();
 
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -168,6 +172,9 @@ export async function removeBackground(
   imageBuffer: Buffer,
 ): Promise<Buffer | null> {
   if (!apiKey) return null;
+  // Privacy audit H3: Runware is one of the AI companies the app names, so a
+  // signed-in user with AI features off sends it nothing.
+  await assertAiSharingAllowed();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), RUNWARE_TIMEOUT_MS);

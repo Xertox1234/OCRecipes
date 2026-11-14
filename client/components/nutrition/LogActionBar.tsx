@@ -6,7 +6,7 @@ import { Button } from "@/components/Button";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
-import type { LogGate } from "@/screens/nutrition-detail-utils";
+import type { LogGate } from "@/components/nutrition/nutrition-detail-utils";
 import { deriveLogBarState } from "./LogActionBar-utils";
 
 interface LogActionBarProps {

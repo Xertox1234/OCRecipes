@@ -22,6 +22,9 @@ const addEventListener = vi.fn(() => {
   return vi.fn();
 });
 
+// query-client.ts points NetInfo's reachability probe at our API at load.
+const configure = vi.fn();
+
 const fetch = vi.fn(() =>
   Promise.resolve({
     isConnected: true,
@@ -33,5 +36,6 @@ const fetch = vi.fn(() =>
 
 export default {
   addEventListener,
+  configure,
   fetch,
 };

@@ -18,6 +18,7 @@ vi.mock("@/lib/query-keys", () => ({
     scannedItems: ["/api/scanned-items"],
     dailySummary: ["/api/daily-summary"],
     frequentItems: ["/api/scanned-items/frequent"],
+    dailyBudget: ["/api/daily-budget"],
   },
 }));
 

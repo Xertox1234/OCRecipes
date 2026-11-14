@@ -197,3 +197,17 @@ describe("NutritionStep — Return key", () => {
     expect(reactProps(order[order.length - 1]).returnKeyType).toBe("done");
   });
 });
+
+// Android TalkBack device check 2026-11-07: the hint already names the unit,
+// so the visible unit text must not be its own focus stop.
+describe("NutritionStep — unit text is not read twice", () => {
+  it("hides each visible unit from screen readers", () => {
+    renderComponent(
+      <NutritionStep nutrition={makeNutrition()} setNutrition={vi.fn()} />,
+    );
+    for (const unit of screen.getAllByText(/^(kcal|grams)$/)) {
+      expect(unit.closest('[aria-hidden="true"]')).not.toBeNull();
+    }
+    expect(screen.getAllByText(/^(kcal|grams)$/)).toHaveLength(4);
+  });
+});

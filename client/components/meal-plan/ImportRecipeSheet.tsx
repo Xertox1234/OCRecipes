@@ -24,8 +24,9 @@ import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
   type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 import { RECIPE_IMPORT_OPTIONS } from "./recipe-import-options";
+import { CLIPBOARD_TEMP_PREFIX } from "@/lib/device-leftovers";
 
 export const IMPORT_RECIPE_SNAP_POINTS = ["55%"];
 
@@ -227,7 +228,7 @@ function ImportRecipeSheetContentInner({
           }
 
           // Write base64 data to a temp file for upload
-          const tempUri = `${cacheDirectory}clipboard_recipe_${Date.now()}.jpg`;
+          const tempUri = `${cacheDirectory}${CLIPBOARD_TEMP_PREFIX}${Date.now()}.jpg`;
           await writeAsStringAsync(tempUri, clipboardImage.data, {
             encoding: EncodingType.Base64,
           });

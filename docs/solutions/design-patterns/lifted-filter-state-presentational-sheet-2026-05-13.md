@@ -95,7 +95,7 @@ This approach:
   ```
 - Prevents the sheet's reset-to-defaults call from accidentally spreading over or clearing the chip-row fields that live outside the sheet — a flat single-level object would let the sheet's own reset silently wipe filter state it doesn't even render, which is a real behavior regression, not just a style choice.
 
-**Implementation pattern** (`client/screens/meal-plan/recipe-browser-utils.ts` / `RecipeBrowserScreen.tsx`):
+**Implementation pattern** (`client/components/meal-plan/recipe-browser-utils.ts` / `RecipeBrowserScreen.tsx`):
 
 ```typescript
 // Parent's consolidated filter state
@@ -166,7 +166,7 @@ When to use: any list screen with a filter bottom sheet (recipe search, product 
 
 - `client/components/meal-plan/SearchFilterSheet.tsx`
 - `client/screens/meal-plan/RecipeBrowserScreen.tsx`
-- `client/screens/meal-plan/recipe-browser-utils.ts`
+- `client/components/meal-plan/recipe-browser-utils.ts`
 
 ## See Also
 

@@ -17,6 +17,7 @@ import {
   validateReceipt,
   type ReceiptValidationResult,
 } from "../services/receipt-validation";
+import { appleFirstClaimRefusal } from "../services/apple-subscription-status";
 import {
   UpgradeRequestSchema,
   RestoreRequestSchema,
@@ -65,6 +66,38 @@ async function applyValidatedReceipt(
       code: ErrorCode.MISSING_TRANSACTION_ID,
     });
     return;
+  }
+
+  // An Apple receipt is a snapshot, so ask Apple for the current status before
+  // granting anything where our own row cannot tell:
+  // - no row yet: a refund notice that arrived before the row existed was
+  //   never stored;
+  // - a revoked row: a re-subscription reuses the originalTransactionId and
+  //   passes the claim's date check, and its own refund, if it was never
+  //   claimed, left revokedAt at the earlier refund.
+  const existing =
+    platform === "ios"
+      ? await storage.getTransaction(validation.originalTransactionId)
+      : undefined;
+  if (platform === "ios" && (!existing || existing.status === "revoked")) {
+    const refusal = await appleFirstClaimRefusal(
+      validation.originalTransactionId,
+    );
+    if (refusal) {
+      log.warn(
+        { userId, code: refusal },
+        "Apple claim refused on the App Store's current status",
+      );
+      res.json({
+        success: false,
+        error:
+          refusal === ErrorCode.TRANSACTION_REVOKED
+            ? "This subscription was refunded or revoked."
+            : "Could not verify the subscription. Please try again.",
+        code: refusal,
+      });
+      return;
+    }
   }
 
   const expiresAt = validation.expiresAt || null;

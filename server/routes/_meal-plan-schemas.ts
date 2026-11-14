@@ -4,8 +4,10 @@ import { isValidCalendarDate } from "../utils/date-validation";
 import {
   boundedNumericStringField,
   nullableNumericStringField,
+  numericStringField,
 } from "./_schemas";
 import { NUTRITION_CAPS } from "@shared/constants/nutrition";
+import { isOurRecipeImageUrl } from "../services/recipe-image-rehost";
 
 // Zod schemas for meal plan endpoints
 export const createMealPlanRecipeSchema = z.object({
@@ -16,6 +18,9 @@ export const createMealPlanRecipeSchema = z.object({
   servings: z.number().int().min(1).max(50).optional(),
   prepTimeMinutes: z.number().int().min(0).max(1440).optional().nullable(),
   cookTimeMinutes: z.number().int().min(0).max(1440).optional().nullable(),
+  // Privacy audit M1: a recipe photo may only point at our own storage, so the
+  // phone never loads one from another host. Any other URL is stored as null.
+  // The transform sits inside .optional() so an absent key stays absent.
   imageUrl: z
     .string()
     .url()
@@ -24,9 +29,10 @@ export const createMealPlanRecipeSchema = z.object({
       (url) => /^https?:\/\//.test(url),
       "Only http:// or https:// URLs allowed",
     )
+    .transform((url) => (isOurRecipeImageUrl(url) ? url : null))
     .optional()
     .nullable(),
-  instructions: z.array(z.string()).max(100).optional(),
+  instructions: z.array(z.string().max(2000)).max(100).optional(),
   dietTags: z.array(z.string().max(50)).max(20).optional(),
   caloriesPerServing: boundedNumericStringField(NUTRITION_CAPS.calories, {
     nullable: true,
@@ -53,6 +59,7 @@ export const createMealPlanRecipeSchema = z.object({
         category: z.string().max(50).optional(),
       }),
     )
+    .max(200)
     .optional(),
   sourceCommunityRecipeId: z.number().int().positive().optional().nullable(),
 });

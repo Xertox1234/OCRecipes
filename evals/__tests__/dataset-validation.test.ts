@@ -48,7 +48,7 @@ function assertDataset(schema: ZodTypeAny, filename: string): void {
   const result = schema.safeParse(data);
   if (!result.success) {
     const msgs = result
-      .error!.errors.map(
+      .error!.issues.map(
         (e) => `  ${e.path.join(".") || "(root)"}: ${e.message}`,
       )
       .join("\n");

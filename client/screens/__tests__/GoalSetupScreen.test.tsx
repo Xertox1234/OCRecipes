@@ -66,6 +66,29 @@ vi.mock("@/context/ToastContext", () => ({
   }),
 }));
 
+// The consent hook and the confirm sheet are collaborators with their own
+// suites; `consent.given` flips the "no consent, no health data" path.
+const { consent, mockGrant, mockConfirm } = vi.hoisted(() => ({
+  consent: { given: true },
+  mockGrant: vi.fn(),
+  mockConfirm: vi.fn(),
+}));
+
+vi.mock("@/hooks/useHealthConsent", () => ({
+  useHealthConsent: () => ({
+    consented: consent.given,
+    grant: mockGrant,
+    withdraw: vi.fn(),
+  }),
+}));
+
+vi.mock("@/components/ConfirmationModal", () => ({
+  useConfirmationModal: () => ({
+    confirm: mockConfirm,
+    ConfirmationModal: () => null,
+  }),
+}));
+
 vi.mock("@/hooks/useAccessibility", () => ({
   useAccessibility: () => ({ reducedMotion: false }),
 }));
@@ -84,13 +107,13 @@ const mockScrollToEnd = vi.fn();
 async function fillAndCalculate() {
   renderComponent(<GoalSetupScreen />);
 
-  fireEvent.change(screen.getByLabelText("Age"), {
+  fireEvent.change(screen.getByLabelText("Age, years"), {
     target: { value: "30" },
   });
-  fireEvent.change(screen.getByLabelText("Weight"), {
+  fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
     target: { value: "70" },
   });
-  fireEvent.change(screen.getByLabelText("Height"), {
+  fireEvent.change(screen.getByLabelText("Height, centimetres"), {
     target: { value: "170" },
   });
   fireEvent.click(screen.getByLabelText("Male"));
@@ -139,13 +162,13 @@ describe("GoalSetupScreen — save invalidates the daily-budget cache", () => {
 
     renderComponent(<GoalSetupScreen />);
 
-    fireEvent.change(screen.getByLabelText("Age"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
       target: { value: "30" },
     });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "70" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -223,13 +246,13 @@ describe("GoalSetupScreen — calculate hint keeps its space", () => {
     renderComponent(<GoalSetupScreen />);
     expect(screen.getByText(/^Still needed: /)).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Age"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
       target: { value: "30" },
     });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "70" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -263,13 +286,13 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
 
   it("shows the age message on leaving the field, not while typing", () => {
     renderComponent(<GoalSetupScreen />);
-    const age = screen.getByLabelText("Age");
+    const age = screen.getByLabelText("Age, years");
 
     fireEvent.change(age, { target: { value: "5" } });
-    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+    expect(screen.queryByText("Age must be 14–120")).toBeNull();
 
     fireEvent.blur(age);
-    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    expect(screen.getByText("Age must be 14–120")).toBeTruthy();
     expect(mockNotification).toHaveBeenCalledExactlyOnceWith(
       Haptics.NotificationFeedbackType.Error,
     );
@@ -280,49 +303,51 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
   // the error clears only once the value is valid.
   it("a shown age error stays (re-checked) while another invalid value is typed, and clears once valid", () => {
     renderComponent(<GoalSetupScreen />);
-    const age = screen.getByLabelText("Age");
+    const age = screen.getByLabelText("Age, years");
     fireEvent.change(age, { target: { value: "5" } });
     fireEvent.blur(age);
-    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    expect(screen.getByText("Age must be 14–120")).toBeTruthy();
     mockNotification.mockClear();
 
     fireEvent.change(age, { target: { value: "500" } });
-    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    expect(screen.getByText("Age must be 14–120")).toBeTruthy();
     // Keystrokes never buzz.
     expect(mockNotification).not.toHaveBeenCalled();
 
     fireEvent.change(age, { target: { value: "30" } });
-    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+    expect(screen.queryByText("Age must be 14–120")).toBeNull();
   });
 
   it("an age with no error shown stays quiet while an invalid value is typed", () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "5" } });
-    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Age, years"), {
+      target: { value: "5" },
+    });
+    expect(screen.queryByText("Age must be 14–120")).toBeNull();
   });
 
   // Spec §5.8 guard: the field's InlineError is the one announcement — the
   // input's hint never repeats the message.
   it("a refused field's message appears once in the a11y tree", () => {
     renderComponent(<GoalSetupScreen />);
-    const age = screen.getByLabelText("Age");
+    const age = screen.getByLabelText("Age, years");
     fireEvent.change(age, { target: { value: "5" } });
     fireEvent.blur(age);
-    expect(screen.getAllByText("Age must be 13–120")).toHaveLength(1);
+    expect(screen.getAllByText("Age must be 14–120")).toHaveLength(1);
     expect(age.getAttribute("aria-hint") ?? "").not.toContain(
-      "Age must be 13–120",
+      "Age must be 14–120",
     );
   });
 
   it("refuses to calculate with an out-of-range field and says why", () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
       target: { value: "30" },
     });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "500" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -338,15 +363,89 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     );
   });
 
+  // Privacy audit H2: body measurements are health data.
+  describe("without the health-data consent", () => {
+    beforeEach(() => {
+      consent.given = false;
+      mockGrant.mockReset().mockResolvedValue(undefined);
+      mockConfirm.mockReset();
+      mockApiRequest.mockClear();
+    });
+    afterEach(() => {
+      consent.given = true;
+    });
+
+    function fillAndPressCalculate() {
+      renderComponent(<GoalSetupScreen />);
+      fireEvent.change(screen.getByLabelText("Age, years"), {
+        target: { value: "30" },
+      });
+      fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
+        target: { value: "70" },
+      });
+      fireEvent.change(screen.getByLabelText("Height, centimetres"), {
+        target: { value: "170" },
+      });
+      fireEvent.click(screen.getByLabelText("Male"));
+      fireEvent.click(screen.getByLabelText("Sedentary"));
+      fireEvent.click(screen.getByLabelText("Lose Weight"));
+      fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    }
+
+    it("Calculate asks for the consent and sends nothing until it is given", () => {
+      fillAndPressCalculate();
+
+      expect(mockConfirm).toHaveBeenCalledTimes(1);
+      expect(mockConfirm.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ confirmLabel: "Agree" }),
+      );
+      expect(mockGrant).not.toHaveBeenCalled();
+      expect(mockApiRequest).not.toHaveBeenCalledWith(
+        "POST",
+        "/api/goals/calculate",
+        expect.anything(),
+      );
+    });
+
+    it("agreeing records the consent, then calculates", async () => {
+      fillAndPressCalculate();
+
+      mockConfirm.mock.calls[0][0].onConfirm();
+
+      await waitFor(() => {
+        expect(mockApiRequest).toHaveBeenCalledWith(
+          "POST",
+          "/api/goals/calculate",
+          expect.objectContaining({ age: 30 }),
+        );
+      });
+      expect(mockGrant).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not calculate when recording the consent fails", async () => {
+      mockGrant.mockRejectedValue(new Error("offline"));
+      fillAndPressCalculate();
+
+      mockConfirm.mock.calls[0][0].onConfirm();
+
+      await waitFor(() => expect(mockGrant).toHaveBeenCalledTimes(1));
+      expect(mockApiRequest).not.toHaveBeenCalledWith(
+        "POST",
+        "/api/goals/calculate",
+        expect.anything(),
+      );
+    });
+  });
+
   it("sends a comma-decimal weight as the number typed", async () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
       target: { value: "30" },
     });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "70,5" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -366,13 +465,13 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
 
   it("refuses to save an out-of-range calorie target and says why", async () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
       target: { value: "30" },
     });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "70" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -424,7 +523,7 @@ describe("GoalSetupScreen — Calculate and Save point at what's missing", () =>
 
     fireEvent.click(calculate);
 
-    expect(document.activeElement).toBe(screen.getByLabelText("Age"));
+    expect(document.activeElement).toBe(screen.getByLabelText("Age, years"));
     expect(mockNotification).toHaveBeenCalledWith(
       Haptics.NotificationFeedbackType.Error,
     );
@@ -434,18 +533,24 @@ describe("GoalSetupScreen — Calculate and Save point at what's missing", () =>
 
   it("focuses the first missing number field, skipping filled ones", () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("Age, years"), {
+      target: { value: "30" },
+    });
     fireEvent.click(screen.getByLabelText("Calculate my goals"));
-    expect(document.activeElement).toBe(screen.getByLabelText("Weight"));
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Weight, kilograms"),
+    );
   });
 
   it("with only a choice missing, refuses with the error haptic", () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "70" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -462,27 +567,33 @@ describe("GoalSetupScreen — Calculate and Save point at what's missing", () =>
 
   it("an out-of-range weight on Calculate moves focus to Weight", () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "500" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
     fireEvent.click(screen.getByLabelText("Sedentary"));
     fireEvent.click(screen.getByLabelText("Lose Weight"));
     fireEvent.click(screen.getByLabelText("Calculate my goals"));
-    expect(document.activeElement).toBe(screen.getByLabelText("Weight"));
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Weight, kilograms"),
+    );
   });
 
   it("Save with a cleared calorie target names it and focuses it", async () => {
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "70" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -517,11 +628,13 @@ describe("GoalSetupScreen — Calculate with only a choice missing", () => {
   it("announces what's still needed once per press", async () => {
     const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
     renderComponent(<GoalSetupScreen />);
-    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
-    fireEvent.change(screen.getByLabelText("Weight"), {
+    fireEvent.change(screen.getByLabelText("Age, years"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText("Weight, kilograms"), {
       target: { value: "70" },
     });
-    fireEvent.change(screen.getByLabelText("Height"), {
+    fireEvent.change(screen.getByLabelText("Height, centimetres"), {
       target: { value: "170" },
     });
     fireEvent.click(screen.getByLabelText("Male"));
@@ -580,4 +693,28 @@ describe("GoalSetupScreen — macro targets while the plan is unknown", () => {
       screen.queryByLabelText("Daily protein target (Premium required)"),
     ).toBeNull();
   });
+});
+
+// Android TalkBack device check 2026-11-07: the unit ("years", "kg", "cm")
+// was its own focus stop after an input labelled only "Age", and the visible
+// title above it a third stop repeating the label. Same convention as the
+// receipt quantity box: the unit is named in the input's label, and the unit
+// and title text are hidden so nothing is read twice.
+describe("GoalSetupScreen — number fields name their unit", () => {
+  it.each([
+    ["Age", "years", "years"],
+    ["Weight", "kg", "kilograms"],
+    ["Height", "cm", "centimetres"],
+  ])(
+    "%s field is labelled with its unit (%s); unit and title text hidden",
+    (label, unit, spoken) => {
+      renderComponent(<GoalSetupScreen />);
+      const input = screen.getByLabelText(`${label}, ${spoken}`);
+      expect(input.tagName).toBe("INPUT");
+      const unitText = screen.getByText(unit, { exact: true });
+      expect(unitText.closest('[aria-hidden="true"]')).not.toBeNull();
+      const title = screen.getByText(label, { exact: true });
+      expect(title.closest('[aria-hidden="true"]')).not.toBeNull();
+    },
+  );
 });

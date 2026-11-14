@@ -85,7 +85,7 @@ import type {
 import { finderBlockFromMetadata } from "@shared/schemas/recipe-finder";
 import { generateRemixChips, type RemixChip } from "@/lib/remix-chips";
 import { apiRequest } from "@/lib/query-client";
-import { QUERY_KEYS } from "@/lib/query-keys";
+import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
 
 type RecipeChatRouteProp = RouteProp<RootStackParamList, "RecipeChat">;
 
@@ -261,15 +261,8 @@ export default function RecipeChatScreen() {
   const createConversation = useCreateConversation();
 
   // Fetch user dietary profile for remix chip generation
-  const { data: userProfile } = useQuery<{
-    allergies?: { name: string; severity: "mild" | "moderate" | "severe" }[];
-    dietType?: string | null;
-  }>({
-    queryKey: QUERY_KEYS.dietaryProfile,
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/user/dietary-profile");
-      return res.json();
-    },
+  const { data: userProfile } = useQuery({
+    ...dietaryProfileQueryOptions,
     enabled: isRemixMode,
   });
 
@@ -370,10 +363,15 @@ export default function RecipeChatScreen() {
     announce: { message: "Recipe response received", always: false },
   });
 
-  // Clear optimistic user message once streaming completes
-  useEffect(() => {
+  // Clear optimistic user message once streaming completes. Adjusted during
+  // render on the isStreaming transition (React's "store the previous prop"
+  // pattern) rather than in an effect; seeded from isStreaming, so mount is a
+  // no-op, as the effect's first run was (the message starts null).
+  const [prevIsStreaming, setPrevIsStreaming] = useState(isStreaming);
+  if (prevIsStreaming !== isStreaming) {
+    setPrevIsStreaming(isStreaming);
     if (!isStreaming) setPendingUserMessage(null);
-  }, [isStreaming]);
+  }
 
   // isStreaming and conversationId mirrored to refs so the unmount cleanup
   // below reads their freshest values without needing either in the effect's

@@ -30,6 +30,7 @@ export function useSuggestionInstructions({
     queryKey: [
       `/api/items/${itemId}/suggestions/${suggestionIndex}/instructions`,
       suggestionTitle,
+      suggestionType,
       cacheId,
     ],
     queryFn: async () => {

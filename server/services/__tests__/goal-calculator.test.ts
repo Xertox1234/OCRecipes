@@ -328,11 +328,25 @@ describe("Goal Calculator", () => {
       expect(result.success).toBe(false);
     });
 
-    it("rejects age below 13", () => {
+    // Quebec Law 25: consent for a person under 14 comes from a parent, so
+    // the app's floor is 14 (privacy audit G5, owner ruling 2026-11-10).
+    it("accepts age 14, the minimum", () => {
+      const result = userPhysicalProfileSchema.safeParse({
+        weight: 70,
+        height: 175,
+        age: 14,
+        gender: "male",
+        activityLevel: "moderate",
+        primaryGoal: "maintain",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects age below 14", () => {
       const invalidProfile = {
         weight: 70,
         height: 175,
-        age: 10,
+        age: 13,
         gender: "male",
         activityLevel: "moderate",
         primaryGoal: "maintain",

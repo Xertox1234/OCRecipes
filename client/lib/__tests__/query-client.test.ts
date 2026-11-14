@@ -501,3 +501,53 @@ describe("request deadlines and cancellation (R16 / N3)", () => {
     await settled;
   });
 });
+
+// Privacy audit H3: a refused AI request reopens the AI-sharing question only
+// when the user started it. Someone who keeps AI off must not be asked again
+// by a screen loading in the background.
+describe("apiRequest — AI-sharing refusal", () => {
+  const refusal = () =>
+    new Response(
+      JSON.stringify({ error: "off", code: "AI_SHARING_REQUIRED" }),
+      { status: 403 },
+    );
+
+  beforeEach(() => {
+    process.env.EXPO_PUBLIC_DOMAIN = "localhost:3000";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => refusal()),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("raises the signal for a write", async () => {
+    const { apiRequest } = await import("../query-client");
+    const { onAiSharingRequired } = await import("../ai-sharing-events");
+    const listener = vi.fn();
+    const off = onAiSharingRequired(listener);
+
+    await expect(
+      apiRequest("POST", "/api/recipes/generate", { a: 1 }, undefined, null),
+    ).rejects.toMatchObject({ code: "AI_SHARING_REQUIRED" });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it("stays quiet for a read", async () => {
+    const { apiRequest } = await import("../query-client");
+    const { onAiSharingRequired } = await import("../ai-sharing-events");
+    const listener = vi.fn();
+    const off = onAiSharingRequired(listener);
+
+    await expect(
+      apiRequest("GET", "/api/suggestions", undefined, undefined, null),
+    ).rejects.toMatchObject({ code: "AI_SHARING_REQUIRED" });
+
+    expect(listener).not.toHaveBeenCalled();
+    off();
+  });
+});

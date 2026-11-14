@@ -11,11 +11,12 @@
  */
 import type { z } from "zod";
 
-function formatPath(path: readonly (string | number)[]): string {
+function formatPath(path: readonly PropertyKey[]): string {
   if (path.length === 0) return "(root)";
   return path.reduce<string>((acc, seg) => {
     if (typeof seg === "number") return `${acc}[${seg}]`;
-    return acc === "" ? seg : `${acc}.${seg}`;
+    const key = String(seg); // zod 4 issue paths may hold symbols
+    return acc === "" ? key : `${acc}.${key}`;
   }, "");
 }
 

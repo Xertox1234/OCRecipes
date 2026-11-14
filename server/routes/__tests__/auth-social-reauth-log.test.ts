@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { reauthenticate } from "../auth-social";
+import { reauthenticate } from "../../services/auth-session";
 import { storage } from "../../storage";
 
 const { mockLog, mockGetKey } = vi.hoisted(() => ({

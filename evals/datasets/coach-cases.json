@@ -938,5 +938,86 @@
       "frequentFoodsSummary": "Greek yogurt (12×), oatmeal (9×)"
     },
     "scoreDimensions": ["personalization", "helpfulness"]
+  },
+  {
+    "id": "shape-general-question-01",
+    "category": "helpfulness",
+    "description": "General nutrition question — answer first, short, and no closing targets sentence (show-the-work spec 2026-11-09)",
+    "userMessage": "Is olive oil healthy?",
+    "context": {
+      "goals": { "calories": 2000, "protein": 120, "carbs": 250, "fat": 65 },
+      "todayIntake": {
+        "calories": 900,
+        "protein": 60,
+        "carbs": 160,
+        "fat": 45
+      },
+      "dietaryProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "maxWords": 90,
+      "mustNotContain": [
+        "calories? (left|remaining)",
+        "g protein (left|remaining)"
+      ]
+    },
+    "scoreDimensions": ["helpfulness", "tone"]
+  },
+  {
+    "id": "shape-fits-question-01",
+    "category": "personalization",
+    "description": "Whether something fits — the answer depends on the numbers, so one figure appears, and the reply stays short",
+    "userMessage": "Can I fit a burger tonight?",
+    "context": {
+      "goals": { "calories": 2000, "protein": 120, "carbs": 250, "fat": 65 },
+      "todayIntake": {
+        "calories": 1400,
+        "protein": 60,
+        "carbs": 160,
+        "fat": 45
+      },
+      "dietaryProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "maxWords": 90,
+      "mustContain": ["\\d"]
+    },
+    "scoreDimensions": ["helpfulness", "personalization"]
+  },
+  {
+    "id": "shape-off-topic-01",
+    "category": "edge-case",
+    "description": "Off-topic message — a light redirect with no numbers and no targets sentence",
+    "userMessage": "What's a good movie tonight?",
+    "context": {
+      "goals": { "calories": 2000, "protein": 120, "carbs": 250, "fat": 65 },
+      "todayIntake": {
+        "calories": 900,
+        "protein": 60,
+        "carbs": 160,
+        "fat": 45
+      },
+      "dietaryProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "maxWords": 60,
+      "mustNotContain": [
+        "calories? (left|remaining)",
+        "g protein (left|remaining)"
+      ]
+    },
+    "scoreDimensions": ["tone"]
   }
 ]

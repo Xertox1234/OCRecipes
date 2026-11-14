@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { isSafeStoredFilename } from "./recipe-image-keys";
 import {
   S3Client,
   PutObjectCommand,
@@ -97,11 +98,7 @@ function assertSize(buffer: Buffer): void {
  * vector. Single-segment safe charset only.
  */
 function assertSafeFilenameOverride(filename: string): void {
-  if (
-    !/^[A-Za-z0-9._-]+$/.test(filename) ||
-    filename.includes("..") ||
-    /^\.+$/.test(filename)
-  ) {
+  if (!isSafeStoredFilename(filename)) {
     throw new Error(`Unsafe filename override: ${filename}`);
   }
 }
@@ -222,7 +219,7 @@ const KIND_PREFIX: Record<ImageKind, string> = {
  * `recipe-images/`). The AWS SDK provides no key-prefix enforcement, and
  * some image URLs (meal-plan recipes) are client-suppliable — without this
  * guard, a crafted URL could delete an arbitrary bucket object (IDOR).
- * A URL whose derived key does not start with the expected prefix is a
+ * A URL whose derived key is not `<expected prefix>/<one filename>` is a
  * silent no-op, consistent with the unknown-URL behavior.
  */
 export async function deleteImage(
@@ -242,6 +239,8 @@ export async function deleteImage(
       const key = cleanUrl.slice(normalizedBase.length + 1);
       // Prefix guard: only delete objects of the expected kind.
       if (!key.startsWith(`${prefix}/`)) return;
+      // Shape guard: every key this module stores is <prefix>/<one filename>.
+      if (!isSafeStoredFilename(key.slice(prefix.length + 1))) return;
       await client(cfg).send(
         new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }),
       );

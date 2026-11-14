@@ -5,9 +5,9 @@
  * Child cards are mocked to thin doubles so this isolates the switch logic.
  */
 import React from "react";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import { FadeInDown } from "react-native-reanimated";
+import { FadeInUp } from "react-native-reanimated";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import BlockRenderer from "../index";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -31,7 +31,13 @@ vi.mock("../CommitmentCard", () => ({
   default: () => <div data-testid="r-commitment" />,
 }));
 vi.mock("../QuickReplies", () => ({
-  default: () => <div data-testid="r-quick" />,
+  default: (p: { animateEntry?: boolean; entryDelayMs?: number }) => (
+    <div
+      data-testid="r-quick"
+      data-animate={String(!!p.animateEntry)}
+      data-delay={String(p.entryDelayMs ?? "")}
+    />
+  ),
 }));
 vi.mock("../RecipeCard", () => ({
   default: () => <div data-testid="r-recipe" />,
@@ -141,42 +147,64 @@ describe("BlockRenderer", () => {
 });
 
 describe("BlockRenderer — entrance", () => {
+  const card = blocks.action_card;
   const quickReplies = {
     type: "quick_replies",
     options: [{ label: "Yes", message: "Yes" }],
   } as unknown as CoachBlock;
 
-  let springify: ReturnType<typeof vi.spyOn>;
+  let delay: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     a11y.reducedMotion = false;
-    springify = vi.spyOn(
-      FadeInDown as unknown as { springify: () => unknown },
-      "springify",
+    delay = vi.spyOn(
+      FadeInUp as unknown as { delay: (ms: number) => unknown },
+      "delay",
     );
   });
   afterEach(() => {
-    springify.mockRestore();
+    delay.mockRestore();
   });
 
-  // Positive control: the live footer copy animates in.
-  it("animates in when asked", () => {
-    renderComponent(<BlockRenderer block={quickReplies} animateEntry />);
-    expect(springify).toHaveBeenCalled();
-    expect(screen.getByTestId("r-quick")).toBeTruthy();
+  // Positive control: the live footer copy fades in on its beat.
+  it("fades in after its stagger delay when asked", () => {
+    renderComponent(
+      <BlockRenderer block={card} animateEntry entryDelayMs={90} />,
+    );
+    expect(delay).toHaveBeenCalledWith(90);
+    expect(screen.getByTestId("r-action")).toBeTruthy();
+  });
+
+  // Each chip of a quick-reply row enters on its own beat, so the row
+  // takes the entrance over instead of fading in as one piece.
+  it("hands a quick-reply row its entrance to stagger chip by chip", () => {
+    renderComponent(
+      <BlockRenderer block={quickReplies} animateEntry entryDelayMs={45} />,
+    );
+    const row = screen.getByTestId("r-quick");
+    expect(row.getAttribute("data-animate")).toBe("true");
+    expect(row.getAttribute("data-delay")).toBe("45");
+    expect(delay).not.toHaveBeenCalled();
   });
 
   // Saved messages (history, scroll-back, the swap after a reply) appear
   // without replaying an entrance.
   it("does not animate by default", () => {
+    renderComponent(<BlockRenderer block={card} />);
     renderComponent(<BlockRenderer block={quickReplies} />);
-    expect(springify).not.toHaveBeenCalled();
+    expect(delay).not.toHaveBeenCalled();
+    expect(screen.getByTestId("r-quick").getAttribute("data-animate")).toBe(
+      "false",
+    );
   });
 
   it("does not animate under reduced motion", () => {
     a11y.reducedMotion = true;
+    renderComponent(<BlockRenderer block={card} animateEntry />);
     renderComponent(<BlockRenderer block={quickReplies} animateEntry />);
-    expect(springify).not.toHaveBeenCalled();
-    expect(screen.getByTestId("r-quick")).toBeTruthy();
+    expect(delay).not.toHaveBeenCalled();
+    expect(screen.getByTestId("r-quick").getAttribute("data-animate")).toBe(
+      "false",
+    );
   });
 
   it("still renders nothing for an unknown block type", () => {
@@ -187,5 +215,52 @@ describe("BlockRenderer — entrance", () => {
       />,
     );
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("BlockRenderer write_card", () => {
+  it("renders a write card and reports edits with its card id", () => {
+    const onWriteCardEdit = vi.fn();
+    renderComponent(
+      <BlockRenderer
+        block={{
+          type: "write_card",
+          cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+          kind: "food",
+          status: "live",
+          payload: {
+            items: [
+              {
+                name: "Large eggs",
+                unitLabel: "egg",
+                perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+                count: 2,
+                source: "lookup",
+              },
+            ],
+            mealType: "breakfast",
+            day: "today",
+          },
+        }}
+        onWriteCardEdit={onWriteCardEdit}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Log 144 cal" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "More Large eggs" }));
+    expect(onWriteCardEdit).toHaveBeenCalledWith(
+      "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+      { counts: [3] },
+    );
+  });
+});
+
+describe("BlockRenderer — checked_trail", () => {
+  it("draws a checked_trail block as the trail line", () => {
+    renderComponent(
+      <BlockRenderer
+        block={{ type: "checked_trail", items: ["today's log"] }}
+      />,
+    );
+    expect(screen.getByText("Checked: today's log")).toBeTruthy();
   });
 });

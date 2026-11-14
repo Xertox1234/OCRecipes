@@ -68,6 +68,33 @@ describe("useMealPlanRecipes", () => {
         expect.stringContaining("/api/recipes/browse?query=tacos"),
       );
     });
+
+    // Perf audit 2026-11-08 L3: each debounced search term is a new query
+    // key; without placeholder data the list emptied to the loading skeleton
+    // on every term while the next page fetched.
+    it("keeps the previous term's results while the next term loads", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const previous = {
+        community: [],
+        personal: [{ id: 1, title: "Oats" }],
+        frequent: [],
+      };
+      queryClient.setQueryData(
+        ["/api/recipes/browse", { query: "o" }],
+        previous,
+      );
+      mockApiRequest.mockReturnValue(new Promise(() => {})); // never settles
+
+      const { result, rerender } = renderHook(
+        ({ query }) => useUnifiedRecipes({ query }),
+        { wrapper, initialProps: { query: "o" } },
+      );
+      expect(result.current.data).toEqual(previous);
+
+      rerender({ query: "oa" });
+      expect(result.current.data).toEqual(previous);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
   describe("useMealPlanRecipeDetail", () => {

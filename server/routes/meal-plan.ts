@@ -1,13 +1,11 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { civilDateToInstant } from "../lib/civil-date";
-import { generateRecipeImage } from "../services/recipe-generation";
+import { autoGenerateRecipeImage } from "../services/recipe-auto-image";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { isValidCalendarDate } from "../utils/date-validation";
 import {
   mealPlanRateLimit,
@@ -17,13 +15,12 @@ import {
 } from "./_rate-limiters";
 import {
   checkAiConfigured,
+  checkAiSharing,
   checkPremiumFeature,
   formatZodError,
-  getPremiumFeatures,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
-  parseTimezone,
 } from "./_helpers";
 
 import { logger, toError } from "../lib/logger";
@@ -58,45 +55,6 @@ function inferRecipeMealTypes(
   return inferMealTypes(
     normalized.title ?? title,
     normalized.ingredients?.map((i) => i.name),
-  );
-}
-
-/**
- * Auto-generate a hero image for a recipe saved without one (non-blocking).
- * Premium only: free users keep the placeholder and no image call is made.
- * Premium users are bounded by a DB-backed daily cap claimed BEFORE the paid
- * call; a refused claim just skips the image (the save already succeeded).
- */
-function fireRecipeImageGen(
-  recipe: {
-    id: number;
-    title: string;
-    cuisine: string | null;
-    mealTypes: string[] | null;
-  },
-  req: AuthenticatedRequest,
-): void {
-  const userId = req.userId;
-  fireAndForget(
-    "recipe-image-gen",
-    (async () => {
-      const features = await getPremiumFeatures(req);
-      if (!features.recipeAutoImages) return;
-      const claimed = await storage.claimDailyAiCall(
-        userId,
-        "recipeAutoImage",
-        AI_DAILY_CAPS.recipeAutoImage,
-      );
-      if (!claimed) return;
-      const imageUrl = await generateRecipeImage({
-        title: recipe.title,
-        cuisine: recipe.cuisine,
-        mealTypes: recipe.mealTypes,
-      });
-      if (imageUrl) {
-        await storage.updateMealPlanRecipe(recipe.id, userId, { imageUrl });
-      }
-    })(),
   );
 }
 
@@ -207,7 +165,12 @@ export function register(app: Express): void {
         }
 
         // Auto-generate image if none provided (async, non-blocking)
-        if (!recipe.imageUrl) fireRecipeImageGen(recipe, req);
+        if (!recipe.imageUrl) {
+          fireAndForget(
+            "recipe-image-gen",
+            autoGenerateRecipeImage(recipe, req.userId),
+          );
+        }
 
         res.status(201).json(recipe);
       } catch (error) {
@@ -229,8 +192,13 @@ export function register(app: Express): void {
           return;
         }
 
+        // zod 4 applies .default() even inside .partial(): unwrap the
+        // create-time sourceType default, or every edit resets it.
         const updateSchema = createMealPlanRecipeSchema
           .omit({ ingredients: true })
+          .extend({
+            sourceType: createMealPlanRecipeSchema.shape.sourceType.unwrap(),
+          })
           .partial();
         const parsed = updateSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -397,14 +365,17 @@ export function register(app: Express): void {
             },
           ]);
           if (!recipeData.imageUrl) {
-            fireRecipeImageGen(
-              {
-                id: created.recipeId,
-                title: recipeData.title,
-                cuisine: recipeData.cuisine ?? null,
-                mealTypes,
-              },
-              req,
+            fireAndForget(
+              "recipe-image-gen",
+              autoGenerateRecipeImage(
+                {
+                  id: created.recipeId,
+                  title: recipeData.title,
+                  cuisine: recipeData.cuisine ?? null,
+                  mealTypes,
+                },
+                req.userId,
+              ),
             );
           }
           res.status(201).json({
@@ -547,39 +518,9 @@ export function register(app: Express): void {
           return;
         }
 
-        // Check for duplicate confirmation.
-        //
-        // `plannedDate` is a `yyyy-mm-dd` date column, so it must be converted
-        // to an instant inside that civil day IN THE USER'S ZONE. The previous
-        // `new Date(plannedDate)` produced UTC midnight, so this searched the
-        // UTC day, which overlaps the user's actual day only partially.
-        //
-        // This pre-check is an optimisation, not the guarantee: correctness
-        // comes from `daily_logs_unique_meal_plan_confirm`, and the catch below
-        // maps a unique violation to the same 409. Note that index is on
-        // `(user_id, meal_plan_item_id)` with NO date component, so a duplicate
-        // that slips past here still returns the identical response — the cost
-        // of the old behaviour was a wasted round-trip, not a wrong answer.
-        // (A pre-check that actually matched the constraint would be an
-        // existence query on those two columns; this one bounds
-        // `daily_logs.logged_at` by `plannedDate`'s day, and those two columns
-        // have no enforced relationship — confirming a Sept 2 meal on Sept 4
-        // misses in every timezone. Left as-is: out of scope here.)
-        const tz = parseTimezone(req.headers["x-timezone"]);
-        const confirmedIds = await storage.getConfirmedMealPlanItemIds(
-          req.userId,
-          civilDateToInstant(mealPlanItem.plannedDate, tz),
-          tz,
-        );
-        if (confirmedIds.includes(id)) {
-          sendError(
-            res,
-            409,
-            "Meal plan item already confirmed",
-            ErrorCode.ALREADY_CONFIRMED,
-          );
-          return;
-        }
+        // No duplicate pre-check: the unique index
+        // `daily_logs_unique_meal_plan_confirm` (user_id, meal_plan_item_id)
+        // is the guarantee, and the catch below maps its violation to 409.
 
         // Create daily log entry
         const dailyLog = await storage.createDailyLog({
@@ -621,6 +562,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         const features = await checkPremiumFeature(
           req,
@@ -700,14 +642,16 @@ export function register(app: Express): void {
           prepTimeMinutes: z.number().int().min(0).max(1440),
           cookTimeMinutes: z.number().int().min(0).max(1440),
           difficulty: z.string().max(50).optional(),
-          ingredients: z.array(
-            z.object({
-              name: z.string().min(1).max(200),
-              quantity: z.coerce.string().optional().nullable(),
-              unit: z.string().max(50).optional().nullable(),
-            }),
-          ),
-          instructions: z.array(z.string()).max(100).optional(),
+          ingredients: z
+            .array(
+              z.object({
+                name: z.string().min(1).max(200),
+                quantity: z.coerce.string().optional().nullable(),
+                unit: z.string().max(50).optional().nullable(),
+              }),
+            )
+            .max(200),
+          instructions: z.array(z.string().max(2000)).max(100).optional(),
           dietTags: z.array(z.string().max(50)).max(20).optional(),
           // Bounded like every other nutrition boundary: an unbounded value
           // stringifies to "1e+21" and fails the numeric(10,2) insert.

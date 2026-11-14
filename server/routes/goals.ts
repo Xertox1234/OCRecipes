@@ -17,6 +17,7 @@ import {
   parseTimezone,
 } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
+import { hasHealthConsent, sendHealthConsentRequired } from "./_health-consent";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
 // Zod schema for manual goal update
@@ -59,6 +60,12 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = userPhysicalProfileSchema.parse(req.body);
+
+        // Weight, height, age, gender and activity are health data: they are
+        // stored only for a user who agreed to the health-data consent.
+        if (!(await hasHealthConsent(req.userId))) {
+          return sendHealthConsentRequired(res);
+        }
 
         // Calculate goals using the service
         const goals = calculateGoals(validated);

@@ -1862,11 +1862,21 @@ describe("default OpenRouter client construction", () => {
         constructor(opts: ConstructorParameters<typeof actual.default>[0]) {
           super(opts);
           ctorOpts.push(opts as Record<string, unknown>);
+          // No network: the first call only has to construct the client.
+          Object.defineProperty(this, "chat", {
+            value: {
+              completions: {
+                create: () => Promise.reject(new Error("no network in test")),
+              },
+            },
+          });
         }
       }
       return { ...actual, default: Spy };
     });
-    await import("../ai-client");
+    const { aiChat } = await import("../ai-client");
+    // Clients are built on the first call, not at import.
+    await aiChat(F, params).catch(() => undefined);
     const openrouter = ctorOpts.find(
       (o) => o.baseURL === "https://openrouter.ai/api/v1",
     );

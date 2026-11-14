@@ -475,6 +475,72 @@ describe("SimpleEntrySheet", () => {
         ).toBeDefined();
       });
     });
+
+    it("starting and stopping dictation while open keeps servings, error and dish name", async () => {
+      mockParseFoodText.mockResolvedValue({ items: [] });
+      const { rerender } = renderComponent(
+        <SimpleEntrySheetContent {...defaultProps} />,
+      );
+
+      fireEvent.click(screen.getByLabelText("Increase servings"));
+      fireEvent.change(screen.getByLabelText("Dish name"), {
+        target: { value: "mystery stew" },
+      });
+      fireEvent.click(screen.getByText("Add"));
+      const parseError =
+        "Couldn't estimate nutrition. Try a simpler description.";
+      await waitFor(() => {
+        expect(screen.getByText(parseError)).toBeDefined();
+      });
+
+      // Dictation starts (no transcript yet), then stops. The content is
+      // React.memo, so a fresh onDismiss forces the re-render the real
+      // hook's state change would cause.
+      mockIsListening = true;
+      rerender(
+        <SimpleEntrySheetContent {...defaultProps} onDismiss={vi.fn()} />,
+      );
+      mockIsListening = false;
+      rerender(
+        <SimpleEntrySheetContent {...defaultProps} onDismiss={vi.fn()} />,
+      );
+
+      expect(screen.getByText("2")).toBeDefined();
+      expect(screen.getByText(parseError)).toBeDefined();
+      expect(
+        (screen.getByLabelText("Dish name") as HTMLInputElement).value,
+      ).toBe("mystery stew");
+      expect(mockStopListening).not.toHaveBeenCalled();
+    });
+
+    it("stops an in-progress dictation when the sheet closes", () => {
+      mockIsListening = true;
+      const { rerender } = renderComponent(
+        <SimpleEntrySheetContent {...defaultProps} />,
+      );
+      expect(mockStopListening).not.toHaveBeenCalled();
+
+      rerender(<SimpleEntrySheetContent {...defaultProps} mealType={null} />);
+      expect(mockStopListening).toHaveBeenCalledOnce();
+    });
+
+    it("reopening the sheet resets servings and dish name", () => {
+      const { rerender } = renderComponent(
+        <SimpleEntrySheetContent {...defaultProps} />,
+      );
+      fireEvent.click(screen.getByLabelText("Increase servings"));
+      fireEvent.change(screen.getByLabelText("Dish name"), {
+        target: { value: "mystery stew" },
+      });
+
+      rerender(<SimpleEntrySheetContent {...defaultProps} mealType={null} />);
+      rerender(<SimpleEntrySheetContent {...defaultProps} />);
+
+      expect(screen.getByText("1")).toBeDefined();
+      expect(
+        (screen.getByLabelText("Dish name") as HTMLInputElement).value,
+      ).toBe("");
+    });
   });
 });
 

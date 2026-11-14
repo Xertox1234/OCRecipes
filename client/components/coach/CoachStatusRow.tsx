@@ -6,6 +6,9 @@ import { PulsingDot } from "@/components/TypingDots";
 
 interface CoachStatusRowProps {
   statusText: string;
+  /** Announce the first value too: a step that appears under reply text
+   *  mounts a fresh row, and nothing else has announced it. */
+  announceOnMount?: boolean;
 }
 
 /**
@@ -13,9 +16,12 @@ interface CoachStatusRowProps {
  * streaming text has been drained to the screen).  Used by both CoachChat
  * (full-screen) and CoachOverlayContent (modal overlay).
  */
-export function CoachStatusRow({ statusText }: CoachStatusRowProps) {
+export function CoachStatusRow({
+  statusText,
+  announceOnMount = false,
+}: CoachStatusRowProps) {
   const { theme } = useTheme();
-  const prevStatusRef = useRef("");
+  const prevStatusRef = useRef(announceOnMount ? "\u0000" : "");
 
   // Announce phase changes (e.g. "Searching your data...") to iOS VoiceOver.
   // Skip the first value — the parent already announces "Coach is thinking..."

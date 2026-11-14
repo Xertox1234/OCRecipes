@@ -33,6 +33,11 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
+import { useHealthConsent } from "@/hooks/useHealthConsent";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
+import { HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { parseDecimalInput } from "@/lib/number-input";
 import { announceTogether } from "@/lib/announce-together";
 import {
@@ -45,6 +50,8 @@ import {
   heightToCm,
   weightUnitLabel,
   heightUnitLabel,
+  weightUnitSpoken,
+  heightUnitSpoken,
 } from "@shared/lib/units";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -190,6 +197,7 @@ function NumberInput({
   onBlur,
   error,
   unit,
+  spokenUnit,
   placeholder,
 }: {
   inputRef: React.RefObject<TextInputInstance | null>;
@@ -199,13 +207,24 @@ function NumberInput({
   onBlur: () => void;
   error: string | null;
   unit: string;
+  /** Unit as a screen reader should say it; defaults to `unit`. */
+  spokenUnit?: string;
   placeholder: string;
 }) {
   const { theme } = useTheme();
 
   return (
     <View style={styles.numberInputContainer}>
-      <ThemedText type="body" style={styles.inputLabel}>
+      {/* The input's own name carries the label and unit, so the visible
+          title and unit text are hidden — otherwise a screen reader stops on
+          the title, then the field, then the unit (Android device check
+          2026-11-07). Same convention as the receipt quantity box. */}
+      <ThemedText
+        type="body"
+        style={styles.inputLabel}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {label}
       </ThemedText>
       <View style={styles.inputRow}>
@@ -221,9 +240,14 @@ function NumberInput({
           keyboardType="numeric"
           placeholder={placeholder}
           placeholderTextColor={withOpacity(theme.textSecondary, 0.6)}
-          accessibilityLabel={label}
+          accessibilityLabel={`${label}, ${spokenUnit ?? unit}`}
         />
-        <ThemedText type="body" style={{ color: theme.textSecondary }}>
+        <ThemedText
+          type="body"
+          style={{ color: theme.textSecondary }}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
           {unit}
         </ThemedText>
       </View>
@@ -240,6 +264,8 @@ export default function GoalSetupScreen() {
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<GoalSetupScreenNavigationProp>();
   const queryClient = useQueryClient();
+  const { consented, grant: grantConsent } = useHealthConsent();
+  const { confirm, ConfirmationModal } = useConfirmationModal();
   const { updateUser } = useAuthContext();
   const canSetMacros = usePremiumFeature("macroGoals");
   // While the plan is unknown the fields stay read-only (a free user's typed
@@ -410,8 +436,8 @@ export default function GoalSetupScreen() {
         dailyCalorieGoal: numberOf(manualCalories),
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailyBudget });
       // After the awaited updateUser, so a failed local update never
       // celebrates. The toast survives the goBack and fires its own haptic.
       toast.success("Goals saved");
@@ -448,7 +474,23 @@ export default function GoalSetupScreen() {
       return;
     }
     if (refused.length > 0) return;
-    calculateMutation.mutate();
+    // Body measurements are health data: no consent, no health data.
+    if (consented) {
+      calculateMutation.mutate();
+      return;
+    }
+    confirm({
+      ...HEALTH_CONSENT_PROMPT,
+      onConfirm: () => {
+        grantConsent().then(
+          () => calculateMutation.mutate(),
+          (err: unknown) => {
+            logger.error("Health-data consent save failed", err);
+            toast.error("Couldn't save your consent. Please try again.");
+          },
+        );
+      },
+    });
   };
 
   const handleSave = () => {
@@ -536,6 +578,7 @@ export default function GoalSetupScreen() {
                 onBlur={blurField("weight")}
                 error={weightField.error}
                 unit={weightUnitLabel(unit)}
+                spokenUnit={weightUnitSpoken(unit)}
                 placeholder={unit === "imperial" ? "e.g. 154" : "e.g. 70"}
               />
               <NumberInput
@@ -546,6 +589,7 @@ export default function GoalSetupScreen() {
                 onBlur={blurField("height")}
                 error={heightField.error}
                 unit={heightUnitLabel(unit)}
+                spokenUnit={heightUnitSpoken(unit)}
                 placeholder={unit === "imperial" ? "e.g. 67" : "e.g. 170"}
               />
             </View>
@@ -875,6 +919,7 @@ export default function GoalSetupScreen() {
           </Animated.View>
         )}
       </ScreenScrollView>
+      <ConfirmationModal />
     </ThemedView>
   );
 }

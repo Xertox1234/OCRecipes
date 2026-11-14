@@ -6,6 +6,7 @@ module: client
 tags: [react, hooks, useeffect, useref, transitions]
 applies_to: [client/screens/**/*.tsx, client/components/**/*.tsx]
 created: '2026-05-13'
+last_updated: 2026-11-10
 ---
 
 # Ref guard for one-shot effects (fire once per boolean transition)
@@ -56,3 +57,15 @@ When NOT to use:
 
 - [Cross-platform live region announcements](cross-platform-live-region-announcements-2026-05-13.md)
 - [Skip-first-render guard for accessibility announcements](../conventions/skip-first-render-guard-accessibility-announcements-2026-05-13.md)
+
+## Variant: render from the latched value when the effect itself clears the flag (2026-11-10)
+
+A guard on the *effect* is not enough when the effect's own side effect flips the
+prop the component *renders* from. The weekly report's `HeadlineCard` played its
+celebration when `celebrate` was true and called `onCelebrated()`, which marks it
+shown and refetches the report — the refetch returns `celebrate: false`, so a
+`{celebrate && <Badge/>}` guard unmounted the badge mid-spring. Latch the first
+value with `useState(celebrate)` and render and key the effect from the latch
+(`client/components/weekly-report/HeadlineCard.tsx`, test
+`client/components/weekly-report/__tests__/HeadlineCard.test.tsx`).
+

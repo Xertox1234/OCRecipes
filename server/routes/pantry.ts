@@ -27,7 +27,10 @@ const pantryItemSchema = z.object({
     .transform((v) => (v ? new Date(v) : null)),
 });
 
+// zod 4 applies .default() even inside .partial(), so the create-time category
+// default is unwrapped first — otherwise every partial update resets it.
 const pantryItemUpdateSchema = pantryItemSchema
+  .extend({ category: pantryItemSchema.shape.category.unwrap() })
   .partial()
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field must be provided for update",

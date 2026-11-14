@@ -24,7 +24,12 @@ import {
   pantryItems,
   communityRecipes,
   favouriteRecipes,
+  coachWeeklyReports,
 } from "@shared/schema";
+import {
+  createMockWeeklyFacts,
+  createMockWeeklyReportContent,
+} from "../../__tests__/factories";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -124,6 +129,27 @@ describe("profile-hub storage", () => {
       expect(counts.pantryItems).toBe(1);
       expect(counts.featuredRecipes).toBeGreaterThanOrEqual(1);
       expect(counts.favouriteRecipes).toBe(1);
+    });
+
+    it("counts the user's weekly reports, not other users'", async () => {
+      const { getLibraryCounts } = await import("../profile-hub");
+      const other = await createTestUser(tx);
+      const row = (userId: string, weekStart: string) => ({
+        userId,
+        weekStart,
+        weekEnd: weekStart,
+        facts: createMockWeeklyFacts(),
+        content: createMockWeeklyReportContent(),
+        source: "template" as const,
+      });
+      await tx
+        .insert(coachWeeklyReports)
+        .values([
+          row(testUser.id, "2026-11-01"),
+          row(testUser.id, "2026-11-08"),
+          row(other.id, "2026-11-08"),
+        ]);
+      expect((await getLibraryCounts(testUser.id)).weeklyReports).toBe(2);
     });
 
     it("scopes per-user counts — other users' rows are excluded", async () => {

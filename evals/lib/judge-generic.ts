@@ -13,6 +13,17 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export function resolveJudgeBackend(
   env: Record<string, string | undefined> = process.env,
 ): JudgeBackend {
+  // Spend the Anthropic credit on judging while generation stays on
+  // OpenRouter (the owner's preference; OpenRouter credit runs out first).
+  if (env.EVAL_JUDGE_BACKEND === "anthropic") {
+    if (!env.ANTHROPIC_API_KEY) {
+      throw new Error("EVAL_JUDGE_BACKEND=anthropic needs ANTHROPIC_API_KEY");
+    }
+    return {
+      kind: "anthropic",
+      model: env.EVAL_JUDGE_MODEL || "claude-sonnet-4-6",
+    };
+  }
   if (env.OPENROUTER_API_KEY) {
     const model = env.EVAL_JUDGE_MODEL || "anthropic/claude-sonnet-4.6";
     if (!model.includes("/")) {
@@ -82,10 +93,9 @@ function buildJudgeSchema(validDimensions: string[]) {
   const dimensionSchema = z
     .string()
     .transform((s) => s.toLowerCase())
-    .refine(
-      (s) => validDimensions.includes(s),
-      (s) => ({ message: `Unknown dimension "${s}"` }),
-    );
+    .refine((s) => validDimensions.includes(s), {
+      error: (iss) => `Unknown dimension "${String(iss.input)}"`,
+    });
   return z.object({
     scores: z.array(
       z.object({
@@ -185,7 +195,7 @@ Respond with ONLY valid JSON, no markdown fences:
   const validated = schema.safeParse(parsed);
   if (!validated.success) {
     console.warn(
-      `    ⚠ Judge returned unexpected shape (${validated.error.errors[0]?.message ?? "invalid schema"}), using default scores`,
+      `    ⚠ Judge returned unexpected shape (${validated.error.issues[0]?.message ?? "invalid schema"}), using default scores`,
     );
     return {
       scores: params.dimensions.map((d) => ({

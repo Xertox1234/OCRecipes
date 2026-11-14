@@ -3,6 +3,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { handleRouteError, parseQueryInt } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
+import { stripAuthorId } from "./_recipe-helpers";
 
 export function register(app: Express): void {
   app.get(
@@ -21,7 +22,7 @@ export function register(app: Express): void {
           min: 0,
         });
         const recipes = await storage.getCuratedRecipes({ limit, offset });
-        res.json({ recipes });
+        res.json({ recipes: stripAuthorId(recipes) });
       } catch (error) {
         handleRouteError(res, error, "list curated recipes");
       }

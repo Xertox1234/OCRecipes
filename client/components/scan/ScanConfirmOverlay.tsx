@@ -21,7 +21,7 @@ import {
   canLog,
   getConfirmFlagPresentation,
   type ConfirmCardState,
-} from "@/screens/ScanScreenConfirmOverlay-utils";
+} from "@/components/scan/ScanScreenConfirmOverlay-utils";
 
 interface ScanConfirmOverlayProps {
   confirmCard: ConfirmCardState;

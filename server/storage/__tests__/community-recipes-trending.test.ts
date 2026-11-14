@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { db } from "../../db";
 import { communityRecipes } from "@shared/schema";
-import { getTrendingSearchTerms } from "../community-recipes";
+import { getTrendingSearchTerms } from "../community-recipe-queries";
 import { eq } from "drizzle-orm";
 
 // Tests run against the local dev database, so this file must not touch rows

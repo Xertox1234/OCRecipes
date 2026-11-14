@@ -4,10 +4,6 @@ import {
   type CoachBlock,
   type MealPlanDay,
 } from "@shared/schemas/coach-blocks";
-import {
-  MEAL_LABELS,
-  type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
 
 /**
  * Validates and parses raw plan data from a block action into typed MealPlanDay[].
@@ -133,48 +129,92 @@ export function filterValidBlocks(raw: unknown[]): CoachBlock[] {
 }
 
 /**
- * Success toast copy for "Add to Plan", naming the chosen day and meal so a
- * mis-filed slot (e.g. a local-vs-UTC date bug on write) is visible in the
- * confirmation itself, not just on the Plan tab.
- *
- * Takes `dayLabel` as a plain string (the tapped chip's own `weekday`, e.g.
- * "Wednesday") rather than the `plannedDate` ISO string — do NOT change this
- * to re-derive the day by parsing `plannedDate`. `plannedDate` is the device's
- * LOCAL calendar day, but `new Date(plannedDate)` parses a bare date as UTC
- * midnight, so re-parsing it back into a weekday renders the *previous* day at
- * any UTC-NEGATIVE offset, which would make this toast contradict the very
- * chip the user just tapped. A `plannedDate` must always be built from the
- * device's LOCAL date parts, never `toISOString()` (which is UTC).
- *
- * The sign is a trap: the original write-side bug was UTC-POSITIVE-only, so
- * this guard looks unnecessary when tested from Europe or Oceania. Dropping it
- * breaks the Americas instead.
+ * Where VoiceOver's sentence-by-sentence reading of a streaming reply should
+ * continue from. Tracking the announced TEXT rather than an index lets a
+ * safety override, which replaces the reply mid-stream, start over at 0
+ * instead of slicing the new text at an offset into the old one.
  */
-export function formatPlanSaveSuccess(
-  dayLabel: string,
-  mealType: MealType,
-): string {
-  return `Added to ${dayLabel} ${MEAL_LABELS[mealType]}`;
+export function announcedOffset(text: string, announced: string): number {
+  return announced.length > 0 && text.startsWith(announced)
+    ? announced.length
+    : 0;
 }
 
 /**
- * `formatPlanSaveSuccess` for callers that only hold the ISO `plannedDate`
- * (the meal-plan sheets, recipe browser and wizard). The weekday is rebuilt
- * from the date's parts as a LOCAL date — never `new Date(iso)`, which reads
- * UTC midnight and names the previous day at UTC-negative offsets (see
- * `formatPlanSaveSuccess` above).
+ * What to announce when a streamed coach reply finishes.
+ *
+ * On iOS, CoachChat speaks each sentence as soon as it is followed by
+ * whitespace. The reply's last sentence never is, so without this it was
+ * never spoken. VoiceOver doesn't queue announcements, so it gets the
+ * remainder in place of "Coach responded" rather than both. Android never
+ * announces sentences, so it keeps the generic cue.
  */
-export function formatPlanAddSuccess(
-  plannedDate: string,
-  mealType: string,
+export function getStreamFinishAnnouncement(
+  fullText: string,
+  announced: string,
+  platform: "ios" | "android" | string,
 ): string {
-  const [year, month, day] = plannedDate.split("-").map(Number);
-  const weekday = new Date(year, month - 1, day).toLocaleDateString("en-US", {
-    weekday: "long",
-  });
-  // Route params type the meal as a plain string; an unknown value still
-  // confirms the add, just without a meal label.
-  return Object.hasOwn(MEAL_LABELS, mealType)
-    ? formatPlanSaveSuccess(weekday, mealType as MealType)
-    : `Added to ${weekday}`;
+  if (platform === "ios") {
+    const remainder = fullText
+      .slice(announcedOffset(fullText, announced))
+      .trim();
+    if (remainder.length > 0) return remainder;
+  }
+  return "Coach responded";
+}
+
+// ── Coach write cards (spec 2026-11-09) ─────────────────────────────
+
+type WriteCardBlockLike = Extract<CoachBlock, { type: "write_card" }>;
+
+/**
+ * The card the chat's next message should carry edits for: the newest write
+ * card in the chat, if it is still live (a saved or locked newest card means
+ * none is live). `blockLists` is in chat order, oldest first.
+ */
+export function latestLiveWriteCard(
+  blockLists: readonly (readonly CoachBlock[])[],
+): { cardId: string; kind: WriteCardBlockLike["kind"] } | null {
+  let newest: WriteCardBlockLike | null = null;
+  for (const blocks of blockLists) {
+    for (const b of blocks) if (b.type === "write_card") newest = b;
+  }
+  return newest?.status === "live"
+    ? { cardId: newest.cardId, kind: newest.kind }
+    : null;
+}
+
+/**
+ * Locks every live write card older than the newest one, the way the server
+ * already has: the card the newest names in `replacesCardId` shows
+ * "Replaced", any other "Expired". Lets the chat lock an old card the moment
+ * a new one streams in, before the refetch reports it. Blocks are replaced
+ * only where a status changes.
+ */
+export function lockOlderWriteCards(
+  blockLists: readonly CoachBlock[][],
+): CoachBlock[][] {
+  let newest: WriteCardBlockLike | null = null;
+  for (const blocks of blockLists) {
+    for (const b of blocks) if (b.type === "write_card") newest = b;
+  }
+  if (!newest) return blockLists as CoachBlock[][];
+  const keep = newest;
+  // By id, not identity: the finished reply's card can be on screen twice
+  // (the footer's live copy and the saved message) for a moment.
+  const older = (b: CoachBlock): b is WriteCardBlockLike =>
+    b.type === "write_card" && b.cardId !== keep.cardId && b.status === "live";
+  return blockLists.map((blocks) =>
+    blocks.some(older)
+      ? blocks.map((b) =>
+          older(b)
+            ? {
+                ...b,
+                status:
+                  keep.replacesCardId === b.cardId ? "replaced" : "expired",
+              }
+            : b,
+        )
+      : blocks,
+  );
 }

@@ -2,9 +2,11 @@ import {
   type ChatConversation,
   type ChatMessage,
   chatConversations,
+  chatMessageReports,
   chatMessages,
   coachResponseCache,
 } from "@shared/schema";
+import type { ChatMessageReportReason } from "@shared/constants/chat-message-report";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, inArray, ilike } from "drizzle-orm";
 import { escapeLike } from "./helpers";
@@ -250,6 +252,44 @@ export async function deleteChatMessage(
     )
     .returning({ id: chatMessages.id });
   return result.length > 0;
+}
+
+/**
+ * Save a person's report on an AI reply (privacy audit 2026-11-10, G7): the
+ * reply's id, the reason and who reported, never the text. False when the
+ * reply is not an assistant message in one of this person's own conversations
+ * (IDOR: the ownership check is part of the insert). A repeat report keeps the
+ * first row and still returns true.
+ */
+export async function reportChatMessage(
+  messageId: number,
+  userId: string,
+  reason: ChatMessageReportReason,
+): Promise<boolean> {
+  const [owned] = await db
+    .select({ id: chatMessages.id })
+    .from(chatMessages)
+    .innerJoin(
+      chatConversations,
+      eq(chatMessages.conversationId, chatConversations.id),
+    )
+    .where(
+      and(
+        eq(chatMessages.id, messageId),
+        eq(chatMessages.role, "assistant"),
+        eq(chatConversations.userId, userId),
+      ),
+    )
+    .limit(1);
+  if (!owned) return false;
+
+  await db
+    .insert(chatMessageReports)
+    .values({ userId, messageId, reason })
+    .onConflictDoNothing({
+      target: [chatMessageReports.userId, chatMessageReports.messageId],
+    });
+  return true;
 }
 
 export async function updateChatConversationTitle(

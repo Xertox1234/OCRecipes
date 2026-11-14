@@ -196,7 +196,13 @@ export function Chip({
           accessibilityRole ?? (variant === "tab" ? "tab" : "button")
         }
         accessibilityLabel={accessibilityLabel || label}
-        accessibilityState={{ selected }}
+        // A radio reports checked (a screen reader reads "selected" for
+        // tabs/buttons and "checked" for radios).
+        accessibilityState={
+          accessibilityRole === "radio"
+            ? { selected, checked: selected }
+            : { selected }
+        }
         style={[chipStyles, animatedChipStyle, animatedStyle]}
       >
         {leading}

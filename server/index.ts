@@ -25,12 +25,15 @@ import {
   stopNotificationScheduler,
 } from "./services/notification-scheduler";
 import { logger, rootLogger, toError } from "./lib/logger";
+import { loggedPath, requestLogFields } from "./lib/log-url";
 import {
   attachExpressErrorReporter,
   flushErrorReporter,
   reportError,
 } from "./lib/error-reporter";
 import { requestContextMiddleware } from "./lib/request-context";
+import { installAiSharingLookup } from "./lib/ai-sharing-gate";
+import { storage } from "./storage";
 import { bodyShapeBudget } from "./middleware/body-shape-budget";
 import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
 import { UUID_RE } from "./lib/identifier-patterns";
@@ -39,7 +42,7 @@ import {
   assertExecutionAllowed as assertRetentionAllowed,
 } from "./scripts/cleanup-retention";
 import { rateLimit } from "express-rate-limit";
-import { ipKeyGenerator } from "./routes/_rate-limiters";
+import { ipKeyGenerator } from "./lib/ip-key";
 import crypto from "node:crypto";
 
 process.on("uncaughtException", (error) => {
@@ -196,23 +199,15 @@ function setupRequestLogging(app: express.Application) {
           !req.url?.startsWith("/api") || req.url === "/api/health",
       },
       serializers: {
-        req(req) {
-          return {
-            method: req.method,
-            url: req.url,
-            headers: {
-              "content-type": req.headers["content-type"],
-              "user-agent": req.headers["user-agent"],
-              "x-request-id": req.headers["x-request-id"],
-            },
-          };
-        },
+        // Path only, barcode replaced, and genReqId's id rather than the
+        // client's header (privacy audit M12; security audit 2026-11-12, L12).
+        req: requestLogFields,
         res(res) {
           return { statusCode: res.statusCode };
         },
       },
-      customSuccessMessage: (req) => `${req.method} ${req.url}`,
-      customErrorMessage: (req) => `${req.method} ${req.url}`,
+      customSuccessMessage: (req) => `${req.method} ${loggedPath(req.url)}`,
+      customErrorMessage: (req) => `${req.method} ${loggedPath(req.url)}`,
     }),
   );
 }
@@ -248,6 +243,10 @@ function startServer() {
   setupBodyParsing(app);
   setupRequestLogging(app);
   app.use(requestContextMiddleware);
+  // Privacy audit H3: aiChat refuses a signed-in user who has not allowed AI
+  // sharing. The gate lives in lib/ (a leaf), so storage is handed to it here,
+  // next to the request context it reads the user from.
+  installAiSharingLookup(storage.isAiSharingAllowed);
   // Dev-only, opt-in (CONTRACT_SNAPSHOT=1) — see server/lib/contract-snapshot.ts and
   // docs/research/2026-07-05-pg-lab-roadmap.md (PG Lab Batch C).
   installContractSnapshotMiddleware(app);

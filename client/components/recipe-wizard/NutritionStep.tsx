@@ -118,7 +118,12 @@ function NutritionCell({
         accessibilityLabel={`${field.label.toLowerCase()} per serving`}
         accessibilityHint={`Enter ${field.label.toLowerCase()} in ${field.unit}`}
       />
-      <Text style={[styles.unitText, { color: theme.textSecondary }]}>
+      {/* The hint already names the unit, so it is not read a second time. */}
+      <Text
+        style={[styles.unitText, { color: theme.textSecondary }]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {field.unit}
       </Text>
     </FocusField>

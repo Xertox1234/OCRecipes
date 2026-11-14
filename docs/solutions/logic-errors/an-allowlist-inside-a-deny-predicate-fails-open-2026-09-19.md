@@ -4,10 +4,10 @@ track: bug
 category: logic-errors
 tags: [harness, hooks, security, testing, ai-prompting, architecture, safety-gate, bash, regex]
 module: shared
-applies_to: [".claude/hooks/**/*.sh", ".claude/hooks/lib/*.sh", "server/services/coach-intent-classifier.ts"]
+applies_to: [".claude/hooks/**/*.sh", ".claude/hooks/lib/*.sh", "server/services/coach-intent-classifier.ts", "evals/assertions.ts"]
 symptoms: ["a deny gate that used to block a command spelling now allows it, with green CI and every count pin reconciled", "the new predicate is more specific and better commented than the one it replaced, and the PR fixes a real over-denial", "review keeps finding one more spelling the pattern misses, and each fix's own comment declares the class closed", "an argument that the pattern is exhaustive cites a grammar (RFC, CLI help) rather than the exact string the code consumes"]
 created: 2026-09-19
-last_updated: 2026-10-09
+last_updated: 2026-11-14
 severity: critical
 ---
 
@@ -139,6 +139,45 @@ put ("can I go a week without eating meat"). For a safety router that is the rig
 Prevention, added: before the second review round on a deny-shaped change, ask whether the change
 can be expressed as an added entry. If it can, do that instead of editing the shipped one.
 
+## Also seen: self-harm wording in the same router (#1864, #1865, 2026-11-14)
+
+Adding first-person self-harm phrases to the router needed two exclusions for food talk, and both
+were first written as a list of grammar words:
+
+1. After "don't want to live", the exclusion listed `on|off|with|without|in|like|for` to let
+   "live on salads" through. It also let through "I don't want to live like this" and "with this
+   pain anymore". Fixed by keeping `on|off` only.
+2. After "cut myself", the exclusion listed `a|an|some|off|down|loose|free` to let "a slice of
+   cake" through. A bare `a` also let through "cut myself a little" and "a lot", which the branch
+   base matched. Fixed by requiring a named continuation: `a|an|some` followed by slice, piece,
+   portion, serving, wedge, slack or break.
+
+Both are the open-vocabulary veto again. **An exclusion in a safety matcher names the harmless
+thing ("a slice", "some slack"), never the grammar around it (an article, a preposition).** The
+test table carries both sides: the everyday sentences that must not match and the crisis sentences
+that share the same first words and must.
+
+## Also seen: the coach eval's allergen check (#1867–#1869, 2026-11-14)
+
+`mustNotContain` in `evals/assertions.ts` failed a reply for any mention of a forbidden allergen,
+including "this is made without peanuts". #1867 added an exclusion: a mention led by an avoid word
+("without", "avoid", "skip", "no", "never") does not count. Review then measured real suggestions
+that the exclusion passed, so a reply that recommends the allergen scored as safe:
+
+1. A negation before the avoid word: "Don't skip peanut butter", "Never skip peanut butter".
+2. "No" as an interjection: "No problem, peanut butter is great", "No worries, peanut butter
+   works", "No, peanut butter is great".
+
+Fixed across #1868 and #1869 by a negation check before the avoid word, by `never (eat|have|use)`
+in place of bare "never", and by treating a comma after "no" as an interjection unless every part
+before the allergen is itself a forbidden item ("no peanuts, almonds"). The first comma rule broke
+that list form, which had passed before the branch — the fix for one direction regressed the other.
+
+**An exclusion inside an eval's must-not-contain check is the same allowlist: each avoid word is a
+way for a bad reply to pass.** The limits that remain are kept in the failing direction on purpose:
+a list of three or more items after "without" still fails the check, because a false failure costs
+one look at a transcript and a false pass hides an allergen suggestion.
+
 ## Related Files
 
 - `.claude/hooks/merge-review-guard.sh` — the endpoint check, now main's substring test, with all
@@ -149,6 +188,8 @@ can be expressed as an added entry. If it can, do that instead of editing the sh
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_words_deep`, the rendering the predicate actually reads
 - `server/services/coach-intent-classifier.ts` — `SAFETY_PATTERNS`: #1333's entry, then the additive
   `PROLONGED_STARVATION` sibling (#1339) with the reasons in its comment
+- `evals/assertions.ts` — `isAvoidanceMention`: the avoid words, the negation check and the
+  interjection rule; `evals/__tests__/assertions.test.ts` carries both directions
 - `.claude/hooks/repro-outward-cli-corpus.sh` — pins `guard-outward-cli.sh` only (`HOOK=`), which
   is why the sibling's regression was invisible to CI
 

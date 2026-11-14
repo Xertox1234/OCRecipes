@@ -2,12 +2,12 @@
 import { renderHook, waitFor, act } from "@testing-library/react";
 
 import {
-  recipeStatsKey,
   useRecipeCommunityStats,
   useSetRecipeTried,
   useRecipeVariants,
 } from "../useRecipeCommunity";
 import { ApiError } from "@/lib/api-error";
+import { recipeStatsKey } from "@/lib/query-keys";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({ mockApiRequest: vi.fn() }));

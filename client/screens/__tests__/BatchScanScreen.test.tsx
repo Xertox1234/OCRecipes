@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent, act } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
+import { AccessibilityInfo, Platform } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import BatchScanScreen from "../BatchScanScreen";
 
@@ -127,5 +128,53 @@ describe("BatchScanScreen — haptic rhythm", () => {
     );
     expect(mockNotification).toHaveBeenCalledOnce();
     expect(mockReplace).toHaveBeenCalledWith("BatchSummary");
+  });
+});
+
+// Accessibility audit 2026-11-06 M5: the item-count badge has a polite live
+// region (Android-only) whose label changes with the count, so the imperative
+// count announce must be iOS-only or TalkBack speaks the count twice.
+describe("BatchScanScreen — scan count announcement", () => {
+  const originalOS = Platform.OS;
+  let announce: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    announce.mockRestore();
+    Platform.OS = originalOS;
+  });
+
+  it("announces the first scanned item on iOS", () => {
+    Platform.OS = "ios";
+    renderComponent(<BatchScanScreen />);
+    act(() => {
+      onBarcodeScannedRef.current?.({ data: VALID_BARCODE }, false);
+    });
+    expect(announce).toHaveBeenCalledWith(
+      expect.stringContaining("First item scanned"),
+    );
+  });
+
+  it("leaves the count to the badge's live region on Android", () => {
+    Platform.OS = "android";
+    renderComponent(<BatchScanScreen />);
+    act(() => {
+      onBarcodeScannedRef.current?.({ data: VALID_BARCODE }, false);
+    });
+    expect(announce).not.toHaveBeenCalledWith(expect.stringContaining("item"));
+  });
+
+  it("still announces a repeat scan on Android — the count does not change", () => {
+    Platform.OS = "android";
+    renderComponent(<BatchScanScreen />);
+    act(() => {
+      onBarcodeScannedRef.current?.({ data: VALID_BARCODE }, true);
+    });
+    expect(announce).toHaveBeenCalledWith(
+      "Item already scanned. Quantity increased.",
+    );
   });
 });

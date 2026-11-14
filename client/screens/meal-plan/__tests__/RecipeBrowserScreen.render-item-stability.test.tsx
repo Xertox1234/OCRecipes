@@ -240,4 +240,32 @@ describe("RecipeBrowserScreen — renderItem identity stability across a search 
     const secondRenderItem = secondProps?.renderItem;
     expect(secondRenderItem).toBe(firstRenderItem);
   });
+
+  // Perf audit 2026-11-08 M1: SectionList is a PureComponent, so EVERY prop
+  // must survive a keystroke, not just renderItem — an inline sections
+  // array or section renderer re-renders the list on each character.
+  it.each([
+    "sections",
+    "renderSectionHeader",
+    "renderSectionFooter",
+    "onEndReached",
+    "ListFooterComponent",
+    "contentContainerStyle",
+  ])("keeps %s referentially stable across a keystroke", async (prop) => {
+    mockSearchState.value = {
+      ...mockSearchState.value,
+      loadMore: vi.fn(),
+    };
+    renderComponent(<RecipeBrowserScreen />);
+    await waitFor(() => {
+      expect(capturedSectionListProps.value).toBeDefined();
+    });
+    const firstProps = capturedSectionListProps.value;
+    const input = screen.getByDisplayValue("chicken");
+    fireEvent.change(input, { target: { value: "chicken t" } });
+    expect((input as HTMLInputElement).value).toBe("chicken t");
+    const secondProps = capturedSectionListProps.value;
+    expect(secondProps).not.toBe(firstProps);
+    expect(secondProps?.[prop]).toBe(firstProps?.[prop]);
+  });
 });

@@ -274,6 +274,10 @@ describe("Verification Routes", () => {
       expect(res.body.success).toBe(true);
       expect(res.body.frontLabelScanned).toBe(true);
       expect(storage.confirmFrontLabelData).toHaveBeenCalledOnce();
+      // Privacy audit 2026-11-10 L1: the product row is shared and outlives
+      // the account, so it does not record who scanned it.
+      const stored = vi.mocked(storage.confirmFrontLabelData).mock.calls[0][2];
+      expect(stored).not.toHaveProperty("scannedByUserId");
     });
 
     it("cleans up session after successful confirm", async () => {

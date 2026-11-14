@@ -44,6 +44,31 @@ describe("classifyRecipeImageUrl", () => {
       classifyRecipeImageUrl("/api/recipe-images/recipe-abc.jpg", BASE),
     ).toBe("ours");
   });
+
+  // Security audit 2026-11-12, L11: "ours" means exactly the shape we store,
+  // <base>/recipe-images/<one filename>. A URL that only starts that way is a
+  // stranger's string and is treated like any other site's.
+  it.each([
+    ["a parent step", `${BASE}/recipe-images/../avatars/victim.jpg`],
+    ["a nested path", `${BASE}/recipe-images/a/b.jpg`],
+    [
+      "an encoded parent step",
+      `${BASE}/recipe-images/%2e%2e%2favatars%2fv.jpg`,
+    ],
+    ["a fragment", `${BASE}/recipe-images/recipe-abc.jpg#x`],
+    ["no filename", `${BASE}/recipe-images/`],
+    ["a dots-only filename", `${BASE}/recipe-images/..`],
+    [
+      "a parent step on the dev disk path",
+      "/api/recipe-images/../avatars/v.jpg",
+    ],
+    [
+      "a parent step hidden behind a query",
+      `${BASE}/recipe-images/../x.jpg?v=1`,
+    ],
+  ])("classifies a url with %s as 'external'", (_label, url) => {
+    expect(classifyRecipeImageUrl(url, BASE)).toBe("external");
+  });
 });
 
 describe("deriveRecipeImageFilename", () => {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { handleRouteError } from "./_helpers";
+import { reminderMutesSchema } from "./_schemas";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -10,14 +11,6 @@ import {
   remindersAcknowledgeRateLimit,
   remindersMutesRateLimit,
 } from "./_rate-limiters";
-
-const mutesSchema = z
-  .object({
-    "meal-log": z.boolean().optional(),
-    commitment: z.boolean().optional(),
-    "daily-checkin": z.boolean().optional(),
-  })
-  .strict();
 
 export function register(app: Express): void {
   // GET /api/reminders/pending
@@ -31,6 +24,36 @@ export function register(app: Express): void {
         res.json({ hasPending });
       } catch (error) {
         handleRouteError(res, error, "check pending reminders");
+      }
+    },
+  );
+
+  // POST /api/reminders/acknowledge-type — clear one reminder type only.
+  const acknowledgeTypeSchema = z.object({
+    type: z.enum(["meal-log", "commitment", "daily-checkin", "user-set"]),
+  });
+  app.post(
+    "/api/reminders/acknowledge-type",
+    requireAuth,
+    remindersAcknowledgeRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = acknowledgeTypeSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return sendError(
+            res,
+            400,
+            "Unknown reminder type",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        const acknowledged = await storage.acknowledgeReminderType(
+          req.userId,
+          parsed.data.type,
+        );
+        res.json({ acknowledged });
+      } catch (error) {
+        handleRouteError(res, error, "acknowledge reminder type");
       }
     },
   );
@@ -57,7 +80,7 @@ export function register(app: Express): void {
     remindersMutesRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const parsed = mutesSchema.safeParse(req.body);
+        const parsed = reminderMutesSchema.safeParse(req.body);
         if (!parsed.success) {
           return sendError(
             res,

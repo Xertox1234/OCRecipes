@@ -1,7 +1,7 @@
 // client/camera/components/ProductChip-utils.ts
 import type { ScanPhase } from "../types/scan-phase";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
-import { getContentTypeLabel } from "@/screens/scan-screen-utils";
+import { getContentTypeLabel } from "../utils/content-type-label";
 import { getShutterTopInset } from "./shutter-layout";
 import { getConfidenceTier } from "@/lib/confidence";
 import type { VerificationLevel } from "@shared/types/verification";

@@ -133,7 +133,9 @@ export default function RecipeTextImportScreen() {
             >
               <Feather name="alert-circle" size={32} color={theme.error} />
             </View>
-            <ThemedText style={styles.heading}>Extraction Failed</ThemedText>
+            <ThemedText accessibilityRole="header" style={styles.heading}>
+              Extraction Failed
+            </ThemedText>
             <ThemedText
               style={[styles.errorText, { color: theme.textSecondary }]}
             >

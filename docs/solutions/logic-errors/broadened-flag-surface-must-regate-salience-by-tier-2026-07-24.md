@@ -4,7 +4,7 @@ track: knowledge
 category: logic-errors
 tags: [client, accessibility, scan-flags, live-region, severity, tier, naming]
 module: client
-applies_to: [client/screens/ScanScreen.tsx, client/screens/ScanScreenConfirmOverlay-utils.ts, client/camera/components/ProductChip.tsx]
+applies_to: [client/screens/ScanScreen.tsx, client/components/scan/ScanScreenConfirmOverlay-utils.ts, client/camera/components/ProductChip.tsx]
 created: '2026-07-24'
 ---
 

@@ -10,6 +10,11 @@ import type { CoachChatEvent } from "../coach-pro-chat";
 import { storage } from "../../storage";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import {
+  containsUnsafeCoachAdvice,
+  containsUnsafeCoachAdviceInValue,
+  STANDARD_SAFETY_MESSAGE,
+} from "../../lib/ai-safety";
+import {
   generateRecipeChatResponse,
   type RecipeChatRecipe,
 } from "../recipe-chat";
@@ -207,6 +212,18 @@ export async function* runCoachFinderTurn(
     } else if ("content" in event && event.content) {
       text += event.content;
     }
+  }
+  // Output screen. This reply is saved here and never passes through the
+  // coach reply's own screen, so it is checked here: the text, and the card
+  // as the decoded object the app shows. Nothing was shown yet, so a hit is
+  // saved and shown as the standard message, with no card.
+  if (
+    containsUnsafeCoachAdvice(text) ||
+    containsUnsafeCoachAdviceInValue(recipe)
+  ) {
+    await persistAssistant(p, STANDARD_SAFETY_MESSAGE, null);
+    yield { type: "content", content: STANDARD_SAFETY_MESSAGE };
+    return;
   }
   const conversational =
     text.replace(/\n*```json[\s\S]*?```\s*/g, "").trim() ||

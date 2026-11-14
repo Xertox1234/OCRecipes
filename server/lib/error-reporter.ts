@@ -15,7 +15,8 @@
  * SDK queues events to an async transport); nothing here blocks the
  * error-response path.
  *
- * PII posture (verified against the installed @sentry/node 10.65.0 source):
+ * PII posture (verified against the installed @sentry/node source: first at
+ * 10.65.0, again at 10.78.0 on 2026-11-12 — privacy audit L8):
  * `sendDefaultPii: false` only withholds IP/user data — including, as an
  * SDK-internal side effect (not a documented contract — see
  * SENSITIVE_HEADER_SNIPPETS below), a fixed 12-name exact-match set of
@@ -32,6 +33,7 @@ import * as Sentry from "@sentry/node";
 import type { Application } from "express";
 import { getRequestContext } from "./request-context";
 import { logger } from "./logger";
+import { loggedPath } from "./log-url";
 
 /**
  * In-process cap on reported events. A noisy error loop (e.g. a crashing
@@ -78,10 +80,12 @@ function underRateCap(): boolean {
  *
  * The credential-oriented entries below (through `"cookie"`) are a verified
  * reconciliation with the installed SDK's own deny-list — read directly from
- * `node_modules/@sentry/node/node_modules/@sentry/core/.../filtering-snippets.js`
- * `SENSITIVE_KEY_SNIPPETS` (@sentry/core 10.65.0, 2026-07-12), not from docs.
- * Do NOT assume future parity — re-diff against the installed source on any
- * @sentry/node major/minor bump.
+ * `build/cjs/utils/data-collection/filtering-snippets.js` in the @sentry/core
+ * copy that @sentry/node resolves, `SENSITIVE_KEY_SNIPPETS` (@sentry/core
+ * 10.65.0 on 2026-07-12; unchanged at 10.78.0, 2026-11-12), not from docs.
+ * Do NOT assume future parity: the drift-guard tests in
+ * `__tests__/error-reporter.test.ts` re-read that list, and the client-IP
+ * names below, from the installed SDK on every run.
  *
  * The client-IP entries after that are an OCRecipes-specific addition and
  * are NOT part of Sentry's SENSITIVE_KEY_SNIPPETS. Two OTHER SDK mechanisms
@@ -180,6 +184,16 @@ const PINO_CONTEXT_ALLOWLIST = new Set([
 ]);
 
 /**
+ * The request URL as Sentry keeps it: the origin, then the path the request
+ * log keeps (no query string or fragment, a scanned barcode replaced by its
+ * route parameter name).
+ */
+function scrubbedRequestUrl(url: string): string {
+  const origin = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i.exec(url)?.[0] ?? "";
+  return origin + loggedPath(url.slice(origin.length));
+}
+
+/**
  * PII scrubber for outbound events — the load-bearing control on this
  * external trust boundary (see the module doc: `sendDefaultPii: false`
  * does NOT withhold headers/cookies/query on the error-event path in v10).
@@ -208,10 +222,7 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
     delete request.cookies;
     delete request.query_string;
     if (typeof request.url === "string") {
-      const queryStart = request.url.indexOf("?");
-      if (queryStart !== -1) {
-        request.url = request.url.slice(0, queryStart);
-      }
+      request.url = scrubbedRequestUrl(request.url);
     }
   }
   // A failed Drizzle query's message ends with "\nparams: <every bound
@@ -322,7 +333,7 @@ export function initErrorReporter(): void {
       }),
       // Every logger.error becomes a handled Sentry event. Handled failures
       // never reach Sentry otherwise: the cron/interval catches and the SSE
-      // chat-stream catch log and swallow, and onUnhandledRejection only sees
+      // chat-turn catch log and swallow, and onUnhandledRejection only sees
       // UNhandled rejections. (fireAndForget also calls reportError with the
       // same Error it logs, so that capture is deduped, not doubled.) Error level
       // only (warn stays log-only); `log` levels are inert because

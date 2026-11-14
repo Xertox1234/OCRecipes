@@ -14,6 +14,8 @@
  * Extracted from server/routes/chat.ts to keep route handlers thin.
  */
 
+import { filterMemoryRefs } from "./memory-refs";
+import { filterAllergyCards } from "./allergy-cards";
 import { randomUUID } from "crypto";
 import { civilDateToInstant } from "../lib/civil-date";
 import { storage } from "../storage";
@@ -21,13 +23,34 @@ import {
   generateCoachResponse,
   generateCoachProResponse,
   SAFETY_OVERRIDE_SENTINEL,
+  type CoachContext,
 } from "./nutrition-coach";
-import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
-import { parseBlocksFromContent } from "./coach-blocks";
+import {
+  classifyIntent,
+  matchesDisorderedEating,
+  matchesSelfHarm,
+  type CoachIntent,
+} from "./coach-intent-classifier";
+import { getBlocksSystemPrompt, parseBlocksFromContent } from "./coach-blocks";
+import { buildTrail, plainStatusLabel, toolStep } from "./coach-step-labels";
+import { isRecipeFinderEnabled } from "./recipe-finder/config";
+import {
+  sanitizeContextField,
+  containsUnsafeCoachAdvice,
+  STANDARD_SAFETY_MESSAGE,
+  SAFETY_REFUSAL_FALLBACK_MESSAGE,
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
+  isFlatModelRefusal,
+} from "../lib/ai-safety";
+import {
+  buildWriteCardPayload,
+  describeLiveCard,
+  type WriteCardProposal,
+} from "./write-cards";
+import { WRITE_CARD_EDITS_SCHEMAS } from "@shared/schemas/coach-write-cards";
 import { extractNotebookEntries } from "./notebook-extraction";
-import { containsDangerousDietaryAdvice } from "../lib/ai-safety";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
 import {
   assembleCoachContext,
@@ -44,6 +67,7 @@ import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
+import { isOpeningBriefMessage } from "@shared/lib/opening-brief";
 import type { ChatMessage } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { FinderAction } from "@shared/schemas/recipe-finder";
@@ -78,26 +102,12 @@ export type CoachChatEvent =
   | { type: "content"; content: string }
   | { type: "blocks"; blocks: CoachBlock[] }
   | { type: "status"; label: string }
+  // A specific step label (show-the-work spec 2026-11-09). `status` stays the
+  // plain label for runtime 5.1.0 clients, which have no pacing queue.
+  | { type: "step"; label: string }
   | { type: "safety_override"; message: string };
 
-export const STANDARD_SAFETY_MESSAGE =
-  "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
-
-const TOOL_STATUS_LABELS: Record<string, string> = {
-  lookup_nutrition: "Looking up nutrition…",
-  search_recipes: "Searching recipes…",
-  get_daily_log_details: "Checking today's log…",
-  log_food_item: "Logging food…",
-  get_pantry_items: "Checking your pantry…",
-  get_meal_plan: "Checking your meal plan…",
-  add_to_meal_plan: "Planning your meals…",
-  add_to_grocery_list: "Updating grocery list…",
-  get_substitutions: "Finding substitutes…",
-};
-
-function getToolStatusLabel(toolName: string): string {
-  return TOOL_STATUS_LABELS[toolName] ?? "Working on it…";
-}
+export { STANDARD_SAFETY_MESSAGE };
 
 export interface CoachChatParams {
   conversationId: number;
@@ -123,6 +133,13 @@ export interface CoachChatParams {
    * RECIPE_FINDER_ENABLED is on and the user is Coach Pro; absent → today's
    * behavior exactly.
    */
+  /**
+   * Coach write cards (spec 2026-11-09): the app sent `writeCards: true`, so it
+   * can show a write card. Absent → today's behavior exactly.
+   */
+  writeCards?: boolean;
+  /** The card on screen and the user's edits to it, sent with this message. */
+  liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {
     action?: FinderAction;
     /** This turn's user row — Generate/Spoonacular claims mark it. */
@@ -361,6 +378,7 @@ async function extractAndStoreNotebook(a: {
         userId,
         type: e.type,
         content: e.content,
+        label: e.label,
         status: "active",
         // `civilDateToInstant`, not `new Date(dateStr)`: a bare parse
         // anchors at UTC midnight, which is BEFORE local midnight for
@@ -400,6 +418,75 @@ async function extractAndStoreNotebook(a: {
  * Orchestrates the coach chat response — yields SSE events for the route
  * handler to write, handles persistence and side-effects internally.
  */
+/**
+ * Write-card mode's prompt context: store the edits the app sent for the live
+ * card (only if they parse and the card is this conversation's live card),
+ * then describe the live card so "make it three eggs" starts from what is on
+ * screen now.
+ */
+async function applyWriteCardContext(
+  context: CoachContext,
+  a: {
+    conversationId: number;
+    userId: string;
+    liveCard?: { cardId: string; edits: Record<string, unknown> };
+  },
+): Promise<void> {
+  context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled(), {
+    writeCards: true,
+  });
+  if (a.liveCard) {
+    const card = await storage.getWriteCard(a.liveCard.cardId, a.userId);
+    if (
+      card &&
+      card.conversationId === a.conversationId &&
+      card.status === "live" &&
+      WRITE_CARD_EDITS_SCHEMAS[card.kind].safeParse(a.liveCard.edits).success
+    ) {
+      await storage.setWriteCardEdits(card.id, a.userId, a.liveCard.edits);
+    }
+  }
+  const live = await storage.getLiveWriteCard(a.conversationId, a.userId);
+  if (live) {
+    // Item names came from model output — sanitize like any context field.
+    context.liveWriteCard = sanitizeContextField(describeLiveCard(live), 1500);
+  }
+}
+
+/** Builds the proposal's card and its row; null (logged) when it can't. */
+async function createWriteCardBlock(
+  proposal: WriteCardProposal,
+  a: { conversationId: number; userId: string; tz: string },
+): Promise<CoachBlock | null> {
+  try {
+    const payload = await buildWriteCardPayload(proposal, {
+      userId: a.userId,
+      tz: a.tz,
+      now: new Date(),
+    });
+    const { card, previous } = await storage.createWriteCard({
+      userId: a.userId,
+      conversationId: a.conversationId,
+      kind: proposal.kind,
+      payload,
+    });
+    return {
+      type: "write_card",
+      cardId: card.id,
+      kind: proposal.kind,
+      payload,
+      status: "live",
+      ...(previous?.status === "replaced" && { replacesCardId: previous.id }),
+    };
+  } catch (err) {
+    log.warn(
+      { err: toError(err), kind: proposal.kind },
+      "coach write card not built",
+    );
+    return null;
+  }
+}
+
 export async function* handleCoachChat(
   params: CoachChatParams,
 ): AsyncGenerator<CoachChatEvent> {
@@ -415,7 +502,10 @@ export async function* handleCoachChat(
     user,
     isAborted,
     abortSignal,
+    liveCard,
   } = params;
+  // Write cards ride on Coach Pro's blocks; the free tier never gets them.
+  const writeCards = !!params.writeCards && isCoachPro;
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
@@ -432,9 +522,16 @@ export async function* handleCoachChat(
   // the offer tool's repeat = yes delegation needs this turn's user row.
   const offerOn = !!params.finder && isRecipeOfferEnabled();
 
+  // History read by the finder decision, reused below when the turn falls
+  // through to the tool loop (one read per turn — perf audit M5).
+  let finderHistory:
+    | Awaited<ReturnType<typeof storage.getChatMessages>>
+    | undefined;
+
   // ── Recipe finder (Coach Pro, flag on) — early return (R2) ──
   if (params.finder && isCoachPro) {
     const recent = await storage.getChatMessages(conversationId, 20, userId);
+    finderHistory = recent;
     const entry = decideCoachFinderEntry(
       recent,
       content,
@@ -493,7 +590,7 @@ export async function* handleCoachChat(
   ] = await Promise.all([
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today, tz),
-    storage.getChatMessages(conversationId, 20, userId),
+    finderHistory ?? storage.getChatMessages(conversationId, 20, userId),
     isCoachPro
       ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
       : Promise.resolve(
@@ -530,6 +627,10 @@ export async function* handleCoachChat(
     dueCommitments,
     frequentFoods,
   });
+
+  if (writeCards) {
+    await applyWriteCardContext(context, { conversationId, userId, liveCard });
+  }
 
   let messageHistory: {
     role: "user" | "assistant" | "system";
@@ -568,7 +669,11 @@ export async function* handleCoachChat(
   // reference tool-call results — caching them would serve stale context to
   // the same user (and the cache key is too coarse to distinguish Pro vs
   // non-Pro prompts across users). See H4 — 2026-04-18.
-  const isCacheable = !screenContext && history.length <= 1 && !isCoachPro;
+  // The saved opening brief (an assistant row written before the first user
+  // message) doesn't make this a later turn — not for the free cache, not
+  // for the auto-title below.
+  const turnCount = history.filter((m) => !isOpeningBriefMessage(m)).length;
+  const isCacheable = !screenContext && turnCount <= 1 && !isCoachPro;
   const questionHash = isCacheable
     ? hashCoachCacheKey(
         userId,
@@ -585,16 +690,21 @@ export async function* handleCoachChat(
     cachedResponse = await storage.getCoachCachedResponse(userId, questionHash);
   }
 
-  // M6 (2026-04-18): Re-scan cached responses for dangerous dietary advice before
-  // serving. A response may have been cached before the safety filter existed, or
-  // safety thresholds may have been tightened since it was stored. Discarding the
-  // entry forces a fresh generation that goes through the live safety checks.
-  if (cachedResponse && containsDangerousDietaryAdvice(cachedResponse)) {
+  // M6 (2026-04-18): Re-scan cached responses with the live output screen
+  // (dietary and medical — the same check a fresh reply gets) before serving.
+  // A response may have been cached before the safety filter existed, or
+  // safety thresholds may have been tightened since it was stored. Discarding
+  // the entry forces a fresh generation that goes through the live checks.
+  if (cachedResponse && containsUnsafeCoachAdvice(cachedResponse)) {
     cachedResponse = null;
   }
 
   let fullResponse = "";
   let offerToolArgs: string | null = null;
+  let writeCardProposal: WriteCardProposal | null = null;
+  // Show-the-work: what this turn looked up, for the "Checked:" trail.
+  const trailEntries: (string | null)[] = [];
+  let safetyOverridden = false;
 
   if (cachedResponse) {
     // Send cached response in 3 chunks with minimal delay
@@ -623,15 +733,43 @@ export async function* handleCoachChat(
       // redundant classifyIntent call inside the generator.
       intent,
       tz,
-      { offerRecipe: offerOn },
+      {
+        offerRecipe: offerOn,
+        // Only in write-card mode, so the options are unchanged without it.
+        ...(writeCards && {
+          writeCards: true,
+          // A turn shows at most one card: the last write tool call wins.
+          onWriteCardProposal: (p: WriteCardProposal) => {
+            writeCardProposal = p;
+          },
+          planRecipePool: [],
+        }),
+      },
     )) {
+      // A later sentence failed the unsafe-advice check: replace everything
+      // shown and save only the safety message (as the free tier does).
+      if (chunk.type === "safety_override") {
+        fullResponse = STANDARD_SAFETY_MESSAGE;
+        safetyOverridden = true;
+        if (!isAborted())
+          yield { type: "safety_override", message: STANDARD_SAFETY_MESSAGE };
+        break;
+      }
       if (chunk.type === "tool_calls") {
         // Yielded immediately when the tools are detected, before they run —
         // surface the status event on the wire now instead of waiting for
         // the next content chunk.
-        for (const name of chunk.toolNames) {
-          if (!isAborted())
-            yield { type: "status", label: getToolStatusLabel(name) };
+        const calls =
+          chunk.calls ??
+          chunk.toolNames.map((name) => ({ name, arguments: "{}" }));
+        for (const call of calls) {
+          if (isAborted()) break;
+          const step = toolStep(call, { writeCards: !!writeCards });
+          trailEntries.push(step.trail);
+          // step first: a new client queues it and then ignores the plain
+          // status, so the line never flickers between the two labels.
+          yield { type: "step", label: step.label };
+          yield { type: "status", label: plainStatusLabel(call.name) };
         }
         if (isAborted()) break;
         continue;
@@ -667,17 +805,75 @@ export async function* handleCoachChat(
     }
   }
 
+  // The model itself sometimes answers a safety-sensitive turn (distress,
+  // disordered eating) with only a bare refusal. Replace it like an unsafe
+  // reply: the client swaps what it showed, and the supportive text is saved.
+  if (
+    !safetyOverridden &&
+    intent === "safety_refusal" &&
+    !isAborted() &&
+    isFlatModelRefusal(fullResponse)
+  ) {
+    // Suicide or self-harm comes first, and gets the crisis message even when
+    // the same message also mentions purging. The warm fallback is worded for
+    // distress about eating; other safety turns (medical, injection, ...) get
+    // the generic referral message.
+    const replacement = matchesSelfHarm(content)
+      ? SAFETY_CRISIS_FALLBACK_MESSAGE
+      : matchesDisorderedEating(content)
+        ? SAFETY_REFUSAL_FALLBACK_MESSAGE
+        : STANDARD_SAFETY_MESSAGE;
+    fullResponse = replacement;
+    safetyOverridden = true;
+    yield { type: "safety_override", message: replacement };
+  }
+
   // Parse blocks from response for Coach Pro
   let blocks: CoachBlock[] = [];
   let textContent = fullResponse;
   if (isCoachPro && fullResponse) {
     const parsedBlocks = parseBlocksFromContent(fullResponse);
     textContent = parsedBlocks.text;
-    blocks = parsedBlocks.blocks;
+    // R1: a reply may cite only confirmed entries the prompt was given.
+    const confirmedIds = new Set(
+      notebookEntries
+        .filter(
+          (e) =>
+            e.status === "active" &&
+            e.confirmedAt != null &&
+            (e.type === "goal" ||
+              e.type === "preference" ||
+              e.type === "commitment"),
+        )
+        .map((e) => e.id),
+    );
+    blocks = filterAllergyCards(
+      filterMemoryRefs(parsedBlocks.blocks, confirmedIds),
+      context.dietaryProfile.allergies.map((a) => a.name),
+    );
+  }
+
+  // The write card is built (and its row created) only for a client still
+  // here: the row locks the previous live card, which an abandoned turn must
+  // not do.
+  if (writeCardProposal && fullResponse && !isAborted()) {
+    const card = await createWriteCardBlock(writeCardProposal, {
+      conversationId,
+      userId,
+      tz,
+    });
+    if (card) blocks = [...blocks, card];
+  }
+
+  // The trail leads the reply's blocks, so it sits right under the text and
+  // above any card. A safety override replaced the reply: no trail for it.
+  const trail = buildTrail(trailEntries);
+  if (isCoachPro && !safetyOverridden && trail.length > 0) {
+    blocks = [{ type: "checked_trail", items: trail }, ...blocks];
   }
 
   const maybeAutoTitle = () => {
-    if (!isAborted() && history.length <= 1) {
+    if (!isAborted() && turnCount <= 1) {
       const shortTitle =
         content.slice(0, 50) + (content.length > 50 ? "..." : "");
       fireAndForget(

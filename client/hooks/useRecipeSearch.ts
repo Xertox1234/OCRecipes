@@ -61,8 +61,17 @@ export function useRecipeSearch(
 
   const total = query.data?.pages[0]?.total ?? 0;
 
+  // Named fields, not `...query`: spreading reads every property of the
+  // result, so TanStack's tracked-props optimisation subscribes the caller to
+  // all of them and it re-renders on changes it never reads.
   return {
-    ...query,
+    isLoading: query.isLoading,
+    isSuccess: query.isSuccess,
+    isError: query.isError,
+    error: query.error,
+    fetchStatus: query.fetchStatus,
+    refetch: query.refetch,
+    isFetchingNextPage: query.isFetchingNextPage,
     data: query.data
       ? { results, total, query: query.data.pages[0]?.query }
       : undefined,

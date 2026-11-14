@@ -54,7 +54,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { QUERY_KEYS } from "@/lib/query-keys";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import { isScanIntent, isScanIntentLocked } from "@/screens/photo-intent-utils";
@@ -78,7 +78,7 @@ import {
   canLog,
   getScanOverlayA11y,
   type ConfirmCardState,
-} from "@/screens/ScanScreenConfirmOverlay-utils";
+} from "@/components/scan/ScanScreenConfirmOverlay-utils";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ScanConfirmOverlay } from "@/components/scan/ScanConfirmOverlay";
 import { CameraPermissionGate } from "@/components/scan/CameraPermissionGate";
@@ -113,6 +113,16 @@ export default function ScanScreen() {
   const haptics = useHaptics();
   const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
+  // The scan-count pill is plain text; speak the limit once, on the edge
+  // from scans-left to none (silent when the camera opens already at it).
+  const prevRemainingScansRef = useRef(remainingScans);
+  useEffect(() => {
+    const prev = prevRemainingScansRef.current;
+    prevRemainingScansRef.current = remainingScans;
+    if (!isPremium && prev !== null && prev > 0 && remainingScans === 0) {
+      AccessibilityInfo.announceForAccessibility("Daily scan limit reached");
+    }
+  }, [isPremium, remainingScans]);
   const { refreshScanCount, features, canGenerateRecipe } = usePremiumContext();
   const queryClient = useQueryClient();
 
@@ -238,6 +248,7 @@ export default function ScanScreen() {
   // Coach hint escalation timer
   useEffect(() => {
     if (scanPhase.type === "HUNTING") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- camera coach-hint timer: the reset stays with the interval it restarts on each HUNTING entry (and with its clear on leaving), kept as one effect rather than restructuring camera lifecycle
       setElapsedSeconds(0);
       elapsedTimerRef.current = setInterval(
         () => setElapsedSeconds((s) => s + 1),
@@ -273,6 +284,7 @@ export default function ScanScreen() {
     sessionNavigatedRef.current = true;
 
     if (!reducedMotion) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- once-per-session SESSION_COMPLETE orchestration (confetti, barcode fetch, navigation) guarded by a ref; it starts external work, so it cannot run during render
       setShowConfetti(true);
     }
 
@@ -360,9 +372,7 @@ export default function ScanScreen() {
         "/api/scanned-items",
         buildScannedItemPayload(confirmCard),
       );
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
+      invalidateFoodLogQueries(queryClient);
       void refreshScanCount();
       toast.success(buildSuccessToastMessage(confirmCard));
       safeGoBack(navigation, () =>

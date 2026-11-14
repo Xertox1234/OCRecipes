@@ -127,7 +127,9 @@ export interface LabelConflict {
    * label makes exactly one field comparable, so a single agreement would verify
    * one number while the user logs sugar, fat, protein and sodium that were
    * never checked. On the CONFLICT path one field is enough, because the label's
-   * values replace the ones they disagree with.
+   * values replace the ones they disagree with — EXCEPT an empty record (no DB
+   * value for any compared field): the label is adopted but nothing checked it,
+   * so `compared` is false there and the client keeps its log gate shut.
    *
    * KNOWN RESIDUAL, and it is new. That conflict-path rationale assumed the
    * whole displayed macro block came from the label, which was true while a
@@ -745,6 +747,25 @@ export function buildLabelConflict(
     // list of names is exactly the field-parallel lookup this file avoids.
     conflicting.push(c);
   }
+  // EMPTY RECORD: the product exists but the database has none of the compared
+  // nutrients, so every row above was skipped and nothing could disagree.
+  // "Fail toward the DB result" has nothing to fail toward here — refusing
+  // would show blanks while discarding a readable label (device-observed
+  // 2026-11-06, Vanilla Coca-Cola 06722908). Adopt the label exactly as a
+  // conflict would: every field the label read counts as differing from the
+  // record's nothing. The record's own values for other nutrients are kept
+  // (nothing disproved them). `compared` stays FALSE: nothing cross-checked the
+  // label, so the client keeps the one-tap log gate shut until the user has
+  // reviewed the values (owner, 2026-11-06).
+  const recordIsEmpty = cmp.every((c) => c.dbVal == null);
+  if (recordIsEmpty) {
+    for (const c of cmp) {
+      if (c.labelVal == null) continue;
+      if (c.requiresDirectRead && !directReads.has(c.requiresDirectRead))
+        continue;
+      conflicting.push(c);
+    }
+  }
   const fields = conflicting.map((c) => c.field);
   if (fields.length === 0) {
     // No disagreement. `compared` distinguishes a genuine agreement (the record
@@ -827,7 +848,9 @@ export function buildLabelConflict(
   // Note the two cases stay genuinely distinct rather than one subsuming the
   // other: when a corroborating field disagrees, the un-read macros are blanked
   // exactly as before, Cherry Coke included.
-  const basisDisproven = conflicting.some((c) => c.corroborates);
+  // An empty record had nothing to disprove — see `recordIsEmpty` above.
+  const basisDisproven =
+    !recordIsEmpty && conflicting.some((c) => c.corroborates);
   const { guarded: mergedPer100g, drops: containmentDrops } =
     enforceContainment(
       basisDisproven
@@ -868,6 +891,6 @@ export function buildLabelConflict(
     fields,
     labelResult,
     containmentDrops,
-    compared: true,
+    compared: !recordIsEmpty,
   };
 }

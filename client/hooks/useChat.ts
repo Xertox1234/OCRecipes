@@ -4,6 +4,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
+import type { BriefForm } from "@shared/lib/opening-brief";
 import {
   apiRequest,
   getApiUrl,
@@ -11,6 +12,7 @@ import {
   type QueryErrorMeta,
   type MutationErrorMeta,
 } from "@/lib/query-client";
+import { chatMessagesKey } from "@/lib/query-keys";
 import {
   PIN_CONVERSATION_KEY,
   pinConversationFn,
@@ -18,6 +20,12 @@ import {
 } from "@/lib/mutation-defaults";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
+import {
+  CHAT_GENERIC_ERROR,
+  chatRequestErrorCopy,
+  parseErrorCode,
+} from "@/lib/chat-error-copy";
+import { raiseIfAiSharingRequired } from "@/lib/ai-sharing-events";
 import {
   streamSse,
   watchStreamHealth,
@@ -270,7 +278,7 @@ export function useChatMessages(
 ) {
   const queryClient = useQueryClient();
   return useQuery<ChatMessage[]>({
-    queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+    queryKey: chatMessagesKey(conversationId),
     enabled: !!conversationId,
     meta,
     ...(opts?.pollPendingRecipeTurn &&
@@ -379,6 +387,9 @@ export function useSendMessage(
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  // The refusal's machine-readable code (e.g. DAILY_LIMIT_REACHED) so callers
+  // branch on it, never on requestError's wording.
+  const [requestErrorCode, setRequestErrorCode] = useState<string | null>(null);
 
   // Refs for stale-closure-safe access inside streaming callbacks
   const isStreamingRef = useRef(false);
@@ -451,7 +462,7 @@ export function useSendMessage(
       content: string,
       screenContext?: string,
       conversationIdOverride?: number,
-      options?: { finderAction?: FinderAction },
+      options?: { finderAction?: FinderAction; openingBrief?: BriefForm },
     ) => {
       const effectiveId = conversationIdOverride ?? conversationId;
       if (!effectiveId) return;
@@ -475,6 +486,7 @@ export function useSendMessage(
       setStreamingStatus(null);
       setStreamError(false);
       setRequestError(null);
+      setRequestErrorCode(null);
 
       let receivedDone = false;
       // Captured separately from abortRef so the `finally` below (outside
@@ -511,6 +523,8 @@ export function useSendMessage(
           content,
           ...(screenContext && { screenContext }),
           ...(options?.finderAction && { finderAction: options.finderAction }),
+          // First send from a new chat that showed the opening brief.
+          ...(options?.openingBrief && { openingBrief: options.openingBrief }),
         });
 
         let pendingFlush = false;
@@ -588,7 +602,7 @@ export function useSendMessage(
               setStreamingContent(streamingContentRef.current);
             }
             void queryClient.invalidateQueries({
-              queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+              queryKey: chatMessagesKey(effectiveId),
             });
             void queryClient.invalidateQueries({
               queryKey: ["/api/chat/conversations"],
@@ -624,11 +638,8 @@ export function useSendMessage(
           // Server-sent application error — surface via requestError instead
           // of throwing, so callers that don't await sendMessage still see it.
           if (data.error) {
-            setRequestError(
-              typeof data.error === "string"
-                ? data.error
-                : "Something went wrong. Please try again.",
-            );
+            // The event's text is server wording — show static copy.
+            setRequestError(CHAT_GENERIC_ERROR);
             sseErrorReceived = true;
           }
         };
@@ -684,14 +695,13 @@ export function useSendMessage(
             outcome.responseText,
             token,
           );
-          let errorMsg = "Something went wrong. Please try again.";
-          try {
-            const parsed = JSON.parse(outcome.responseText);
-            if (typeof parsed.error === "string") errorMsg = parsed.error;
-          } catch {
-            // ignore parse errors
-          }
-          setRequestError(errorMsg);
+          // Static copy chosen by code — never the response body.
+          const code = parseErrorCode(outcome.responseText);
+          // Sending a message is something the user started (privacy audit
+          // H3): a refusal for AI being off opens the question.
+          raiseIfAiSharingRequired(code);
+          setRequestError(chatRequestErrorCopy(code));
+          setRequestErrorCode(code ?? null);
         }
 
         // Stream ended — check if it completed normally
@@ -720,7 +730,7 @@ export function useSendMessage(
           // racing the server's still-in-flight write (same pattern as
           // CoachOverlayContent / CoachChat, #1060).
           void queryClient.invalidateQueries({
-            queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+            queryKey: chatMessagesKey(effectiveId),
             refetchType: "none",
           });
           void queryClient.invalidateQueries({
@@ -730,7 +740,7 @@ export function useSendMessage(
         } else if (!receivedDone && streamingContentRef.current.length > 0) {
           setStreamError(true);
           void queryClient.invalidateQueries({
-            queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+            queryKey: chatMessagesKey(effectiveId),
           });
           void queryClient.invalidateQueries({
             queryKey: ["/api/chat/conversations"],
@@ -772,7 +782,7 @@ export function useSendMessage(
           setStreamingStatus(null);
         }
         // requestError is intentionally NOT cleared here: clearing in the same
-        // synchronous finally frame as setRequestError(errorMsg) batches to null
+        // synchronous finally frame as the error-copy setRequestError call batches to null
         // before the component re-renders (React 19 automatic batching). It is
         // cleared at the start of the next sendMessage call instead — that
         // holds for every consumer of this hook regardless of screen
@@ -797,6 +807,7 @@ export function useSendMessage(
     isStreaming,
     streamError,
     requestError,
+    requestErrorCode,
   };
 }
 

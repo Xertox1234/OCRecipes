@@ -1,0 +1,33 @@
+-- Index meal_suggestion_cache by (user_id, created_at).
+--
+-- getDailyMealSuggestionCount (server/storage/cache.ts) runs on every
+-- POST /api/meal-plan/suggest and filters
+--   WHERE user_id = ? AND created_at >= ? AND created_at < ?
+-- The table's only indexes were cache_key and expires_at, so the per-user
+-- count scanned the table, and the users FK's ON DELETE CASCADE had no index
+-- on user_id either. Performance audit 2026-11-08, finding M6.
+--
+-- CONCURRENTLY: the suggest route writes this table; build without locking
+-- out writes. CREATE INDEX CONCURRENTLY cannot run inside a transaction block
+-- — do NOT wrap it in BEGIN/COMMIT, and do not pass -1 / --single-transaction.
+--
+-- NOT idempotent (no IF NOT EXISTS), deliberately — same reasoning as
+-- 0012_chat_messages_conv_created_id_idx.sql: a failed CONCURRENTLY build
+-- leaves an INVALID index under this name, and IF NOT EXISTS would silently
+-- keep it. If a re-run reports "relation ... already exists", check
+--   SELECT indisvalid FROM pg_index
+--   WHERE indexrelid = 'meal_suggestion_cache_user_created_idx'::regclass;
+-- If `f`, DROP INDEX meal_suggestion_cache_user_created_idx; and re-run.
+-- If `t`, the earlier run succeeded — nothing to do.
+--
+-- ORDERING: order-independent w.r.t. the deploy — an additive index does not
+-- change the query the running server issues. Per the merge rule, paste the
+-- verify output before the PR that ships this file merges.
+--
+-- Apply with:  psql "$DATABASE_URL" -f migrations/0041_meal_suggestion_cache_user_created_idx.sql
+--
+-- Verify (expect "t"):
+--   psql "$DATABASE_URL" -Atc "SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('meal_suggestion_cache_user_created_idx');"
+
+CREATE INDEX CONCURRENTLY meal_suggestion_cache_user_created_idx
+  ON meal_suggestion_cache (user_id, created_at);

@@ -63,3 +63,31 @@ describe("useDietaryProfileForm — toggles leave the haptic to the tile", () =>
     expect(mockSelection).not.toHaveBeenCalled();
   });
 });
+
+describe("useDietaryProfileForm — an allergen handed in from Coach", () => {
+  function renderWith(profile: object, addAllergen: string) {
+    const { queryClient, wrapper } = createQueryWrapper();
+    queryClient.setQueryData(QUERY_KEYS.dietaryProfile, profile);
+    return renderHook(() => useDietaryProfileForm({ addAllergen }), {
+      wrapper,
+    });
+  }
+
+  it("opens the severity choice for it, and saves nothing until one is picked", () => {
+    const { result } = renderWith({ allergies: [] }, "shellfish");
+    expect(result.current.selectedAllergen).toBe("shellfish");
+    expect(result.current.allergies).toEqual([]);
+    act(() => result.current.setSeverity("moderate"));
+    expect(result.current.allergies).toEqual([
+      { name: "shellfish", severity: "moderate" },
+    ]);
+  });
+
+  it("leaves an allergen the profile already has alone", () => {
+    const { result } = renderWith(
+      { allergies: [{ name: "shellfish", severity: "severe" }] },
+      "shellfish",
+    );
+    expect(result.current.selectedAllergen).toBeNull();
+  });
+});

@@ -16,6 +16,7 @@ import {
 } from "@/constants/theme";
 import {
   LIBRARY_ITEMS,
+  visibleLibraryItems,
   libraryTileLabel,
   navigateLibraryItem,
   type LibraryItem,
@@ -112,9 +113,10 @@ export const LibraryGrid = React.memo(function LibraryGrid({
   );
 
   // Render in rows of 2
+  const items = visibleLibraryItems(LIBRARY_ITEMS, counts);
   const rows: LibraryItem[][] = [];
-  for (let i = 0; i < LIBRARY_ITEMS.length; i += 2) {
-    rows.push(LIBRARY_ITEMS.slice(i, i + 2) as LibraryItem[]);
+  for (let i = 0; i < items.length; i += 2) {
+    rows.push(items.slice(i, i + 2));
   }
 
   return (
@@ -129,7 +131,7 @@ export const LibraryGrid = React.memo(function LibraryGrid({
 
       <View
         role="group"
-        accessibilityLabel={`Your Library, ${LIBRARY_ITEMS.length} items`}
+        accessibilityLabel={`Your Library, ${items.length} items`}
         style={styles.grid}
       >
         {rows.map((row, rowIndex) => (

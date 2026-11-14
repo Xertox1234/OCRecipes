@@ -121,8 +121,8 @@ vi.mock("../../services/email", () => ({
 }));
 
 // Every two-step challenge emails a code; stub only the send.
-vi.mock("../../lib/mfa/email-code", async (orig) => ({
-  ...(await orig<typeof import("../../lib/mfa/email-code")>()),
+vi.mock("../../services/mfa/email-code", async (orig) => ({
+  ...(await orig<typeof import("../../services/mfa/email-code")>()),
   sendMfaEmailCode: vi.fn().mockResolvedValue("issued"),
 }));
 
@@ -130,7 +130,7 @@ vi.mock("../../lib/mfa/email-code", async (orig) => ({
 const { mockVerifySecondFactor } = vi.hoisted(() => ({
   mockVerifySecondFactor: vi.fn(),
 }));
-vi.mock("../../lib/mfa/verify-second-factor", () => ({
+vi.mock("../../services/mfa/verify-second-factor", () => ({
   verifySecondFactor: mockVerifySecondFactor,
 }));
 
@@ -2782,7 +2782,6 @@ describe("_helpers utility functions", () => {
           message: "Required",
           code: "invalid_type",
           expected: "string",
-          received: "undefined",
         },
       ]);
       expect(formatZodError(error)).toBe("username: Required");
@@ -2802,7 +2801,6 @@ describe("_helpers utility functions", () => {
           message: "Required",
           code: "invalid_type",
           expected: "string",
-          received: "undefined",
         },
         {
           path: ["password"],
@@ -2810,7 +2808,7 @@ describe("_helpers utility functions", () => {
           code: "too_small",
           minimum: 8,
           inclusive: true,
-          type: "string",
+          origin: "string",
         },
       ]);
       expect(formatZodError(error)).toBe(

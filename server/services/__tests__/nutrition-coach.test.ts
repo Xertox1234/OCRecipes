@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   generateCoachProResponse,
   generateCoachResponse,
@@ -154,6 +154,162 @@ describe("generateCoachProResponse", () => {
     expect(executeToolCall).not.toHaveBeenCalled();
   });
 
+  describe("sentence-by-sentence release", () => {
+    afterEach(() => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    });
+    async function collectChunks(gen: AsyncGenerator<CoachProChunk>) {
+      const out: CoachProChunk[] = [];
+      for await (const c of gen) out.push(c);
+      return out;
+    }
+    const contents = (chunks: CoachProChunk[]) =>
+      chunks.flatMap((c) => (c.type === "content" ? [c.content] : []));
+
+    // Positive control: a safe reply reaches the caller a sentence at a
+    // time, not as one block once the model has finished.
+    it("yields each finished sentence as it arrives", async () => {
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Oats are " },
+          { content: "great. They have " },
+          { content: "fiber. Enjoy" },
+          { content: " them!" },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Oats?" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual([
+        "Oats are great.",
+        " They have fiber.",
+        " Enjoy them!",
+      ]);
+    });
+
+    // Each release is checked with everything before it; a sentence that
+    // fails is never yielded, and the caller is told to replace what it has.
+    it("never yields an unsafe sentence, and overrides what was shown", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockImplementation((t: string) =>
+        /fast for 3 days/.test(t),
+      );
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Hydrate well. " },
+          { content: "You could fast for 3 days. " },
+          { content: "Good luck." },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Fasting?" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual(["Hydrate well."]);
+      expect(chunks.at(-1)).toEqual({ type: "safety_override" });
+      expect(contents(chunks).join("")).not.toMatch(/fast/);
+    });
+
+    it("overrides a reply that is unsafe from its first sentence", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "You likely have diabetes." },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Sugar?" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual([]);
+      expect(chunks).toEqual([{ type: "safety_override" }]);
+    });
+
+    // The coach_blocks fence is held and vetted whole at the end of the
+    // round — unsafe JSON inside it never reaches the caller.
+    it("holds the blocks fence and vets it whole", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockImplementation((t: string) =>
+        /UNSAFE/.test(t),
+      );
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Sure thing. \n\n```coach_blocks\n" },
+          { content: '[{"type":"x","label":"UNSAFE. Really."}]\n```' },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Hi" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual(["Sure thing."]);
+      expect(chunks.at(-1)).toEqual({ type: "safety_override" });
+    });
+
+    it("releases a safe fence in one piece once the round ends", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+      const fence = '```coach_blocks\n[{"type":"x","label":"A. B."}]\n```';
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Sure thing. \n\n" },
+          { content: fence },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Hi" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual(["Sure thing.", " \n\n" + fence]);
+    });
+
+    // Every release is checked against the WHOLE reply so far, including
+    // earlier sentences — not the new sentence alone.
+    it("checks each release with all the text before it", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "One. Two. " },
+          { content: "Three. Four" },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Count" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      const checked = vi
+        .mocked(containsUnsafeCoachAdvice)
+        .mock.calls.map((c) => c[0]);
+      expect(checked).toEqual([
+        "One. Two.",
+        "One. Two. Three.",
+        "One. Two. Three. Four",
+      ]);
+    });
+  });
+
   it("sanitizes all message roles before sending history to OpenAI", async () => {
     const stream = createMockStream([
       { content: "Hello" },
@@ -284,6 +440,8 @@ describe("generateCoachProResponse", () => {
     expect(first.value).toEqual({
       type: "tool_calls",
       toolNames: ["lookup_nutrition"],
+      // Show-the-work: each call's raw arguments ride along for the labels.
+      calls: [{ name: "lookup_nutrition", arguments: '{"query":"chicken"}' }],
     });
     // The tool_calls chunk was yielded — the tool itself must not have run yet.
     expect(executeToolCall).not.toHaveBeenCalled();
@@ -1220,7 +1378,9 @@ describe("Pro tier prompt differentiation", () => {
 
     const prompt = capturedSystemPrompt();
     expect(prompt).toContain("advice builds week over week");
-    expect(prompt).toContain("Last week you mentioned");
+    // Visible memory: recall only confirmed entries, no time claims.
+    expect(prompt).toContain("WHAT YOU CAN MENTION");
+    expect(prompt).not.toContain("Last week you mentioned");
     expect(prompt).toContain("inline_chart");
   });
 
@@ -1230,7 +1390,7 @@ describe("Pro tier prompt differentiation", () => {
 
     const prompt = capturedSystemPrompt();
     expect(prompt).not.toContain("advice builds week over week");
-    expect(prompt).not.toContain("Last week you mentioned");
+    expect(prompt).not.toContain("WHAT YOU CAN MENTION");
     expect(prompt).not.toContain("inline_chart");
   });
 
@@ -1307,13 +1467,14 @@ describe("due-commitments follow-up rendering", () => {
     expect(prompt).toContain("COMMITMENTS DUE FOR FOLLOW-UP:");
     expect(prompt).toContain("Try meal prepping on Sunday");
     // Behavioral rules: one natural check-in, skipped for loaded messages.
-    expect(prompt).toContain("ONE of these");
+    expect(prompt).toContain("ONE brief check-in");
     expect(prompt).toMatch(/urgent|emotionally loaded|safety/);
     expect(prompt).toContain("twice in a row");
+    expect(prompt).toContain("Answer the user's message first");
     // Untrusted-data directive mirrors the notebook's (M12) and the section
     // must render before the notebook section.
     const sectionStart = prompt.indexOf("COMMITMENTS DUE FOR FOLLOW-UP:");
-    const notebookStart = prompt.indexOf("WHAT YOU KNOW ABOUT THIS USER");
+    const notebookStart = prompt.indexOf("WHAT YOU CAN MENTION (confirmed");
     expect(sectionStart).toBeGreaterThan(-1);
     expect(notebookStart).toBeGreaterThan(sectionStart);
     expect(

@@ -3,13 +3,19 @@ import { aiChat } from "../lib/ai-client";
 import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
+import { parseAiJson } from "../lib/ai-json";
 
 const log = createServiceLogger("receipt-analysis");
 
 // Gemini (the Vertex backup) writes null for a field it has no value for,
 // where GPT leaves the key out; both mean "not given".
+// The trailing .optional() keeps the key optional in the inferred type (zod 4
+// types a transformed field as a required key).
 const absentAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  schema.nullish().transform((v) => v ?? undefined);
+  schema
+    .nullish()
+    .transform((v) => v ?? undefined)
+    .optional();
 
 const receiptItemSchema = z.object({
   name: z.string(),
@@ -169,33 +175,23 @@ export async function analyzeReceiptPhotos(
     throw new Error("Failed to analyze receipt photo. Please try again.");
   }
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("No response from receipt analysis");
-
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error(
-      "Receipt analysis returned invalid data. Please try again.",
-    );
-  }
-
-  const result = receiptAnalysisSchema.safeParse(parsed);
-  if (!result.success) {
-    log.warn(
-      { zodErrors: result.error.flatten() },
-      "receipt validation failed",
-    );
-    throw new Error(
-      "Receipt analysis returned unexpected data. Please try again.",
-    );
-  }
+  const result = parseAiJson(
+    response.choices[0]?.message?.content,
+    receiptAnalysisSchema,
+    {
+      noResponse: "No response from receipt analysis",
+      invalid: "Receipt analysis returned invalid data. Please try again.",
+      schemaMismatch:
+        "Receipt analysis returned unexpected data. Please try again.",
+      validationFailed: "receipt validation failed",
+    },
+    log,
+  );
 
   // Filter to food items only; a food line without an estimate gets the default
   return {
-    ...result.data,
-    items: result.data.items
+    ...result,
+    items: result.items
       .filter((item) => item.isFood)
       .map((item) => ({
         ...item,

@@ -24,6 +24,7 @@ import {
 } from "@/constants/theme";
 import type { ReminderMutes } from "@shared/types/reminders";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
 
 interface ReminderToggleConfig {
   key: keyof ReminderMutes;
@@ -54,13 +55,9 @@ const REMINDER_TYPES: ReminderToggleConfig[] = [
 
 function useReminderMutes() {
   return useQuery({
-    queryKey: QUERY_KEYS.dietaryProfile,
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/user/dietary-profile");
-      return res.json();
-    },
+    ...dietaryProfileQueryOptions,
     // The server answers `null` for a user with no profile row yet.
-    select: (profile: { reminderMutes?: ReminderMutes } | null) => ({
+    select: (profile) => ({
       reminderMutes: (profile?.reminderMutes ?? {}) as ReminderMutes,
     }),
     // Intentionally NO meta.silentError here: this query shares
@@ -105,12 +102,13 @@ export default function CoachRemindersScreen() {
   const bottomBudget = useBottomBudget();
   const headerInset = useHeaderContentInset(Spacing.lg);
   const { data, isLoading, isError, refetch } = useReminderMutes();
-  const updateMute = useUpdateReminderMute();
+  const { mutate: updateMute, isPending: isUpdatingMute } =
+    useUpdateReminderMute();
 
   const handleToggle = useCallback(
     (key: keyof ReminderMutes, currentlyMuted: boolean) => {
       haptics.selection();
-      updateMute.mutate({ [key]: !currentlyMuted });
+      updateMute({ [key]: !currentlyMuted });
     },
     [haptics, updateMute],
   );
@@ -150,7 +148,7 @@ export default function CoachRemindersScreen() {
             onPress={() => void refetch()}
             accessibilityRole="button"
             accessibilityLabel="Retry loading reminder settings"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.textLink}
           >
             <ThemedText style={[styles.retryText, { color: theme.link }]}>
               Retry
@@ -168,13 +166,10 @@ export default function CoachRemindersScreen() {
 
             return (
               <View key={item.key}>
-                <View
-                  style={styles.row}
-                  accessible
-                  accessibilityRole="switch"
-                  accessibilityLabel={item.label}
-                  accessibilityValue={{ text: isEnabled ? "on" : "off" }}
-                >
+                {/* Layout only: the Switch below is the accessible control.
+                    A role="switch" View here announced a switch whose
+                    double-tap hit the label, not the toggle. */}
+                <View style={styles.row}>
                   <View style={styles.labelContainer}>
                     <ThemedText style={styles.label}>{item.label}</ThemedText>
                     <ThemedText
@@ -187,6 +182,8 @@ export default function CoachRemindersScreen() {
                     </ThemedText>
                   </View>
                   <Switch
+                    accessibilityLabel={item.label}
+                    accessibilityHint={item.description}
                     value={isEnabled}
                     onValueChange={() => handleToggle(item.key, isMuted)}
                     trackColor={{
@@ -196,7 +193,7 @@ export default function CoachRemindersScreen() {
                     thumbColor={
                       Platform.OS === "android" ? "#FFFFFF" : undefined // hardcoded
                     }
-                    disabled={isLoading || updateMute.isPending}
+                    disabled={isLoading || isUpdatingMute}
                   />
                 </View>
                 {!isLast && (
@@ -219,6 +216,13 @@ export default function CoachRemindersScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ≥44pt tap target for a text link (no hitSlop; see touch-targets tests).
+  textLink: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   container: {
     padding: Spacing.lg,
     gap: Spacing.md,

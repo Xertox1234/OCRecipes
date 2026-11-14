@@ -1,12 +1,14 @@
-import type { Express, Request, Response } from "express";
+import type { Express } from "express";
 import { createServer, type Server } from "node:http";
-import { MulterError } from "multer";
+import { handleUploadError } from "./routes/_upload";
 import { register as registerAuth } from "./routes/auth";
 import { register as registerAuthSocial } from "./routes/auth-social";
 import { register as registerAuthMfa } from "./routes/auth-mfa";
 import { register as registerAuthPassword } from "./routes/auth-password";
 import { register as registerProfile } from "./routes/profile";
+import { register as registerAiSharing } from "./routes/ai-sharing";
 import { register as registerNutrition } from "./routes/nutrition";
+import { register as registerProductImages } from "./routes/product-images";
 import { register as registerPhotos } from "./routes/photos";
 import { register as registerSuggestions } from "./routes/suggestions";
 import { register as registerSavedItems } from "./routes/saved-items";
@@ -23,6 +25,7 @@ import { register as registerGoals } from "./routes/goals";
 import { register as registerMealSuggestions } from "./routes/meal-suggestions";
 import { register as registerFood } from "./routes/food";
 import { register as registerChat } from "./routes/chat";
+import { register as registerCoachWriteCards } from "./routes/coach-write-cards";
 import { register as registerCoachContext } from "./routes/coach-context";
 import { register as registerNotebook } from "./routes/notebook";
 import { register as registerRecipeChat } from "./routes/recipe-chat";
@@ -45,6 +48,7 @@ import { register as registerAdminSearchIndex } from "./routes/admin-search-inde
 import { register as registerApiDocs } from "./routes/api-docs";
 import { register as registerPushTokens } from "./routes/push-tokens";
 import { register as registerReminders } from "./routes/reminders";
+import { register as registerWeeklyReports } from "./routes/weekly-reports";
 import { register as registerCuratedRecipes } from "./routes/curated-recipes";
 import { register as registerCoachCommitments } from "./routes/coach-commitments";
 import { register as registerTastePicks } from "./routes/taste-picks";
@@ -67,7 +71,9 @@ export function registerRoutes(app: Express): Server {
   registerAuthMfa(app);
   registerAuthPassword(app);
   registerProfile(app);
+  registerAiSharing(app);
   registerNutrition(app);
+  registerProductImages(app);
   registerPhotos(app);
   registerSuggestions(app);
   registerSavedItems(app);
@@ -87,6 +93,7 @@ export function registerRoutes(app: Express): Server {
   registerMealSuggestions(app);
   registerFood(app);
   registerChat(app);
+  registerCoachWriteCards(app);
   registerCoachContext(app);
   registerNotebook(app);
   registerRecipeChat(app);
@@ -105,30 +112,14 @@ export function registerRoutes(app: Express): Server {
   registerProfileHub(app);
   registerPushTokens(app);
   registerReminders(app);
+  registerWeeklyReports(app);
   registerCuratedRecipes(app);
   registerCoachCommitments(app);
   registerTastePicks(app);
   registerExport(app);
 
-  // Multer error handler - returns 400 for file validation errors instead of 500
-  app.use(
-    (
-      err: Error,
-      req: Request,
-      res: Response,
-      next: (err?: Error) => void,
-    ): void => {
-      if (err instanceof MulterError) {
-        res.status(400).json({ error: err.message, code: err.code });
-        return;
-      }
-      if (err.message?.includes("Invalid file type")) {
-        res.status(400).json({ error: err.message });
-        return;
-      }
-      next(err);
-    },
-  );
+  // Upload errors (multer limits, rejected file types) -> 400 instead of 500
+  app.use(handleUploadError);
 
   const httpServer = createServer(app);
 

@@ -16,6 +16,7 @@ const {
   mockLaunchImageLibrary,
   mockTakePicture,
   mockRecognize,
+  mockCamPerm,
 } = vi.hoisted(() => ({
   mockReplace: vi.fn(),
   mockGoBack: vi.fn(),
@@ -23,6 +24,15 @@ const {
   mockLaunchImageLibrary: vi.fn(),
   mockTakePicture: vi.fn(),
   mockRecognize: vi.fn(),
+  mockCamPerm: {
+    value: {
+      permission: { status: "granted", canAskAgain: false } as {
+        status: string;
+        canAskAgain: boolean;
+      } | null,
+      isLoading: false,
+    },
+  },
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -41,8 +51,7 @@ vi.mock("@/camera", async () => {
       return null;
     }),
     useCameraPermissions: () => ({
-      permission: { status: "granted", canAskAgain: false },
-      isLoading: false,
+      ...mockCamPerm.value,
       requestPermission: vi.fn(),
     }),
     recognizeTextFromPhoto: (...args: unknown[]) => mockRecognize(...args),
@@ -299,5 +308,66 @@ describe("ReceiptCaptureScreen — capture and gallery failures", () => {
     });
 
     expect(alertSpy).toHaveBeenCalled();
+  });
+});
+
+// Accessibility audit 2026-11-06 H2: every early-return state of this
+// fullScreenModal keeps VoiceOver inside it, not just the camera view.
+describe("ReceiptCaptureScreen — modal containment in every state", () => {
+  afterEach(() => {
+    mockCamPerm.value = {
+      permission: { status: "granted", canAskAgain: false },
+      isLoading: false,
+    };
+  });
+
+  const modalRootOf = (text: string) =>
+    screen.getByText(text).closest('[aria-modal="true"]');
+
+  it("the plan-check failure state is modal", () => {
+    premium.value = {
+      isPremium: false,
+      isPremiumResolved: false,
+      isPremiumStatusError: true,
+    };
+    renderComponent(<ReceiptCaptureScreen />);
+    expect(modalRootOf("Couldn't check your plan")).not.toBeNull();
+  });
+
+  it("the plan-check loading state is modal", () => {
+    premium.value = {
+      isPremium: false,
+      isPremiumResolved: false,
+      isPremiumStatusError: false,
+    };
+    renderComponent(<ReceiptCaptureScreen />);
+    expect(modalRootOf("Go Back")).not.toBeNull();
+  });
+
+  it("the permission-loading state is modal", () => {
+    premium.value = {
+      isPremium: true,
+      isPremiumResolved: true,
+      isPremiumStatusError: false,
+    };
+    mockCamPerm.value = { permission: null, isLoading: true };
+    renderComponent(<ReceiptCaptureScreen />);
+    expect(modalRootOf("Go Back")).not.toBeNull();
+  });
+
+  it("the permission-denied state is modal", () => {
+    premium.value = {
+      isPremium: true,
+      isPremiumResolved: true,
+      isPremiumStatusError: false,
+    };
+    mockCamPerm.value = {
+      permission: { status: "denied", canAskAgain: false },
+      isLoading: false,
+    };
+    renderComponent(<ReceiptCaptureScreen />);
+    expect(
+      modalRootOf("Camera permission is required to scan receipts"),
+    ).not.toBeNull();
   });
 });

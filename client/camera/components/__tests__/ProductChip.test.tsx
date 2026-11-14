@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import * as ProductChipUtils from "../ProductChip-utils";
 import { ProductChip } from "../ProductChip";
 import type { ScanPhase } from "../../types/scan-phase";
@@ -24,6 +24,23 @@ vi.mock("@/components/PressableScale", async () => {
         style={flat(style) as StyleProp<ViewStyle>}
       />
     ),
+  };
+});
+
+// The shared mock's withSpring drops the completion callback. Capture it here
+// so a test can fire it the way Reanimated does: `finished: false` when a newer
+// animation on the same shared value cancels the spring, `true` when it settles.
+type SpringCallback = (finished?: boolean) => void;
+const springCallbacks: SpringCallback[] = [];
+
+vi.mock("react-native-reanimated", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    withSpring: (val: number, _config?: unknown, cb?: SpringCallback) => {
+      if (cb) springCallbacks.push(cb);
+      return val;
+    },
   };
 });
 
@@ -214,5 +231,46 @@ describe("ProductChip — shutter-clearance wiring", () => {
     render(<ProductChip phase={sessionComplete} {...handlers} />);
     expect(spy).toHaveBeenCalledWith(0);
     spy.mockRestore();
+  });
+});
+
+const idle: ScanPhase = { type: "IDLE" };
+
+const chipIsRendered = () => screen.queryAllByRole("button").length > 0;
+
+describe("ProductChip — exit spring completion", () => {
+  beforeEach(() => {
+    springCallbacks.length = 0;
+  });
+
+  it("stays rendered when the variant returns mid-exit and the cancelled spring reports finished: false", () => {
+    const { rerender } = render(
+      <ProductChip phase={barcodeLock} {...handlers} />,
+    );
+    expect(chipIsRendered()).toBe(true);
+
+    // Variant goes away: the exit spring starts (its callback is captured).
+    rerender(<ProductChip phase={idle} {...handlers} />);
+    expect(springCallbacks).toHaveLength(1);
+    const exitCallback = springCallbacks[0];
+
+    // Variant comes back before the exit spring settles: the enter spring
+    // replaces it, so Reanimated fires the exit callback with finished=false.
+    rerender(<ProductChip phase={barcodeLock} {...handlers} />);
+    act(() => exitCallback(false));
+
+    expect(chipIsRendered()).toBe(true);
+  });
+
+  it("unmounts once the exit spring finishes with no variant set", () => {
+    const { rerender } = render(
+      <ProductChip phase={barcodeLock} {...handlers} />,
+    );
+    rerender(<ProductChip phase={idle} {...handlers} />);
+    expect(springCallbacks).toHaveLength(1);
+
+    act(() => springCallbacks[0](true));
+
+    expect(chipIsRendered()).toBe(false);
   });
 });

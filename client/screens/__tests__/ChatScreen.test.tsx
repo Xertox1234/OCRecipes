@@ -7,7 +7,7 @@ import {
   waitFor,
   act,
 } from "@testing-library/react";
-import { SlideInRight } from "react-native-reanimated";
+import { FadeInUp } from "react-native-reanimated";
 import { renderComponent } from "../../../test/utils/render-component";
 import { reactProps } from "../../../test/utils/react-props";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -18,6 +18,7 @@ import {
   noteCoachReplyFinished,
 } from "@/hooks/useCoachUnreadReplies";
 import ChatScreen from "../ChatScreen";
+import { CHAT_LIMIT_ERROR } from "@/lib/chat-error-copy";
 
 const {
   mockSendMessage,
@@ -81,6 +82,7 @@ const {
       isStreaming: false,
       streamError: null as boolean | null,
       requestError: null as string | null,
+      requestErrorCode: null as string | null,
     },
   },
   mockToastError: vi.fn(),
@@ -123,6 +125,11 @@ vi.mock("@/hooks/useChat", () => ({
 
 const { mockImpact } = vi.hoisted(() => ({ mockImpact: vi.fn() }));
 
+const mockPremium = vi.hoisted(() => ({ isPremium: false }));
+vi.mock("@/context/PremiumContext", () => ({
+  usePremiumContext: () => mockPremium,
+}));
+
 // The shared react-native mock has no Keyboard; the keyboard-visibility hook
 // is covered by bottom-budget-utils.test.ts (pure math).
 vi.mock("@/hooks/useKeyboardVisible", () => ({
@@ -137,8 +144,30 @@ vi.mock("@/hooks/useHaptics", () => ({
   }),
 }));
 
+const briefMock = vi.hoisted(() => ({
+  brief: null as unknown,
+  useCoachBrief: vi.fn(),
+  markSeen: vi.fn(),
+}));
+vi.mock("@/hooks/useCoachBrief", () => ({
+  useCoachBrief: (...args: unknown[]) => {
+    briefMock.useCoachBrief(...args);
+    return { brief: briefMock.brief };
+  },
+}));
+vi.mock("@/lib/coach-brief-seen", () => ({
+  getCachedLastBriefSeenDate: () => null,
+  markBriefSeen: briefMock.markSeen,
+}));
+vi.mock("@/hooks/usePendingReminders", () => ({
+  usePendingReminders: () => ({ hasPending: false }),
+}));
+
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
-  useAcknowledgeReminders: () => ({ acknowledge: mockAcknowledge }),
+  useAcknowledgeReminders: () => ({
+    acknowledge: mockAcknowledge,
+    acknowledgeType: mockAcknowledge,
+  }),
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
@@ -169,7 +198,10 @@ beforeEach(() => {
     isStreaming: false,
     streamError: null,
     requestError: null,
+    requestErrorCode: null,
   };
+  mockPremium.isPremium = false;
+  briefMock.brief = null;
 });
 
 describe("ChatScreen — the message you just sent", () => {
@@ -356,16 +388,16 @@ describe("ChatScreen — bubble entrance", () => {
   let userSpring: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     userSpring = vi.spyOn(
-      SlideInRight as unknown as { springify: () => unknown },
-      "springify",
+      FadeInUp as unknown as { duration: () => unknown },
+      "duration",
     );
   });
   afterEach(() => {
     userSpring.mockRestore();
   });
 
-  // Positive control: the message just sent slides in.
-  it("slides in the message you just sent", () => {
+  // Positive control: the message just sent fades up into place.
+  it("animates in the message you just sent", () => {
     mockSendMessage.mockReturnValue(new Promise(() => {}));
     renderComponent(<ChatScreen />);
     fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
@@ -377,7 +409,7 @@ describe("ChatScreen — bubble entrance", () => {
     expect(userSpring).toHaveBeenCalled();
   });
 
-  it("shows saved messages without sliding them in", () => {
+  it("shows saved messages without animating them in", () => {
     mockUseChatMessages.mockReturnValue({
       data: [
         {
@@ -601,6 +633,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: true,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
     mockStreamSnapshot.value = {
@@ -613,6 +646,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: false,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
     expect(screen.getByText("Try Greek yogurt with berries.")).toBeDefined();
@@ -626,6 +660,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: true,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     // While actively streaming the content renders via the live streaming
     // footer, not the pending bubble under test here — assert only on what
@@ -639,9 +674,12 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: false,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
     expect(screen.getByText("Here's a healthy snack idea.")).toBeDefined();
+    // Privacy audit G7: a reply with no id yet cannot be reported.
+    expect(screen.queryByLabelText("Report this reply")).toBeNull();
 
     // The real assistant message lands in the next fetch — bubble clears.
     mockUseChatMessages.mockReturnValue({
@@ -662,6 +700,8 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
     // one instance to prove the bubble actually cleared rather than merely
     // coexisting with the real message.
     expect(screen.getAllByText("Here's a healthy snack idea.")).toHaveLength(1);
+    // The saved AI reply can be reported; the person's own message cannot.
+    expect(screen.getAllByLabelText("Report this reply")).toHaveLength(1);
   });
 
   it("never shows a pending bubble when the stream ends in error", () => {
@@ -672,6 +712,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: true,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
 
@@ -680,6 +721,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: false,
       streamError: true,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
 
@@ -701,6 +743,7 @@ describe("ChatScreen — stream-interrupted toast copy", () => {
       isStreaming: false,
       streamError: true,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
 
@@ -1017,5 +1060,167 @@ describe("ChatScreen — voice ownership", () => {
     };
     rerender(<ChatScreen />);
     expect(input.value).toBe("what about protein");
+  });
+});
+
+describe("ChatScreen — a refused send", () => {
+  // Branch on the code useSendMessage exposes, never the copy's wording.
+  it("adds the upgrade prompt to a daily-limit refusal for a free user", () => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: CHAT_LIMIT_ERROR,
+      requestErrorCode: "DAILY_LIMIT_REACHED",
+    };
+    renderComponent(<ChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      `${CHAT_LIMIT_ERROR} Upgrade to Premium for more messages.`,
+    );
+  });
+
+  it("does not offer Premium to a user who already has it", () => {
+    mockPremium.isPremium = true;
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: CHAT_LIMIT_ERROR,
+      requestErrorCode: "DAILY_LIMIT_REACHED",
+    };
+    renderComponent(<ChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith(CHAT_LIMIT_ERROR);
+  });
+
+  it("shows other refusals as they are, even when the copy mentions a limit", () => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Something about a limit",
+      requestErrorCode: "SERVER_ERROR",
+    };
+    renderComponent(<ChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith("Something about a limit");
+  });
+});
+
+describe("ChatScreen — opening brief", () => {
+  const brief = {
+    greeting: "Good afternoon.",
+    recap: "Nothing logged yet today.",
+    stats: [],
+    pointer: null,
+    reminder: null,
+    suggestions: ["What should I eat next?"],
+    text: "Good afternoon.\n\nNothing logged yet today.",
+  };
+
+  beforeEach(() => {
+    mockRouteParams.value = undefined;
+    briefMock.brief = brief;
+  });
+
+  it("opens a new chat with the brief and keeps the camera and Pro prompts", () => {
+    renderComponent(<ChatScreen />);
+    expect(screen.getByText("Good afternoon.")).toBeTruthy();
+    expect(briefMock.useCoachBrief).toHaveBeenCalledWith("full", true);
+    expect(
+      screen.queryByLabelText("Suggested prompt: What should I eat today?"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText(
+        "Suggested prompt: What's the fastest way to log a meal?",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText("Suggested prompt: How did my week go? (Pro)"),
+    ).toBeTruthy();
+  });
+
+  it("falls back to the usual prompts when there is no brief", () => {
+    briefMock.brief = null;
+    renderComponent(<ChatScreen />);
+    expect(screen.getAllByLabelText(/^Suggested prompt:/)).toHaveLength(4);
+  });
+
+  it("asks for no brief in an existing conversation", () => {
+    mockRouteParams.value = { conversationId: 42 };
+    renderComponent(<ChatScreen />);
+    expect(screen.queryByText("Good afternoon.")).toBeNull();
+    expect(briefMock.useCoachBrief).toHaveBeenLastCalledWith("full", false);
+  });
+
+  it("tells the server which brief the first send followed", async () => {
+    mockCreateMutateAsync.mockResolvedValue({ id: 99 });
+    renderComponent(<ChatScreen />);
+    fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    await waitFor(() =>
+      expect(mockSendMessage).toHaveBeenCalledWith("Hello", undefined, 99, {
+        openingBrief: "full",
+      }),
+    );
+  });
+
+  it("sends a brief chip as the first message", async () => {
+    mockCreateMutateAsync.mockResolvedValue({ id: 99 });
+    renderComponent(<ChatScreen />);
+    fireEvent.click(screen.getByLabelText("What should I eat next?"));
+    await waitFor(() =>
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        "What should I eat next?",
+        undefined,
+        99,
+        { openingBrief: "full" },
+      ),
+    );
+  });
+
+  it("Log from a missed-meal brief opens Quick Log and clears the reminder", () => {
+    briefMock.brief = {
+      ...brief,
+      reminder: {
+        type: "meal-log",
+        lead: "Nothing logged yet today.",
+        actions: [{ label: "Log lunch", kind: "quick-log" }],
+      },
+    };
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText("Log lunch, Nothing logged yet today."),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("QuickLog");
+    expect(mockAcknowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks today seen once the full brief shows", () => {
+    renderComponent(<ChatScreen />);
+    expect(briefMock.markSeen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ChatScreen — brief Not today", () => {
+  it("clears just the missed-meal reminder", () => {
+    mockRouteParams.value = undefined;
+    briefMock.brief = {
+      greeting: "Good afternoon.",
+      recap: "Nothing logged yet today.",
+      stats: [],
+      pointer: null,
+      reminder: {
+        type: "meal-log",
+        lead: "Want to log lunch?",
+        actions: [
+          { label: "Log lunch", kind: "quick-log" },
+          { label: "Not today", kind: "dismiss", reminderType: "meal-log" },
+        ],
+      },
+      suggestions: [],
+      text: "Good afternoon.",
+    };
+    renderComponent(<ChatScreen />);
+    fireEvent.click(screen.getByLabelText("Not today, Want to log lunch?"));
+    expect(mockAcknowledge).toHaveBeenCalledWith("meal-log");
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });

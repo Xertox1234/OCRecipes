@@ -19,18 +19,33 @@ import express from "express";
 import request from "supertest";
 
 import { register } from "../recipe-import";
-import { importRecipeFromUrl } from "../../services/recipe-import";
+import {
+  importRecipeFromUrl,
+  parseRecipeFromLdJson,
+} from "../../services/recipe-import";
 import { generateRecipeImage } from "../../services/recipe-generation";
+import { rehostRecipeImage } from "../../services/recipe-image-rehost";
+import { deleteImage } from "../../lib/image-store";
 import { storage } from "../../storage";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { createMockMealPlanRecipe } from "../../__tests__/factories";
 
 vi.mock("../../services/recipe-import", () => ({
   importRecipeFromUrl: vi.fn(),
+  parseRecipeFromLdJson: vi.fn(),
 }));
 
 vi.mock("../../services/recipe-generation", () => ({
   generateRecipeImage: vi.fn(),
+}));
+
+vi.mock("../../services/recipe-image-rehost", () => ({
+  rehostRecipeImage: vi.fn(),
+}));
+
+vi.mock("../../lib/image-store", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/image-store")>()),
+  deleteImage: vi.fn(),
 }));
 
 vi.mock("../../middleware/auth");
@@ -49,7 +64,7 @@ vi.mock("../../storage", () => ({
 
 function createApp() {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "2mb" }));
   register(app);
   return app;
 }
@@ -202,6 +217,123 @@ describe("POST /api/meal-plan/recipes/parse-url (free preview)", () => {
   });
 });
 
+describe("POST /api/meal-plan/recipes/parse-page (on-device extraction)", () => {
+  let app: express.Express;
+  const URL_OK = "https://example.com/recipe";
+  const post = (body: unknown) =>
+    request(app)
+      .post("/api/meal-plan/recipes/parse-page")
+      .set("Authorization", "Bearer token")
+      .send(body as object);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+    app = createApp();
+  });
+
+  it("returns 400 when ldJson is missing", async () => {
+    const res = await post({ url: URL_OK });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 when ldJson is empty", async () => {
+    expect((await post({ url: URL_OK, ldJson: [] })).status).toBe(400);
+  });
+
+  it("returns 400 with 21 blocks", async () => {
+    const res = await post({ url: URL_OK, ldJson: Array(21).fill("{}") });
+    expect(res.status).toBe(400);
+    expect(parseRecipeFromLdJson).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when total ldJson exceeds 1,000,000 bytes (counted in bytes, not chars)", async () => {
+    // 500_001 chars but 1_000_002 UTF-8 bytes
+    const res = await post({ url: URL_OK, ldJson: ["é".repeat(500_001)] });
+    expect(res.status).toBe(400);
+    expect(parseRecipeFromLdJson).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when total across several blocks exceeds the cap", async () => {
+    const res = await post({
+      url: URL_OK,
+      ldJson: ["a".repeat(600_000), "b".repeat(400_001)],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for an ftp:// url", async () => {
+    const res = await post({ url: "ftp://example.com/r", ldJson: ["{}"] });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when a block is not a string", async () => {
+    const res = await post({ url: URL_OK, ldJson: [{ a: 1 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 200 with parsed data and does not persist", async () => {
+    vi.mocked(parseRecipeFromLdJson).mockReturnValue({
+      success: true,
+      data: buildImportedData({ title: "From Phone" }),
+    });
+    const body = { url: URL_OK, ldJson: ['{"@type":"Recipe"}'] };
+    const res = await post(body);
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("From Phone");
+    expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
+    expect(parseRecipeFromLdJson).toHaveBeenCalledWith(body.ldJson, body.url);
+  });
+
+  it("returns 422 NO_RECIPE_DATA when no recipe found", async () => {
+    vi.mocked(parseRecipeFromLdJson).mockReturnValue({
+      success: false,
+      error: "NO_RECIPE_DATA",
+    });
+    const res = await post({ url: URL_OK, ldJson: ["{}"] });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("NO_RECIPE_DATA");
+    expect(res.body.error).toBe("No recipe data found on this page");
+  });
+
+  it("returns 422 when recipe has neither ingredients nor instructions", async () => {
+    vi.mocked(parseRecipeFromLdJson).mockReturnValue({
+      success: true,
+      data: buildImportedData({ instructions: [], ingredients: [] }),
+    });
+    const res = await post({ url: URL_OK, ldJson: ["{}"] });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("NO_RECIPE_DATA");
+    expect(res.body.error).toMatch(/no instructions or ingredients/);
+  });
+
+  it("never fetches", async () => {
+    vi.mocked(parseRecipeFromLdJson).mockReturnValue({
+      success: true,
+      data: buildImportedData(),
+    });
+    await post({ url: URL_OK, ldJson: ["{}"] });
+    expect(importRecipeFromUrl).not.toHaveBeenCalled();
+  });
+
+  it("does NOT require premium", async () => {
+    vi.mocked(parseRecipeFromLdJson).mockReturnValue({
+      success: true,
+      data: buildImportedData(),
+    });
+    const res = await post({ url: URL_OK, ldJson: ["{}"] });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 500 on unexpected parser error", async () => {
+    vi.mocked(parseRecipeFromLdJson).mockImplementation(() => {
+      throw new Error("boom");
+    });
+    expect((await post({ url: URL_OK, ldJson: ["{}"] })).status).toBe(500);
+  });
+});
+
 describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
   let app: express.Express;
 
@@ -213,7 +345,116 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
     });
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
+    vi.mocked(rehostRecipeImage).mockImplementation(async (url) => url ?? null);
     app = createApp();
+  });
+
+  // Privacy audit M1: the saved recipe's photo is our copy, never the source
+  // site's URL, so the phone never loads it from that site.
+  it("saves our copy of the source photo, not the source URL", async () => {
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      success: true,
+      data: buildImportedData({ imageUrl: "https://example.com/img.jpg" }),
+    });
+    vi.mocked(rehostRecipeImage).mockResolvedValue(
+      "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg",
+    );
+    vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+      createMockMealPlanRecipe({
+        id: 1,
+        imageUrl: "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg",
+      }),
+    );
+
+    await request(app)
+      .post("/api/meal-plan/recipes/import-url")
+      .set("Authorization", "Bearer token")
+      .send({ url: "https://example.com/recipe" });
+
+    expect(rehostRecipeImage).toHaveBeenCalledWith(
+      "https://example.com/img.jpg",
+    );
+    expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageUrl: "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("saves no photo when the copy fails, never the source URL", async () => {
+    vi.mocked(importRecipeFromUrl).mockResolvedValue({
+      success: true,
+      data: buildImportedData({ imageUrl: "https://example.com/img.jpg" }),
+    });
+    vi.mocked(rehostRecipeImage).mockResolvedValue(null);
+    vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+      createMockMealPlanRecipe({ id: 1, imageUrl: null }),
+    );
+
+    await request(app)
+      .post("/api/meal-plan/recipes/import-url")
+      .set("Authorization", "Bearer token")
+      .send({ url: "https://example.com/recipe" });
+
+    expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+      expect.objectContaining({ imageUrl: null }),
+      expect.anything(),
+    );
+  });
+
+  // Security audit 2026-11-12, L10: the copy is stored before the row exists,
+  // so a failed save must remove it or nothing ever points at it.
+  describe("when saving the recipe fails", () => {
+    const OUR_COPY = "https://cdn.ocrecipes.test/recipe-images/recipe-1.jpg";
+
+    beforeEach(() => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: buildImportedData({ imageUrl: "https://example.com/img.jpg" }),
+      });
+      vi.mocked(storage.createMealPlanRecipe).mockRejectedValue(
+        new Error("insert failed"),
+      );
+    });
+
+    const importIt = () =>
+      request(app)
+        .post("/api/meal-plan/recipes/import-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/recipe" });
+
+    it("removes the photo copy it just stored", async () => {
+      vi.mocked(rehostRecipeImage).mockResolvedValue(OUR_COPY);
+
+      const res = await importIt();
+
+      expect(res.status).toBe(500);
+      expect(deleteImage).toHaveBeenCalledWith(OUR_COPY, "recipe");
+    });
+
+    it("leaves a photo that was already ours (another recipe may use it)", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: buildImportedData({ imageUrl: OUR_COPY }),
+      });
+      vi.mocked(rehostRecipeImage).mockResolvedValue(OUR_COPY);
+
+      const res = await importIt();
+
+      expect(res.status).toBe(500);
+      expect(deleteImage).not.toHaveBeenCalled();
+    });
+
+    it("still answers 500 when the cleanup fails too", async () => {
+      vi.mocked(rehostRecipeImage).mockResolvedValue(OUR_COPY);
+      vi.mocked(deleteImage).mockRejectedValueOnce(new Error("storage down"));
+
+      const res = await importIt();
+
+      expect(res.status).toBe(500);
+      expect(deleteImage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("returns 403 for free tier — must NOT call the importer", async () => {

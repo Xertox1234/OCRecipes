@@ -36,6 +36,7 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { ScannedItemResponse } from "@/types/api";
+import { resolveImageUrl } from "@/lib/query-client";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 /** Height of the expanded action row */
@@ -175,7 +176,7 @@ const HistoryItem = React.memo(function HistoryItem({
                 accessibilityRole="button"
               >
                 <FallbackImage
-                  source={{ uri: item.imageUrl ?? undefined }}
+                  source={{ uri: resolveImageUrl(item.imageUrl) ?? undefined }}
                   style={styles.itemImage}
                   fallbackStyle={{
                     ...styles.itemPlaceholder,

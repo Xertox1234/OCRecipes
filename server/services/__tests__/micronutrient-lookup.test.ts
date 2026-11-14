@@ -269,6 +269,24 @@ describe("Micronutrient Lookup", () => {
       expect(storage.getMicronutrientCache).toHaveBeenCalledWith("orange");
     });
 
+    it("reads USDA_API_KEY at call time, not at import", async () => {
+      vi.mocked(storage.getMicronutrientCache).mockResolvedValue(null as any);
+      vi.stubEnv("USDA_API_KEY", "KEY_SET_AFTER_IMPORT");
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ foods: [] }),
+      });
+      globalThis.fetch = fetchMock;
+      try {
+        await lookupMicronutrientsWithCache("orange");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(String(fetchMock.mock.calls[0][0])).toContain(
+        "api_key=KEY_SET_AFTER_IMPORT",
+      );
+    });
+
     it("fetches from USDA on cache miss and caches result", async () => {
       vi.mocked(storage.getMicronutrientCache).mockResolvedValue(null as any);
       vi.mocked(storage.setMicronutrientCache).mockResolvedValue(

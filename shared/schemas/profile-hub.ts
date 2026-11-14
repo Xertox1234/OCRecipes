@@ -28,6 +28,7 @@ export const libraryCountsSchema = z.object({
   pantryItems: z.number(),
   featuredRecipes: z.number(),
   favouriteRecipes: z.number(),
+  weeklyReports: z.number(),
 });
 
 export type LibraryCountsResponse = z.infer<typeof libraryCountsSchema>;

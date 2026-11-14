@@ -17,3 +17,8 @@ export const PRIVACY_POLICY_URL: string =
 
 export const TERMS_URL: string =
   process.env.EXPO_PUBLIC_TERMS_URL?.trim() || "https://ocrecipes.com/terms";
+
+/** US state health-data laws ask for this page to be linked on its own (privacy audit 2026-11-10, G2). */
+export const HEALTH_PRIVACY_POLICY_URL: string =
+  process.env.EXPO_PUBLIC_HEALTH_PRIVACY_POLICY_URL?.trim() ||
+  "https://ocrecipes.com/health-privacy";

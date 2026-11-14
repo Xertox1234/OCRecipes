@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  buildCoachStreamBody,
+  type CoachStreamExtras,
+} from "@/lib/coach-stream-body";
+import {
   getApiUrl,
   notifyIfStreamSessionExpired,
   queryClient,
@@ -18,14 +22,27 @@ import {
   createFenceScanState,
   filterValidBlocks,
 } from "@/components/coach/coach-chat-utils";
+import {
+  initialRevealState,
+  nextReveal,
+} from "@/components/coach/stream-reveal-utils";
+import {
+  enqueueStep,
+  initialStepQueue,
+  stepsSettled,
+  tickSteps,
+} from "@/components/coach/step-pacing-utils";
+import { coachRevealPacing, coachStepPacing } from "@/constants/animations";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
-import type { FinderAction } from "@shared/schemas/recipe-finder";
+import { parseErrorCode } from "@/lib/chat-error-copy";
+import { raiseIfAiSharingRequired } from "@/lib/ai-sharing-events";
 
-// Exported so tests can import and verify against them
+// Exported so tests can import and verify against them. How much text each
+// tick reveals is decided by `nextReveal` (stream-reveal-utils.ts), tuned by
+// `coachRevealPacing`.
 export const HOLD_GATE_MS = 700;
 export const DRAIN_INTERVAL_MS = 50;
-export const CHARS_PER_TICK = 20;
 
 // Termination ceilings. Order: server SSE_TIMEOUT_MS (shared/constants/sse.ts,
 // enforced by server/routes/chat.ts) < STREAM_INACTIVITY_MS < XHR_TIMEOUT_MS.
@@ -44,42 +61,6 @@ export const STREAM_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
 // OkHttp total-call cap, not an idle one.
 export const XHR_TIMEOUT_MS = STREAM_INACTIVITY_MS + 25_000;
 
-/**
- * Pure helper — returns the slice of buffer to release this drain tick.
- * Returns "" when the hold gate has not elapsed yet.
- */
-export function charsToRelease(
-  buffer: string,
-  elapsedMs: number,
-  holdGateMs: number,
-  charsPerTick: number,
-): string {
-  if (elapsedMs < holdGateMs) return "";
-  return buffer.slice(0, charsPerTick);
-}
-
-/**
- * Extract the machine-readable `code` from a non-200 stream response body.
- * The server's `sendError` returns `{ error, code }`; a pre-stream 429
- * (daily limit) is delivered this way before the SSE stream starts. Returns
- * undefined when the body is non-JSON or carries no string `code`.
- */
-export function parseErrorCode(responseText: string): string | undefined {
-  try {
-    const parsed: unknown = JSON.parse(responseText);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof (parsed as { code?: unknown }).code === "string"
-    ) {
-      return (parsed as { code: string }).code;
-    }
-  } catch {
-    // Non-JSON body — no machine-readable code to extract.
-  }
-  return undefined;
-}
-
 interface UseCoachStreamOptions {
   onDone?: (fullText: string, blocks?: CoachBlock[]) => void;
   // `code` is the machine-readable ApiError code parsed from a non-200 stream
@@ -94,11 +75,7 @@ export interface UseCoachStreamReturn {
   startStream: (
     conversationId: number,
     userMessage: string,
-    extras?: {
-      warmUpId?: string | null;
-      screenContext?: string;
-      finderAction?: FinderAction;
-    },
+    extras?: CoachStreamExtras,
   ) => void;
   abortStream: () => void;
   streamingContent: string;
@@ -135,6 +112,10 @@ export function useCoachStream({
   // offsets from a prior stream corrupt the next one's fence detection.
   const fenceStateRef = useRef(createFenceScanState());
   const firstCharDrainedRef = useRef(false); // cleared status on first drain?
+  // Show-the-work: Coach's steps, each held on the line for a minimum time.
+  const stepQueueRef = useRef(initialStepQueue());
+  const stepSeenRef = useRef(false); // a `step` arrived: ignore `status`
+  const shownStepRef = useRef<string | null>(null);
   const fullTextRef = useRef(""); // fence-stripped text to pass to onDone
   const blocksRef = useRef<CoachBlock[]>([]);
   // Mirrors `isStreaming` for a synchronous, stale-closure-safe guard read in
@@ -148,6 +129,8 @@ export function useCoachStream({
   // Aborting it stops the in-flight request and its inactivity watchdog.
   const abortRef = useRef<AbortController | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const revealStateRef = useRef(initialRevealState()); // word-pacing credit
+  const lastTickAtRef = useRef(0); // Date.now() of the previous drain tick
   // Offline / dead-socket guard for the in-flight stream, and the post-abort
   // messages poll. Both end with the stream, a new stream, or unmount.
   const disposeHealthRef = useRef<(() => void) | null>(null);
@@ -166,18 +149,54 @@ export function useCoachStream({
 
   const startDrain = useCallback(() => {
     if (drainIntervalRef.current !== null) return; // already running
+    revealStateRef.current = initialRevealState();
+    lastTickAtRef.current = Date.now();
     drainIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startedAtRef.current;
-      const chunk = charsToRelease(
-        bufferRef.current,
-        elapsed,
-        HOLD_GATE_MS,
-        CHARS_PER_TICK,
+      const now = Date.now();
+      const elapsed = now - startedAtRef.current;
+      // A starved JS timer must not turn into one big catch-up burst.
+      const dt = Math.min(now - lastTickAtRef.current, DRAIN_INTERVAL_MS * 4);
+      lastTickAtRef.current = now;
+      const steps = tickSteps(
+        stepQueueRef.current,
+        now,
+        coachStepPacing.minStepMs,
       );
+      stepQueueRef.current = steps;
+      const stepLabel = steps.current?.label ?? null;
+      if (stepLabel !== shownStepRef.current) {
+        shownStepRef.current = stepLabel;
+        // A finished step keeps its words up until the reply starts; one that
+        // ends under the reply clears.
+        if (stepLabel) setStatusText(stepLabel);
+        else if (firstCharDrainedRef.current) setStatusText("");
+      }
+      let chunk = "";
+      // Early steps play out before the first word; later ones never pause it.
+      if (
+        elapsed >= HOLD_GATE_MS &&
+        (firstCharDrainedRef.current ||
+          stepsSettled(steps, now, coachStepPacing.minStepMs))
+      ) {
+        const step = nextReveal(
+          bufferRef.current,
+          dt,
+          isDoneRef.current,
+          revealStateRef.current,
+          coachRevealPacing,
+        );
+        revealStateRef.current = step.state;
+        chunk = step.release;
+      }
 
       if (chunk.length === 0) {
         // Nothing to drain this tick
-        if (isDoneRef.current && bufferRef.current.length === 0) {
+        // Every step gets its full time, even one that arrived late.
+        if (
+          isDoneRef.current &&
+          bufferRef.current.length === 0 &&
+          stepsSettled(steps, now, coachStepPacing.minStepMs)
+        ) {
           // Buffer exhausted and server is done — finish
           stopDrain();
           isStreamingRef.current = false;
@@ -195,7 +214,7 @@ export function useCoachStream({
 
       if (!firstCharDrainedRef.current) {
         firstCharDrainedRef.current = true;
-        setStatusText(""); // clear status as text starts appearing
+        if (!stepQueueRef.current.current) setStatusText(""); // text starts
       }
       setStreamingContent((prev) => prev + chunk);
     }, DRAIN_INTERVAL_MS);
@@ -213,6 +232,9 @@ export function useCoachStream({
     displayedLengthRef.current = 0;
     fenceStateRef.current = createFenceScanState();
     firstCharDrainedRef.current = false;
+    stepQueueRef.current = initialStepQueue();
+    stepSeenRef.current = false;
+    shownStepRef.current = null;
     isStreamingRef.current = false;
     setIsStreaming(false);
     setStatusText("");
@@ -234,11 +256,7 @@ export function useCoachStream({
     (
       conversationId: number,
       userMessage: string,
-      extras?: {
-        warmUpId?: string | null;
-        screenContext?: string;
-        finderAction?: FinderAction;
-      },
+      extras?: CoachStreamExtras,
     ) => {
       // Refuse an overlapping stream: most internal state here (buffer,
       // accumulated text, abortRef, timers) is a single shared slot, not
@@ -258,6 +276,9 @@ export function useCoachStream({
       displayedLengthRef.current = 0;
       fenceStateRef.current = createFenceScanState();
       firstCharDrainedRef.current = false;
+      stepQueueRef.current = initialStepQueue();
+      stepSeenRef.current = false;
+      shownStepRef.current = null;
       fullTextRef.current = "";
       blocksRef.current = [];
       startedAtRef.current = Date.now();
@@ -322,13 +343,7 @@ export function useCoachStream({
           disposeHealthRef.current = health.dispose;
 
           const turnKey = randomUuidV4();
-          const body: Record<string, unknown> = {
-            content: userMessage,
-            turnKey,
-          };
-          if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
-          if (extras?.screenContext) body.screenContext = extras.screenContext;
-          if (extras?.finderAction) body.finderAction = extras.finderAction;
+          const body = buildCoachStreamBody(userMessage, turnKey, extras);
 
           streamSse({
             url: `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`,
@@ -343,9 +358,16 @@ export function useCoachStream({
                 fail(String(data.error));
                 return "stop";
               }
-              if (
+              if (typeof data.step === "string") {
+                stepSeenRef.current = true;
+                stepQueueRef.current = enqueueStep(
+                  stepQueueRef.current,
+                  data.step,
+                );
+              } else if (
                 typeof data.status === "string" &&
-                !firstCharDrainedRef.current
+                !firstCharDrainedRef.current &&
+                !stepSeenRef.current
               ) {
                 setStatusText(data.status);
               }
@@ -368,6 +390,9 @@ export function useCoachStream({
                 displayedLengthRef.current = 0;
                 fenceStateRef.current = createFenceScanState();
                 firstCharDrainedRef.current = false;
+                stepQueueRef.current = initialStepQueue();
+                stepSeenRef.current = false;
+                shownStepRef.current = null;
                 fullTextRef.current = data.safety_override;
                 setStreamingContent("");
                 bufferRef.current = data.safety_override;
@@ -399,10 +424,13 @@ export function useCoachStream({
                     outcome.responseText,
                     token,
                   );
-                  fail(
-                    `${outcome.status}: ${outcome.responseText}`,
-                    parseErrorCode(outcome.responseText),
-                  );
+                  {
+                    const code = parseErrorCode(outcome.responseText);
+                    // A refusal for AI being off opens the question
+                    // (privacy audit H3).
+                    raiseIfAiSharingRequired(code);
+                    fail(`${outcome.status}: ${outcome.responseText}`, code);
+                  }
                   break;
                 case "network":
                   fail("Network error");

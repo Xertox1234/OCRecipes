@@ -124,6 +124,7 @@ export function RecentActionsRow({
     <Animated.View entering={entering}>
       <View style={styles.labelRow}>
         <ThemedText
+          accessibilityRole="header"
           type="small"
           style={[styles.sectionLabel, { color: theme.textSecondary }]}
         >

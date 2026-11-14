@@ -87,44 +87,44 @@ export interface OfferRecipeArgs {
  * "extreme") is dropped rather than rejecting the whole call; only a missing,
  * empty or over-long dish fails the parse.
  */
-export const offerRecipeArgsSchema: z.ZodType<
-  OfferRecipeArgs,
-  z.ZodTypeDef,
-  unknown
-> = z.unknown().transform((raw, ctx) => {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    ctx.addIssue({ code: "custom", message: "args must be an object" });
-    return z.NEVER;
-  }
-  const r = raw as Record<string, unknown>;
-  const dish = parseDish(r.dish);
-  if (dish === null) {
-    ctx.addIssue({ code: "custom", message: "invalid dish" });
-    return z.NEVER;
-  }
-  const out: OfferRecipeArgs = {
-    dish,
-    from_conversation: r.from_conversation === true,
-  };
-  const servings = recipeDetailsSchema.shape.servings.safeParse(r.servings);
-  if (servings.success && servings.data !== undefined) {
-    out.servings = servings.data;
-  }
-  const spice = spiceLevelSchema.safeParse(r.spice);
-  if (spice.success) out.spice = spice.data;
-  const time = cookingTimeSchema.safeParse(r.time);
-  if (time.success) out.time = time.data;
-  if (Array.isArray(r.ingredients)) {
-    out.ingredients = r.ingredients
-      .filter((i): i is string => typeof i === "string")
-      .slice(0, INGREDIENTS_MAX)
-      .map((i) =>
-        sanitizeContextField(i, INGREDIENT_MAX).slice(0, INGREDIENT_MAX).trim(),
-      )
-      .filter((i) => i.length > 0);
-  }
-  return out;
-});
+export const offerRecipeArgsSchema: z.ZodType<OfferRecipeArgs, unknown> = z
+  .unknown()
+  .transform((raw, ctx) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      ctx.addIssue({ code: "custom", message: "args must be an object" });
+      return z.NEVER;
+    }
+    const r = raw as Record<string, unknown>;
+    const dish = parseDish(r.dish);
+    if (dish === null) {
+      ctx.addIssue({ code: "custom", message: "invalid dish" });
+      return z.NEVER;
+    }
+    const out: OfferRecipeArgs = {
+      dish,
+      from_conversation: r.from_conversation === true,
+    };
+    const servings = recipeDetailsSchema.shape.servings.safeParse(r.servings);
+    if (servings.success && servings.data !== undefined) {
+      out.servings = servings.data;
+    }
+    const spice = spiceLevelSchema.safeParse(r.spice);
+    if (spice.success) out.spice = spice.data;
+    const time = cookingTimeSchema.safeParse(r.time);
+    if (time.success) out.time = time.data;
+    if (Array.isArray(r.ingredients)) {
+      out.ingredients = r.ingredients
+        .filter((i): i is string => typeof i === "string")
+        .slice(0, INGREDIENTS_MAX)
+        .map((i) =>
+          sanitizeContextField(i, INGREDIENT_MAX)
+            .slice(0, INGREDIENT_MAX)
+            .trim(),
+        )
+        .filter((i) => i.length > 0);
+    }
+    return out;
+  });
 
 /**
  * For COMPARISON only, never display. Strips U+0300–036F combining marks in

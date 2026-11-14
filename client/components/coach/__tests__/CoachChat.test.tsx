@@ -16,7 +16,8 @@ import * as RN from "react-native";
 import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
-import { streamBlockEntranceHoldMs } from "@/constants/animations";
+import { blockEntranceTotalMs } from "@/components/coach/blocks/block-entrance";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 // Mutable container for the onError callback CoachChat passes to useCoachStream,
 // so the test can trigger a 429 limit error after render. vi.hoisted is required
@@ -415,6 +416,8 @@ describe("CoachChat — a finished reply's blocks", () => {
 
       expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
       expect(screen.queryByLabelText("Regenerate response")).toBeNull();
+      // Privacy audit G7: the report flag waits with them.
+      expect(screen.queryByLabelText("Report this reply")).toBeNull();
     });
 
     it("swaps to the saved copy once the entrance is done", () => {
@@ -422,11 +425,45 @@ describe("CoachChat — a finished reply's blocks", () => {
       act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
       deliverSavedReply(rerender);
       act(() => {
-        vi.advanceTimersByTime(streamBlockEntranceHoldMs);
+        vi.advanceTimersByTime(
+          blockEntranceTotalMs([quickReplies as CoachBlock]),
+        );
       });
 
       expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
       expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+      // Privacy audit G7: the saved AI reply can be reported; the person's
+      // own message cannot.
+      expect(screen.getAllByLabelText("Report this reply")).toHaveLength(1);
+    });
+
+    // The chips arrive one after another, so a longer row holds the saved
+    // copy back until its last chip has entered.
+    it("holds the saved copy until the last chip has entered", () => {
+      const longRow = {
+        type: "quick_replies",
+        options: ["Yes please", "Not now", "Tell me more"].map((label) => ({
+          label,
+          message: label,
+        })),
+      };
+      const { rerender } = renderCoachChat();
+      act(() => coachStreamRef.onDone?.("Here you go", [longRow]));
+      deliverSavedReply(rerender, [longRow]);
+      const total = blockEntranceTotalMs([longRow as CoachBlock]);
+
+      act(() => {
+        vi.advanceTimersByTime(
+          blockEntranceTotalMs([quickReplies as CoachBlock]),
+        );
+      });
+      expect(screen.queryByLabelText("Regenerate response")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(total);
+      });
+      expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+      expect(screen.getAllByLabelText("Tell me more")).toHaveLength(1);
     });
 
     // No entrance plays under Reduce Motion, so nothing is held.
@@ -808,9 +845,23 @@ describe("CoachChat — 'Coach responded' announcement", () => {
     });
   }
 
-  it("announces when the reply arrives", () => {
+  // iOS speaks the reply's last sentence in place of the generic cue: the
+  // per-sentence announcer needs whitespace after the full stop, so it never
+  // reached the final sentence (getStreamFinishAnnouncement).
+  it("announces when the reply arrives (iOS speaks the last sentence)", () => {
     streamThenEnd(() => coachStreamRef.onDone?.("Here you go"));
-    expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+    expect(announceSpy).toHaveBeenCalledWith("Here you go");
+  });
+
+  it("announces 'Coach responded' when the reply arrives on Android", () => {
+    const originalOS = RN.Platform.OS;
+    RN.Platform.OS = "android";
+    try {
+      streamThenEnd(() => coachStreamRef.onDone?.("Here you go"));
+      expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+    } finally {
+      RN.Platform.OS = originalOS;
+    }
   });
 
   it("announces a reply made only of blocks", () => {
@@ -840,6 +891,6 @@ describe("CoachChat — 'Coach responded' announcement", () => {
 
   it("announces a dead-socket abort that kept partial text", () => {
     streamThenEnd(() => coachStreamRef.onDone?.("Here is half"));
-    expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+    expect(announceSpy).toHaveBeenCalledWith("Here is half");
   });
 });

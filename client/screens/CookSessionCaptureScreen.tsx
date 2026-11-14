@@ -1,7 +1,3 @@
-// The rule is still off globally until every batch lands (todo
-// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
-// eslint-disable below counts as used and lint-staged --fix keeps it.
-/* eslint react-hooks/set-state-in-effect: "error" */
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   StyleSheet,
@@ -12,6 +8,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  AccessibilityInfo,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -29,6 +27,7 @@ import { AllergenWarningBanner } from "@/components/AllergenWarningBanner";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 import { useToast } from "@/context/ToastContext";
 import {
   AbsoluteFill,
@@ -40,6 +39,7 @@ import {
 import { logger } from "@/lib/logger";
 import {
   getCookPhotoAllergenState,
+  getCookPhotoResultAnnouncement,
   ALLERGEN_CHECK_FAILED_NOTICE,
   type CookPhotoAllergenState,
 } from "./CookSessionCaptureScreen-utils";
@@ -74,6 +74,8 @@ export default function CookSessionCaptureScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ingredientCount, setIngredientCount] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // The "Detecting ingredients..." overlay is hidden-from-AT text; speak it.
+  useDelayedLoadingAnnouncement(isAnalyzing);
   // Each photo response re-checks ALL session ingredients, so the latest
   // response replaces earlier allergen state rather than accumulating.
   const [allergenState, setAllergenState] = useState<CookPhotoAllergenState>({
@@ -120,8 +122,17 @@ export default function CookSessionCaptureScreen() {
           photoUri,
         });
         haptics.notification(Haptics.NotificationFeedbackType.Success);
+        const nextAllergenState = getCookPhotoAllergenState(result);
         setIngredientCount(result.ingredients.length);
-        setAllergenState(getCookPhotoAllergenState(result));
+        setAllergenState(nextAllergenState);
+        const resultAnnouncement = getCookPhotoResultAnnouncement(
+          result.ingredients.length,
+          nextAllergenState,
+          Platform.OS,
+        );
+        if (resultAnnouncement) {
+          AccessibilityInfo.announceForAccessibility(resultAnnouncement);
+        }
         setPhotos((prev) => [...prev, photoUri]);
       } catch (error) {
         logger.error("[CookSessionCapture] photo analysis failed", error);

@@ -13,8 +13,8 @@ import {
 describe("AI_FEATURES table", () => {
   const rows: [string, AiFeatureConfig][] = Object.entries(AI_FEATURES);
 
-  it("has one row per call site (34)", () => {
-    expect(rows).toHaveLength(34);
+  it("has one row per call site (35)", () => {
+    expect(rows).toHaveLength(35);
   });
 
   it("every model has a provider/ prefix", () => {

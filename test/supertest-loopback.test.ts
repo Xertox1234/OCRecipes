@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import express from "express";
 import request from "supertest";
 
-// Canary for the supertest patch in test/setup.ts. Unpatched, request(app)
-// listens on the wildcard address, so a loopback connection arrives as
-// "::ffff:127.0.0.1" — and on macOS another process can hold 127.0.0.1 on the
-// same port and answer instead. Patched, it listens on 127.0.0.1 itself.
+// Canary for supertest's loopback bind. Before 7.3, request(app) listened on
+// the wildcard address, so a loopback connection arrived as "::ffff:127.0.0.1"
+// — and on macOS another process could hold 127.0.0.1 on the same port and
+// answer instead; test/setup.ts patched it. supertest 7.3 binds 127.0.0.1
+// itself and the patch is gone; if a future supertest drops the bind, this fails.
 // See docs/solutions/runtime-errors/supertest-per-request-listener-reaches-foreign-server-on-macos-2026-10-20.md
 describe("supertest request(app) binds 127.0.0.1", () => {
   const app = express();

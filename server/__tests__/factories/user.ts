@@ -32,6 +32,9 @@ const userDefaults: User = {
   subscriptionExpiresAt: null,
   timezone: null,
   lastActiveAt: null,
+  aiSharingAllowedAt: null,
+  aiSharingVersion: null,
+  aiSharingHistory: [],
   createdAt: new Date("2024-01-01"),
 };
 
@@ -43,6 +46,8 @@ const userProfileDefaults: UserProfile = {
   id: 1,
   userId: "1",
   allergies: [],
+  moodScore: 0,
+  moodUpdatedAt: null,
   healthConditions: [],
   dietType: null,
   foodDislikes: [],
@@ -56,6 +61,9 @@ const userProfileDefaults: UserProfile = {
   glp1Medication: null,
   glp1StartDate: null,
   healthDataConsentAt: null,
+  healthDataConsentVersion: null,
+  healthDataConsentWithdrawnAt: null,
+  healthDataConsentHistory: [],
   reminderMutes: {},
   notificationPrefs: {
     categories: {},

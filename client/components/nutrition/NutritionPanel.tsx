@@ -6,7 +6,7 @@ import { Card } from "@/components/Card";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
-import { roundToOneDecimal } from "@/screens/nutrition-detail-utils";
+import { roundToOneDecimal } from "@/components/nutrition/nutrition-detail-utils";
 import { BandDot, BandPill } from "./BandIndicators";
 import {
   bandTagText,

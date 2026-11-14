@@ -48,8 +48,32 @@ const {
   },
 }));
 
+const draftState = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  hasPending: false,
+  lastSeen: "2026-11-08" as string | null | undefined,
+  isCoachPro: false,
+}));
+
+vi.mock("@/hooks/usePendingReminders", () => ({
+  usePendingReminders: () => ({ hasPending: draftState.hasPending }),
+}));
+vi.mock("@/lib/coach-brief-seen", () => ({
+  getCachedLastBriefSeenDate: () => draftState.lastSeen,
+}));
+vi.mock("@/hooks/usePremiumFeatures", () => ({
+  usePremiumFeature: () => draftState.isCoachPro,
+}));
+vi.mock(
+  "@/components/coach/opening-brief-decision",
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    localDateString: () => "2026-11-08",
+  }),
+);
+
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
+  useNavigation: () => ({ navigate: draftState.navigate }),
   useFocusEffect: (cb: () => void) => {
     focusEffectCb.current = cb;
   },
@@ -145,6 +169,9 @@ beforeEach(() => {
   refreshControlProps.current = null;
   conversations.setData = null;
   useChatConversationsOpts.current = null;
+  draftState.hasPending = false;
+  draftState.lastSeen = "2026-11-08";
+  draftState.isCoachPro = false;
 });
 
 // P3-2026-09-26: a fixed settle margin (below) doesn't cover recipe/remix
@@ -293,5 +320,39 @@ describe("ChatListScreen — refocus in the same transition as an abort", () => 
     expect(mockRefetch).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Settled title")).toBeTruthy();
     expect(screen.queryByText("Pre-settle title")).toBeNull();
+  });
+});
+
+describe("ChatListScreen — opening brief draft", () => {
+  it("stays on the list once today's brief was seen", () => {
+    renderComponent(<ChatListScreen />);
+    expect(draftState.navigate).not.toHaveBeenCalledWith("Chat");
+  });
+
+  it("opens a new chat on the first visit of the day", () => {
+    draftState.lastSeen = "2026-11-07";
+    renderComponent(<ChatListScreen />);
+    expect(draftState.navigate).toHaveBeenCalledWith("Chat");
+    expect(draftState.navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a new chat when a reminder is pending", () => {
+    draftState.hasPending = true;
+    renderComponent(<ChatListScreen />);
+    expect(draftState.navigate).toHaveBeenCalledWith("Chat");
+  });
+
+  it("leaves Coach Pro users on the list (their tab opens Coach Pro)", () => {
+    draftState.hasPending = true;
+    draftState.isCoachPro = true;
+    renderComponent(<ChatListScreen />);
+    expect(draftState.navigate).not.toHaveBeenCalledWith("Chat");
+  });
+
+  it("decides once, not again on a re-render", () => {
+    draftState.hasPending = true;
+    const { rerender } = renderComponent(<ChatListScreen />);
+    rerender(<ChatListScreen />);
+    expect(draftState.navigate).toHaveBeenCalledTimes(1);
   });
 });

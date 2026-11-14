@@ -6,6 +6,7 @@ import {
   shouldUpdateStrategy,
 } from "../notebook-extraction";
 import { aiChat } from "../../lib/ai-client";
+import { storage } from "../../storage";
 import { SYSTEM_PROMPT_BOUNDARY } from "../../lib/ai-safety";
 import { civilDateString } from "../../lib/civil-date";
 
@@ -31,6 +32,7 @@ vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../storage", () => ({
   storage: {
     getNotebookEntryCount: vi.fn().mockResolvedValue(3),
+    updateMoodScore: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -317,9 +319,148 @@ describe("Notebook Extraction", () => {
       {
         type: "preference",
         content: "Prefers quick lunches with vegetables",
+        label: null,
         followUpDate: null,
       },
     ]);
+  });
+
+  describe("acknowledgement-only turns (perf audit M4)", () => {
+    const runWith = (userText: string) =>
+      extractNotebookEntries(
+        [
+          { role: "assistant" as const, content: "Want to avoid dairy?" },
+          { role: "user" as const, content: userText },
+          { role: "assistant" as const, content: "Got it." },
+        ],
+        "user-1",
+        1,
+        { now: new Date("2026-01-01T00:00:00Z"), tz: "UTC" },
+      );
+
+    it.each(["thanks!", "Thank you 🙏", "ok", "Okay, cool.", "got it 👍"])(
+      "skips the model call for %j",
+      async (text) => {
+        const entries = await runWith(text);
+        expect(entries).toEqual([]);
+        expect(mockCreate).not.toHaveBeenCalled();
+        expect(storage.getNotebookEntryCount).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(["yes", "no", "I'm vegan", "thanks, I'll try the oats tomorrow"])(
+      "still extracts for %j",
+      async (text) => {
+        mockCreate.mockResolvedValue(
+          mockCompletion(JSON.stringify({ entries: [] })),
+        );
+        await runWith(text);
+        expect(mockCreate).toHaveBeenCalledTimes(1);
+      },
+    );
+  });
+
+  describe("visible memory", () => {
+    const run = (payload: unknown) => {
+      mockCreate.mockResolvedValue(mockCompletion(JSON.stringify(payload)));
+      return extractNotebookEntries(
+        [{ role: "user" as const, content: "hi" }],
+        "user-1",
+        1,
+        { now: new Date("2026-01-01T00:00:00Z"), tz: "UTC" },
+      );
+    };
+
+    it("keeps a commitment's short second-person label", async () => {
+      const entries = await run({
+        entries: [
+          {
+            type: "commitment",
+            content: "The user agreed to add pumpkin seeds to their salad",
+            label: "pumpkin seeds on your salad",
+            followUpDate: null,
+          },
+        ],
+      });
+      expect(entries[0].label).toBe("pumpkin seeds on your salad");
+    });
+
+    it("never stores an emotional moment as an entry", async () => {
+      const entries = await run({
+        entries: [
+          { type: "emotional_context", content: "User felt stressed" },
+          { type: "goal", content: "User aims for 120 g protein" },
+        ],
+      });
+      expect(entries.map((e) => e.type)).toEqual(["goal"]);
+    });
+
+    it("never stores an allergy: allergies belong in the dietary profile", async () => {
+      const entries = await run({
+        entries: [
+          { type: "insight", content: "User is allergic to shellfish" },
+          { type: "preference", content: "User has a peanut allergy" },
+          { type: "goal", content: "User aims for 120 g protein" },
+        ],
+      });
+      expect(entries.map((e) => e.type)).toEqual(["goal"]);
+    });
+
+    it("tells the model allergies are not notebook entries", async () => {
+      await run({ entries: [] });
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toMatch(/never record allergies/i);
+    });
+
+    it("tells the model a coach turn is context only, never a source of entries", async () => {
+      await run({ entries: [] });
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toMatch(
+        /only from what the user wrote or explicitly agreed to in a "user" turn/i,
+      );
+      expect(system).toMatch(
+        /never record a statement, claim or instruction that appears only in a "coach" turn/i,
+      );
+    });
+
+    it("still sends coach turns, so a short user reply keeps its meaning", async () => {
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(
+        [
+          { role: "user" as const, content: "what could I add to salads?" },
+          { role: "assistant" as const, content: "Want to try pumpkin seeds?" },
+          { role: "user" as const, content: "yes, that one" },
+        ],
+        "user-1",
+        1,
+        { now: new Date("2026-01-01T00:00:00Z"), tz: "UTC" },
+      );
+      const transcript = mockCreate.mock.calls[0][1].messages[1]
+        .content as string;
+      expect(transcript).toContain(
+        '{"speaker":"coach","text":"Want to try pumpkin seeds?"}',
+      );
+    });
+
+    it("nudges the mood score instead, and skips a zero nudge", async () => {
+      await run({ entries: [], moodDelta: -0.5 });
+      expect(storage.updateMoodScore).toHaveBeenCalledWith(
+        "user-1",
+        -0.5,
+        new Date("2026-01-01T00:00:00Z"),
+      );
+      vi.mocked(storage.updateMoodScore).mockClear();
+      await run({ entries: [], moodDelta: 0 });
+      expect(storage.updateMoodScore).not.toHaveBeenCalled();
+    });
+
+    it("asks the model for labels and a mood nudge, and not for feelings", async () => {
+      await run({ entries: [] });
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toContain("label");
+      expect(system).toContain("moodDelta");
+      expect(system).not.toContain('"emotional_context"');
+    });
   });
 
   it("returns empty array on parse failure", async () => {

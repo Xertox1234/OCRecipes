@@ -11,6 +11,7 @@ import {
   schemaOrgRecipeSchema,
   type SchemaOrgRecipe,
 } from "./recipe-import-schema";
+import { capImportedRecipe } from "./recipe-import-caps";
 
 const log = createServiceLogger("recipe-import");
 
@@ -61,6 +62,33 @@ export function parseIsoDuration(duration: string | undefined): number | null {
 }
 
 /**
+ * Remove HTML tags: everything from a "<" to the next ">".
+ *
+ * Written as a scan, not as `text.replace(/<[^>]*>/g, "")`, which gives the
+ * same output but is quadratic on a page-sized run of "<" that never closes
+ * (each "<" is scanned to the end of the string). Here the first "<" with no
+ * ">" after it ends the scan. Do not swap in `/<[^<>]*>/g`: one pass of it
+ * turns "<<b>script>" into "<script>", and repeating it until nothing changes
+ * is quadratic again.
+ *
+ * No "<" is left in front of a ">" in the result, so removed tags cannot join
+ * into a new one. A "<" with no ">" after it is kept as text ("cook < 5 min").
+ */
+function stripTags(text: string): string {
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf("<", from);
+    if (open === -1) break;
+    const close = text.indexOf(">", open);
+    if (close === -1) break;
+    out += text.slice(from, open);
+    from = close + 1;
+  }
+  return out + text.slice(from);
+}
+
+/**
  * Normalize recipeInstructions from either a single string or
  * an array of strings/HowToStep objects into a string[] of steps.
  */
@@ -69,7 +97,11 @@ export function normalizeInstructions(
 ): string[] | null {
   if (!instructions) return null;
   if (typeof instructions === "string") {
-    const cleaned = instructions.replace(/<[^>]*>/g, "").trim();
+    // A page that writes the method as one HTML block has its steps in the
+    // tags, so a closing block tag or a line-break tag counts as a new line.
+    const cleaned = stripTags(
+      instructions.replace(/<\/(?:li|p|div)\s*>|<br\s*\/?>/gi, "\n"),
+    ).trim();
     if (!cleaned) return null;
     return cleaned
       .split(/\n/)
@@ -79,7 +111,7 @@ export function normalizeInstructions(
   const steps = instructions
     .map((step) => {
       const text = typeof step === "string" ? step : step.text;
-      return text.replace(/<[^>]*>/g, "").trim();
+      return stripTags(text).trim();
     })
     .filter((s) => s.length > 0);
   return steps.length > 0 ? steps : null;
@@ -348,17 +380,17 @@ export async function resolveAndValidateHost(
 // ── Main Import Function ─────────────────────────────────────────────
 
 /**
- * Read response body as text while enforcing a byte-size limit.
+ * Read a response body while enforcing a byte-size limit.
  * Streams the body and aborts if the accumulated size exceeds maxBytes.
  * Throws an error with message "RESPONSE_TOO_LARGE" if limit is exceeded.
  */
-async function readBodyWithLimit(
+export async function readBytesWithLimit(
   res: Response,
   maxBytes: number,
-): Promise<string> {
+): Promise<Buffer> {
   const reader = res.body?.getReader();
   if (!reader) {
-    return "";
+    return Buffer.alloc(0);
   }
 
   const chunks: Uint8Array[] = [];
@@ -375,11 +407,15 @@ async function readBodyWithLimit(
     chunks.push(value);
   }
 
-  const decoder = new TextDecoder();
-  return (
-    chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join("") +
-    decoder.decode()
-  );
+  return Buffer.concat(chunks);
+}
+
+/** {@link readBytesWithLimit}, decoded as UTF-8 text. */
+async function readBodyWithLimit(
+  res: Response,
+  maxBytes: number,
+): Promise<string> {
+  return new TextDecoder().decode(await readBytesWithLimit(res, maxBytes));
 }
 
 /**
@@ -390,9 +426,10 @@ async function readBodyWithLimit(
  * - Validates each redirect target with `isBlockedUrl()` and DNS resolution
  * - Follows at most MAX_REDIRECTS redirects
  */
-async function safeFetch(
+export async function safeFetch(
   initialUrl: string,
   signal: AbortSignal,
+  accept = "text/html",
 ): Promise<Response> {
   let currentUrl = initialUrl;
 
@@ -413,7 +450,7 @@ async function safeFetch(
       headers: {
         "User-Agent":
           "Mozilla/5.0 (compatible; OCRecipes/1.0; +https://ocrecipes.com)",
-        Accept: "text/html",
+        Accept: accept,
       },
       redirect: "manual",
       signal,
@@ -435,6 +472,85 @@ async function safeFetch(
   }
 
   throw new Error("TOO_MANY_REDIRECTS");
+}
+
+/**
+ * Turn raw `application/ld+json` script contents into an imported recipe.
+ * Shared by the server-side URL fetch and the on-device import endpoint.
+ * The first block containing a Recipe wins; invalid JSON blocks are skipped.
+ */
+export function parseRecipeFromLdJson(
+  blocks: string[],
+  sourceUrl: string,
+): ImportResult {
+  let recipeData: unknown = null;
+  for (const block of blocks) {
+    try {
+      const json = JSON.parse(block);
+      const found = findRecipeInLdJson(json);
+      if (found) {
+        recipeData = found;
+        break;
+      }
+    } catch {
+      // Invalid JSON, skip
+    }
+  }
+
+  if (!recipeData) {
+    return { success: false, error: "NO_RECIPE_DATA" };
+  }
+
+  const parsed = schemaOrgRecipeSchema.safeParse(recipeData);
+  if (!parsed.success) {
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "recipe LD+JSON parse error",
+    );
+    return { success: false, error: "PARSE_ERROR" };
+  }
+
+  const recipe = parsed.data;
+
+  const imageUrl = Array.isArray(recipe.image)
+    ? recipe.image[0] || null
+    : recipe.image || null;
+
+  const keywords = recipe.keywords
+    ? typeof recipe.keywords === "string"
+      ? recipe.keywords.split(",").map((k) => k.trim())
+      : recipe.keywords
+    : [];
+
+  const prepTimeMinutes = parseIsoDuration(recipe.prepTime);
+  let cookTimeMinutes = parseIsoDuration(recipe.cookTime);
+  // Many sites publish only totalTime — surface it rather than no time at all.
+  if (prepTimeMinutes === null && cookTimeMinutes === null) {
+    cookTimeMinutes = parseIsoDuration(recipe.totalTime);
+  }
+
+  const data: ImportedRecipeData = {
+    title: recipe.name,
+    description: recipe.description || null,
+    servings: parseServings(recipe.recipeYield),
+    prepTimeMinutes,
+    cookTimeMinutes,
+    cuisine: extractFirstString(recipe.recipeCuisine),
+    dietTags: keywords,
+    ingredients: (recipe.recipeIngredient || []).map(parseIngredientString),
+    instructions: normalizeInstructions(recipe.recipeInstructions),
+    imageUrl,
+    caloriesPerServing: parseNutritionValue(
+      recipe.nutrition?.calories,
+      NUTRITION_CAPS.calories,
+    ),
+    proteinPerServing: parseNutritionValue(recipe.nutrition?.proteinContent),
+    carbsPerServing: parseNutritionValue(recipe.nutrition?.carbohydrateContent),
+    fatPerServing: parseNutritionValue(recipe.nutrition?.fatContent),
+    sourceUrl,
+  };
+
+  return { success: true, data: capImportedRecipe(data) };
 }
 
 export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
@@ -487,71 +603,10 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
 
   const $ = cheerio.load(html);
 
-  // Find all LD+JSON scripts
-  let recipeData: unknown = null;
-  $('script[type="application/ld+json"]').each((_, el) => {
-    if (recipeData) return; // already found
-    try {
-      const json = JSON.parse($(el).text());
-      const found = findRecipeInLdJson(json);
-      if (found) recipeData = found;
-    } catch {
-      // Invalid JSON, skip
-    }
-  });
+  // Collect all LD+JSON script contents
+  const blocks = $('script[type="application/ld+json"]')
+    .map((_, el) => $(el).text())
+    .get();
 
-  if (!recipeData) {
-    return { success: false, error: "NO_RECIPE_DATA" };
-  }
-
-  const parsed = schemaOrgRecipeSchema.safeParse(recipeData);
-  if (!parsed.success) {
-    log.warn(
-      { zodErrors: parsed.error.flatten() },
-      "recipe LD+JSON parse error",
-    );
-    return { success: false, error: "PARSE_ERROR" };
-  }
-
-  const recipe = parsed.data;
-
-  const imageUrl = Array.isArray(recipe.image)
-    ? recipe.image[0] || null
-    : recipe.image || null;
-
-  const keywords = recipe.keywords
-    ? typeof recipe.keywords === "string"
-      ? recipe.keywords.split(",").map((k) => k.trim())
-      : recipe.keywords
-    : [];
-
-  const prepTimeMinutes = parseIsoDuration(recipe.prepTime);
-  let cookTimeMinutes = parseIsoDuration(recipe.cookTime);
-  // Many sites publish only totalTime — surface it rather than no time at all.
-  if (prepTimeMinutes === null && cookTimeMinutes === null) {
-    cookTimeMinutes = parseIsoDuration(recipe.totalTime);
-  }
-
-  const data: ImportedRecipeData = {
-    title: recipe.name,
-    description: recipe.description || null,
-    servings: parseServings(recipe.recipeYield),
-    prepTimeMinutes,
-    cookTimeMinutes,
-    cuisine: extractFirstString(recipe.recipeCuisine),
-    dietTags: keywords,
-    ingredients: (recipe.recipeIngredient || []).map(parseIngredientString),
-    instructions: normalizeInstructions(recipe.recipeInstructions),
-    imageUrl,
-    caloriesPerServing: parseNutritionValue(
-      recipe.nutrition?.calories,
-      NUTRITION_CAPS.calories,
-    ),
-    proteinPerServing: parseNutritionValue(recipe.nutrition?.proteinContent),
-    carbsPerServing: parseNutritionValue(recipe.nutrition?.carbohydrateContent),
-    fatPerServing: parseNutritionValue(recipe.nutrition?.fatContent),
-    sourceUrl: url,
-  };
-
-  return { success: true, data };
+  return parseRecipeFromLdJson(blocks, url);
 }

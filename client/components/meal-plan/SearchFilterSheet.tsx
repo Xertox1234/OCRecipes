@@ -104,7 +104,10 @@ export function SearchFilterSheet({
   return (
     <View style={styles.container}>
       {/* Sort */}
-      <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
+      <ThemedText
+        accessibilityRole="header"
+        style={[styles.sectionTitle, { color: theme.text }]}
+      >
         Sort by
       </ThemedText>
       <View style={styles.chipRow}>
@@ -218,7 +221,10 @@ export function SearchFilterSheet({
       />
 
       {/* Source */}
-      <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
+      <ThemedText
+        accessibilityRole="header"
+        style={[styles.sectionTitle, { color: theme.text }]}
+      >
         Source
       </ThemedText>
       <View style={styles.chipRow}>

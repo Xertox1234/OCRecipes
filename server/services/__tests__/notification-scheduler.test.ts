@@ -6,7 +6,12 @@ import {
   startNotificationScheduler,
   stopNotificationScheduler,
   schedulerRunSlot,
+  runWeeklyReports,
 } from "../notification-scheduler";
+import {
+  generateWeeklyReportForUser,
+  sendDueWeeklyReportPushes,
+} from "../weekly-report/generate";
 import { storage } from "../../storage";
 import {
   createMockCoachNotebookEntry,
@@ -32,6 +37,11 @@ vi.mock("../../storage", () => ({
 
 vi.mock("../notifications/notify", () => ({
   notify: vi.fn(),
+}));
+
+vi.mock("../weekly-report/generate", () => ({
+  generateWeeklyReportForUser: vi.fn(),
+  sendDueWeeklyReportPushes: vi.fn(),
 }));
 
 vi.mock("node-cron", () => ({
@@ -144,6 +154,35 @@ describe("sendDueCommitmentReminders", () => {
     );
   });
 
+  it("names a commitment in the push only when it is confirmed and labelled", async () => {
+    const raw = createMockCoachNotebookEntry({
+      id: 3,
+      userId: "42",
+      type: "commitment",
+      content: "The user agreed to add pumpkin seeds",
+    });
+    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([
+      raw,
+      {
+        ...raw,
+        id: 4,
+        label: "pumpkin seeds on your salad",
+        confirmedAt: new Date("2026-11-01T00:00:00Z"),
+      },
+    ]);
+    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
+
+    await sendDueCommitmentReminders();
+
+    const bodies = vi
+      .mocked(notify)
+      .mock.calls.map((c) => (c[2] as { body?: string }).body);
+    expect(bodies).toEqual([
+      "Coach has a quick check-in for you.",
+      "How's pumpkin seeds on your salad going?",
+    ]);
+  });
+
   it("does NOT mark entry completed when push delivery fails", async () => {
     const entry = createMockCoachNotebookEntry({ id: 2, userId: "7" });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
@@ -154,12 +193,12 @@ describe("sendDueCommitmentReminders", () => {
     expect(storage.updateNotebookEntryStatus).not.toHaveBeenCalled();
   });
 
-  it("truncates long content to 100 chars in the push body", async () => {
-    const longContent = "A".repeat(150);
+  it("caps a long label in the push body", async () => {
     const entry = createMockCoachNotebookEntry({
       id: 3,
       userId: "5",
-      content: longContent,
+      label: "A".repeat(150),
+      confirmedAt: new Date("2026-11-01T00:00:00Z"),
     });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
     vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
@@ -167,7 +206,7 @@ describe("sendDueCommitmentReminders", () => {
     await sendDueCommitmentReminders();
 
     const body = vi.mocked(notify).mock.calls[0][2]?.body;
-    expect(body?.length).toBe(100);
+    expect(body).toBe(`How's ${"A".repeat(80)} going?`);
   });
 
   it("processes multiple entries independently — failure on one does not block others", async () => {
@@ -739,5 +778,67 @@ describe("multi-instance run claim", () => {
     await expect(handlerFor("0 9 * * *")()).resolves.toBeUndefined();
 
     expect(storage.getDueCommitmentsAllUsers).not.toHaveBeenCalled();
+  });
+});
+
+describe("weekly report schedule", () => {
+  function setupUsers() {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["la-user", "tokyo-user", "utc-user"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(
+      new Map<string, string | null>([
+        ["la-user", "America/Los_Angeles"],
+        ["tokyo-user", "Asia/Tokyo"],
+        ["utc-user", null],
+      ]),
+    );
+    vi.mocked(generateWeeklyReportForUser).mockResolvedValue("created");
+    vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+  }
+
+  it("writes reports only for users at local Sunday 18:00, then sends due pushes", async () => {
+    setupUsers();
+    // 2026-11-16T02:00Z = Sun 18:00 in LA; Mon 11:00 in Tokyo; Mon 02:00 UTC.
+    const now = new Date("2026-11-16T02:00:00Z");
+    await runWeeklyReports(now);
+    expect(vi.mocked(generateWeeklyReportForUser).mock.calls).toEqual([
+      ["la-user", now, "America/Los_Angeles"],
+    ]);
+    expect(sendDueWeeklyReportPushes).toHaveBeenCalledWith(now);
+  });
+
+  it("still sends due pushes in an hour when nobody is at Sunday 18:00", async () => {
+    setupUsers();
+    const now = new Date("2026-11-17T17:00:00Z"); // Tuesday everywhere
+    await runWeeklyReports(now);
+    expect(generateWeeklyReportForUser).not.toHaveBeenCalled();
+    expect(sendDueWeeklyReportPushes).toHaveBeenCalledWith(now);
+  });
+
+  it("one user's failure does not stop the others or the pushes", async () => {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["a", "b"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(new Map());
+    vi.mocked(generateWeeklyReportForUser)
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce("created");
+    vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+    const now = new Date("2026-11-15T18:00:00Z"); // Sun 18:00 UTC
+    await runWeeklyReports(now);
+    expect(generateWeeklyReportForUser).toHaveBeenCalledTimes(2);
+    expect(sendDueWeeklyReportPushes).toHaveBeenCalled();
+  });
+
+  it("the hourly local-hour job runs the weekly report too", async () => {
+    setupUsers();
+    vi.mocked(storage.getUserIdPage).mockResolvedValue([]);
+    startNotificationScheduler();
+    const call = vi
+      .mocked(cron.schedule)
+      .mock.calls.find((c) => c[0] === "0 * * * *");
+    await (call![1] as unknown as () => Promise<unknown>)();
+    expect(sendDueWeeklyReportPushes).toHaveBeenCalled();
   });
 });

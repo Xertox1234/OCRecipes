@@ -81,6 +81,17 @@ describe("CookbookDetailScreen universal allergen label", () => {
     ).toBeDefined();
   });
 
+  // Accessibility audit 2026-11-06 L3: a screen-reader user can't perform a
+  // swipe (one finger navigates), so the hint must not offer one.
+  it("the recipe card's hint does not tell a screen-reader user to swipe", () => {
+    mockCookbook([baseRecipe]);
+    renderComponent(<CookbookDetailScreen />);
+    const hint = screen
+      .getByLabelText("Pasta Carbonara")
+      .getAttribute("aria-hint");
+    expect(hint ?? "").not.toMatch(/swipe/i);
+  });
+
   it("does not add an allergen suffix when allergens is null (never a false 'safe' signal)", () => {
     mockCookbook([{ ...baseRecipe, allergens: null }]);
     renderComponent(<CookbookDetailScreen />);

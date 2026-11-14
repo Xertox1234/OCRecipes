@@ -1,5 +1,6 @@
 import { parseServingGrams, scaleNutrients } from "./barcode-lookup";
 import type { NutritionData } from "./nutrition-lookup";
+import { roundToOneDecimal } from "../lib/math";
 
 export type NutrientValues = Record<
   "calories" | "protein" | "carbs" | "fat" | "fiber" | "sugar" | "sodium",
@@ -56,6 +57,65 @@ export function scaleToGrams(
     fiber: s.fiber ?? null,
     sugar: s.sugar ?? null,
     sodium: s.sodium ?? null,
+  };
+}
+
+/**
+ * The lookup answers per 100 g (or per serving, for API Ninjas); scale it to
+ * the food's estimated weight. With no estimate, keep per-100 g values under a
+ * marked serving size, as Quick Log does; a basis that can't be weighed
+ * ("1 serving") keeps its own values and label.
+ */
+export function portionNutrition(
+  nutrition: NutritionData,
+  food: { quantity: string; grams?: number },
+): NutritionData {
+  if (food.grams) {
+    const portion = scaleToGrams(nutrition, food.grams);
+    if (portion) {
+      const grams = Math.round(food.grams);
+      return withValues(nutrition, portion, `${food.quantity} (${grams} g)`);
+    }
+  } else {
+    const per100g = scaleToGrams(nutrition, 100);
+    if (per100g) {
+      return withValues(nutrition, per100g, "100 g (portion unknown)");
+    }
+  }
+  return nutrition;
+}
+
+function withValues(
+  nutrition: NutritionData,
+  values: NutrientValues,
+  servingSize: string,
+): NutritionData {
+  return {
+    ...nutrition,
+    calories: values.calories ?? 0,
+    protein: values.protein ?? 0,
+    carbs: values.carbs ?? 0,
+    fat: values.fat ?? 0,
+    fiber: values.fiber ?? 0,
+    sugar: values.sugar ?? 0,
+    sodium: values.sodium ?? 0,
+    servingSize,
+  };
+}
+
+export type NutrientTotals = Record<keyof NutrientValues, number>;
+
+export function sumNutrients(parts: NutrientValues[]): NutrientTotals {
+  const total = (key: keyof NutrientValues) =>
+    roundToOneDecimal(parts.reduce((sum, part) => sum + (part[key] ?? 0), 0));
+  return {
+    calories: Math.round(total("calories")),
+    protein: total("protein"),
+    carbs: total("carbs"),
+    fat: total("fat"),
+    fiber: total("fiber"),
+    sugar: total("sugar"),
+    sodium: total("sodium"),
   };
 }
 

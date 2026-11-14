@@ -31,11 +31,11 @@ import {
   hashTrustKey,
   newTrustKey,
 } from "../lib/mfa/mfa-secrets";
-import { verifySecondFactor } from "../lib/mfa/verify-second-factor";
-import { INVALID_SECOND_FACTOR_MESSAGE } from "../lib/mfa/password-proof-gate";
-import { HttpFailure, issueSession } from "./auth-social";
+import { verifySecondFactor } from "../services/mfa/verify-second-factor";
+import { INVALID_SECOND_FACTOR_MESSAGE } from "../services/mfa/password-proof-gate";
+import { HttpFailure, issueSession } from "../services/auth-session";
 import { emailVerificationEnabled } from "../lib/email-config";
-import { maskEmail, sendMfaEmailCode } from "../lib/mfa/email-code";
+import { maskEmail, sendMfaEmailCode } from "../services/mfa/email-code";
 import { signInCodeMatches } from "../lib/password-reset-code";
 
 // Two-step verification by emailed code (owner ruling 4, 2026-10-12) — spec

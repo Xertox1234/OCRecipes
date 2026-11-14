@@ -4,6 +4,7 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 import { ActivityIndicator, Pressable, View, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import type { AllergenId } from "@shared/constants/allergens";
 
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import type { MainTabParamList } from "@/navigation/MainTabNavigator";
@@ -34,6 +35,8 @@ import CookSessionReviewScreen from "@/screens/CookSessionReviewScreen";
 import SubstitutionResultScreen from "@/screens/SubstitutionResultScreen";
 import ReceiptMealPlanScreen from "@/screens/meal-plan/ReceiptMealPlanScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
+import AiSharingScreen from "@/screens/AiSharingScreen";
+import { useAiSharingReask } from "@/navigation/useAiSharingReask";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -56,6 +59,8 @@ import NotebookScreen from "@/screens/NotebookScreen";
 import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
 
 export type RootStackParamList = {
+  /** The AI-sharing question (privacy audit H3). */
+  AiSharing: undefined;
   Login:
     | {
         /** Prefill the identifier (e.g. after a password reset). */
@@ -172,7 +177,8 @@ export type RootStackParamList = {
     intent: PhotoIntent;
   };
   GoalSetup: undefined;
-  EditDietaryProfile: undefined;
+  // addAllergen: an allergen the Coach offered to add — opens its severity choice.
+  EditDietaryProfile: { addAllergen?: AllergenId } | undefined;
   FeaturedRecipeDetail: {
     recipeId: number;
     /**
@@ -185,7 +191,8 @@ export type RootStackParamList = {
   };
   /** Public community remixes of a recipe (from the recipe's Community section). */
   RecipeVariants: { recipeId: number; title: string };
-  QuickLog: undefined;
+  /** `initialText`: a coach "Log this" card's food, filled into the input. */
+  QuickLog: { initialText?: string } | undefined;
   DailyNutritionDetail: undefined;
   MenuScanResult: {
     imageUri: string;
@@ -250,6 +257,12 @@ export default function RootStackNavigator() {
   const { isAuthenticated, isLoading, user } = useAuthContext();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
+  const needsOnboarding = isAuthenticated && !user?.onboardingCompleted;
+  // Privacy audit H3: a new account answers the AI-sharing question as an
+  // onboarding step. Any other account that has not said yes is asked when
+  // the server refuses its first AI request; the question screen is only
+  // registered next to Main, so the listener stays off until then.
+  useAiSharingReask(isAuthenticated && !needsOnboarding);
 
   if (isLoading) {
     return (
@@ -258,8 +271,6 @@ export default function RootStackNavigator() {
       </View>
     );
   }
-
-  const needsOnboarding = isAuthenticated && !user?.onboardingCompleted;
 
   return (
     <Stack.Navigator
@@ -323,6 +334,13 @@ export default function RootStackNavigator() {
             name="Main"
             component={MainTabNavigator}
             options={{ headerShown: false }}
+          />
+          {/* Opens when someone without AI sharing uses an AI feature
+              (useAiSharingReask), and from Settings. */}
+          <Stack.Screen
+            name="AiSharing"
+            component={AiSharingScreen}
+            options={{ headerShown: false, presentation: "modal" }}
           />
           {/* A verify link tapped while signed in — change-email mails one to
               the new address. Same screen and linking path as signed out; its
@@ -392,6 +410,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="GoalSetup"
             component={GoalSetupScreen}
+            layout={withSheetProvider}
             options={{
               headerTitle: "Set Goals",
               presentation: "modal",
@@ -400,6 +419,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="EditDietaryProfile"
             component={EditDietaryProfileScreen}
+            layout={withSheetProvider}
             options={{
               headerTitle: "Edit Preferences",
               presentation: "modal",
@@ -574,6 +594,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="NotebookEntry"
             component={NotebookEntryScreen}
+            layout={withSheetProvider}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",

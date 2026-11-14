@@ -224,6 +224,7 @@ export default function ReceiptCaptureScreen() {
   if (!isPremiumResolved) {
     return (
       <View
+        accessibilityViewIsModal
         style={[styles.centered, { backgroundColor: theme.backgroundDefault }]}
       >
         {isPremiumStatusError ? (
@@ -258,6 +259,7 @@ export default function ReceiptCaptureScreen() {
   if (permissionLoading) {
     return (
       <View
+        accessibilityViewIsModal
         style={[styles.centered, { backgroundColor: theme.backgroundDefault }]}
       >
         <ActivityIndicator size="large" color={theme.link} />
@@ -276,6 +278,7 @@ export default function ReceiptCaptureScreen() {
   if (permission?.status !== "granted") {
     return (
       <View
+        accessibilityViewIsModal
         style={[
           styles.centered,
           { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },

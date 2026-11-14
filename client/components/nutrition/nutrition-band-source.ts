@@ -164,8 +164,8 @@ export interface PanelData {
  * on every path. The primary server path builds them from each other
  * (`barcode-lookup.ts`: `perServing = scaleNutrients(per100g, scale)`;
  * `label-override.ts` merges both halves). But the CLIENT-SIDE direct-OFF
- * fallback (server
- * unreachable / 5xx) assembles them from independent OFF fields:
+ * fallback (server unreachable / 5xx; removed by privacy audit M1, still in
+ * older app bundles) assembles them from independent OFF fields:
  * `validateAndNormalizeNutrition`'s trusted branch returns
  * `perServing: existingPerServing`, built field-by-field from the `*_serving`
  * nutriments (`serving-size-utils.ts:334-349`), while `per100g` comes from the

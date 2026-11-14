@@ -148,6 +148,7 @@ export interface EvalTestCase {
     mustNotContain?: string[];
     mustContain?: string[];
     mustNotRecommendBelow?: number; // coach only — evaluated by LLM judge
+    maxWords?: number; // coach reply shape — answer-first replies stay short
     macrosBudgetRespected?: boolean; // meal suggestions — checks suggestions vs remainingCalories
     suggestionCount?: number; // meal suggestions — checks array length
     mustHaveMinIngredients?: number; // recipe generation — checks ingredients array length
@@ -232,6 +233,7 @@ export const evalTestCaseSchema = z.object({
       mustNotContain: z.array(z.string()).optional(),
       mustContain: z.array(z.string()).optional(),
       mustNotRecommendBelow: z.number().optional(),
+      maxWords: z.number().int().positive().optional(),
       macrosBudgetRespected: z.boolean().optional(),
       suggestionCount: z.number().optional(),
       mustHaveMinIngredients: z.number().optional(),

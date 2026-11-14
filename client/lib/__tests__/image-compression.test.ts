@@ -1,12 +1,22 @@
 import { compressImage, cleanupImage } from "../image-compression";
 
-const { mockManipulateAsync, mockGetInfoAsync, mockDeleteAsync, mockGetSize } =
-  vi.hoisted(() => ({
-    mockManipulateAsync: vi.fn(),
-    mockGetInfoAsync: vi.fn(),
-    mockDeleteAsync: vi.fn(),
-    mockGetSize: vi.fn(),
-  }));
+const {
+  mockManipulateAsync,
+  mockGetInfoAsync,
+  mockDeleteAsync,
+  mockGetSize,
+  mockLoggerWarn,
+} = vi.hoisted(() => ({
+  mockManipulateAsync: vi.fn(),
+  mockGetInfoAsync: vi.fn(),
+  mockDeleteAsync: vi.fn(),
+  mockGetSize: vi.fn(),
+  mockLoggerWarn: vi.fn(),
+}));
+
+vi.mock("../logger", () => ({
+  logger: { warn: (...args: unknown[]) => mockLoggerWarn(...args) },
+}));
 
 vi.mock("react-native", () => ({
   Image: { getSize: (...args: unknown[]) => mockGetSize(...args) },
@@ -288,6 +298,32 @@ describe("compressImage", () => {
       expect(mockDeleteAsync).toHaveBeenCalledWith("file://late-result.jpg", {
         idempotent: true,
       });
+    });
+
+    // E2E run 43120554293: a 480×480 receipt photo hit the 30 s deadline that
+    // the same photo had met in 600 ms minutes earlier. A late answer says the
+    // resize was slow; no answer at all says it never settled.
+    it("logs how long a timed-out resize took when it finally finishes", async () => {
+      let finish!: (r: { uri: string; width: number; height: number }) => void;
+      mockManipulateAsync.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+
+      const pending = compressImage("file://late.jpg");
+      const assertion = expect(pending).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(12_000);
+      finish({ uri: "file://late-result.jpg", width: 1024, height: 768 });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "Image resize settled 42000 ms after it started (deadline 30000 ms)",
+      );
     });
   });
 });

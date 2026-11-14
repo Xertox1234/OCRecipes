@@ -87,7 +87,7 @@ describe("OnboardingProvider default data", () => {
   it("starts at step 0 with the provider's totalSteps", () => {
     const { result } = renderOnboarding();
     expect(result.current.currentStep).toBe(0);
-    expect(result.current.totalSteps).toBe(8);
+    expect(result.current.totalSteps).toBe(9);
   });
 });
 
@@ -194,9 +194,14 @@ describe("OnboardingProvider step navigation", () => {
   it("prevStep decrements within bounds and does not go below 0", () => {
     const { result } = renderOnboarding();
 
+    // With the health-data consent every screen is walked in order.
     act(() => {
       result.current.nextStep();
-      result.current.nextStep();
+    });
+    act(() => {
+      result.current.answerConsent(true);
+    });
+    act(() => {
       result.current.nextStep();
     });
     expect(result.current.currentStep).toBe(3);
@@ -213,5 +218,135 @@ describe("OnboardingProvider step navigation", () => {
       });
     }
     expect(result.current.currentStep).toBe(0);
+  });
+});
+
+describe("OnboardingProvider completeOnboarding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+    mockUpdateUser.mockResolvedValue({ onboardingCompleted: true });
+  });
+
+  it("saves the profile, then the taste picks, then marks the user onboarded", async () => {
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await result.current.completeOnboarding([3, 7]);
+    });
+
+    expect(mockApiRequest.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+      ["POST", "/api/user/dietary-profile"],
+      ["PUT", "/api/taste-picks"],
+    ]);
+    expect(mockApiRequest).toHaveBeenLastCalledWith("PUT", "/api/taste-picks", {
+      recipeIds: [3, 7],
+    });
+    expect(mockUpdateUser).toHaveBeenCalledWith({ onboardingCompleted: true });
+  });
+
+  it("skips the taste-picks write when there are no picks", async () => {
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await result.current.completeOnboarding();
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/user/dietary-profile",
+      expect.any(Object),
+    );
+  });
+
+  it("rethrows a failed picks save without resyncing, so the user stays and can retry", async () => {
+    mockApiRequest.mockImplementation(async (method: string) => {
+      if (method === "PUT") throw new Error("500");
+      return { json: async () => ({}) };
+    });
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await expect(result.current.completeOnboarding([3])).rejects.toThrow();
+    });
+
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+    expect(mockCheckAuth).not.toHaveBeenCalled();
+  });
+
+  it("resyncs via checkAuth when the server saved but the local user update failed", async () => {
+    mockUpdateUser.mockRejectedValue(new Error("local sync failed"));
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await expect(result.current.completeOnboarding([3])).rejects.toThrow(
+        "local sync failed",
+      );
+    });
+
+    expect(mockCheckAuth).toHaveBeenCalledOnce();
+  });
+
+  // Privacy audit H2 — "no consent, no health data".
+  describe("answerConsent", () => {
+    it("agreeing records the consent and moves on to the first health question", () => {
+      const { result } = renderHook(() => useOnboarding(), {
+        wrapper: createWrapper(),
+      });
+      act(() => result.current.nextStep()); // Welcome → AI question
+      act(() => result.current.nextStep()); // AI question → consent
+
+      act(() => result.current.answerConsent(true));
+
+      expect(result.current.data.healthDataConsent).toBe(true);
+      expect(result.current.currentStep).toBe(3); // Allergies
+    });
+
+    it("declining skips the health questions, in both directions", () => {
+      const { result } = renderHook(() => useOnboarding(), {
+        wrapper: createWrapper(),
+      });
+      act(() => result.current.nextStep());
+      act(() => result.current.nextStep());
+
+      act(() => result.current.answerConsent(false));
+      expect(result.current.data.healthDataConsent).toBe(false);
+      expect(result.current.currentStep).toBe(7); // Preferences
+
+      act(() => result.current.nextStep());
+      expect(result.current.currentStep).toBe(8); // TastePicks
+
+      act(() => result.current.prevStep());
+      act(() => result.current.prevStep());
+      expect(result.current.currentStep).toBe(2); // back on the consent screen
+    });
+
+    it("declining after answering drops the health answers already given", () => {
+      const { result } = renderHook(() => useOnboarding(), {
+        wrapper: createWrapper(),
+      });
+      act(() => result.current.nextStep());
+      act(() => result.current.answerConsent(true));
+      act(() =>
+        result.current.updateData({
+          allergies: [{ name: "peanuts", severity: "severe" }],
+          healthConditions: ["type 2 diabetes"],
+          primaryGoal: "lose_weight",
+          activityLevel: "moderate",
+          dietType: "vegan",
+        }),
+      );
+      act(() => result.current.prevStep()); // Allergies → consent
+
+      act(() => result.current.answerConsent(false));
+
+      expect(result.current.data.allergies).toEqual([]);
+      expect(result.current.data.healthConditions).toEqual([]);
+      expect(result.current.data.primaryGoal).toBeNull();
+      expect(result.current.data.activityLevel).toBeNull();
+      // Diet type sits behind the consent too (owner ruling 2026-11-10).
+      expect(result.current.data.dietType).toBeNull();
+    });
   });
 });

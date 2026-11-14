@@ -31,14 +31,12 @@ import {
   writeNutritionCache,
   type NutritionData,
 } from "../services/nutrition-lookup";
-import {
-  scaleToGrams,
-  type NutrientValues,
-} from "../services/portion-nutrition";
+import { portionNutrition } from "../services/portion-nutrition";
 import {
   handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   getPremiumFeatures,
   parseStringParam,
   requireValidImage,
@@ -65,15 +63,15 @@ const followUpSchema = z.object({
 
 // Zod schema for confirm request
 const confirmPhotoSchema = z.object({
-  sessionId: z.string(),
+  sessionId: z.string().max(100),
   // Bounds match the batch-scan item schema (shared/types/batch-scan.ts):
   // a negative food could cancel another out and slip a corrupted total past
   // the scanned_items >= 0 CHECKs, and an unbounded one overflows numeric(10,2).
   foods: z
     .array(
       z.object({
-        name: z.string(),
-        quantity: z.string(),
+        name: z.string().max(200),
+        quantity: z.string().max(100),
         calories: z.number().min(0).max(50000),
         protein: z.number().min(0).max(5000),
         carbs: z.number().min(0).max(5000),
@@ -81,7 +79,7 @@ const confirmPhotoSchema = z.object({
       }),
     )
     .max(50),
-  mealType: z.string().optional(),
+  mealType: z.string().max(50).optional(),
   preparationMethods: z.array(preparationMethodSchema).optional(),
   analysisIntent: photoIntentSchema.optional(),
 });
@@ -123,49 +121,6 @@ async function attachNutrition<
   });
 }
 
-/**
- * The lookup answers per 100 g (or per serving, for API Ninjas); scale it to
- * the food's estimated weight. With no estimate, keep per-100 g values under a
- * marked serving size, as Quick Log does; a basis that can't be weighed
- * ("1 serving") keeps its own values and label.
- */
-function portionNutrition(
-  nutrition: NutritionData,
-  food: { quantity: string; grams?: number },
-): NutritionData {
-  if (food.grams) {
-    const portion = scaleToGrams(nutrition, food.grams);
-    if (portion) {
-      const grams = Math.round(food.grams);
-      return withValues(nutrition, portion, `${food.quantity} (${grams} g)`);
-    }
-  } else {
-    const per100g = scaleToGrams(nutrition, 100);
-    if (per100g) {
-      return withValues(nutrition, per100g, "100 g (portion unknown)");
-    }
-  }
-  return nutrition;
-}
-
-function withValues(
-  nutrition: NutritionData,
-  values: NutrientValues,
-  servingSize: string,
-): NutritionData {
-  return {
-    ...nutrition,
-    calories: values.calories ?? 0,
-    protein: values.protein ?? 0,
-    carbs: values.carbs ?? 0,
-    fat: values.fat ?? 0,
-    fiber: values.fiber ?? 0,
-    sugar: values.sugar ?? 0,
-    sodium: values.sodium ?? 0,
-    servingSize,
-  };
-}
-
 export function register(app: Express): void {
   // Photo Analysis Endpoints
 
@@ -177,6 +132,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Premium gate
         const features = await checkPremiumFeature(
@@ -396,6 +352,8 @@ export function register(app: Express): void {
     photoRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const sessionId = parseStringParam(req.params.sessionId);
         if (!sessionId) {
           return sendError(
@@ -527,6 +485,8 @@ export function register(app: Express): void {
     labelUpload.single("photo"),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const features = await checkPremiumFeature(
           req,
           res,
@@ -576,6 +536,8 @@ export function register(app: Express): void {
     }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const parsed = structureRecipeTextSchema.safeParse(req.body);
         if (!parsed.success) {
           return sendError(
@@ -599,9 +561,9 @@ export function register(app: Express): void {
 
   // Zod schema for confirm-label request
   const confirmLabelSchema = z.object({
-    sessionId: z.string(),
+    sessionId: z.string().max(100),
     servingsConsumed: z.number().min(0.1).max(100).default(1),
-    mealType: z.string().optional(),
+    mealType: z.string().max(50).optional(),
   });
 
   app.post(
@@ -611,6 +573,8 @@ export function register(app: Express): void {
     labelUpload.single("photo"),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         // Check scan limit (label scans share daily scan limit)
         const features = await getPremiumFeatures(req);
         const scanCount = await storage.getDailyScanCount(

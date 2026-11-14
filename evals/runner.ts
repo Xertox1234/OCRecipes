@@ -38,7 +38,7 @@ HELPFULNESS (Actionable, answers the question):
 PERSONALIZATION (Uses the user's context — goals, diet, allergies, intake):
   1 = Ignores all context
   5 = References some context
-  10 = Deeply tailored — incorporates goals, remaining macros, dietary restrictions
+  10 = Deeply tailored — anchors on the user's goals, preferences or logged meals; cites numbers only when the answer depends on them
 
 TONE (Friendly, encouraging, appropriate length):
   1 = Robotic, condescending, or overly verbose
@@ -70,7 +70,7 @@ try {
 const validation = evalTestCasesSchema.safeParse(parsedJson);
 if (!validation.success) {
   console.error("Error: coach-cases.json failed schema validation:");
-  for (const issue of validation.error.errors) {
+  for (const issue of validation.error.issues) {
     console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
   }
   process.exit(1);

@@ -1,7 +1,3 @@
-// The rule is still off globally until every batch lands (todo
-// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
-// eslint-disable below counts as used and lint-staged --fix keeps it.
-/* eslint react-hooks/set-state-in-effect: "error" */
 import React, {
   useCallback,
   useEffect,
@@ -17,6 +13,15 @@ import {
   AppState,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { useNotebookSaves } from "@/hooks/useNotebookSaves";
+import SavedToNotebookPopup from "@/components/coach/SavedToNotebookPopup";
 import {
   useNavigation,
   useRoute,
@@ -25,7 +30,8 @@ import {
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
-import { useCoachContext } from "@/hooks/useCoachContext";
+import { useCoachBrief } from "@/hooks/useCoachBrief";
+import { usePendingReminders } from "@/hooks/usePendingReminders";
 import {
   REFRESH_ON_FOCUS_SETTLE_MS,
   useRefreshOnFocus,
@@ -35,57 +41,42 @@ import { useNotebookEntries } from "@/hooks/useNotebook";
 import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
-import { usePremiumContext } from "@/context/PremiumContext";
 import { ThemedText } from "@/components/ThemedText";
-import CoachDashboard from "@/components/coach/CoachDashboard";
 import CoachChat from "@/components/coach/CoachChat";
-import {
-  SkeletonBox,
-  SkeletonLoadingRegion,
-  SkeletonProvider,
-} from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 import { logger } from "@/lib/logger";
 import type { CoachChatNavigationProp } from "@/types/navigation";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
-import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
+import {
+  getCachedLastBriefSeenDate,
+  markBriefSeen,
+} from "@/lib/coach-brief-seen";
+import {
+  briefFormFor,
+  localDateString,
+  shouldOpenBriefDraft,
+} from "@/components/coach/opening-brief-decision";
+import type { BriefForm } from "@shared/lib/opening-brief";
 
 export default function CoachProScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  // While typing, the open dashboard plus the keyboard leave the chat input no
-  // room on a small screen (Galaxy A37: 453 + ~358 of 832 dp put it under the
-  // keyboard). The dashboard folds, and the input drops the tab-bar padding —
-  // the keyboard covers the tab bar then.
+  // While typing, the input drops the tab-bar padding — the keyboard covers
+  // the tab bar then.
   const keyboardVisible = useKeyboardVisible();
-  const { isPremiumResolved } = usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
-  // Enable context fetch when premium is confirmed OR while the plan is
-  // unknown — loading, or a failed check (not "loading", yet its features
-  // read free). This screen is only mounted for Coach Pro users, so assume
-  // access until the plan is known (owner ruling 2026-11-02).
-  const contextEnabled = isCoachPro || !isPremiumResolved;
-  const {
-    data: context,
-    isLoading: isContextLoading,
-    isError: isContextError,
-    refetch: refetchContext,
-  } = useCoachContext(contextEnabled);
-  // Tell screen-reader users the coach context is loading. Delayed 500ms to
-  // match the modal-safe pattern (docs/solutions/conventions/on-open-announce-
-  // must-delay-past-modal-present-focus-shift-2026-06-25.md) — harmless on
-  // this non-modal route, kept for consistency with the other skeleton
-  // screens fixed alongside this one.
-  useDelayedLoadingAnnouncement(isContextLoading);
   // CoachChat's own catch (handleSend) shows a visible streamingError on a
   // creation failure — opt out so the global net doesn't double it.
   const { mutateAsync: createConversation } = useCreateConversation({
     silentError: true,
   });
   const [conversationId, setConversationId] = useState<number | null>(null);
+  // Bottom edge of the thread bar, measured: the save popup hangs just under
+  // it (absolute children ignore the container's safe-area padding).
+  const [threadBarBottom, setThreadBarBottom] = useState<number | null>(null);
   const {
     data: coachConversations = [],
     isError: conversationsError,
@@ -100,9 +91,18 @@ export default function CoachProScreen() {
   // refetches on an observer mount. Pick it up on refocus instead; the hook's
   // settle-margin follow-up covers the refocus landing in the same transition
   // as that dismissal, before the server's post-disconnect write.
+  // Visible memory R2: new notebook saves pop up under the Notebook icon.
+  // Checked on open, when a reply finishes, and on a later refocus (saves
+  // made from the Ask Coach sheet show here).
+  const notebookSaves = useNotebookSaves();
+  const { checkForSaves } = notebookSaves;
+  useEffect(() => {
+    checkForSaves();
+  }, [checkForSaves]);
   const refetchConversationsOnFocus = useCallback(() => {
     void refetchConversations();
-  }, [refetchConversations]);
+    checkForSaves();
+  }, [refetchConversations, checkForSaves]);
   // settleMs: the refocus usually lands in the same transition as the abort
   // that invalidated this list with `refetchType: "none"` — re-read once the
   // server's post-disconnect write has settled (see the constant's comment).
@@ -112,7 +112,7 @@ export default function CoachProScreen() {
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
-  const { acknowledge } = useAcknowledgeReminders();
+  const { acknowledge, acknowledgeType } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a message, not on mere
   // screen focus — fire at most once per mount.
   const hasAcknowledgedRef = useRef(false);
@@ -142,7 +142,57 @@ export default function CoachProScreen() {
   // auto-select below must not put a thread back (it re-runs whenever the id
   // returns to null, and the thread list can also arrive after New is tapped).
   // Cleared when a thread is picked or the draft's first message creates one.
-  const [isNewDraft, setIsNewDraft] = useState(false);
+  //
+  // The opening brief (spec 2026-11-08): on the first visit of the day, or
+  // when a reminder lit the tab dot, the screen opens on a fresh draft with
+  // the coach's brief instead of the last thread. Decided ONCE, here, from
+  // values already in memory — never switched after a later fetch lands. A
+  // conversation named by the route always wins.
+  const { hasPending: hasPendingReminder } = usePendingReminders();
+  const [isNewDraft, setIsNewDraft] = useState(() =>
+    shouldOpenBriefDraft({
+      hasPendingReminder,
+      lastSeen: getCachedLastBriefSeenDate(),
+      today: localDateString(new Date()),
+      hasExplicitConversation: route.params?.selectedConversationId != null,
+    }),
+  );
+  // Frozen per draft: marking today seen must not swap the brief on screen.
+  const [draftForm, setDraftForm] = useState<BriefForm>(() =>
+    briefFormFor(
+      getCachedLastBriefSeenDate(),
+      localDateString(new Date()),
+      hasPendingReminder,
+    ),
+  );
+  const startDraft = useCallback(() => {
+    setDraftForm(
+      briefFormFor(
+        getCachedLastBriefSeenDate(),
+        localDateString(new Date()),
+        hasPendingReminder,
+      ),
+    );
+    setIsNewDraft(true);
+    setConversationId(null);
+  }, [hasPendingReminder]);
+  const isDraft = conversationId === null;
+  const { brief } = useCoachBrief(draftForm, isDraft);
+  // The conversation the draft's first send created, and the brief it showed:
+  // kept on screen until that conversation's saved copy loads (CoachChat
+  // hides it once messages arrive), so the brief never blinks out mid-send.
+  const [briefThread, setBriefThread] = useState<{
+    id: number;
+    brief: NonNullable<typeof brief>;
+  } | null>(null);
+  const shownBrief = isDraft
+    ? brief
+    : briefThread?.id === conversationId
+      ? briefThread.brief
+      : null;
+  const onBriefShown = useCallback(() => {
+    if (draftForm === "full") markBriefSeen(localDateString(new Date()));
+  }, [draftForm]);
 
   // Adjusted during render (guarded: once an id is set it stops), not in an
   // effect.
@@ -188,18 +238,29 @@ export default function CoachProScreen() {
 
   const handleCreateConversation = useCallback(async () => {
     const result = await createConversation({ type: "coach" });
+    setBriefThread(brief ? { id: result.id, brief } : null);
     setConversationId(result.id);
     setIsNewDraft(false);
     return result.id;
-  }, [createConversation]);
+  }, [createConversation, brief]);
 
-  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(
-    null,
-  );
-
-  const handleSuggestionPress = useCallback((text: string) => {
-    setPendingSuggestion(text);
-  }, []);
+  // One pulse of the Notebook icon per new batch of saves (reduced motion:
+  // a colour change on the button instead).
+  const { reducedMotion } = useAccessibility();
+  const hasSaves = notebookSaves.saves.length > 0;
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    if (!hasSaves || reducedMotion) return;
+    pulse.set(
+      withSequence(
+        withTiming(1.15, { duration: 150 }),
+        withTiming(1, { duration: 150 }),
+      ),
+    );
+  }, [hasSaves, reducedMotion, pulse]);
+  const notebookPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.get() }],
+  }));
 
   return (
     <View
@@ -208,62 +269,15 @@ export default function CoachProScreen() {
         { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
       ]}
     >
-      {isContextLoading && (
-        <SkeletonProvider>
-          <SkeletonLoadingRegion
-            style={styles.loadingContainer}
-            testID="coach-pro-loading-skeleton"
-          >
-            <SkeletonBox
-              width="60%"
-              height={20}
-              borderRadius={BorderRadius.sm}
-            />
-            <SkeletonBox
-              width="90%"
-              height={48}
-              borderRadius={BorderRadius.md}
-              style={{ marginTop: Spacing.sm }}
-            />
-            <SkeletonBox
-              width="40%"
-              height={16}
-              borderRadius={BorderRadius.xs}
-              style={{ marginTop: Spacing.sm }}
-            />
-          </SkeletonLoadingRegion>
-        </SkeletonProvider>
-      )}
-      {isContextError && (
-        <View style={styles.errorContainer}>
-          <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            Unable to load dashboard
-          </ThemedText>
-          <Pressable
-            onPress={() => refetchContext()}
-            accessibilityRole="button"
-            accessibilityLabel="Retry loading dashboard"
-          >
-            <ThemedText type="small" style={{ color: theme.link }}>
-              Retry
-            </ThemedText>
-          </Pressable>
-        </View>
-      )}
-      {context && (
-        <CoachDashboard
-          context={context}
-          onSuggestionPress={handleSuggestionPress}
-          onNotebookPress={() => navigation.navigate("NotebookScreen")}
-          forceCollapsed={keyboardVisible}
-        />
-      )}
-      <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
+      <View
+        style={[styles.threadBar, { borderBottomColor: theme.border }]}
+        onLayout={(e) => {
+          const { y, height } = e.nativeEvent.layout;
+          setThreadBarBottom(y + height);
+        }}
+      >
         <Pressable
-          onPress={() => {
-            setIsNewDraft(true);
-            setConversationId(null);
-          }}
+          onPress={startDraft}
           style={({ pressed }) => [
             styles.newThreadButton,
             {
@@ -371,33 +385,65 @@ export default function CoachProScreen() {
             </ThemedText>
           </Pressable>
         </ScrollView>
+        <Animated.View style={notebookPulseStyle}>
+          <Pressable
+            onPress={() => navigation.navigate("NotebookScreen")}
+            style={({ pressed }) => [
+              styles.notebookButton,
+              (pressed || (hasSaves && reducedMotion)) && {
+                backgroundColor: theme.backgroundSecondary,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Notebook"
+          >
+            <Feather name="book-open" size={18} color={theme.link} />
+          </Pressable>
+        </Animated.View>
       </View>
+      <SavedToNotebookPopup
+        saves={notebookSaves.saves}
+        onConfirm={notebookSaves.confirm}
+        onUndo={notebookSaves.undo}
+        top={(threadBarBottom ?? insets.top + THREAD_BAR_FALLBACK_HEIGHT) + 4}
+      />
       <CoachChat
         conversationId={conversationId}
         onCreateConversation={handleCreateConversation}
         isCoachPro={isCoachPro}
         warmUpHook={warmUpHook}
-        initialMessage={pendingSuggestion}
-        onInitialMessageSent={() => setPendingSuggestion(null)}
         onMessageSent={handleMessageSent}
         inputBarStyle={{
           paddingBottom: keyboardVisible ? Spacing.sm : tabBarHeight,
         }}
+        onReminderHandled={handleMessageSent}
+        onReplyDone={checkForSaves}
+        onDismissReminder={(type) => {
+          acknowledgeType(type).catch((err) =>
+            logger.warn("[CoachProScreen] acknowledgeType failed", err),
+          );
+        }}
+        openingBrief={
+          shownBrief
+            ? { brief: shownBrief, form: draftForm, onShown: onBriefShown }
+            : null
+        }
       />
     </View>
   );
 }
 
+/** 44pt buttons plus vertical padding — used until the bar is measured. */
+const THREAD_BAR_FALLBACK_HEIGHT = 44 + Spacing.sm * 2;
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  loadingContainer: {
-    paddingVertical: Spacing.xl,
-    paddingHorizontal: Spacing.lg,
-  },
-  errorContainer: {
-    paddingVertical: Spacing.md,
+  notebookButton: {
+    minWidth: 44,
+    minHeight: 44,
     alignItems: "center",
-    gap: Spacing.xs,
+    justifyContent: "center",
+    borderRadius: BorderRadius.sm,
   },
   threadBar: {
     flexDirection: "row",

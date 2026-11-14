@@ -1,6 +1,8 @@
 // shared/schemas/coach-blocks.ts
 import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
+import { allergenIdSchema } from "../constants/allergens";
+import { writeCardBlockObjectSchema } from "./coach-write-cards";
 import {
   recipeResultsBlockSchema,
   recipeQuestionsBlockSchema,
@@ -28,7 +30,9 @@ const NAVIGABLE_SCREENS = [
   "QuickLog",
   "DailyNutritionDetail",
   "Scan",
-  "WeightTracking",
+  // No "WeightTracking": weight tracking was retired (#384) and the client
+  // has no route for it, so such a card was a dead tap. A stored card that
+  // still names it fails validation and is dropped (filterValidBlocks).
   "GoalSetup",
   "RecipeChat",
   "RecipeBrowserModal",
@@ -40,7 +44,7 @@ const NAVIGABLE_SCREENS = [
 const navigateActionSchema = z.object({
   type: z.literal("navigate"),
   screen: z.enum(NAVIGABLE_SCREENS),
-  params: z.record(z.unknown()).optional(),
+  params: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Per-screen param schemas for navigate actions requiring specific params. */
@@ -155,6 +159,16 @@ const addGroceryListActionSchema = z.object({
   ),
 });
 
+/**
+ * Offer to add an allergy the user named in chat to their dietary profile.
+ * Only the nine allergens the profile editor can hold; the editor asks for
+ * the severity — the coach never guesses it.
+ */
+const addAllergyActionSchema = z.object({
+  type: z.literal("add_allergy"),
+  allergen: allergenIdSchema,
+});
+
 const blockActionSchema = z
   .discriminatedUnion("type", [
     logFoodActionSchema,
@@ -162,6 +176,7 @@ const blockActionSchema = z
     setGoalActionSchema,
     addMealPlanActionSchema,
     addGroceryListActionSchema,
+    addAllergyActionSchema,
   ])
   .superRefine((val, ctx) => {
     if (val.type === "navigate") {
@@ -288,6 +303,28 @@ export const mealPlanCardSchema = z.object({
   days: z.array(mealPlanDaySchema),
 });
 
+/**
+ * Which notebook entries a Coach Pro reply drew on (visible memory R1). Not a
+ * card: the client renders a quiet "From your notebook" line from it. The
+ * server keeps only ids from the user's confirmed set (server/services/memory-refs.ts).
+ */
+export const memoryRefsSchema = z.object({
+  type: z.literal("memory_refs"),
+  ids: z.array(z.number().int().positive()).min(1).max(5),
+});
+export type MemoryRefs = z.infer<typeof memoryRefsSchema>;
+
+/**
+ * What a Coach Pro reply looked up, shown as one quiet "Checked: a · b" line
+ * under it (show-the-work spec 2026-11-09). SERVER-BUILT from the turn's tool
+ * calls; a model-authored one is dropped (server/services/coach-blocks.ts).
+ */
+export const checkedTrailSchema = z.object({
+  type: z.literal("checked_trail"),
+  items: z.array(z.string().min(1).max(60)).min(1).max(5),
+});
+export type CheckedTrailBlock = z.infer<typeof checkedTrailSchema>;
+
 // ── Discriminated union of all blocks ───────────────────────────────
 
 // recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
@@ -305,6 +342,11 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   recipeQuestionsBlockSchema,
   recipeOfferBlockSchema,
   recipeAdjustBlockSchema,
+  memoryRefsSchema,
+  // SERVER-BUILT like the finder blocks (spec 2026-11-09): dropped from model
+  // output by server/services/coach-blocks.ts.
+  writeCardBlockObjectSchema,
+  checkedTrailSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;

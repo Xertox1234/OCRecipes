@@ -1,11 +1,6 @@
 import React, { useRef, useState } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  Image,
-  AccessibilityInfo,
-} from "react-native";
+import { StyleSheet, View, Pressable, AccessibilityInfo } from "react-native";
+import { Image } from "expo-image";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -23,6 +18,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { ProfileCard } from "@/components/profile/ProfileCard";
 import { MiniWidgetRow } from "@/components/profile/MiniWidgetRow";
 import { LibraryGrid } from "@/components/profile/LibraryGrid";
+import { ProfileWeekCard } from "@/components/weekly-report/YourWeekCard";
 import { InlineSettings } from "@/components/profile/InlineSettings";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
@@ -105,6 +101,7 @@ export default function ProfileScreen() {
 
   // Mark animated after first render
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- must flip after the first commit: the mount render's views take their entering animation at construction; set during render, they would never animate
     setHasAnimated(true);
   }, []);
 
@@ -186,6 +183,7 @@ export default function ProfileScreen() {
             <Image
               source={{ uri: resolveImageUrl(user.avatarUrl)! }}
               style={styles.collapsedAvatar}
+              contentFit="cover"
             />
           ) : (
             <View
@@ -246,6 +244,9 @@ export default function ProfileScreen() {
             onGearPress={handleGearPress}
           />
         </Animated.View>
+
+        {/* 1b. Coach weekly report — newest week, while it's fresh */}
+        <ProfileWeekCard style={styles.widgetSection} />
 
         {/* 2. Mini Widget Row */}
         {widgetData && (

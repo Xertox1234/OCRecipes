@@ -45,7 +45,7 @@ vi.mock("../../storage", () => ({
     getDailyMealSuggestionCount: vi.fn(),
     getUserProfile: vi.fn(),
     getUser: vi.fn(),
-    getMealPlanItems: vi.fn(),
+    getMealPlanItemSummaries: vi.fn(),
     getRecentDismissedRecipeIds: vi.fn().mockResolvedValue([]),
     getCommunityRecipeTitlesByIds: vi.fn().mockResolvedValue(new Map()),
     getMealSuggestionCache: vi.fn(),
@@ -101,7 +101,7 @@ describe("Meal Suggestions Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ dailyCalorieGoal: 2000 }),
       );
-      vi.mocked(storage.getMealPlanItems).mockResolvedValue([]);
+      vi.mocked(storage.getMealPlanItemSummaries).mockResolvedValue([]);
       vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
         totalCalories: 0,
@@ -141,7 +141,7 @@ describe("Meal Suggestions Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ dailyCalorieGoal: 2000 }),
       );
-      vi.mocked(storage.getMealPlanItems).mockResolvedValue([]);
+      vi.mocked(storage.getMealPlanItemSummaries).mockResolvedValue([]);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
         totalCalories: 500,
         totalProtein: 20,
@@ -267,7 +267,9 @@ describe("Meal Suggestions Routes", () => {
     });
 
     function mockBudgetSetup(
-      mealPlanItems: Awaited<ReturnType<typeof storage.getMealPlanItems>>,
+      mealPlanItems: Awaited<
+        ReturnType<typeof storage.getMealPlanItemSummaries>
+      >,
     ) {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
@@ -279,7 +281,9 @@ describe("Meal Suggestions Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ dailyCalorieGoal: 2000 }),
       );
-      vi.mocked(storage.getMealPlanItems).mockResolvedValue(mealPlanItems);
+      vi.mocked(storage.getMealPlanItemSummaries).mockResolvedValue(
+        mealPlanItems,
+      );
       vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
         totalCalories: 0,

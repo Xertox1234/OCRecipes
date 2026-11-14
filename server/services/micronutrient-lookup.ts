@@ -2,10 +2,10 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { createServiceLogger, toError } from "../lib/logger";
+import { getUsdaApiKey } from "./usda-lookup";
 
 const log = createServiceLogger("micronutrient-lookup");
 
-const USDA_API_KEY = process.env.USDA_API_KEY || "DEMO_KEY";
 const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
 const MICRONUTRIENT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -93,7 +93,7 @@ async function lookupMicronutrients(
   foodName: string,
 ): Promise<MicronutrientData[]> {
   try {
-    const url = `${USDA_BASE_URL}/foods/search?api_key=${USDA_API_KEY}&query=${encodeURIComponent(foodName)}&pageSize=1&dataType=Survey (FNDDS)`;
+    const url = `${USDA_BASE_URL}/foods/search?api_key=${getUsdaApiKey()}&query=${encodeURIComponent(foodName)}&pageSize=1&dataType=Survey (FNDDS)`;
 
     // AbortSignal.timeout leaves no timer behind on a failed fetch (the old
     // setTimeout was cleared only on success) and also bounds the body read.

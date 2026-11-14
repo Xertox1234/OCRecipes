@@ -19,7 +19,7 @@ const googleRtdnBodySchema = z.object({
     .object({
       data: z.string().optional(),
       messageId: z.string().optional(),
-      attributes: z.record(z.string()).optional(),
+      attributes: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
   subscription: z.string().optional(),

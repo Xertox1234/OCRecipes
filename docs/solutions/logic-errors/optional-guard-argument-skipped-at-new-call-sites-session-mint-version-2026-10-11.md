@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [security, api, architecture]
 module: server
-applies_to: ["server/routes/auth-social.ts", "server/routes/auth-upgrade.ts", "server/routes/auth-mfa.ts", "server/services/mfa-totp.ts", "client/lib/second-factor-utils.ts", "client/hooks/useAuth.ts"]
+applies_to: ["server/services/auth-session.ts", "server/routes/auth-social.ts", "server/routes/auth-upgrade.ts", "server/routes/auth-mfa.ts", "server/services/mfa-totp.ts", "client/lib/second-factor-utils.ts", "client/hooks/useAuth.ts"]
 symptoms: ["A session issued during a password reset still works after the reset", "Three audits in a row each find the same missing session-version check on a different route", "Turning on two-step in a race leaves the account with recovery codes nobody ever saw"]
 created: 2026-10-11
 severity: low
@@ -40,7 +40,7 @@ severity: low
 
 ## Related Files
 
-- `server/routes/auth-social.ts` — `issueSession(userId, expectedTokenVersion)`
+- `server/services/auth-session.ts` — `issueSession(userId, expectedTokenVersion)`
 - `server/routes/auth-upgrade.ts`, `server/routes/auth-mfa.ts` — mint under the written version; codes ride the refusal
 - `server/services/mfa-totp.ts` — `confirmFirstEnrollment` returns `{ recoveryCodes, tokenVersion }`
 - `client/lib/second-factor-utils.ts` — `recoveryCodesOrThrow`; `client/hooks/useAuth.ts` — `confirmTwoStep`, `upgradeConfirmTwoStep`

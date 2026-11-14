@@ -4,6 +4,11 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../coach-context";
+import { buildCoachBrief } from "../../services/coach-brief";
+import { requireAuth } from "../../middleware/auth";
+import { sendError } from "../../lib/api-errors";
+import { TIER_FEATURES } from "@shared/types/premium";
+import type { RenderedBrief } from "@shared/lib/opening-brief";
 import {
   createMockUser,
   createMockUserProfile,
@@ -29,6 +34,10 @@ vi.mock("../../storage", () => ({
 vi.mock("../../services/coach-warm-up", () => ({
   setWarmUp: vi.fn(() => ({ ok: true })),
   generateWarmUpId: vi.fn(() => "test-uuid-warmup"),
+}));
+
+vi.mock("../../services/coach-brief", () => ({
+  buildCoachBrief: vi.fn(),
 }));
 
 vi.mock("../../middleware/auth");
@@ -199,7 +208,9 @@ describe("Coach Context Routes", () => {
       vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([
         createMockCoachNotebookEntry({
           type: "commitment",
-          content: "Eat more greens",
+          content: "The user agreed to eat more greens",
+          label: "more greens",
+          confirmedAt: new Date(),
           followUpDate: new Date(),
           sourceConversationId: 1,
         }),
@@ -210,10 +221,8 @@ describe("Coach Context Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      // Should include a commitment follow-up suggestion
-      expect(
-        res.body.suggestions.some((s: string) => s.includes("Eat more greens")),
-      ).toBe(true);
+      // A confirmed, labelled commitment gets a curiosity chip
+      expect(res.body.suggestions).toContain("How's more greens going?");
       // Should include protein deficit suggestion (150 - 10 = 140 > 30)
       expect(
         res.body.suggestions.some((s: string) => s.includes("protein")),
@@ -330,6 +339,68 @@ describe("Coach Context Routes", () => {
         .set("Authorization", "Bearer token")
         .send({ conversationId: 1, interimTranscript: "Hello" });
 
+      expect(res.status).toBe(500);
+    });
+  });
+  describe("GET /api/coach/brief", () => {
+    const brief: RenderedBrief = {
+      greeting: "Good afternoon.",
+      recap: "Nothing logged yet today.",
+      stats: [],
+      pointer: null,
+      reminder: null,
+      suggestions: [],
+      text: "Good afternoon.\n\nNothing logged yet today.",
+    };
+
+    beforeEach(() => {
+      vi.mocked(buildCoachBrief).mockResolvedValue(brief);
+    });
+
+    it("serves a free user (no Coach Pro gate)", async () => {
+      setupFreeMock();
+      const res = await request(app).get("/api/coach/brief");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(brief);
+      expect(buildCoachBrief).toHaveBeenCalledWith(
+        "1",
+        TIER_FEATURES.free,
+        "UTC",
+        "full",
+      );
+    });
+
+    it("passes the timezone header and the short form", async () => {
+      setupPremiumMock();
+      await request(app)
+        .get("/api/coach/brief?form=short")
+        .set("x-timezone", "America/Los_Angeles");
+      expect(buildCoachBrief).toHaveBeenCalledWith(
+        "1",
+        TIER_FEATURES.premium,
+        "America/Los_Angeles",
+        "short",
+      );
+    });
+
+    it("rejects an unknown form", async () => {
+      const res = await request(app).get("/api/coach/brief?form=bogus");
+      expect(res.status).toBe(400);
+      expect(buildCoachBrief).not.toHaveBeenCalled();
+    });
+
+    it("requires auth", async () => {
+      vi.mocked(requireAuth).mockImplementationOnce(async (_req, res) => {
+        sendError(res, 401, "Unauthorized");
+      });
+      const res = await request(app).get("/api/coach/brief");
+      expect(res.status).toBe(401);
+      expect(buildCoachBrief).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 when the brief fails to build", async () => {
+      vi.mocked(buildCoachBrief).mockRejectedValue(new Error("db down"));
+      const res = await request(app).get("/api/coach/brief");
       expect(res.status).toBe(500);
     });
   });

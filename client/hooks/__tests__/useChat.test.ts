@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook, act } from "@testing-library/react";
+import { onAiSharingRequired } from "@/lib/ai-sharing-events";
+import { CHAT_GENERIC_ERROR, CHAT_LIMIT_ERROR } from "@/lib/chat-error-copy";
 
 import {
   useSendMessage,
@@ -228,7 +230,74 @@ describe("useSendMessage", () => {
     });
 
     expect(result.current.isStreaming).toBe(false);
-    expect(result.current.requestError).toBe("Internal Server Error");
+    // Static copy, never the server body (client-state.md); the code stays.
+    expect(result.current.requestError).toBe(CHAT_GENERIC_ERROR);
+    expect(result.current.requestErrorCode).toBe("SERVER_ERROR");
+  });
+
+  it("names a daily-limit refusal with static copy and exposes its code", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateErrorResponse(429, {
+        error: "Daily Coach Pro message limit reached",
+        code: "DAILY_LIMIT_REACHED",
+      });
+      await p;
+    });
+
+    expect(result.current.requestError).toBe(CHAT_LIMIT_ERROR);
+    expect(result.current.requestErrorCode).toBe("DAILY_LIMIT_REACHED");
+  });
+
+  // Privacy audit H3: an account that was never asked about AI sharing is
+  // asked when its first message is refused. The stream bypasses apiRequest,
+  // so it has to raise the signal itself.
+  it("opens the AI-sharing question when a message is refused for AI being off", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    const asked = vi.fn();
+    const off = onAiSharingRequired(asked);
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateErrorResponse(403, {
+        error: "AI features are off",
+        code: "AI_SHARING_REQUIRED",
+      });
+      await p;
+    });
+    off();
+
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(result.current.requestErrorCode).toBe("AI_SHARING_REQUIRED");
+  });
+
+  it("shows static copy for a server error event mid-stream", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateChunks(['data: {"error":"Response too large"}\n']);
+      await p;
+    });
+
+    expect(result.current.requestError).toBe(CHAT_GENERIC_ERROR);
   });
 
   it("routes an error response through the shared session-expiry check with the sent token (R22)", async () => {
@@ -254,7 +323,7 @@ describe("useSendMessage", () => {
       expect.stringContaining("TOKEN_EXPIRED"),
       "token",
     );
-    expect(result.current.requestError).toBe("Token expired");
+    expect(result.current.requestError).toBe(CHAT_GENERIC_ERROR);
   });
 
   it("arms the XHR timeout above the server's SSE cap, so the server's graceful timeout arrives first", async () => {
@@ -333,7 +402,7 @@ describe("useSendMessage", () => {
     });
 
     expect(result.current.isStreaming).toBe(false);
-    expect(result.current.requestError).toBe("Rate limit exceeded");
+    expect(result.current.requestError).toBe(CHAT_GENERIC_ERROR);
   });
 
   it("invalidates query cache when done signal received", async () => {
@@ -705,7 +774,7 @@ describe("useSendMessage", () => {
       await p;
     });
 
-    expect(result.current.requestError).toBe("Rate limit exceeded");
+    expect(result.current.requestError).toBe(CHAT_GENERIC_ERROR);
 
     // Second send — requestError is cleared at the top of sendMessage before any
     // network activity. After a successful second send it must remain null.
@@ -811,6 +880,24 @@ describe("useSendMessage", () => {
       });
       expect(xhrInstance.send).toHaveBeenCalledWith(
         JSON.stringify({ content: "Generate", finderAction }),
+      );
+    });
+
+    it("sends the opening brief form in the body", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("t");
+      const { result } = renderHook(() => useSendMessage(42), { wrapper });
+      await act(async () => {
+        const p = result.current.sendMessage("Hello", undefined, 99, {
+          openingBrief: "full",
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.simulateChunks(['data: {"done":true}\n']);
+        await p;
+      });
+      expect(xhrInstance.send).toHaveBeenCalledWith(
+        JSON.stringify({ content: "Hello", openingBrief: "full" }),
       );
     });
 

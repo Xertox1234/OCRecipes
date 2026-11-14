@@ -39,7 +39,95 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
       }
     }
   }
+  for (const exception of event.exception?.values ?? []) {
+    if (typeof exception.value === "string") {
+      exception.value = scrubErrorText(exception.value);
+    }
+  }
+  if (typeof event.message === "string") {
+    event.message = scrubErrorText(event.message);
+  }
   return event;
+}
+
+/** `"<status>: <response body>"`, the shape every failed API call throws. */
+const STATUS_PREFIXED = /^(\d{3}): ([\s\S]*)$/;
+/** A machine-readable error code such as `VALIDATION_ERROR`. */
+const ERROR_CODE = /^[A-Z][A-Z0-9_]*$/;
+
+/**
+ * Privacy audit M9 follow-up: a failed API call throws the server's response
+ * body in its message, and a validation error can echo what the user typed.
+ * Keep the status and the error code; drop the rest. The thrown message itself
+ * is left alone, because the 4xx retry guards in query-client.ts read it.
+ */
+function scrubErrorText(text: string): string {
+  const match = STATUS_PREFIXED.exec(text);
+  if (!match) return text;
+  let code: unknown;
+  try {
+    code = (JSON.parse(match[2]) as { code?: unknown } | null)?.code;
+  } catch {
+    // Not JSON: nothing machine-readable to keep.
+  }
+  const suffix =
+    typeof code === "string" && ERROR_CODE.test(code) ? ` code=${code}` : "";
+  return `${match[1]}: [body removed]${suffix}`;
+}
+
+/**
+ * A path segment survives only if it is a plain route word (`grocery-lists`)
+ * or an API version (`v1`). Anything else — numeric ids, UUIDs, barcodes,
+ * percent-encoded or mixed-case text — becomes `:id`.
+ */
+const ROUTE_WORD = /^(?:[a-z][a-z-]*|v\d+)$/;
+
+/**
+ * Reduce a URL or route to its shape: drop the query string and fragment
+ * (search text, food names, dates) and replace every non-route-word path
+ * segment. Keeps the scheme and host so a report still shows which service
+ * a request went to.
+ */
+function scrubUrl(url: string): string {
+  const bare = url.split(/[?#]/, 1)[0];
+  const origin = /^[a-z][a-z0-9+.-]*:\/\/[^/]*/i.exec(bare)?.[0] ?? "";
+  const path = bare.slice(origin.length);
+  const scrubbed = path
+    .split("/")
+    .map((seg) => (seg === "" || ROUTE_WORD.test(seg) ? seg : ":id"))
+    .join("/");
+  return origin + scrubbed;
+}
+
+/**
+ * A crash-report label for a query or mutation key: the first element's route
+ * shape only. The other elements hold ingredient names, ids and dates.
+ */
+export function queryKeyLabel(key: readonly unknown[] | undefined): string {
+  const head = key?.[0];
+  return typeof head === "string" ? scrubUrl(head) : "unkeyed";
+}
+
+/**
+ * Privacy audit M9: Sentry's default breadcrumbs record full request URLs
+ * (ids, barcodes, search text) and console output. The privacy policy says
+ * request contents are removed from crash reports, so:
+ * - http (fetch/xhr) and navigation crumbs keep only the URL's shape;
+ * - console crumbs are dropped — their arguments can hold anything;
+ * - every other crumb (the app's own `reportError` context, touches) passes.
+ * Exported so it can be unit-tested without initializing Sentry.
+ */
+export function scrubBreadcrumb(
+  breadcrumb: Sentry.Breadcrumb,
+): Sentry.Breadcrumb | null {
+  if (breadcrumb.category === "console") return null;
+  const data = breadcrumb.data;
+  if (!data) return breadcrumb;
+  for (const key of ["url", "from", "to"] as const) {
+    const value = data[key];
+    if (typeof value === "string") data[key] = scrubUrl(value);
+  }
+  return breadcrumb;
 }
 
 /**
@@ -56,6 +144,8 @@ export function initReporter(): void {
     sendDefaultPii: false,
     // Belt-and-suspenders: scrub Authorization headers regardless of defaults.
     beforeSend: scrubEvent,
+    // Strip ids, barcodes and search text from breadcrumb URLs (audit M9).
+    beforeBreadcrumb: scrubBreadcrumb,
   });
 }
 

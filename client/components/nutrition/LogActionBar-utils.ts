@@ -3,7 +3,7 @@
  */
 
 /**
- * The subset of `LogGate` (`@/screens/nutrition-detail-utils`) this function
+ * The subset of `LogGate` (`@/components/nutrition/nutrition-detail-utils`) this function
  * needs. Not the exact same type: the real `"open"` variant carries no
  * `buttonLabel` at all, but the real `LogGate` is still assignable here
  * (its `"open"` member satisfies `buttonLabel`'s optionality, its
@@ -13,7 +13,11 @@
  */
 export type LogBarGate =
   | { kind: "open"; buttonLabel?: string }
-  | { kind: "needsAcknowledgement"; buttonLabel: string };
+  | {
+      kind: "needsAcknowledgement";
+      buttonLabel: string;
+      valuesFromLabel?: true;
+    };
 
 export interface LogBarState {
   mode: "acknowledge" | "log";
@@ -27,7 +31,7 @@ export interface LogBarState {
  * not-yet-reviewed database fallback, or the ordinary log action once the
  * gate is open (or already acknowledged this render).
  *
- * `deriveLogGate` (`@/screens/nutrition-detail-utils`) owns the gate itself
+ * `deriveLogGate` (`@/components/nutrition/nutrition-detail-utils`) owns the gate itself
  * — this only reacts to it. The acknowledge branch echoes back whatever
  * `buttonLabel` the gate produced rather than hardcoding the string, so a
  * future change to that copy doesn't require touching this file too.
@@ -44,7 +48,9 @@ export function deriveLogBarState(params: {
     return {
       mode: "acknowledge",
       label,
-      accessibilityLabel: `${label}. These values come from the product database, not the label you photographed.`,
+      accessibilityLabel: logGate.valuesFromLabel
+        ? `${label}. These values come from the label you photographed and could not be checked against the product database.`
+        : `${label}. These values come from the product database, not the label you photographed.`,
       accessibilityHint: "Reveals the Add to Today button",
     };
   }

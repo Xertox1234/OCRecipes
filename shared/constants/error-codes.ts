@@ -21,6 +21,16 @@ export const ErrorCode = {
   CONFLICT: "CONFLICT",
   /** A duplicate of a write still in flight (a double tap) — the first request owns the result; clients stay quiet. */
   REQUEST_IN_FLIGHT: "REQUEST_IN_FLIGHT",
+  /** A health field was sent by a user who has not agreed to the health-data consent. */
+  HEALTH_CONSENT_REQUIRED: "HEALTH_CONSENT_REQUIRED",
+  /** An AI feature was used by a user who has not allowed AI sharing. */
+  AI_SHARING_REQUIRED: "AI_SHARING_REQUIRED",
+  /** Coach write card replaced/expired by a newer card — it can't be saved. */
+  CARD_LOCKED: "CARD_LOCKED",
+  /** Coach write card Undo after the server's undo window. */
+  UNDO_EXPIRED: "UNDO_EXPIRED",
+  /** Coach write card Undo for a card that isn't saved. */
+  CARD_NOT_SAVED: "CARD_NOT_SAVED",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   API_KEY_INVALID: "API_KEY_INVALID",
   API_KEY_REVOKED: "API_KEY_REVOKED",

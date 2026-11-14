@@ -159,7 +159,14 @@ jobs:
     # cache at all) has not itself been directly measured; that's fine here
     # specifically because the number being relied on (the cold build)
     # already assumes no cache benefit.
-    timeout-minutes: 160
+    #
+    # Re-bumped 160 -> 180 on 2026-11-12 together with the build step's bound
+    # (70 -> 90, see that step's comment): setup ~6m + build <=90m + pre-warm
+    # <=10m + flows <=64m = ~170m, plus the same ~10m margin. The build step
+    # bound moved because 3 of 38 measured iOS builds hit 70m (nightlies
+    # 42986537073 and 43182452033, dispatch 43299922691). GitHub's cap for a
+    # hosted job is 360m, so 180 is well inside it.
+    timeout-minutes: 180
 
     env:
       # Backend/credential env shared with the Android job lives in the
@@ -178,6 +185,24 @@ jobs:
       # fails soft, surfacing any *other* problem in it instead of masking
       # the phase entirely.
       SENTRY_ALLOW_FAILURE: "true"
+      # 127.0.0.1, not the workflow-level `localhost`. On macOS `localhost`
+      # resolves to ::1 first, then 127.0.0.1, and Node 24 Happy Eyeballs
+      # (autoSelectFamily true, 250 ms per address) dropped the ::1 attempt
+      # whenever this starved runner could not finish it in 250 ms, then
+      # retried over IPv4. Run 43104528885 (postgres.log): 30 of 210
+      # connections were dropped ::1 attempts, each paired with an IPv4 retry
+      # (30 of 30). The retry came 584 ms later at p50 and 3.2 s at most, all
+      # of it spent from the pool's 5 s connectionTimeoutMillis. The two
+      # "Connection terminated due to connection timeout" errors in that run
+      # both began with a dropped ::1 attempt.
+      # todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md
+      DATABASE_URL: postgresql://ocrecipes:ocrecipes@127.0.0.1:5432/ocrecipes_test
+      # Keep the server's idle pool connections open (server/db.ts; pg's
+      # default closes them after 10 s idle). With IPv4 alone, run 43120554293
+      # still had 2 connection timeouts, both new connections that Postgres
+      # took 6.2 s and 7.6 s to start (received -> authorized in postgres.log),
+      # longer than the 5 s connectionTimeoutMillis.
+      DB_POOL_IDLE_TIMEOUT_MS: "0"
 
     steps:
       - uses: actions/checkout@v5
@@ -310,6 +335,19 @@ jobs:
           psql -d postgres -c "ALTER USER ocrecipes WITH PASSWORD 'ocrecipes';"
           createdb -O ocrecipes ocrecipes_test || true
           psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          # Measurement for todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md:
+          # every "Connection terminated due to connection timeout" in server.log
+          # is a NEW connection that took over 5 s to open (pg-pool newClient).
+          # "connection received" -> "connection authorized" timestamps show
+          # whether that time goes to fork + auth inside Postgres; slow
+          # statements show whether queries themselves are slow. Uploaded as
+          # postgres.log with logs-ios.
+          psql -d postgres -c "ALTER SYSTEM SET log_connections = on;" \
+            -c "ALTER SYSTEM SET log_disconnections = on;" \
+            -c "ALTER SYSTEM SET log_min_duration_statement = 1000;" \
+            -c "ALTER SYSTEM SET log_checkpoints = on;" \
+            -c "ALTER SYSTEM SET log_line_prefix = '%m [%p] ';" \
+            -c "SELECT pg_reload_conf();"
 
       - name: Push database schema
         run: npm run db:push
@@ -346,6 +384,62 @@ jobs:
             process.exit(1);
           ')"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          # Stop the simulator's push daemon (todos/archive/P2-2026-11-12-e2e-ios-runner-host-load.md).
+          # On this runner apsd never reaches sandbox.push.apple.com and retries with no
+          # backoff ("Connected on 0 interfaces", ~920 attempts in a 3-minute flow, run
+          # 43143893480): ~20% CPU from boot to the end of the job, plus the system-log
+          # traffic diagnosticd and Maestro's per-flow device log capture then process
+          # (193k of the 529k lines in one flow's device-simulator.log). It never got a
+          # push token here, so the app sees the same thing with it stopped. The build
+          # step competes with it too: clang got 78% of the CPU in the 70-minute timeout
+          # (nightly 43182452033) against 106% in a 45-minute build (43143893480).
+          xcrun simctl spawn "$UDID" launchctl disable system/com.apple.apsd \
+            || echo "::warning::could not disable apsd in the simulator"
+          xcrun simctl spawn "$UDID" launchctl bootout system/com.apple.apsd \
+            || echo "::warning::could not boot out apsd in the simulator"
+
+      # Measurement for todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md.
+      # metro-probe.log shows load1 around 250-300 for the whole flow phase
+      # (runs 42810549290, 43064552610) but not WHAT is runnable. Every 30 s,
+      # from here to the end of the job (build and flows): load, swap, free
+      # pages, Postgres backends, and the ten busiest processes. Uploaded as
+      # host-sample.log with logs-ios.
+      - name: Start host load sampler
+        run: |
+          cat > "$RUNNER_TEMP/host-sampler.sh" <<'SAMPLER'
+          out="$GITHUB_WORKSPACE/host-sample.log"
+          echo "# $(sysctl -n hw.model) ncpu=$(sysctl -n hw.ncpu) mem=$(( $(sysctl -n hw.memsize) / 1048576 ))MB" > "$out"
+          i=0
+          while true; do
+            {
+              echo "=== $(date -u +%H:%M:%S) load $(sysctl -n vm.loadavg) swap $(sysctl -n vm.swapusage)"
+              vm_stat | grep -E '^(Pages free|Pageouts|Swapouts)' | tr -s ' ' | tr '\n' ';'
+              echo " pg_backends=$(pgrep -f 'postgres: ocrecipes' | wc -l | tr -d ' ')"
+              # comm is a full path and may contain spaces: print everything after rss.
+              ps -Ao pcpu=,rss=,comm= -r | head -10 \
+                | awk '{ c = $1; r = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); printf "  %5s%% %6dMB %s\n", c, r / 1024, $0 }'
+              # The `log stream --style syslog` process (~15% CPU during flows) is
+              # Maestro 2.9.0's per-flow device log capture (IOSDriver
+              # startDeviceLogCapture -> logs/device-simulator.log). Kept to show
+              # whether it still runs and for how long.
+              for p in $(pgrep -x log); do
+                pp=$(ps -o ppid= -p "$p" | tr -d ' ')
+                echo "  log pid=$p args=$(ps -o args= -p "$p" | cut -c1-200) parent=$pp $(ps -o args= -p "$pp" | cut -c1-200)"
+              done
+              # The host runs its own apsd; count only the simulator's.
+              echo "  sim_apsd=$(ps -Ao comm= | grep -c 'simruntime/.*/apsd$')"
+              # Memory: free pages sit near 60 MB through the flows and swap-outs
+              # climb (run 43143893480). Every 5 minutes, the ten largest by RSS.
+              if [ $(( i % 10 )) -eq 0 ]; then
+                ps -Ao rss=,pcpu=,comm= -m | head -10 \
+                  | awk '{ r = $1; c = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); printf "  rss %6dMB %5s%% %s\n", r / 1024, c, $0 }'
+              fi
+            } >> "$out" 2>&1
+            i=$(( i + 1 ))
+            sleep 30
+          done
+          SAMPLER
+          nohup bash "$RUNNER_TEMP/host-sampler.sh" >/dev/null 2>&1 &
 
       # The photo e2e/flows/plan/receipt-upload.yaml picks from the gallery. Added here, before the
       # app or Maestro starts, instead of by the flow's Maestro addMedia: on iOS that command hung
@@ -453,9 +547,38 @@ jobs:
       # is deliberately preserving. So the two numbers move together: re-derive
       # the job bound in the same change, or the margin is silently spent.
       # Keeping 70m here is what makes the 160m job bound's arithmetic hold.
+      #
+      # Re-measured 2026-11-12 (the revisit the paragraphs above ask for), from
+      # the Checks API step times and job logs of the last 40 runs of this
+      # workflow (38 builds ran): median 44.7m, mean 46.5m, range 24.8m-70.2m.
+      # By trigger: nightly (schedule) n=11, median 52.5m; dispatch n=27, median
+      # 43.5m. Three builds hit this 70m bound (nightlies 42986537073 and
+      # 43182452033, dispatch 43299922691), so 8% of runs failed before any flow
+      # ran. The step logs split the time: pod install 1-6m, xcodebuild compile
+      # 23-66m (always the same ~2031 compile units), install under 1m. Pods
+      # caching is not what varies; the same workload takes 1.7x-2.7x longer on
+      # a slow runner. Runs 43317178019 and 43329068850 built the identical
+      # sha (08f57e7f7) on the same evening in 42.2m and 24.8m. No compiler
+      # cache is in play ("[Ccache]: Removing Ccache" in all 38 build logs).
+      # The two nightly timeouts that were killed late were close: 43299922691
+      # was linking the app target and 43182452033 was still in the Pods
+      # packaging stage, so the true durations are somewhat above 70m (censored).
+      # Rule: 2x the dispatch median (43.5m) is ~87m, which also clears every
+      # observed value plus the slow tail the censored runs imply; 90m. The
+      # job bound moved with it (160 -> 180, see its comment). Trade-off: a
+      # build that is truly wedged now spends up to 90m before the diagnostic
+      # step below fires.
+      #
+      # The host-load fix (#1852, apsd stopped at simulator boot) landed
+      # after most of these runs; only 5 runs since (24.8-46.4m, none a
+      # nightly) are too few to say it changed anything. Re-measure after 5
+      # more runs and tighten this bound if it did. A compiler cache (ccache
+      # via USE_CCACHE=1) or DerivedData restore was not tried: DerivedData was
+      # already a net loss here (see above), and ccache needs runner
+      # measurements this change cannot make.
       - name: Build and install iOS app
         id: build-ios
-        timeout-minutes: 70
+        timeout-minutes: 90
         run: |
           npx expo run:ios --no-bundler || {
             echo "::warning::expo run:ios failed once - retrying (see run 33345540597 simctl-openurl timeout)"
@@ -587,6 +710,12 @@ jobs:
       - name: Run Maestro regression flows
         run: bash scripts/ci/e2e-with-flow-retry.sh
 
+      # brew services writes Postgres's server log under the brew prefix; copy
+      # it into the workspace so the upload below keeps its usual layout.
+      - name: Collect Postgres log
+        if: always()
+        run: cp "$(brew --prefix)/var/log/postgresql@16.log" postgres.log || echo "::warning::no Postgres log found"
+
       # always(), NOT failure(): scripts/ci/e2e-with-flow-retry.sh re-runs each
       # failed flow individually and the job exits 0 when the re-runs pass, so a
       # failure()-gated upload discards the debug output for every attempt-1
@@ -609,6 +738,8 @@ jobs:
             stub-openai.log
             metro.log
             metro-probe.log
+            host-sample.log
+            postgres.log
             e2e/maestro-output/
           if-no-files-found: warn
 
@@ -686,7 +817,13 @@ jobs:
 
       # The OpenAI stand-in answers the receipt-upload flow's AI step (scripts/ci/stub-openai.mjs);
       # every other AI call gets the same 401 sk-stub got from the real API.
+      # LOG_LEVEL info, as in the iOS job: per-request response times here are
+      # the control for the iOS job's slow requests (same server, same flows,
+      # Linux host with a Postgres service container;
+      # todos/archive/P2-2026-11-10-e2e-ios-ci-postgres-saturation.md).
       - name: Start backend
+        env:
+          LOG_LEVEL: info
         run: |
           node scripts/ci/stub-openai.mjs &
           for i in $(seq 1 15); do

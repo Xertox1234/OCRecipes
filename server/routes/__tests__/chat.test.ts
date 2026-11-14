@@ -3,6 +3,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import request from "supertest";
+import { buildCoachBrief } from "../../services/coach-brief";
 
 import { storage } from "../../storage";
 import { logger } from "../../lib/logger";
@@ -26,9 +27,22 @@ import type {
 import {
   createMockChatConversation,
   createMockChatMessage,
+  createMockCoachWriteCard,
   createMockCommunityRecipe,
   createMockUser,
 } from "../../__tests__/factories";
+
+vi.mock("../../services/coach-brief", () => ({
+  buildCoachBrief: vi.fn(async () => ({
+    greeting: "Good afternoon.",
+    recap: "Nothing logged yet today.",
+    stats: [],
+    pointer: null,
+    reminder: null,
+    suggestions: [],
+    text: "Good afternoon.\n\nNothing logged yet today.",
+  })),
+}));
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -48,6 +62,7 @@ vi.mock("../../storage", () => ({
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
     deleteChatMessage: vi.fn(),
+    reportChatMessage: vi.fn(),
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
     getCommunityRecipe: vi.fn(),
@@ -62,6 +77,11 @@ vi.mock("../../storage", () => ({
     claimRecipeGeneration: vi.fn(),
     claimSpoonacularSearch: vi.fn(),
     countInspiredSuggestionsSince: vi.fn().mockResolvedValue(0),
+    getWriteCard: vi.fn().mockResolvedValue(undefined),
+    getLiveWriteCard: vi.fn().mockResolvedValue(undefined),
+    setWriteCardEdits: vi.fn().mockResolvedValue(false),
+    createWriteCard: vi.fn(),
+    getWriteCardsByIds: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -350,6 +370,84 @@ describe("Chat Routes", () => {
       expect(res.body).toEqual(messages);
     });
 
+    it("GET messages reports the saved status and receipt", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const cardId = "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+      const payload = {
+        items: [
+          {
+            name: "Large eggs",
+            unitLabel: "egg",
+            perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+            count: 2,
+            source: "lookup",
+          },
+        ],
+        mealType: "breakfast",
+        day: "today",
+      };
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({ role: "user", content: "two eggs" }),
+        createMockChatMessage({
+          id: 2,
+          role: "assistant",
+          content: "Here's what I've got.",
+          metadata: {
+            blocks: [
+              {
+                type: "write_card",
+                cardId,
+                kind: "food",
+                payload,
+                status: "live",
+              },
+            ],
+          },
+        }),
+      ]);
+      vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
+        createMockCoachWriteCard({
+          id: cardId,
+          kind: "food",
+          payload,
+          edits: { counts: [3] },
+          status: "saved",
+          savedRefs: { scannedItemIds: [1] },
+        }),
+      ]);
+
+      const res = await request(app)
+        .get("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(storage.getWriteCardsByIds).toHaveBeenCalledWith("1", [cardId]);
+      expect(res.body[1].metadata.blocks[0]).toEqual({
+        type: "write_card",
+        cardId,
+        kind: "food",
+        payload,
+        edits: { counts: [3] },
+        status: "saved",
+        receipt: "✓ Logged to Breakfast · 216 cal",
+      });
+    });
+
+    it("GET messages without write cards does not read card rows", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({ role: "user", content: "Hello" }),
+      ]);
+      await request(app)
+        .get("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token");
+      expect(storage.getWriteCardsByIds).not.toHaveBeenCalled();
+    });
+
     it("returns 404 for unknown conversation", async () => {
       vi.mocked(storage.getChatConversation).mockResolvedValue(undefined);
 
@@ -580,6 +678,76 @@ describe("Chat Routes", () => {
       );
     }
 
+    it("rejects an openingBrief that is not a known form (400)", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Hello", openingBrief: "<script>alert(1)</script>" });
+      expect(res.status).toBe(400);
+      expect(buildCoachBrief).not.toHaveBeenCalled();
+    });
+
+    it("forwards writeCards and liveCard to the coach turn", async () => {
+      mockStreamingSetup();
+      async function* fakeStream() {
+        yield { type: "content" as const, content: "Updated." };
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      const cardId = "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({
+          content: "make it three eggs",
+          writeCards: true,
+          liveCard: { cardId, edits: { counts: [3] } },
+        });
+      expect(res.status).toBe(200);
+      expect(storage.getWriteCard).toHaveBeenCalledWith(cardId, "1");
+      expect(
+        vi.mocked(generateCoachProResponse).mock.calls[0][7],
+      ).toMatchObject({ writeCards: true });
+    });
+
+    it("rejects a liveCard whose id is not a uuid (400)", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({
+          content: "Hello",
+          writeCards: true,
+          liveCard: { cardId: "42", edits: {} },
+        });
+      expect(res.status).toBe(400);
+    });
+
+    it("builds the opening brief on a first coach send that asks for it", async () => {
+      mockStreamingSetup();
+      async function* fakeStream() {
+        yield { type: "content" as const, content: "Hi" };
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "It went well", openingBrief: "full" });
+
+      expect(res.status).toBe(200);
+      expect(buildCoachBrief).toHaveBeenCalledWith(
+        "1",
+        expect.any(Object),
+        "UTC",
+        "full",
+      );
+    });
+
     it("streams SSE response and saves assistant message", async () => {
       mockStreamingSetup();
 
@@ -675,6 +843,50 @@ describe("Chat Routes", () => {
           expect(assistantWrites[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
           expect(assistantWrites[0][4]).toBeNull();
           expect(storage.updateChatConversationTitle).not.toHaveBeenCalled();
+        });
+
+        it("replaces a reply whose recipe card is unsafe although its text is clean", async () => {
+          // The card is shown from the decoded recipe object, so a phrase the
+          // model hid behind JSON escapes (or put in a bare object with no
+          // fence) never appears in the streamed text.
+          setupRecipeTurn();
+          vi.mocked(generateRecipeChatResponse).mockImplementation(
+            async function* () {
+              yield { content: "Here is a simple plan." };
+              yield {
+                content: "",
+                recipe: {
+                  title: "Reset plan",
+                  description: "d",
+                  difficulty: "Easy",
+                  timeEstimate: "5 min",
+                  servings: 1,
+                  ingredients: [{ name: "water", quantity: "1", unit: "cup" }],
+                  instructions: ["Fast for 3 days before you start."],
+                  dietTags: [],
+                  spiceLevel: null,
+                },
+                allergenWarning: null,
+              };
+              yield { done: true };
+            },
+          );
+
+          const res = await request(app)
+            .post("/api/chat/conversations/1/messages")
+            .set("Authorization", "Bearer token")
+            .send({ content: "Make me a plan" });
+
+          expect(res.status).toBe(200);
+          expect(res.text).toContain(
+            JSON.stringify({ safety_override: STANDARD_SAFETY_MESSAGE }),
+          );
+          const assistantWrites = vi
+            .mocked(storage.createChatMessage)
+            .mock.calls.filter((c) => c[2] === "assistant");
+          expect(assistantWrites).toHaveLength(1);
+          expect(assistantWrites[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
+          expect(assistantWrites[0][4]).toBeNull();
         });
 
         it("leaves a clean reply untouched: no override, original text stored", async () => {
@@ -2287,6 +2499,60 @@ describe("Chat Routes", () => {
         },
       );
       const res = await request(app).delete("/api/chat/messages/5");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/chat/messages/:id/report", () => {
+    it("saves the report and returns 204", async () => {
+      vi.mocked(storage.reportChatMessage).mockResolvedValue(true);
+      const res = await request(app)
+        .post("/api/chat/messages/5/report")
+        .set("Authorization", "Bearer valid-token")
+        .send({ reason: "harmful" });
+      expect(res.status).toBe(204);
+      expect(storage.reportChatMessage).toHaveBeenCalledWith(5, "1", "harmful");
+    });
+
+    it("returns 404 when the reply is not found, not the person's, or not an AI reply", async () => {
+      vi.mocked(storage.reportChatMessage).mockResolvedValue(false);
+      const res = await request(app)
+        .post("/api/chat/messages/999/report")
+        .set("Authorization", "Bearer valid-token")
+        .send({ reason: "other" });
+      expect(res.status).toBe(404);
+    });
+
+    it.each([
+      ["a reason off the list", { reason: "spam" }],
+      ["no reason", {}],
+      ["extra text", { reason: "other", comment: "my condition is…" }],
+    ])("returns 400 for %s and saves nothing", async (_name, body) => {
+      const res = await request(app)
+        .post("/api/chat/messages/5/report")
+        .set("Authorization", "Bearer valid-token")
+        .send(body);
+      expect(res.status).toBe(400);
+      expect(storage.reportChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 for an invalid message id", async () => {
+      const res = await request(app)
+        .post("/api/chat/messages/abc/report")
+        .set("Authorization", "Bearer valid-token")
+        .send({ reason: "other" });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      vi.mocked(requireAuth).mockImplementationOnce(
+        async (_req, res, _next) => {
+          sendError(res, 401, "Unauthorized");
+        },
+      );
+      const res = await request(app)
+        .post("/api/chat/messages/5/report")
+        .send({ reason: "other" });
       expect(res.status).toBe(401);
     });
   });

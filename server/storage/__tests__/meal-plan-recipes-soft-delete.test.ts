@@ -77,7 +77,7 @@ const { toggleFavouriteRecipe, getResolvedFavouriteRecipes } = await import(
 );
 const { getUserCookbooks, addRecipeToCookbook, getResolvedCookbookRecipes } =
   await import("../cookbooks");
-const { getRecipeSharePayload } = await import("../community-recipes");
+const { getRecipeSharePayload } = await import("../community-recipe-queries");
 const searchIndex = await import("../../lib/search-index");
 
 let tx: NodePgDatabase<typeof schema>;

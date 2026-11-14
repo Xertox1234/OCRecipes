@@ -1,5 +1,6 @@
 import React from "react";
-import { StyleSheet, View, Pressable, Image } from "react-native";
+import { StyleSheet, View, Pressable } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
@@ -80,6 +81,7 @@ export const ProfileCard = React.memo(function ProfileCard({
             <Image
               source={{ uri: resolveImageUrl(avatarUrl)! }}
               style={styles.avatarImage}
+              contentFit="cover"
             />
           ) : (
             <Feather name="user" size={24} color={theme.textSecondary} />

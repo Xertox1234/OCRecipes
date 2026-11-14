@@ -297,6 +297,10 @@ describe("every protected route is registered behind requireAuth (static guard)"
   // stale-entry test below fails if one no longer matches a real public route.
   const PUBLIC_ROUTES = new Map<string, string>([
     ["GET /api/v1/docs", "public API documentation"],
+    [
+      "GET /api/product-image",
+      "product photo proxy (privacy audit M1) — an <Image> carries no bearer; fixed upstream host, validated path, IP rate-limited",
+    ],
     ["POST /api/auth/register", "account creation — caller has no token yet"],
     ["POST /api/auth/login", "issues the token — caller has no token yet"],
     [

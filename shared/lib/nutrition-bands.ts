@@ -189,7 +189,7 @@ export interface ResolveBasisInput {
   servingSize: string | null | undefined;
   /**
    * Derived scale flag from the barcode response. Absent on the saved-item
-   * path, the direct-OFF fallback, and bundles predating it.
+   * path, older bundles' direct-OFF fallback, and bundles predating it.
    */
   isBeverage: boolean | null | undefined;
 }

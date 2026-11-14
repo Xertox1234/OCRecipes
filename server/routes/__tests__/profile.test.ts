@@ -12,6 +12,7 @@ vi.mock("../../storage", () => ({
     updateUserProfile: vi.fn(),
     createUserProfile: vi.fn(),
     upsertProfileWithOnboarding: vi.fn(),
+    withdrawHealthConsent: vi.fn(),
     invalidateSuggestionCacheForUser: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -48,12 +49,20 @@ const mockProfile = createMockUserProfile({
   cookingTimeAvailable: "30min",
 });
 
+const consentedProfile = createMockUserProfile({
+  healthDataConsentAt: new Date("2026-11-01T00:00:00Z"),
+});
+const unconsentedProfile = createMockUserProfile({ healthDataConsentAt: null });
+
 describe("Profile Routes", () => {
   let app: express.Express;
 
   beforeEach(() => {
     app = createApp();
     lastFireAndForgetPromise = null;
+    // Default: the stored profile already carries consent, so the health-data
+    // gate is open. The consent-gate suite below overrides this.
+    vi.mocked(storage.getUserProfile).mockResolvedValue(consentedProfile);
   });
 
   describe("GET /api/user/dietary-profile", () => {
@@ -147,6 +156,71 @@ describe("Profile Routes", () => {
         .send({ dietType: 12345 });
 
       expect(res.status).toBe(400);
+    });
+
+    // The two JSON columns are typed in TypeScript only; the generated schema
+    // accepts any JSON for them (security audit 2026-11-12, L7).
+    it.each([
+      ["reminderMutes that is not an object", { reminderMutes: "off" }],
+      ["an unknown reminderMutes key", { reminderMutes: { junk: true } }],
+      [
+        "a reminderMutes value that is not a boolean",
+        { reminderMutes: { "meal-log": "yes" } },
+      ],
+      [
+        "notificationPrefs with a wrong type and an extra key",
+        {
+          notificationPrefs: {
+            categories: {},
+            quietHours: { start: "21:00", end: "08:00" },
+            ambientPush: false,
+            transactionalEnabled: "x",
+            junk: [1, 2, 3],
+          },
+        },
+      ],
+      [
+        "quiet hours that are not a time",
+        {
+          notificationPrefs: {
+            categories: {},
+            quietHours: { start: "25:00", end: "8am" },
+            ambientPush: false,
+            transactionalEnabled: true,
+          },
+        },
+      ],
+    ])("returns 400 for %s, and saves nothing", async (_label, body) => {
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(400);
+      expect(storage.updateUserProfile).not.toHaveBeenCalled();
+    });
+
+    it("saves well-formed reminder mutes and notification preferences", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
+      const body = {
+        reminderMutes: { "meal-log": true, commitment: false },
+        notificationPrefs: {
+          categories: { "daily-checkin": true },
+          quietHours: { start: "21:00", end: "08:00" },
+          ambientPush: false,
+          transactionalEnabled: true,
+        },
+      };
+
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateUserProfile).mock.calls[0][1]).toEqual(
+        body,
+      );
     });
 
     it("returns 500 when storage throws", async () => {
@@ -402,6 +476,208 @@ describe("Profile Routes", () => {
       expect(
         "healthDataConsentAt" in (updates as Record<string, unknown>),
       ).toBe(false);
+    });
+  });
+
+  describe("health-data consent gate (no consent, no health data)", () => {
+    const healthBody = {
+      allergies: [{ name: "peanuts", severity: "severe" }],
+      healthConditions: ["type 2 diabetes"],
+      primaryGoal: "lose_weight",
+    };
+
+    beforeEach(() => {
+      vi.mocked(storage.upsertProfileWithOnboarding).mockReset();
+      vi.mocked(storage.updateUserProfile).mockReset();
+      vi.mocked(storage.withdrawHealthConsent).mockReset();
+      vi.mocked(storage.getUserProfile).mockResolvedValue(unconsentedProfile);
+    });
+
+    it("POST refuses health fields from a user who has not consented", async () => {
+      const res = await request(app)
+        .post("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send(healthBody);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+      expect(storage.upsertProfileWithOnboarding).not.toHaveBeenCalled();
+    });
+
+    it("POST refuses health fields when the user has no profile row yet", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send(healthBody);
+
+      expect(res.status).toBe(403);
+      expect(storage.upsertProfileWithOnboarding).not.toHaveBeenCalled();
+    });
+
+    it("POST saves health fields when the same request carries the consent", async () => {
+      vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
+        consentedProfile,
+      );
+
+      const res = await request(app)
+        .post("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ ...healthBody, healthDataConsent: true });
+
+      expect(res.status).toBe(201);
+      expect(
+        vi.mocked(storage.upsertProfileWithOnboarding).mock.calls[0][2],
+      ).toBe(true);
+    });
+
+    it("POST saves preferences without consent (the onboarding skip path)", async () => {
+      vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
+        unconsentedProfile,
+      );
+
+      const res = await request(app)
+        .post("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({
+          allergies: [],
+          healthConditions: [],
+          primaryGoal: null,
+          activityLevel: null,
+          dietType: null,
+          foodDislikes: ["olives"],
+          healthDataConsent: false,
+        });
+
+      expect(res.status).toBe(201);
+    });
+
+    // Owner ruling 2026-11-10: diet type sits behind the consent too.
+    it("POST refuses a diet type from a user who has not consented", async () => {
+      const res = await request(app)
+        .post("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ dietType: "vegan", healthDataConsent: false });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+      expect(storage.upsertProfileWithOnboarding).not.toHaveBeenCalled();
+    });
+
+    it("PUT refuses a diet type from a user who has not consented", async () => {
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ dietType: "omnivore" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+      expect(storage.updateUserProfile).not.toHaveBeenCalled();
+    });
+
+    it("PUT saves a diet type when the same request carries the consent", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(consentedProfile);
+
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ dietType: "vegan", healthDataConsent: true });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateUserProfile).mock.calls[0][2]).toBe(true);
+    });
+
+    it("PUT refuses health fields from a user who has not consented", async () => {
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ allergies: [{ name: "milk", severity: "mild" }] });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+      expect(storage.updateUserProfile).not.toHaveBeenCalled();
+    });
+
+    it("PUT saves health fields when the same request carries the consent", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(consentedProfile);
+
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({
+          allergies: [{ name: "milk", severity: "mild" }],
+          healthDataConsent: true,
+        });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateUserProfile).mock.calls[0][2]).toBe(true);
+    });
+
+    it("PUT never forwards client-supplied consent-record or mood columns", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(
+        unconsentedProfile,
+      );
+
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({
+          foodDislikes: ["olives"],
+          healthDataConsentVersion: "1999-01-01",
+          healthDataConsentWithdrawnAt: "1999-01-01T00:00:00Z",
+          healthDataConsentHistory: [{ event: "granted", at: "1999-01-01" }],
+          moodScore: 1,
+          moodUpdatedAt: "1999-01-01T00:00:00Z",
+        });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateUserProfile).mock.calls[0][1]).toEqual({
+        foodDislikes: ["olives"],
+      });
+    });
+
+    it("PUT saves preferences and cleared health fields without consent", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(
+        unconsentedProfile,
+      );
+
+      const res = await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ foodDislikes: ["olives"], dietType: null, allergies: [] });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe("POST /api/user/health-consent/withdraw", () => {
+    it("clears the health data, invalidates suggestions and returns the profile", async () => {
+      vi.mocked(storage.withdrawHealthConsent).mockResolvedValue(
+        unconsentedProfile,
+      );
+
+      const res = await request(app)
+        .post("/api/user/health-consent/withdraw")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(storage.withdrawHealthConsent).toHaveBeenCalledWith("1");
+      expect(res.body.healthDataConsentAt).toBeNull();
+      await lastFireAndForgetPromise;
+      expect(storage.invalidateSuggestionCacheForUser).toHaveBeenCalledWith(
+        "1",
+      );
+    });
+
+    it("returns 404 when the user has no profile", async () => {
+      vi.mocked(storage.withdrawHealthConsent).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/user/health-consent/withdraw")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(404);
     });
   });
 });

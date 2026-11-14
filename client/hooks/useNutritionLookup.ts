@@ -1,7 +1,3 @@
-// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
-// enabled here so the justified disables below count as used and survive `eslint --fix`.
-// Delete these four lines when the rule is turned on globally.
-/* eslint react-hooks/set-state-in-effect: "error" */
 import {
   useState,
   useEffect,
@@ -36,7 +32,7 @@ import {
 import { enqueue } from "@/lib/offline-queue";
 import { formatLogSuccess } from "@/lib/log-success";
 import type { ScannedItemResponse } from "@/types/api";
-import { deriveLogGate } from "@/screens/nutrition-detail-utils";
+import { deriveLogGate } from "@/components/nutrition/nutrition-detail-utils";
 import {
   lookupBarcode,
   lookupStateFromOutcome,
@@ -134,8 +130,8 @@ export function useNutritionLookup(params: {
     // so not even the "Values shown per 100g" banner disclosed it.
     //
     // The state is reached whenever a lookup populates `nutrition` without
-    // resolving a gram weight — the USDA / API Ninjas fallback, and the
-    // direct-OFF fallback described below. Amy's chili — 680 mg of sodium in a
+    // resolving a gram weight — the USDA / API Ninjas fallback, and (until
+    // privacy audit M1 removed it) the direct-OFF fallback. Amy's chili — 680 mg of sodium in a
     // 236 g can — would then read as 680 mg/100 g instead of 288: an FSA HIGH
     // band where the truth is MEDIUM. Returning null is what prevents that.
     //
@@ -158,11 +154,11 @@ export function useNutritionLookup(params: {
     // guard below: `0 || 100` is 100, so a zero basis fabricated identically
     // rather than dividing by zero. A zero is not a measurement.
     //
-    // Placement matters: this sits BELOW the `validatedData` branch. The
-    // direct-OFF fallback legitimately pairs a null `servingSizeGrams` with a
-    // real `validatedData.per100g` (an OFF record whose serving_size is "1
-    // bottle"), and hoisting this guard above that branch would blank the
-    // serving controls on a path that works. Pinned by a test.
+    // Placement matters: this sits BELOW the `validatedData` branch. A null
+    // `servingSizeGrams` with a real `validatedData.per100g` (an OFF record
+    // whose serving_size is "1 bottle") was reached by the direct-OFF
+    // fallback that privacy audit M1 removed; hoisting this guard above that
+    // branch would blank the serving controls if such a pairing returns.
     const grams = lookup.servingSizeGrams;
     if (!(grams != null && grams > 0)) return null;
     const factor = 100 / grams;
@@ -551,7 +547,7 @@ export function useNutritionLookup(params: {
           queryKey: QUERY_KEYS.dailySummary,
         });
         void queryClient.invalidateQueries({
-          queryKey: ["/api/daily-budget"],
+          queryKey: QUERY_KEYS.dailyBudget,
         });
       }
       // `nutrition` holds the already-scaled values (the serving stepper
@@ -592,7 +588,11 @@ export function useNutritionLookup(params: {
     addToLogMutation.mutate(lookup.nutrition);
   };
 
-  const logGate = deriveLogGate({ ocrText, labelUsed: lookup.labelUsed });
+  const logGate = deriveLogGate({
+    ocrText,
+    labelUsed: lookup.labelUsed,
+    valuesFromLabel: lookup.activeSource === "label",
+  });
 
   return {
     logGate,

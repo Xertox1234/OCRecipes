@@ -37,16 +37,20 @@ import * as sessions from "./sessions";
 import * as carousel from "./carousel";
 import * as profileHub from "./profile-hub";
 import * as coachNotebook from "./coach-notebook";
+import * as coachNotebookMemory from "./coach-notebook-memory";
+import * as coachWriteCards from "./coach-write-cards";
 import * as recipeFromChat from "./recipe-from-chat";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as notificationSendsStorage from "./notification-sends";
+import * as weeklyReportsStorage from "./weekly-reports";
 import * as schedulerRunsStorage from "./scheduler-runs";
 import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
 import * as recipeTriesStorage from "./recipe-tries";
 import * as exportStorage from "./export";
 import * as inspired from "./inspired-suggestions";
+import * as aiSharing from "./ai-sharing";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -139,6 +143,10 @@ export const storage = {
   updateUserProfile: users.updateUserProfile,
   saveReminderMutes: users.saveReminderMutes,
   upsertProfileWithOnboarding: users.upsertProfileWithOnboarding,
+  withdrawHealthConsent: users.withdrawHealthConsent,
+  getAiSharingStatus: aiSharing.getAiSharingStatus,
+  isAiSharingAllowed: aiSharing.isAiSharingAllowed,
+  setAiSharing: aiSharing.setAiSharing,
   updateUserGoalsAndProfile: users.updateUserGoalsAndProfile,
   getSubscriptionStatus: users.getSubscriptionStatus,
   getEffectiveTierForUser: users.getEffectiveTierForUser,
@@ -188,6 +196,7 @@ export const storage = {
   deleteMealPlanRecipe: mealPlans.deleteMealPlanRecipe,
   getUnifiedRecipes: mealPlans.getUnifiedRecipes,
   getMealPlanItems: mealPlans.getMealPlanItems,
+  getMealPlanItemSummaries: mealPlans.getMealPlanItemSummaries,
   getMealPlanItemById: mealPlans.getMealPlanItemById,
   addMealPlanItem: mealPlans.addMealPlanItem,
   removeMealPlanItem: mealPlans.removeMealPlanItem,
@@ -235,6 +244,7 @@ export const storage = {
   getChatMessageByTurnKey: chat.getChatMessageByTurnKey,
   deleteChatConversation: chat.deleteChatConversation,
   deleteChatMessage: chat.deleteChatMessage,
+  reportChatMessage: chat.reportChatMessage,
   updateChatConversationTitle: chat.updateChatConversationTitle,
   pinChatConversation: chat.pinChatConversation,
   getChatMessageCount: chat.getChatMessageCount,
@@ -384,7 +394,25 @@ export const storage = {
   getActiveNotebookEntries: coachNotebook.getActiveNotebookEntries,
   createNotebookEntry: coachNotebook.createNotebookEntry,
   createNotebookEntries: coachNotebook.createNotebookEntries,
+  confirmNotebookEntries: coachNotebookMemory.confirmNotebookEntries,
+  rejectNotebookEntries: coachNotebookMemory.rejectNotebookEntries,
+  markNotebookEntriesShown: coachNotebookMemory.markNotebookEntriesShown,
+  getUnseenNotebookSaves: coachNotebookMemory.getUnseenNotebookSaves,
+
+  // Coach write cards (spec 2026-11-09)
+  createWriteCard: coachWriteCards.createWriteCard,
+  getWriteCard: coachWriteCards.getWriteCard,
+  getLiveWriteCard: coachWriteCards.getLiveWriteCard,
+  setWriteCardEdits: coachWriteCards.setWriteCardEdits,
+  saveWriteCard: coachWriteCards.saveWriteCard,
+  undoWriteCard: coachWriteCards.undoWriteCard,
+  getWriteCardsByIds: coachWriteCards.getWriteCardsByIds,
+  getConfirmedNotebookEntries: coachNotebookMemory.getConfirmedNotebookEntries,
+  clearNotebook: coachNotebookMemory.clearNotebook,
+  updateMoodScore: coachNotebookMemory.updateMoodScore,
   getNotebookEntryById: coachNotebook.getNotebookEntryById,
+  getGroceryListItemForUser: groceryLists.getGroceryListItemForUser,
+  getNotebookEntriesByIds: coachNotebook.getNotebookEntriesByIds,
   updateNotebookEntryStatus: coachNotebook.updateNotebookEntryStatus,
   getCommitmentsWithDueFollowUp: coachNotebook.getCommitmentsWithDueFollowUp,
   archiveOldEntries: coachNotebook.archiveOldEntries,
@@ -404,6 +432,23 @@ export const storage = {
   recordNotificationSend: notificationSendsStorage.recordNotificationSend,
   getLastNotificationSend: notificationSendsStorage.getLastNotificationSend,
 
+  // Coach weekly report
+  getWeeklyReportInputs: weeklyReportsStorage.getWeeklyReportInputs,
+  getFeatureUsage: weeklyReportsStorage.getFeatureUsage,
+  insertWeeklyReport: weeklyReportsStorage.insertWeeklyReport,
+  weeklyReportExists: weeklyReportsStorage.weeklyReportExists,
+  listWeeklyReports: weeklyReportsStorage.listWeeklyReports,
+  getWeeklyReport: weeklyReportsStorage.getWeeklyReport,
+  getRecentWeeklyFacts: weeklyReportsStorage.getRecentWeeklyFacts,
+  markWeeklyReportSeen: weeklyReportsStorage.markWeeklyReportSeen,
+  markCelebrationShown: weeklyReportsStorage.markCelebrationShown,
+  claimWeeklyReportDelivery: weeklyReportsStorage.claimWeeklyReportDelivery,
+  releaseWeeklyReportDelivery: weeklyReportsStorage.releaseWeeklyReportDelivery,
+  getDuePushes: weeklyReportsStorage.getDuePushes,
+  getPendingPopup: weeklyReportsStorage.getPendingPopup,
+  getWeeklyReportSettings: weeklyReportsStorage.getWeeklyReportSettings,
+  setWeeklyReportSettings: weeklyReportsStorage.setWeeklyReportSettings,
+
   // Scheduler run claims (multi-instance cron dedup)
   claimSchedulerRun: schedulerRunsStorage.claimSchedulerRun,
 
@@ -412,6 +457,9 @@ export const storage = {
   hasPendingReminderToday: remindersStorage.hasPendingReminderToday,
   hasPendingReminders: remindersStorage.hasPendingReminders,
   acknowledgeReminders: remindersStorage.acknowledgeReminders,
+  acknowledgeReminderType: remindersStorage.acknowledgeReminderType,
+  hasReminderSince: remindersStorage.hasReminderSince,
+  getTodaysPendingReminders: remindersStorage.getTodaysPendingReminders,
 
   // Canonical recipes
   incrementRecipePopularity: canonicalRecipesStorage.incrementRecipePopularity,

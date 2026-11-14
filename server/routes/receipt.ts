@@ -14,6 +14,7 @@ import { createImageUpload } from "./_upload";
 import {
   checkPremiumFeature,
   checkAiConfigured,
+  checkAiSharing,
   formatZodError,
   handleRouteError,
   claimAiCallOrReject,
@@ -97,6 +98,7 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Claimed before the AI call: a failed or low-confidence scan never
         // becomes a saved scan, so the monthly cap alone doesn't bound spend.

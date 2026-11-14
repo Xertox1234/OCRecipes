@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { validateReceipt } from "../../services/receipt-validation";
+import { appleFirstClaimRefusal } from "../../services/apple-subscription-status";
 import { register } from "../subscription";
 import { _testInternals as streakCacheInternals } from "../../services/verification-streak-cache";
 import {
@@ -35,6 +36,10 @@ vi.mock("../../services/receipt-validation", () => ({
   validateReceipt: vi.fn(),
 }));
 
+vi.mock("../../services/apple-subscription-status", () => ({
+  appleFirstClaimRefusal: vi.fn(),
+}));
+
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
@@ -55,6 +60,7 @@ describe("Subscription Routes", () => {
     vi.mocked(storage.getUserVerificationStats).mockResolvedValue(
       noStreakStats,
     );
+    vi.mocked(appleFirstClaimRefusal).mockResolvedValue(null);
     app = createApp();
   });
 
@@ -297,6 +303,143 @@ describe("Subscription Routes", () => {
       expect(res.body.tier).toBeUndefined();
     });
 
+    describe("first claim of an Apple purchase", () => {
+      beforeEach(() => {
+        vi.mocked(validateReceipt).mockResolvedValue({
+          valid: true,
+          expiresAt: new Date("2099-12-31"),
+          productId: "com.ocrecipes.premium",
+          originalTransactionId: "apple-original-txn-9",
+        });
+        vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+          status: "created",
+          transaction: createMockTransaction(),
+          user: createMockUser(),
+        });
+      });
+
+      // The refund notice for a purchase we never stored leaves no row, and
+      // the phone's receipt is a pre-refund snapshot: only Apple's current
+      // status can refuse it.
+      it("declines a pre-refund receipt when Apple reports the purchase refunded", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
+        vi.mocked(appleFirstClaimRefusal).mockResolvedValue(
+          "TRANSACTION_REVOKED",
+        );
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(appleFirstClaimRefusal).toHaveBeenCalledWith(
+          "apple-original-txn-9",
+        );
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe("TRANSACTION_REVOKED");
+        expect(res.body.tier).toBeUndefined();
+        expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
+      });
+
+      it("declines with a retryable code and grants nothing when Apple's status is unavailable", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
+        vi.mocked(appleFirstClaimRefusal).mockResolvedValue("STORE_API_ERROR");
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe("STORE_API_ERROR");
+        expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
+      });
+
+      it("grants when Apple reports the purchase in good standing", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(appleFirstClaimRefusal).toHaveBeenCalledTimes(1);
+        expect(res.body.success).toBe(true);
+        expect(storage.claimTransactionAndUpgrade).toHaveBeenCalledTimes(1);
+      });
+
+      // A re-subscription reuses the originalTransactionId, so a row revoked
+      // by an EARLIER refund lets a later purchase through on its date alone.
+      // If that later purchase was refunded before it was ever claimed, only
+      // Apple's current status can refuse its pre-refund receipt.
+      it("asks Apple when the stored row is revoked, and declines on a refund", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(
+          createMockTransaction({ status: "revoked" }),
+        );
+        vi.mocked(appleFirstClaimRefusal).mockResolvedValue(
+          "TRANSACTION_REVOKED",
+        );
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(appleFirstClaimRefusal).toHaveBeenCalledWith(
+          "apple-original-txn-9",
+        );
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe("TRANSACTION_REVOKED");
+        expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
+      });
+
+      it("lets a re-subscription over a revoked row reach the claim when Apple reports it in good standing", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(
+          createMockTransaction({ status: "revoked" }),
+        );
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(appleFirstClaimRefusal).toHaveBeenCalledTimes(1);
+        expect(res.body.success).toBe(true);
+        expect(storage.claimTransactionAndUpgrade).toHaveBeenCalledTimes(1);
+      });
+
+      it("does not ask Apple when the transaction is already stored", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(
+          createMockTransaction(),
+        );
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send(validBody);
+
+        expect(storage.getTransaction).toHaveBeenCalledWith(
+          "apple-original-txn-9",
+        );
+        expect(appleFirstClaimRefusal).not.toHaveBeenCalled();
+        expect(res.body.success).toBe(true);
+      });
+
+      it("does not ask Apple about an Android purchase", async () => {
+        vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
+
+        const res = await request(app)
+          .post("/api/subscription/upgrade")
+          .set("Authorization", "Bearer token")
+          .send({ ...validBody, platform: "android" });
+
+        expect(appleFirstClaimRefusal).not.toHaveBeenCalled();
+        expect(res.body.success).toBe(true);
+      });
+    });
+
     it("handles invalid receipt", async () => {
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: false,
@@ -410,6 +553,30 @@ describe("Subscription Routes", () => {
         .send(validRestoreBody);
 
       expect(res.status).toBe(409);
+    });
+
+    it("declines the first claim of an Apple purchase that Apple reports refunded", async () => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2099-12-31"),
+        originalTransactionId: "apple-original-txn-10",
+      });
+      vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
+      vi.mocked(appleFirstClaimRefusal).mockResolvedValue(
+        "TRANSACTION_REVOKED",
+      );
+
+      const res = await request(app)
+        .post("/api/subscription/restore")
+        .set("Authorization", "Bearer token")
+        .send({ receipt: "valid-receipt-data", platform: "ios" });
+
+      expect(appleFirstClaimRefusal).toHaveBeenCalledWith(
+        "apple-original-txn-10",
+      );
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe("TRANSACTION_REVOKED");
+      expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
     });
 
     it("handles no valid subscription found", async () => {

@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { classifyIntent } from "../coach-intent-classifier";
+import {
+  classifyIntent,
+  matchesDisorderedEating,
+  matchesSelfHarm,
+} from "../coach-intent-classifier";
 import type { CoachIntent } from "../coach-intent-classifier";
 
 const rawCases = JSON.parse(
@@ -64,11 +68,16 @@ const EXPECTED: Record<string, CoachIntent> = {
   "edge-non-english-01": "personalized_advice",
   "edge-off-topic-question-01": "personalized_advice",
   "edge-goals-null-returning-user-01": "personalized_advice",
+
+  // ── Reply shape (show-the-work spec 2026-11-09) ──────────────────
+  "shape-general-question-01": "personalized_advice",
+  "shape-fits-question-01": "personalized_advice",
+  "shape-off-topic-01": "general_fact",
 };
 
 describe("classifyIntent", () => {
-  it("covers all 41 eval cases in the expected-intent map", () => {
-    expect(Object.keys(EXPECTED)).toHaveLength(41);
+  it("covers all 44 eval cases in the expected-intent map", () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(44);
   });
 
   it("has an expected intent for every loaded eval case", () => {
@@ -491,6 +500,89 @@ describe("classifyIntent", () => {
     });
   });
 
+  describe("suicide and self-harm wording routes to safety", () => {
+    it.each([
+      "I feel suicidal",
+      "I've been having suicidal thoughts lately",
+      "I've been thinking about suicide",
+      "Feeling SUICIDAL tonight",
+      "I want to self-harm",
+    ])("safety_refusal: %s", (message) => {
+      expect(classifyIntent(message).intent).toBe("safety_refusal");
+    });
+  });
+
+  // Wordings with no "suicid" stem. Each one must both route to the safety
+  // turn and select the crisis message: a phrase that routes without being
+  // recognised as self-harm would get the eating-focused text.
+  describe("self-harm phrases route to safety and select the crisis message", () => {
+    it.each([
+      "I want to kill myself",
+      "I keep thinking about killing myself",
+      "sometimes I want to KILL MYSELF",
+      "I want to end my life",
+      "thinking about ending my life",
+      "I just want to end it all",
+      "I might take my own life",
+      "I want to die",
+      "I wish I was dead",
+      "I wish I were dead",
+      "everyone would be better off without me",
+      "I'd be better off dead",
+      "I don't want to live anymore",
+      "I don’t want to live",
+      "I do not want to be alive",
+      "I don't want to live like this",
+      "I don't want to live with this pain anymore",
+      "I don't want to live in this world",
+      "I don't want to live for much longer",
+      "I don't want to live without him",
+      "I want to hurt myself",
+      "I've been thinking about cutting myself",
+      "I'm going to harm myself",
+      "I want to cut myself",
+      "thinking about cutting myself again",
+      "I want to cut myself a little",
+      "going to cut myself a bit tonight",
+      "thinking about cutting myself a lot",
+      "I want to cut myself down my arm",
+      // Controls: these passed before the phrases were added.
+      "I feel suicidal",
+      "I want to self-harm",
+    ])("%s", (message) => {
+      expect(classifyIntent(message)).toEqual({
+        intent: "safety_refusal",
+        matchedRule: "disordered_eating",
+      });
+      expect(matchesSelfHarm(message)).toBe(true);
+      expect(matchesDisorderedEating(message)).toBe(true);
+    });
+
+    // Everyday food and fitness talk that shares words with the phrases.
+    it.each([
+      "this diet is killing me",
+      "I'd kill for a burger right now",
+      "this cheesecake is to die for",
+      "I'm dying for a snack",
+      "I want to diet",
+      "I cut myself chopping onions",
+      "I'm going to cut myself a slice of cake",
+      "I want to cut myself some slack",
+      "I'm going to cut myself a big piece of pie",
+      "thinking about cutting myself off from sugar",
+      "I hurt myself at the gym yesterday",
+      "I don't want to live on salads",
+      "I don't want to live off protein shakes",
+      "when should I end my fast?",
+      "I want to end my cut and start bulking",
+      "is it better to take my lunch to work?",
+      "am I better off without dairy?",
+    ])("does not match: %s", (message) => {
+      expect(matchesSelfHarm(message)).toBe(false);
+      expect(classifyIntent(message).matchedRule).not.toBe("disordered_eating");
+    });
+  });
+
   describe("recipe_request routing (R4)", () => {
     it.each([
       "meal ideas",
@@ -647,5 +739,39 @@ describe("classifyIntent", () => {
         expect(list).toContain(`"${intent}"`);
       }
     });
+  });
+});
+
+describe("matchesDisorderedEating", () => {
+  it("uses the classifier's own disordered-eating pattern", async () => {
+    const { matchesDisorderedEating } = await import(
+      "../coach-intent-classifier"
+    );
+    expect(matchesDisorderedEating("I want to purge after dinner")).toBe(true);
+    expect(matchesDisorderedEating("thinking about self harm")).toBe(true);
+    expect(matchesDisorderedEating("I made purée")).toBe(false);
+    expect(matchesDisorderedEating("is oat milk ok")).toBe(false);
+  });
+});
+
+describe("matchesSelfHarm", () => {
+  it.each([
+    "I've been thinking about suicide",
+    "I feel suicidal tonight",
+    "I want to self-harm",
+    "thinking about self harm",
+    "I want to throw up and I am thinking about suicide",
+  ])("is true for self-harm or suicide: %s", async (text) => {
+    const { matchesSelfHarm } = await import("../coach-intent-classifier");
+    expect(matchesSelfHarm(text)).toBe(true);
+  });
+
+  it.each([
+    "I want to purge after dinner",
+    "I feel disgusting. I want to throw up to undo those calories",
+    "is oat milk ok",
+  ])("is false for an eating-only or ordinary message: %s", async (text) => {
+    const { matchesSelfHarm } = await import("../coach-intent-classifier");
+    expect(matchesSelfHarm(text)).toBe(false);
   });
 });

@@ -105,7 +105,7 @@ const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 ## Related Files
 
 - `client/screens/ScanScreen.tsx` — per-element application of the two-value result
-- `client/screens/ScanScreenConfirmOverlay-utils.ts` — `getScanOverlayA11y` (the tested supersession helper)
+- `client/components/scan/ScanScreenConfirmOverlay-utils.ts` — `getScanOverlayA11y` (the tested supersession helper)
 - `client/camera/components/ProductChip.tsx` — `importantForAccessibility` passthrough on an overlay component
 - `client/components/DeleteAccountModal.tsx` — the RN `<Modal>` + backdrop-hide variant
 - `client/components/ConfirmationModal.tsx` — the portal-rendered-overlay exception: `behindContentA11yProps`, applied per-element across its 8 caller screens under `client/screens/`

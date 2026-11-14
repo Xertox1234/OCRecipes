@@ -12,10 +12,10 @@ import { logger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import {
-  lookupBarcode,
   UpstreamUnavailableError,
   type BarcodeLookupResult,
 } from "../services/barcode-lookup";
+import { loadBarcodeScanContext } from "../services/barcode-scan-context";
 import {
   buildScanResponseFlags,
   type ProfileOutcome,
@@ -26,11 +26,14 @@ import {
 } from "../services/universal-flags";
 import { buildLabelConflict } from "../services/label-override";
 import { createNutrientUnavailableFlag } from "@shared/types/scan-flags";
-import { parseUserAllergies } from "@shared/constants/allergens";
 import { isBeverageCategory } from "@shared/constants/nutrition-bands";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { boundedNumericStringField } from "./_schemas";
 import { NUTRITION_CAPS } from "@shared/constants/nutrition";
+import {
+  sanitizeStoredProductImageUrl,
+  toProductImageProxyPath,
+} from "../lib/product-image-proxy";
 import {
   handleRouteError,
   parsePositiveIntParam,
@@ -80,6 +83,12 @@ const scannedItemInputSchema = insertScannedItemSchema.extend({
     .default("Unknown Product"),
   brandName: nullishString,
   servingSize: nullishString,
+  // Privacy audit M1: a saved item may only point at our own photo proxy.
+  imageUrl: z
+    .string()
+    .max(2000)
+    .nullish()
+    .transform((url) => sanitizeStoredProductImageUrl(url)),
   calories: boundedNumericStringField(NUTRITION_CAPS.calories),
   protein: boundedNumericStringField(NUTRITION_CAPS.grams),
   carbs: boundedNumericStringField(NUTRITION_CAPS.grams),
@@ -205,6 +214,8 @@ function buildBarcodeResponseBody(
 
   return {
     ...clientResult,
+    // Privacy audit M1: the phone loads the product photo through our server.
+    imageUrl: toProductImageProxyPath(clientResult.imageUrl) ?? undefined,
     flags: orderedFlags,
     isBeverage,
     verificationLevel: verification?.verificationLevel ?? "unverified",
@@ -301,26 +312,8 @@ export function register(app: Express): void {
       }
 
       try {
-        const [result, verification, profileOutcome] = await Promise.all([
-          lookupBarcode(code),
-          storage.getVerification(code),
-          // Fail-dangerous, NOT fatal: a profile-read hiccup must never break
-          // scanning. On rejection we degrade to a "couldn't check" flag — never
-          // silence, never a 500 (Global Constraint: allergen flags fail-dangerous).
-          storage.getUserProfile(req.userId).then(
-            (profile): ProfileOutcome => ({
-              ok: true,
-              allergies: parseUserAllergies(profile?.allergies),
-            }),
-            (err): ProfileOutcome => {
-              logger.warn(
-                { err: toError(err) },
-                "scan-flags: profile read failed",
-              );
-              return { ok: false };
-            },
-          ),
-        ]);
+        const { result, verification, profileOutcome } =
+          await loadBarcodeScanContext(code, req.userId);
         if (!result) {
           sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
           return;
@@ -374,24 +367,8 @@ export function register(app: Express): void {
       }
 
       try {
-        const [result, verification, profileOutcome] = await Promise.all([
-          lookupBarcode(code),
-          storage.getVerification(code),
-          // Fail-dangerous, NOT fatal — same rationale as the GET handler.
-          storage.getUserProfile(req.userId).then(
-            (profile): ProfileOutcome => ({
-              ok: true,
-              allergies: parseUserAllergies(profile?.allergies),
-            }),
-            (err): ProfileOutcome => {
-              logger.warn(
-                { err: toError(err) },
-                "scan-flags: profile read failed",
-              );
-              return { ok: false };
-            },
-          ),
-        ]);
+        const { result, verification, profileOutcome } =
+          await loadBarcodeScanContext(code, req.userId);
         if (!result) {
           sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
           return;

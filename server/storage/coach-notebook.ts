@@ -20,9 +20,11 @@ import {
   inArray,
   isNull,
   ne,
+  notInArray,
   or,
 } from "drizzle-orm";
 import { createHash } from "crypto";
+import { insightKey, sameTip } from "@shared/lib/coach-stats";
 
 export async function getActiveNotebookEntries(
   userId: string,
@@ -91,11 +93,83 @@ export async function createNotebookEntries(
   // unique index makes this insert idempotent when the SSE stream is retried.
   // Rows without a `dedupeKey` (legacy/manual inserts) still insert normally
   // because Postgres treats NULLs as distinct in a unique index.
+  const fresh = await refreshRepeats(clamped);
+  if (fresh.length === 0) return [];
   return db
     .insert(coachNotebook)
-    .values(clamped)
+    .values(fresh)
     .onConflictDoNothing()
     .returning();
+}
+
+/**
+ * Active rows `refreshRepeats` compares against, newest first. Bounds that
+ * read so it does not grow with a user's whole notebook history; an active
+ * fact outside the window can be saved as a second row. Rejected rows are
+ * not bounded: see `refreshRepeats`.
+ */
+export const REPEAT_SCAN_LIMIT = 200;
+
+/**
+ * Visible memory (spec 2026-11-08): a fact the model extracts again refreshes
+ * the existing entry instead of piling up a duplicate, and a fact the user
+ * rejected (Undo / Remove) is never re-saved. Returns the entries still to
+ * insert. Matching: same user and type, `sameTip` on normalised text.
+ *
+ * Every rejected row is read, with no limit, so a rejection holds however
+ * many rows came after it. A row is rejected only by the user's own action,
+ * so that set stays small. Active rows are read up to `REPEAT_SCAN_LIMIT`.
+ */
+async function refreshRepeats(
+  entries: InsertCoachNotebookEntry[],
+): Promise<InsertCoachNotebookEntry[]> {
+  const userIds = [...new Set(entries.map((e) => e.userId))];
+  const types = [...new Set(entries.map((e) => e.type))];
+  const columns = {
+    id: coachNotebook.id,
+    userId: coachNotebook.userId,
+    type: coachNotebook.type,
+    content: coachNotebook.content,
+    status: coachNotebook.status,
+  };
+  const scope = [
+    inArray(coachNotebook.userId, userIds),
+    inArray(coachNotebook.type, types),
+  ];
+  // One after the other: this can run on a transaction client, which takes
+  // one query at a time.
+  const rejected = await db
+    .select(columns)
+    .from(coachNotebook)
+    .where(and(...scope, eq(coachNotebook.status, "rejected")));
+  const active = await db
+    .select(columns)
+    .from(coachNotebook)
+    .where(and(...scope, eq(coachNotebook.status, "active")))
+    .orderBy(desc(coachNotebook.updatedAt))
+    .limit(REPEAT_SCAN_LIMIT);
+  // Rejected first: when a fact matches both, the rejection wins.
+  const existing = [...rejected, ...active];
+  const toRefresh: number[] = [];
+  const fresh: InsertCoachNotebookEntry[] = [];
+  for (const entry of entries) {
+    const key = insightKey(entry.content);
+    const match = existing.find(
+      (row) =>
+        row.userId === entry.userId &&
+        row.type === entry.type &&
+        sameTip(insightKey(row.content), key),
+    );
+    if (!match) fresh.push(entry);
+    else if (match.status === "active") toRefresh.push(match.id);
+  }
+  if (toRefresh.length > 0) {
+    await db
+      .update(coachNotebook)
+      .set({ updatedAt: new Date() })
+      .where(inArray(coachNotebook.id, [...new Set(toRefresh)]));
+  }
+  return fresh;
 }
 
 export async function getNotebookEntryById(
@@ -108,6 +182,20 @@ export async function getNotebookEntryById(
     .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
     .limit(1);
   return entry;
+}
+
+/** Batch form of {@link getNotebookEntryById}; ownership stays in the SQL. */
+export async function getNotebookEntriesByIds(
+  ids: number[],
+  userId: string,
+): Promise<CoachNotebookEntry[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(coachNotebook)
+    .where(
+      and(inArray(coachNotebook.id, ids), eq(coachNotebook.userId, userId)),
+    );
 }
 
 export async function updateNotebookEntryStatus(
@@ -154,6 +242,8 @@ export async function archiveOldEntries(
       and(
         eq(coachNotebook.userId, userId),
         eq(coachNotebook.status, "active"),
+        // Confirmed entries stay until the user removes them (owner 2026-11-08).
+        isNull(coachNotebook.confirmedAt),
         lte(coachNotebook.updatedAt, cutoff),
         or(
           ne(coachNotebook.type, "commitment"),
@@ -211,8 +301,8 @@ export async function getNotebookEntries(
   if (opts?.status) {
     conditions.push(eq(coachNotebook.status, opts.status));
   } else {
-    // Default: exclude archived
-    conditions.push(ne(coachNotebook.status, "archived"));
+    // Default: exclude archived, and entries the user removed (rejected)
+    conditions.push(notInArray(coachNotebook.status, ["archived", "rejected"]));
   }
   return db
     .select()
@@ -236,12 +326,35 @@ export async function updateNotebookEntry(
     status?: string;
   },
 ): Promise<CoachNotebookEntry | undefined> {
+  // Editing the text is the user's own confirmation; a commitment's label
+  // becomes their words (visible memory, spec 2026-11-08).
+  const now = new Date();
+  const confirmEdit =
+    updates.content !== undefined
+      ? {
+          confirmedAt: now,
+          shownAt: now,
+          ...(updates.type === "commitment" ||
+          (updates.type === undefined && (await isCommitment(id, userId)))
+            ? { label: updates.content.slice(0, 120) }
+            : {}),
+        }
+      : {};
   const [updated] = await db
     .update(coachNotebook)
-    .set({ ...updates, updatedAt: new Date() })
+    .set({ ...updates, ...confirmEdit, updatedAt: now })
     .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
     .returning();
   return updated || undefined;
+}
+
+async function isCommitment(id: number, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ type: coachNotebook.type })
+    .from(coachNotebook)
+    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+    .limit(1);
+  return row?.type === "commitment";
 }
 
 export async function deleteNotebookEntry(

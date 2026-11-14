@@ -5,6 +5,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { generateRecipeContent } from "../services/recipe-generation";
 import {
   checkAiConfigured,
+  checkAiSharing,
   checkPremiumFeature,
   handleRouteError,
 } from "./_helpers";
@@ -25,6 +26,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         // Premium gate — mirrors POST /api/recipes/generate. Both endpoints
         // call the AI generator and must be restricted to premium users.
@@ -57,7 +59,7 @@ export function register(app: Express): void {
           sendError(
             res,
             400,
-            parsed.error.errors[0]?.message ?? "Invalid request",
+            parsed.error.issues[0]?.message ?? "Invalid request",
             ErrorCode.VALIDATION_ERROR,
           );
           return;

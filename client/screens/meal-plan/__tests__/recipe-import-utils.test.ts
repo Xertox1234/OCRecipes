@@ -1,6 +1,9 @@
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { urlImportErrorCopy } from "../recipe-import-utils";
+import {
+  shouldTryDeviceFallback,
+  urlImportErrorCopy,
+} from "../recipe-import-utils";
 
 // The server sends every import failure as HTTP 422, so the message always
 // contains "422". Copy must come from ApiError.code, never the message.
@@ -53,5 +56,29 @@ describe("urlImportErrorCopy", () => {
     expect(urlImportErrorCopy(fail("SOMETHING_ELSE"))).toBe(generic);
     expect(urlImportErrorCopy(new Error("422: boom"))).toBe(generic);
     expect(urlImportErrorCopy(undefined)).toBe(generic);
+  });
+});
+
+describe("shouldTryDeviceFallback", () => {
+  it.each([
+    ErrorCode.FETCH_FAILED,
+    ErrorCode.NO_RECIPE_DATA,
+    ErrorCode.TIMEOUT,
+    ErrorCode.PARSE_ERROR,
+  ])("is true for %s", (code) => {
+    expect(shouldTryDeviceFallback(fail(code))).toBe(true);
+  });
+
+  it.each([
+    ErrorCode.RATE_LIMITED,
+    ErrorCode.RESPONSE_TOO_LARGE,
+    ErrorCode.VALIDATION_ERROR,
+  ])("is false for %s", (code) => {
+    expect(shouldTryDeviceFallback(fail(code))).toBe(false);
+  });
+
+  it("is false for a plain Error and undefined", () => {
+    expect(shouldTryDeviceFallback(new Error("x"))).toBe(false);
+    expect(shouldTryDeviceFallback(undefined)).toBe(false);
   });
 });

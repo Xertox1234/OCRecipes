@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import type { AllergenCheckResult } from "@shared/types/allergen-check";
@@ -10,18 +9,12 @@ import type { AllergenCheckResult } from "@shared/types/allergen-check";
  * Returns allergen matches and safe substitution suggestions.
  * Skips the request when the ingredient list is empty.
  *
- * The query key is stabilized via JSON serialization so callers don't need
- * to memoize the input array to prevent unnecessary refetches.
+ * Callers don't need to memoize the input array: TanStack hashes the query
+ * key by value, so a new array with the same names hits the same cache entry.
  */
 export function useAllergenCheck(ingredientNames: string[]) {
-  // Stabilize key — array identity changes don't trigger refetch
-  const stableKey = useMemo(
-    () => JSON.stringify(ingredientNames),
-    [ingredientNames],
-  );
-
   return useQuery<AllergenCheckResult>({
-    queryKey: ["/api/allergen-check", stableKey],
+    queryKey: ["/api/allergen-check", ingredientNames],
     queryFn: async () => {
       const res = await apiRequest("POST", "/api/allergen-check", {
         ingredients: ingredientNames,

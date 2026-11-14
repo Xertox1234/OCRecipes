@@ -112,7 +112,10 @@ export function ScanConflictPrompt(props: {
 
   return (
     <View style={[styles.card, { backgroundColor: theme.surface }]}>
-      <Text style={[styles.heading, { color: theme.text }]}>
+      <Text
+        accessibilityRole="header"
+        style={[styles.heading, { color: theme.text }]}
+      >
         The label you scanned differs from our database
       </Text>
       <View style={styles.row} accessibilityRole="radiogroup">

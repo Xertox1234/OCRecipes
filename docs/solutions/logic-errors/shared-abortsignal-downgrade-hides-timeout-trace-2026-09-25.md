@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 tags: [api, architecture, sse, streaming, abort-controller, logging, testing]
-applies_to: [server/routes/chat.ts, server/routes/chat-stream.ts, server/services/nutrition-coach.ts]
+applies_to: [server/routes/chat.ts, server/services/chat-turn.ts, server/lib/sse.ts, server/services/nutrition-coach.ts]
 symptoms: ['A route holds one AbortController/AbortSignal shared by client-disconnect, an SSE timeout, and a byte-limit guard', 'A downstream generator downgrades its own abort-caused catch log from ERROR to debug keyed only on `abortSignal?.aborted`', 'The SSE-timeout handler itself logs nothing of its own', 'A genuine multi-minute hang produces no log line at ERROR or WARN anywhere']
 created: '2026-09-25'
 severity: medium
@@ -53,7 +53,7 @@ This keeps the downstream consumer's downgrade (correct for the common disconnec
 
 ## Related Files
 
-- `server/routes/chat-stream.ts` (moved out of `chat.ts` in the 2026-10-26 decomposition): `abortController`, `sseTimeout`, the `res.on("close")` handler, the `SSE_MAX_RESPONSE_BYTES` guard
+- `server/services/chat-turn.ts` and `server/lib/sse.ts` (moved out of `chat.ts` in the 2026-10-26 decomposition, then out of routes/): `abortController`, `sseTimeout`, the `res.on("close")` handler, the `SSE_MAX_RESPONSE_BYTES` guard
 - `server/services/nutrition-coach.ts`: `generateCoachResponse`, `generateCoachProResponse`
 - `server/services/__tests__/nutrition-coach.test.ts`: the `vi.hoisted` `mockLog` singleton
 

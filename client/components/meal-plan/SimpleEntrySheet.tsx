@@ -1,7 +1,3 @@
-// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
-// enabled here so the justified disables below count as used and survive `eslint --fix`.
-// Delete these four lines when the rule is turned on globally.
-/* eslint react-hooks/set-state-in-effect: "error" */
 import React, {
   useCallback,
   useEffect,
@@ -36,7 +32,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
+import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import { useParseFoodText } from "@/hooks/useFoodParse";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import {
@@ -55,7 +51,7 @@ import {
 import {
   MEAL_LABELS,
   type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 
 export const SIMPLE_ENTRY_SNAP_POINTS = ["45%"];
 
@@ -128,11 +124,11 @@ function SimpleEntrySheetContentInner(
     [haptics],
   );
 
-  // Reset state when the sheet opens for a meal type, and stop any
-  // in-progress voice capture when it closes.
+  // Reset state when the sheet opens for a meal type. Keyed on mealType
+  // alone: listening changes must not wipe the form mid-entry.
   useEffect(() => {
     if (mealType) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset also clears two refs and stops the external speech session, which cannot run during render; kept as one effect so its run order before the transcript effects is unchanged
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset also clears two refs, which cannot run during render; stays an effect declared before the transcript effects so it runs before them, as before
       setDishName("");
       setServings(1);
       setError(null);
@@ -140,7 +136,12 @@ function SimpleEntrySheetContentInner(
       setShowUpgrade(false);
       isAddingRef.current = false;
       createdRecipeRef.current = null;
-    } else if (isListening) {
+    }
+  }, [mealType]);
+
+  // Stop any in-progress voice capture when the sheet closes.
+  useEffect(() => {
+    if (!mealType && isListening) {
       stopListening();
     }
   }, [mealType, isListening, stopListening]);

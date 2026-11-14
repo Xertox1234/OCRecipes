@@ -232,6 +232,39 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
 
     expect(screen.getByText("Recipe chat")).toBeTruthy();
   });
+
+  it("an untitled row's open button is named with the fallback title, not a bare prefix", () => {
+    mockUseChatConversations.mockImplementation((type: string) => ({
+      data: type === "recipe" ? [conv(44, "")] : [],
+      isLoading: false,
+    }));
+
+    renderComponent(<AllConversationsScreen />);
+    fireEvent.click(screen.getByLabelText("Recipe chats"));
+
+    expect(
+      screen.getByLabelText("Open conversation: Recipe chat"),
+    ).toBeTruthy();
+  });
+
+  // VoiceOver treats an accessible element as a leaf: pin and delete nested
+  // inside the row's open button are unreachable (audit 2026-11-06 C1).
+  it("pin and delete are siblings of the open button, not nested inside it", () => {
+    mockUseChatConversations.mockReturnValue({
+      data: [conv(9, "Meal prep")],
+      isLoading: false,
+    });
+
+    renderComponent(<AllConversationsScreen />);
+    const open = screen.getByLabelText("Open conversation: Meal prep");
+
+    expect(open.contains(screen.getByLabelText("Pin conversation"))).toBe(
+      false,
+    );
+    expect(open.contains(screen.getByLabelText("Delete conversation"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("AllConversationsScreen — refetch on refocus (P3-2026-09-26)", () => {

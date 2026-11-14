@@ -57,6 +57,20 @@ export function heightUnitLabel(unit: MeasurementUnit): "cm" | "in" {
   return unit === "imperial" ? "in" : "cm";
 }
 
+/** Spoken weight-unit name for screen-reader labels ("kg" reads poorly). */
+export function weightUnitSpoken(
+  unit: MeasurementUnit,
+): "kilograms" | "pounds" {
+  return unit === "imperial" ? "pounds" : "kilograms";
+}
+
+/** Spoken height-unit name — "in" alone is read as the word "in". */
+export function heightUnitSpoken(
+  unit: MeasurementUnit,
+): "centimetres" | "inches" {
+  return unit === "imperial" ? "inches" : "centimetres";
+}
+
 /**
  * Convert a stored kg weight into the user's preferred display unit.
  * Returns the raw converted number — round only at the leaf render site.

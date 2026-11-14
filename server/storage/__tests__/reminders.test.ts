@@ -30,6 +30,9 @@ const {
   hasPendingReminderToday,
   hasPendingReminders,
   acknowledgeReminders,
+  getTodaysPendingReminders,
+  acknowledgeReminderType,
+  hasReminderSince,
 } = await import("../reminders");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -190,6 +193,178 @@ describe("reminders storage", () => {
         .from(pendingReminders)
         .where(eq(pendingReminders.id, row.id));
       expect(stored.acknowledgedAt).not.toBeNull();
+    });
+  });
+  describe("getTodaysPendingReminders", () => {
+    const insert = (values: {
+      type: "meal-log" | "commitment" | "daily-checkin";
+      context: Record<string, unknown>;
+      scheduledFor: Date;
+      userId?: string;
+      acknowledgedAt?: Date;
+    }) =>
+      tx
+        .insert(pendingReminders)
+        .values({ userId: testUser.id, ...values })
+        .returning();
+
+    it("returns today's unacknowledged reminders without acknowledging them", async () => {
+      const now = new Date("2026-11-08T15:00:00Z");
+      const [row] = await insert({
+        type: "meal-log",
+        context: { lastLoggedAt: null },
+        scheduledFor: new Date("2026-11-08T12:00:00Z"),
+      });
+
+      const items = await getTodaysPendingReminders(testUser.id, "UTC", now);
+      expect(items).toEqual([{ type: "meal-log", lastLoggedAt: null }]);
+
+      const [stored] = await tx
+        .select()
+        .from(pendingReminders)
+        .where(eq(pendingReminders.id, row.id));
+      expect(stored.acknowledgedAt).toBeNull();
+    });
+
+    it("leaves out yesterday's and acknowledged reminders", async () => {
+      const now = new Date("2026-11-08T15:00:00Z");
+      await insert({
+        type: "meal-log",
+        context: { lastLoggedAt: null },
+        scheduledFor: new Date("2026-11-07T12:00:00Z"),
+      });
+      await insert({
+        type: "daily-checkin",
+        context: { calories: 0 },
+        scheduledFor: new Date("2026-11-08T09:00:00Z"),
+        acknowledgedAt: new Date("2026-11-08T10:00:00Z"),
+      });
+
+      expect(await getTodaysPendingReminders(testUser.id, "UTC", now)).toEqual(
+        [],
+      );
+    });
+
+    it("uses the user's local date, not UTC's", async () => {
+      // 23:30 in Los Angeles on Nov 8 is 07:30 UTC on Nov 9.
+      const now = new Date("2026-11-09T07:30:00Z");
+      // 22:00 LA on Nov 8 (06:00 UTC Nov 9) is today for the user...
+      await insert({
+        type: "meal-log",
+        context: { lastLoggedAt: null },
+        scheduledFor: new Date("2026-11-09T06:00:00Z"),
+      });
+      // ...and 09:00 LA on Nov 7 is not.
+      await insert({
+        type: "daily-checkin",
+        context: { calories: 0 },
+        scheduledFor: new Date("2026-11-07T17:00:00Z"),
+      });
+
+      const items = await getTodaysPendingReminders(
+        testUser.id,
+        "America/Los_Angeles",
+        now,
+      );
+      expect(items.map((i) => i.type)).toEqual(["meal-log"]);
+    });
+
+    it("returns the newest first and skips malformed context", async () => {
+      const now = new Date("2026-11-08T20:00:00Z");
+      await insert({
+        type: "daily-checkin",
+        context: { calories: 0 },
+        scheduledFor: new Date("2026-11-08T09:00:00Z"),
+      });
+      await insert({
+        type: "commitment",
+        context: { notebookEntryId: 4, content: "walk after lunch" },
+        scheduledFor: new Date("2026-11-08T14:00:00Z"),
+      });
+      await insert({
+        type: "meal-log",
+        context: { somethingElse: "garbage" },
+        scheduledFor: new Date("2026-11-08T18:00:00Z"),
+      });
+
+      const items = await getTodaysPendingReminders(testUser.id, "UTC", now);
+      expect(items.map((i) => i.type)).toEqual(["commitment", "daily-checkin"]);
+    });
+
+    it("never returns another user's reminders", async () => {
+      const other = await createTestUser(tx);
+      const now = new Date("2026-11-08T15:00:00Z");
+      await insert({
+        userId: other.id,
+        type: "meal-log",
+        context: { lastLoggedAt: null },
+        scheduledFor: new Date("2026-11-08T12:00:00Z"),
+      });
+
+      expect(await getTodaysPendingReminders(testUser.id, "UTC", now)).toEqual(
+        [],
+      );
+    });
+  });
+
+  describe("acknowledgeReminderType", () => {
+    it("clears only that type, leaving other reminders pending", async () => {
+      await tx.insert(pendingReminders).values([
+        {
+          userId: testUser.id,
+          type: "meal-log",
+          context: { lastLoggedAt: null },
+          scheduledFor: new Date(),
+        },
+        {
+          userId: testUser.id,
+          type: "commitment",
+          context: { notebookEntryId: 1, content: "x" },
+          scheduledFor: new Date(),
+        },
+      ]);
+      expect(await acknowledgeReminderType(testUser.id, "meal-log")).toBe(1);
+      const rows = await tx
+        .select()
+        .from(pendingReminders)
+        .where(eq(pendingReminders.userId, testUser.id));
+      const byType = Object.fromEntries(
+        rows.map((r) => [r.type, r.acknowledgedAt !== null]),
+      );
+      expect(byType).toEqual({ "meal-log": true, commitment: false });
+    });
+  });
+
+  describe("hasReminderSince", () => {
+    it("sees a reminder of the type at or after the instant, acknowledged or not", async () => {
+      await createPendingReminder({
+        userId: testUser.id,
+        type: "commitment",
+        context: {},
+        scheduledFor: new Date("2026-11-08T09:00:00Z"),
+      });
+      await acknowledgeReminders(testUser.id);
+      expect(
+        await hasReminderSince(
+          testUser.id,
+          "commitment",
+          new Date("2026-11-08T00:00:00Z"),
+        ),
+      ).toBe(true);
+      expect(
+        await hasReminderSince(
+          testUser.id,
+          "commitment",
+          new Date("2026-11-08T10:00:00Z"),
+        ),
+      ).toBe(false);
+      expect(
+        await hasReminderSince(
+          testUser.id,
+          "meal-log",
+          new Date("2026-11-08T00:00:00Z"),
+        ),
+      ).toBe(false);
     });
   });
 });

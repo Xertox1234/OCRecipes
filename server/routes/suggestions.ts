@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { type AuthenticatedRequest, requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { reportError } from "../lib/error-reporter";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { calculateProfileHash } from "../utils/profile-hash";
@@ -10,6 +11,7 @@ import { instructionsRateLimit, suggestionsRateLimit } from "./_rate-limiters";
 import {
   parsePositiveIntParam,
   checkAiConfigured,
+  checkAiSharing,
   checkPremiumFeature,
   handleRouteError,
   claimAiCallOrReject,
@@ -83,6 +85,7 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate suggestions
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         if (
           !(await claimAiCallOrReject(
@@ -116,6 +119,8 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof SuggestionParseError) {
+          // A direct 5xx response skips handleRouteError, so report it here.
+          reportError(error, "generate suggestions");
           return sendError(res, 502, error.message, ErrorCode.INTERNAL_ERROR);
         }
         handleRouteError(res, error, "generate suggestions");
@@ -203,6 +208,7 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate instructions
         if (!checkAiConfigured(res)) return;
+        if (!(await checkAiSharing(req, res))) return;
 
         if (
           !(await claimAiCallOrReject(

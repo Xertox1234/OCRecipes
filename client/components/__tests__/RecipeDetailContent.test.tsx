@@ -92,3 +92,25 @@ describe("RecipeDetailContent — expanded step", () => {
     expect(screen.getByTestId("expanded-step").textContent).toBe("none");
   });
 });
+
+describe("RecipeDetailContent — canonical gallery", () => {
+  it("renders gallery photos through expo-image with their labels", () => {
+    renderComponent(
+      <RecipeDetailContent
+        recipeId={1}
+        recipeType="community"
+        title="Soup"
+        instructions={["Chop"]}
+        isCanonical
+        canonicalImages={[
+          "https://cdn.example.com/a.jpg",
+          "https://cdn.example.com/b.jpg",
+        ]}
+      />,
+    );
+    const photo = screen.getByLabelText("Photo 2 of 2 of Soup");
+    expect(photo.getAttribute("src")).toBe("https://cdn.example.com/b.jpg");
+    // data-content-fit is only emitted by the expo-image mock.
+    expect(photo.getAttribute("data-content-fit")).toBe("cover");
+  });
+});

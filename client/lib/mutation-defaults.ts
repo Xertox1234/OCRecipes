@@ -1,8 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { GroceryListItem } from "@shared/schema";
 import { apiRequest } from "./query-client";
-import { QUERY_KEYS } from "./query-keys";
-import { recipeStatsKey } from "@/hooks/useRecipeCommunity";
+import { QUERY_KEYS, recipeStatsKey } from "./query-keys";
 import type { ChatConversation } from "@/hooks/useChat";
 
 /**

@@ -156,19 +156,16 @@ export function SuggestionCard({
       enabled: cardState === "loading" || cardState === "expanded",
     });
 
-  // Update state when instructions arrive
-  React.useEffect(() => {
-    if (cardState === "loading" && instructionsData) {
+  // Leave "loading" once the instructions request settles. Adjusted during
+  // render rather than in an effect, so no frame shows the spinner over
+  // instructions that are already here. An error wins over (stale) data.
+  if (cardState === "loading") {
+    if (instructionsError) {
+      setCardState("collapsed");
+    } else if (instructionsData) {
       setCardState("expanded");
     }
-  }, [cardState, instructionsData]);
-
-  // Update state on error
-  React.useEffect(() => {
-    if (cardState === "loading" && instructionsError) {
-      setCardState("collapsed");
-    }
-  }, [cardState, instructionsError]);
+  }
 
   const iconName = getSuggestionIconName(suggestion.type);
 

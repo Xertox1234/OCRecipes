@@ -8,6 +8,7 @@
 import { storage } from "../../storage";
 import { sendPushToUser } from "../push-notifications";
 import { getCategoryDef, type NotificationCategoryKey } from "./registry";
+import type { ReminderType } from "@shared/types/reminders";
 
 export interface NotifyPayload {
   title?: string;
@@ -33,7 +34,9 @@ export async function notify(
   if (def.channels.includes("in-app")) {
     await storage.createPendingReminder({
       userId,
-      type: category,
+      // Only reminder categories declare the in-app channel ("weekly-report"
+      // is push-only; registry.test pins it), so the category is a ReminderType.
+      type: category as ReminderType,
       context: payload.context ?? {},
       scheduledFor,
     });

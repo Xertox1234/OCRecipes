@@ -75,6 +75,18 @@ describe("Coach Block Schemas", () => {
     );
   });
 
+  it("accepts an add_allergy card for one of the nine common allergens only", () => {
+    const card = (allergen: string) => ({
+      type: "action_card",
+      title: "Add shellfish to your allergies",
+      subtitle: "So Coach and your scans always flag it",
+      action: { type: "add_allergy", allergen },
+      actionLabel: "Add allergy",
+    });
+    expect(actionCardSchema.safeParse(card("shellfish")).success).toBe(true);
+    expect(actionCardSchema.safeParse(card("kiwi")).success).toBe(false);
+  });
+
   it("validates set_goal navigation to GoalSetup", () => {
     const list = {
       type: "suggestion_list",
@@ -87,6 +99,22 @@ describe("Coach Block Schemas", () => {
       ],
     };
     expect(suggestionListSchema.parse(list)).toEqual(list);
+  });
+
+  // Weight tracking was retired in #384; a card pointing at it was a dead
+  // tap (no client route). The coach may no longer offer it (2026-11-08).
+  it("rejects navigation to the retired WeightTracking screen", () => {
+    const list = {
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Log your weight",
+          subtitle: "Track progress",
+          action: { type: "navigate", screen: "WeightTracking" },
+        },
+      ],
+    };
+    expect(suggestionListSchema.safeParse(list).success).toBe(false);
   });
 
   it("validates a suggestion list", () => {
@@ -588,5 +616,19 @@ describe("RecipeBrowserModal navigate params", () => {
     };
     const result = suggestionListSchema.safeParse(list);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("memory_refs block", () => {
+  it("accepts 1–5 positive ids", () => {
+    expect(
+      coachBlockSchema.safeParse({ type: "memory_refs", ids: [3] }).success,
+    ).toBe(true);
+  });
+
+  it.each([[[]], [[0]], [[1, 2, 3, 4, 5, 6]], [["3"]]])("rejects %j", (ids) => {
+    expect(
+      coachBlockSchema.safeParse({ type: "memory_refs", ids }).success,
+    ).toBe(false);
   });
 });

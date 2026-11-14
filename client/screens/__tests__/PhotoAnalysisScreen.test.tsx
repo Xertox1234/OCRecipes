@@ -269,3 +269,43 @@ describe("PhotoAnalysisScreen — follow-up Return key", () => {
     );
   });
 });
+
+// Accessibility audit 2026-11-06 H3 + M6: both screen states of this modal
+// route keep VoiceOver inside it, and the photo is decorative (a bare RN
+// Image ignores accessibilityLabel unless it is accessible).
+describe("PhotoAnalysisScreen — modal containment and decorative photo", () => {
+  const results = () => ({
+    isAnalyzing: false,
+    loadingText: "",
+    analysisResult: { foods: [], overallConfidence: 0.9 },
+    showNutrition: true,
+    foods: [],
+    selectedFoods: [],
+    selectedItems: new Set(),
+    prepMethods: {},
+    prepLoading: {},
+    totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    error: null,
+    BeverageSheet: () => null,
+    haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
+  });
+
+  it("the analyzing state is modal", () => {
+    renderLoading();
+    expect(
+      screen
+        .getByText("Analyzing your photo...")
+        .closest('[aria-modal="true"]'),
+    ).not.toBeNull();
+  });
+
+  it("the results state is modal and the photo is hidden from screen readers", () => {
+    mockUsePhotoAnalysis.mockReturnValue(results());
+    const { container } = renderComponent(<PhotoAnalysisScreen />);
+
+    const img = container.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.closest('[aria-modal="true"]')).not.toBeNull();
+    expect(screen.queryByLabelText("Photo being analyzed")).toBeNull();
+  });
+});

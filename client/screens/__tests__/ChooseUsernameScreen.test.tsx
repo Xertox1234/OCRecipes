@@ -77,7 +77,7 @@ describe("ChooseUsernameScreen", () => {
   it("an email taken meanwhile sends them back to sign in, not 'username taken'", async () => {
     mockComplete.mockRejectedValue(new ApiError("raw", "EMAIL_IN_USE", 409));
     renderScreen();
-    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /14 years of age/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("Login"));
     expect(mockToastError).toHaveBeenCalledWith(
@@ -100,7 +100,7 @@ describe("ChooseUsernameScreen — shake on validation reject", () => {
     fireEvent.change(screen.getByLabelText("Username"), {
       target: { value: "" },
     });
-    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /14 years of age/ }));
     const cont = screen.getByRole("button", { name: "Continue" });
 
     fireEvent.click(cont);
@@ -115,7 +115,7 @@ describe("ChooseUsernameScreen — shake on validation reject", () => {
   it("a server error buzzes but does not shake", async () => {
     mockComplete.mockRejectedValue(new ApiError("raw", "USERNAME_TAKEN", 409));
     renderScreen();
-    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /14 years of age/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(
@@ -161,7 +161,7 @@ describe("ChooseUsernameScreen — validation timing", () => {
     renderScreen();
     const input = screen.getByLabelText("Username");
     fireEvent.change(input, { target: { value: "" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /14 years of age/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(document.activeElement).toBe(input);
@@ -209,7 +209,7 @@ describe("ChooseUsernameScreen — one announcement per error", () => {
     renderScreen();
     const input = screen.getByLabelText("Username");
     fireEvent.change(input, { target: { value: "" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /14 years of age/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(input.getAttribute("aria-invalid")).toBe("true");
@@ -223,7 +223,7 @@ describe("ChooseUsernameScreen — one announcement per error", () => {
   it("a server error is announced once, by the alert only", async () => {
     mockComplete.mockRejectedValue(new ApiError("raw", "USERNAME_TAKEN", 409));
     renderScreen();
-    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /14 years of age/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     const message = "That username is taken — try another.";
     await screen.findByText(message);

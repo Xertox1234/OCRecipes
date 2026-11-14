@@ -180,7 +180,7 @@ export default function CookbookDetailScreen() {
               ]}
               accessibilityRole="button"
               accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}${allergenA11ySuffix}`}
-              accessibilityHint="Swipe left to remove from cookbook"
+              accessibilityHint="Opens the recipe"
             >
               <FallbackImage
                 source={{ uri: resolveImageUrl(item.imageUrl) ?? undefined }}

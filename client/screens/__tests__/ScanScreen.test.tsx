@@ -169,8 +169,11 @@ vi.mock("@react-navigation/native", () => ({
 vi.mock("expo-file-system/legacy", () => ({
   deleteAsync: mockDeleteAsync,
 }));
+const mockPremiumCamera = vi.hoisted(() => ({
+  value: { isPremium: true, remainingScans: null as number | null },
+}));
 vi.mock("@/hooks/usePremiumFeatures", () => ({
-  usePremiumCamera: () => ({ isPremium: true, remainingScans: null }),
+  usePremiumCamera: () => mockPremiumCamera.value,
 }));
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
@@ -201,7 +204,18 @@ vi.mock("@/context/ToastContext", () => ({
 // other two safe-back-navigation call sites never touch the network.
 vi.mock("@/lib/query-client", () => ({
   apiRequest: mockApiRequest,
+  resolveImageUrl: (url: string | null | undefined) => url ?? null,
 }));
+// Wraps the real helper so the key-level assertions below still see the
+// actual invalidations, while the log path's use of the shared helper is
+// observable (arch audit L1: a hand-copied key list skips future keys).
+const mockInvalidateFoodLog = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/food-log-invalidation", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/food-log-invalidation")>();
+  mockInvalidateFoodLog.mockImplementation(actual.invalidateFoodLogQueries);
+  return { invalidateFoodLogQueries: mockInvalidateFoodLog };
+});
 // Delegates to the real reducer for every action except the shortcut used by
 // the post-log-success tests below — scan-phase-reducer.test.ts already
 // covers the reducer's real transition logic directly, so this file doesn't
@@ -491,6 +505,18 @@ describe("ScanScreen — safe back navigation", () => {
       });
 
       invalidateSpy.mockRestore();
+    });
+
+    it("refreshes the food log through the shared invalidateFoodLogQueries helper", async () => {
+      mockCanGoBack.mockReturnValue(true);
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockGoBack).toHaveBeenCalledOnce();
+      });
+      expect(mockInvalidateFoodLog).toHaveBeenCalledOnce();
     });
   });
 });
@@ -1983,5 +2009,38 @@ describe("ScanScreen — teaching tips", () => {
   it("marks the camera as used when the screen opens", () => {
     renderComponent(<ScanScreen />);
     expect(mockMarkFeatureUsed).toHaveBeenCalledWith("scan");
+  });
+});
+
+// Accessibility audit 2026-11-06 L5: the scan-count pill flipping to "Daily
+// limit reached" was silent — speak it once, on the edge into the limit.
+describe("ScanScreen — daily scan limit announcement", () => {
+  let announce: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    announce.mockRestore();
+    mockPremiumCamera.value = { isPremium: true, remainingScans: null };
+  });
+
+  it("announces when the last free scan is used", () => {
+    mockPremiumCamera.value = { isPremium: false, remainingScans: 1 };
+    const { rerender } = renderComponent(<ScanScreen />);
+    expect(announce).not.toHaveBeenCalledWith("Daily scan limit reached");
+
+    mockPremiumCamera.value = { isPremium: false, remainingScans: 0 };
+    act(() => {
+      rerender(<ScanScreen />);
+    });
+    expect(announce).toHaveBeenCalledWith("Daily scan limit reached");
+  });
+
+  it("does not announce on opening the camera already at the limit", () => {
+    mockPremiumCamera.value = { isPremium: false, remainingScans: 0 };
+    renderComponent(<ScanScreen />);
+    expect(announce).not.toHaveBeenCalledWith("Daily scan limit reached");
   });
 });

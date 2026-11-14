@@ -103,7 +103,7 @@ const recipeResponseSchema = z.object({
     .pipe(z.array(z.string()).min(1)),
   dietTags: z.array(z.string()).default([]),
   // AI-set heat level; missing or invalid -> null (no icon), never a rejection.
-  spiceLevel: z.unknown().transform(parseSpiceLevel),
+  spiceLevel: z.unknown().optional().transform(parseSpiceLevel),
 });
 
 // Re-export shared schema for consumers that already import from this file

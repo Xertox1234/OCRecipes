@@ -17,6 +17,7 @@ import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { formatDateLong as formatDate } from "@/lib/format";
 import type { ScannedItemResponse } from "@/types/api";
+import { resolveImageUrl } from "@/lib/query-client";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
 type ItemDetailRouteProp = RouteProp<ProfileStackParamList, "ItemDetail">;
@@ -199,7 +200,7 @@ export default function ItemDetailScreen() {
         <Card elevation={2} style={styles.headerCard}>
           <View style={styles.headerContent}>
             <FallbackImage
-              source={{ uri: item.imageUrl ?? undefined }}
+              source={{ uri: resolveImageUrl(item.imageUrl) ?? undefined }}
               style={styles.productImage}
               fallbackStyle={{
                 ...styles.imagePlaceholder,

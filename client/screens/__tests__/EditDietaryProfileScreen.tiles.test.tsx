@@ -5,8 +5,17 @@ import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
 import EditDietaryProfileScreen from "../EditDietaryProfileScreen";
 
-const { form } = vi.hoisted(() => ({
-  form: { selectedAllergen: null as string | null },
+const { form, mockHandleSave, mockConfirm } = vi.hoisted(() => ({
+  form: { selectedAllergen: null as string | null, needsConsent: false },
+  mockHandleSave: vi.fn(),
+  mockConfirm: vi.fn(),
+}));
+
+vi.mock("@/components/ConfirmationModal", () => ({
+  useConfirmationModal: () => ({
+    confirm: mockConfirm,
+    ConfirmationModal: () => null,
+  }),
 }));
 
 // The form hook is mocked so the screen renders without queries; its own
@@ -39,7 +48,8 @@ vi.mock("@/hooks/useDietaryProfileForm", () => ({
     toggleHealthCondition: vi.fn(),
     toggleDislike: vi.fn(),
     toggleCuisine: vi.fn(),
-    handleSave: vi.fn(),
+    needsConsent: form.needsConsent,
+    handleSave: mockHandleSave,
   }),
 }));
 
@@ -52,6 +62,38 @@ function tiles() {
 
 beforeEach(() => {
   form.selectedAllergen = null;
+  form.needsConsent = false;
+  mockHandleSave.mockReset();
+  mockConfirm.mockReset();
+});
+
+// Privacy audit H2 — "no consent, no health data".
+describe("EditDietaryProfileScreen — health-data consent on save", () => {
+  it("saves straight away when no consent is needed", () => {
+    renderComponent(<EditDietaryProfileScreen />);
+
+    fireEvent.click(screen.getByLabelText("Save Changes"));
+
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockHandleSave).toHaveBeenCalledTimes(1);
+    expect(mockHandleSave.mock.calls[0][0]).toBeUndefined();
+  });
+
+  it("asks for the consent first, and saves with it only after Agree", () => {
+    form.needsConsent = true;
+    renderComponent(<EditDietaryProfileScreen />);
+
+    fireEvent.click(screen.getByLabelText("Save Changes"));
+
+    expect(mockHandleSave).not.toHaveBeenCalled();
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+    const options = mockConfirm.mock.calls[0][0];
+    expect(options).toEqual(expect.objectContaining({ confirmLabel: "Agree" }));
+
+    options.onConfirm();
+
+    expect(mockHandleSave).toHaveBeenCalledWith(true);
+  });
 });
 
 describe("EditDietaryProfileScreen — one selection tick per pick", () => {

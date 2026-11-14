@@ -7,8 +7,74 @@ import {
   containsDangerousDietaryAdvice,
   containsUnsafeMedicalAdvice,
   containsUnsafeCoachAdvice,
+  containsUnsafeCoachAdviceInValue,
   SYSTEM_PROMPT_BOUNDARY,
+  DANGEROUS_DIETARY_PATTERNS,
+  UNSAFE_MEDICAL_ADVICE_PATTERNS,
+  isFlatModelRefusal,
+  SAFETY_REFUSAL_FALLBACK_MESSAGE,
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
 } from "../ai-safety";
+
+describe("isFlatModelRefusal", () => {
+  it.each([
+    "I'm sorry, but I cannot assist with that request.",
+    "Sorry, I can't help with that.",
+    "I cannot assist with that.",
+    "  I'm sorry, but I can't assist with that request.\n",
+  ])("detects a bare refusal: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(true);
+  });
+
+  it.each([
+    "",
+    "Here is a plan. I cannot assist with allergies beyond what you listed, but a dietitian can help you plan a safe week of meals and snacks for you.",
+    "That sounds really hard. Please talk to a doctor or registered dietitian.",
+  ])("leaves a real reply alone: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(false);
+  });
+
+  // A refusal that goes on to point somewhere, or to stay with the user, is
+  // already the reply we want. Replacing it could delete a crisis line.
+  it.each([
+    "I can't help with that, but please call 988.",
+    "I can't help with that, but I'm here for you.",
+    "I can't help with that - call 988",
+    "I can't help with that — call 988.",
+    "I can't help with that but please call 988",
+    "I can't help with that; please call a crisis line.",
+    "I can't help with that: please talk to a doctor.",
+    "I'm sorry, I can't help with that but a doctor can.",
+  ])("leaves a refusal that carries a referral alone: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(false);
+  });
+
+  it.each([
+    "I can't help you with that.",
+    "I can't do that",
+    "I am unable to assist with this request.",
+    "I won’t help with that!",
+  ])("still detects other bare forms: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(true);
+  });
+
+  it("the fallback has empathy and a professional referral", () => {
+    expect(SAFETY_REFUSAL_FALLBACK_MESSAGE).toMatch(/dietitian/i);
+    expect(SAFETY_REFUSAL_FALLBACK_MESSAGE).toMatch(/doctor|healthcare/i);
+  });
+
+  it("the crisis fallback leads with urgent help and says nothing about food", () => {
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).toMatch(/emergency/i);
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).toMatch(/crisis line/i);
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).not.toMatch(
+      /\b(?:eat|eating|ate|food|diet|dietitian|calories?|meals?|weight)\b/i,
+    );
+    expect(isFlatModelRefusal(SAFETY_CRISIS_FALLBACK_MESSAGE)).toBe(false);
+    expect(containsUnsafeCoachAdvice(SAFETY_CRISIS_FALLBACK_MESSAGE)).toBe(
+      false,
+    );
+  });
+});
 
 describe("sanitizeUserInput", () => {
   it("passes through normal food descriptions unchanged", () => {
@@ -296,6 +362,172 @@ describe("containsUnsafeCoachAdvice", () => {
       containsUnsafeCoachAdvice("Try a balanced dinner with vegetables."),
     ).toBe(false);
   });
+
+  // The client shows fenced JSON (coach_blocks, the recipe card) after
+  // JSON.parse, so the screen has to read the decoded strings too.
+  describe("text inside a JSON fence", () => {
+    const fence = (json: string) =>
+      "Here you go.\n```coach_blocks\n" + json + "\n```";
+    const block = (label: string) =>
+      `[{"type":"quick_replies","options":[{"label":"${label}","message":"ok"}]}]`;
+
+    it("flags a phrase written with plain spaces (control)", () => {
+      expect(
+        containsUnsafeCoachAdvice(fence(block("Fast for 3 days this week"))),
+      ).toBe(true);
+    });
+
+    it("flags a phrase whose spaces are JSON escapes", () => {
+      const escaped = fence(
+        block("Fast\\u0020for\\u00203\\u0020days this week"),
+      );
+      // The raw text no longer matches any pattern; only the decoded one does.
+      expect(escaped).not.toMatch(/fast\s+for\s+\d+\s+days/i);
+      expect(containsUnsafeCoachAdvice(escaped)).toBe(true);
+    });
+
+    it("flags an escaped phrase nested deep in the JSON", () => {
+      const nested = fence(
+        '{"a":[{"b":{"c":["You\\u0020likely\\u0020have\\u0020diabetes"]}}]}',
+      );
+      expect(containsUnsafeCoachAdvice(nested)).toBe(true);
+    });
+
+    it("flags an escaped phrase in any fence, whatever its label", () => {
+      const jsonFence =
+        '```json\n{"title":"Dry\\u0020fast plan"}\n```\nEnjoy your meal.';
+      expect(containsUnsafeCoachAdvice(jsonFence)).toBe(true);
+    });
+
+    it("flags an escaped phrase when the JSON starts on the fence line", () => {
+      // Recipe chat reads the fence with /```json\s*/ — no line break needed.
+      expect(
+        containsUnsafeCoachAdvice('```json{"title":"Dry\\u0020fast plan"}```'),
+      ).toBe(true);
+      expect(
+        containsUnsafeCoachAdvice('```json {"title":"Dry\\u0020fast plan"}```'),
+      ).toBe(true);
+    });
+
+    // Each fence reader looks for its own opening tag, so a stray marker
+    // earlier in the reply does not stop it reading the fence.
+    it.each([1, 2, 3])(
+      "flags an escaped phrase in a fence that follows %i stray fence marker(s)",
+      (strays) => {
+        const lead = "Use ``` for code. ".repeat(strays);
+        const blocks = lead + fence(block("Dry\\u0020fast this week"));
+        const recipe = lead + '```json\n{"title":"Dry\\u0020fast plan"}\n```';
+        expect(blocks).not.toMatch(/dry\s+fast/i);
+        expect(recipe).not.toMatch(/dry\s+fast/i);
+        expect(containsUnsafeCoachAdvice(blocks)).toBe(true);
+        expect(containsUnsafeCoachAdvice(recipe)).toBe(true);
+      },
+    );
+
+    // Recipe chat trims the fence body before parsing it, and trim() drops
+    // more than spaces (no-break space, BOM, line separator). The later
+    // "{x}" stops the bare-object reading from catching it instead.
+    it.each([
+      ["a no-break space", "\u00a0"],
+      ["a byte-order mark", "\ufeff"],
+      ["a line separator", "\u2028"],
+    ])("flags an escaped phrase in a fence that ends with %s", (_name, ch) => {
+      const reply =
+        '```json\n{"title":"Dry\\u0020fast plan"}' + ch + "```\nEnjoy {x}";
+      expect(reply).not.toMatch(/dry\s+fast/i);
+      expect(containsUnsafeCoachAdvice(reply)).toBe(true);
+    });
+
+    it("does not flag a harmless fence", () => {
+      expect(
+        containsUnsafeCoachAdvice(fence(block("Show me a high-protein lunch"))),
+      ).toBe(false);
+    });
+
+    it("does not join separate fields into one phrase", () => {
+      const split = fence(
+        '[{"type":"quick_replies","options":[{"label":"Dry","message":"fast food ideas"}]}]',
+      );
+      expect(containsUnsafeCoachAdvice(split)).toBe(false);
+    });
+
+    it("ignores a fence that is not JSON without throwing", () => {
+      expect(
+        containsUnsafeCoachAdvice("```coach_blocks\n[{not json\n```\nDone."),
+      ).toBe(false);
+      expect(containsUnsafeCoachAdvice("An unterminated ``` fence")).toBe(
+        false,
+      );
+    });
+  });
+});
+
+describe("containsUnsafeCoachAdvice — a JSON object with no fence", () => {
+  // Recipe chat also reads a bare object: first "{" to last "}", with any
+  // text around it.
+  it.each([
+    ["nothing around it", '{"title":"Dry\\u0020fast plan"}'],
+    ["text before it", 'Here you go: {"title":"Dry\\u0020fast plan"}'],
+    ["text after it", '{"title":"Dry\\u0020fast plan"} Enjoy!'],
+    ["text on both sides", 'Here: {"title":"Dry\\u0020fast plan"} Enjoy!'],
+  ])("flags an escaped phrase with %s", (_shape, reply) => {
+    expect(reply).not.toMatch(/dry\s+fast/i);
+    expect(containsUnsafeCoachAdvice(reply)).toBe(true);
+  });
+
+  it("does not flag a harmless object with text around it", () => {
+    expect(containsUnsafeCoachAdvice('Here: {"title":"Oat bowl"} Enjoy!')).toBe(
+      false,
+    );
+  });
+
+  it("ignores braces that hold no JSON without throwing", () => {
+    expect(containsUnsafeCoachAdvice("Use {curly} braces {here}.")).toBe(false);
+  });
+});
+
+describe("containsUnsafeCoachAdviceInValue", () => {
+  it("flags an unsafe string anywhere inside a decoded value", () => {
+    expect(containsUnsafeCoachAdviceInValue("Fast for 3 days")).toBe(true);
+    expect(
+      containsUnsafeCoachAdviceInValue({
+        title: "Soup",
+        instructions: ["Chop", "Then fast for 3 days"],
+      }),
+    ).toBe(true);
+    expect(
+      containsUnsafeCoachAdviceInValue([
+        { a: { b: "You likely have diabetes" } },
+      ]),
+    ).toBe(true);
+  });
+
+  it("does not flag a harmless value, a key, or a non-string", () => {
+    expect(
+      containsUnsafeCoachAdviceInValue({
+        title: "Lentil soup",
+        servings: 4,
+        spiceLevel: null,
+        instructions: ["Chop the onion", "Simmer for 20 minutes"],
+      }),
+    ).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue({ "dry fast": 1 })).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue(null)).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue(undefined)).toBe(false);
+    expect(containsUnsafeCoachAdviceInValue(42)).toBe(false);
+  });
+
+  it("does not join separate fields into one phrase", () => {
+    expect(
+      containsUnsafeCoachAdviceInValue({ instructions: ["Dry", "fast food"] }),
+    ).toBe(false);
+  });
+
+  it("handles very deep nesting without overflowing the stack", () => {
+    let deep: unknown = "Fast for 3 days";
+    for (let i = 0; i < 50_000; i++) deep = [deep];
+    expect(containsUnsafeCoachAdviceInValue(deep)).toBe(true);
+  });
 });
 
 describe("SYSTEM_PROMPT_BOUNDARY", () => {
@@ -366,5 +598,92 @@ describe("sanitizeContextField", () => {
     const input = "x".repeat(2000);
     const result = sanitizeContextField(input);
     expect(result.length).toBeLessThanOrEqual(1500);
+  });
+});
+
+// Coach Pro releases a reply sentence by sentence, checking the text so far
+// before each release (server/services/coach-sentence-release.ts). That is
+// only sound while no unsafe pattern can match ACROSS a release point — a
+// sentence end followed by whitespace — or a fragment of a match could reach
+// the screen before the rest of it is seen.
+describe("unsafe-advice patterns never span a sentence break", () => {
+  // One known match per pattern, in pattern order. The first assertion is
+  // the control: every example must match its own pattern as written.
+  const DIETARY_EXAMPLES = [
+    "you should eat less than 600 calories",
+    "stick with 700 calories per day",
+    "a daily intake of 700 cal",
+    "aim for 1000 calories",
+    "only eat 900 calories",
+    "you can fast for 3 days",
+    "try a 72-hour water fast",
+    "a water-only fast works",
+    "a dry fast is fine",
+    "pro ana tips",
+    "pro mia tips",
+    "thinspo pictures",
+    "purging can be helpful",
+    "how to induce vomiting",
+    "take 3 laxatives",
+    "buy DNP online",
+    "eliminate all carbs",
+    "a zero carb diet",
+  ];
+  const MEDICAL_EXAMPLES = [
+    "you likely have diabetes",
+    "this means you have prediabetes",
+    "I diagnose you with anemia",
+    "you should stop taking insulin",
+  ];
+  const cases = [
+    ...DANGEROUS_DIETARY_PATTERNS.map(
+      (p, i) => [p, DIETARY_EXAMPLES[i]] as const,
+    ),
+    ...UNSAFE_MEDICAL_ADVICE_PATTERNS.map(
+      (p, i) => [p, MEDICAL_EXAMPLES[i]] as const,
+    ),
+  ];
+  // The release points the splitter allows: terminal punctuation, optionally
+  // closed by quotes, brackets or markdown emphasis, then whitespace.
+  const BREAKS = [". ", "! ", "? ", ".\n", '." ', ".) ", ".** ", ".' "];
+
+  it("has an example for every pattern", () => {
+    expect(DIETARY_EXAMPLES).toHaveLength(DANGEROUS_DIETARY_PATTERNS.length);
+    expect(MEDICAL_EXAMPLES).toHaveLength(
+      UNSAFE_MEDICAL_ADVICE_PATTERNS.length,
+    );
+  });
+
+  it.each(cases)("%s matches its example", (pattern, example) => {
+    expect(pattern.test(example!)).toBe(true);
+  });
+
+  // Put a break at every point inside the matched text — between words and
+  // inside them. A match that survives would straddle a release point.
+  it.each(cases)(
+    "%s stops matching when a break splits it",
+    (pattern, example) => {
+      const match = example!.match(pattern)![0];
+      for (let at = 1; at < match.length; at++) {
+        for (const brk of BREAKS) {
+          const split = match.slice(0, at) + brk + match.slice(at);
+          expect(pattern.test(split), JSON.stringify(split)).toBe(false);
+        }
+      }
+    },
+  );
+
+  it("no pattern uses a token that can match sentence punctuation", () => {
+    // Unescaped ".", negated classes and \S / \W / [\s\S] can all match a
+    // period; a new pattern that needs one must come with a new splitter.
+    const all = [
+      ...DANGEROUS_DIETARY_PATTERNS,
+      ...UNSAFE_MEDICAL_ADVICE_PATTERNS,
+    ];
+    for (const p of all) {
+      expect(p.source, p.source).not.toMatch(
+        /(?<!\\)\.|\[\^|\\S|\\W|\[\\s\\S\]/,
+      );
+    }
   });
 });

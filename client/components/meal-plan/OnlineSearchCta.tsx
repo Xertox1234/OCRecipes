@@ -11,7 +11,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import type { IdeasCtaState } from "@/screens/meal-plan/recipe-browser-utils";
+import type { IdeasCtaState } from "@/components/meal-plan/recipe-browser-utils";
 
 interface OnlineSearchCtaProps {
   state: IdeasCtaState;

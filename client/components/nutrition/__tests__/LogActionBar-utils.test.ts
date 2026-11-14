@@ -19,6 +19,21 @@ describe("deriveLogBarState", () => {
     );
   });
 
+  it("says the values come from the label when the gate is over label values", () => {
+    const state = deriveLogBarState({
+      logGate: {
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+        valuesFromLabel: true,
+      },
+      acknowledged: false,
+      productName: "Vanilla Coca-Cola",
+    });
+    expect(state.accessibilityLabel).toBe(
+      "Review values before logging. These values come from the label you photographed and could not be checked against the product database.",
+    );
+  });
+
   it("shows the log button once acknowledged", () => {
     const state = deriveLogBarState({
       logGate: {

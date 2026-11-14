@@ -22,6 +22,11 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { DeleteAccountModal } from "@/components/DeleteAccountModal";
 import { ChangeEmailModal } from "@/components/ChangeEmailModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
+import { useHealthConsent } from "@/hooks/useHealthConsent";
+import { WITHDRAW_HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
+import { AI_SHARING_OFF_PROMPT } from "@shared/lib/ai-sharing";
+import { useAiSharing } from "@/hooks/useAiSharing";
+import { openAiSharing } from "@/navigation/openAiSharing";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -36,8 +41,13 @@ import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
+import {
+  HEALTH_PRIVACY_POLICY_URL,
+  PRIVACY_POLICY_URL,
+  TERMS_URL,
+} from "@/constants/legal";
 import { formatBuildInfo, toCreatedAtIso } from "./settings-version-utils";
+import { clearImportBrowserData } from "../../modules/webview-site-data";
 import type { MeasurementUnit } from "@shared/lib/units";
 import type { ProfileScreenNavigationProp } from "@/types/navigation";
 
@@ -52,6 +62,7 @@ interface SettingsItemConfig {
   id: string;
   icon: FeatherIconName;
   label: string;
+  subtitle?: string;
   danger?: boolean;
   iosOnly?: boolean;
 }
@@ -65,6 +76,24 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "signInMethods", icon: "key", label: "Sign-in methods" },
   { id: "changeEmail", icon: "mail", label: "Change Email" },
   { id: "exportData", icon: "download", label: "Export My Data" },
+  {
+    id: "clearSiteData",
+    icon: "globe",
+    label: "Clear site data",
+    subtitle: "Sign-ins to recipe sites made in OCRecipes",
+  },
+  {
+    id: "aiSharing",
+    icon: "cpu",
+    label: "AI features",
+    subtitle: "Who receives your data, and turning it on or off",
+  },
+  {
+    id: "withdrawHealthConsent",
+    icon: "shield-off",
+    label: "Withdraw health-data consent",
+    subtitle: "Removes your allergies, conditions and body details",
+  },
   { id: "signout", icon: "log-out", label: "Sign Out" },
   {
     id: "deleteAccount",
@@ -80,8 +109,11 @@ export default function SettingsScreen() {
   const toast = useToast();
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { logout, deleteAccount, changeEmail, user, updateUser } =
+  const { logout, deleteAccount, changeEmail, user, updateUser, checkAuth } =
     useAuthContext();
+  const { consented: healthConsented, withdraw: withdrawHealthConsent } =
+    useHealthConsent();
+  const { status: aiSharingStatus, answer: answerAiSharing } = useAiSharing();
   const { isPremium } = usePremiumContext();
   const measurementUnit = useMeasurementUnit();
 
@@ -248,6 +280,60 @@ export default function SettingsScreen() {
         case "exportData":
           handleExportData();
           break;
+        case "clearSiteData":
+          // Same in-app sheet as sign-out (see below for why not Alert.alert).
+          confirm({
+            title: "Clear site data",
+            message:
+              "This signs you out of any recipe websites you signed in to inside OCRecipes. Your OCRecipes account is not affected.",
+            confirmLabel: "Clear",
+            destructive: true,
+            onConfirm: () => {
+              void clearImportBrowserData().then((cleared) => {
+                if (cleared) toast.success("Site data cleared");
+                else toast.error("Couldn't clear site data");
+              });
+            },
+          });
+          break;
+        case "aiSharing":
+          // Off → the full question, which names the companies. On → confirm,
+          // then stop sending.
+          if (!aiSharingStatus?.allowed) {
+            openAiSharing();
+            break;
+          }
+          confirm({
+            ...AI_SHARING_OFF_PROMPT,
+            onConfirm: () => {
+              answerAiSharing(false).then(
+                () => toast.success("AI features are off"),
+                (err: unknown) => {
+                  logger.error("Turning AI sharing off failed", err);
+                  toast.error("Couldn't turn it off. Please try again.");
+                },
+              );
+            },
+          });
+          break;
+        case "withdrawHealthConsent":
+          confirm({
+            ...WITHDRAW_HEALTH_CONSENT_PROMPT,
+            onConfirm: () => {
+              withdrawHealthConsent().then(
+                () => {
+                  toast.success("Health details removed");
+                  // The cached account still holds the body measurements.
+                  void checkAuth();
+                },
+                (err: unknown) => {
+                  logger.error("Health-data consent withdrawal failed", err);
+                  toast.error("Couldn't withdraw. Please try again.");
+                },
+              );
+            },
+          });
+          break;
         case "signout":
           // In-app ConfirmationModal sheet, NEVER a native Alert.alert: on the
           // CI iOS simulator the UIAlertController renders on screen but is
@@ -285,11 +371,19 @@ export default function SettingsScreen() {
       signInMethods,
       signInMethodsError,
       refetchSignInMethods,
+      toast,
+      withdrawHealthConsent,
+      checkAuth,
+      aiSharingStatus,
+      answerAiSharing,
     ],
   );
 
   const visibleItems = SETTINGS_ITEMS.filter(
-    (item) => !item.iosOnly || Platform.OS === "ios",
+    (item) =>
+      (!item.iosOnly || Platform.OS === "ios") &&
+      // Nothing to withdraw until the consent is on record.
+      (item.id !== "withdrawHealthConsent" || healthConsented),
   );
 
   const openLegalUrl = useCallback(
@@ -373,7 +467,7 @@ export default function SettingsScreen() {
                 onPress={() => handlePress(item.id)}
                 accessibilityLabel={item.label}
                 accessibilityRole="button"
-                accessibilityHint="Tap to open"
+                accessibilityHint={item.subtitle ?? "Tap to open"}
                 style={({ pressed }) => [
                   styles.settingsItem,
                   pressed && { opacity: 0.7 },
@@ -386,14 +480,26 @@ export default function SettingsScreen() {
                     color={item.danger ? theme.error : theme.textSecondary}
                     accessible={false}
                   />
-                  <ThemedText
-                    style={[
-                      styles.settingsLabel,
-                      item.danger && { color: theme.error },
-                    ]}
-                  >
-                    {item.label}
-                  </ThemedText>
+                  <View style={styles.settingsText}>
+                    <ThemedText
+                      style={[
+                        styles.settingsLabel,
+                        item.danger && { color: theme.error },
+                      ]}
+                    >
+                      {item.label}
+                    </ThemedText>
+                    {item.subtitle && (
+                      <ThemedText
+                        style={[
+                          styles.settingsSubtitle,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        {item.subtitle}
+                      </ThemedText>
+                    )}
+                  </View>
                 </View>
                 <View style={styles.settingsItemRight}>
                   {!item.danger && (
@@ -475,6 +581,40 @@ export default function SettingsScreen() {
               accessible={false}
             />
             <ThemedText style={styles.settingsLabel}>Privacy Policy</ThemedText>
+          </View>
+          <Feather
+            name="external-link"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <Pressable
+          onPress={() =>
+            openLegalUrl(
+              HEALTH_PRIVACY_POLICY_URL,
+              "our Consumer Health Data Privacy Policy",
+            )
+          }
+          accessibilityLabel="Consumer Health Data Privacy Policy"
+          accessibilityRole="link"
+          accessibilityHint="Opens our Consumer Health Data Privacy Policy in your browser"
+          style={({ pressed }) => [
+            styles.settingsItem,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <View style={styles.settingsItemLeft}>
+            <Feather
+              name="heart"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
+            <ThemedText style={styles.settingsLabel}>
+              Consumer Health Data Privacy Policy
+            </ThemedText>
           </View>
           <Feather
             name="external-link"
@@ -606,8 +746,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.sm,
   },
+  settingsText: {
+    flex: 1,
+  },
   settingsLabel: {
     fontSize: 15,
+  },
+  settingsSubtitle: {
+    fontSize: 13,
+    marginTop: Spacing.xs,
   },
   unitSectionHeader: {
     flexDirection: "row",

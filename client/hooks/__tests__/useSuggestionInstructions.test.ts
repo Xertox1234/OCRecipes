@@ -75,7 +75,7 @@ describe("useSuggestionInstructions", () => {
     const { wrapper, queryClient } = createQueryWrapper();
     const mockData = { instructions: "cached" };
     queryClient.setQueryData(
-      ["/api/items/1/suggestions/0/instructions", "Test", 42],
+      ["/api/items/1/suggestions/0/instructions", "Test", "recipe", 42],
       mockData,
     );
 
@@ -93,5 +93,41 @@ describe("useSuggestionInstructions", () => {
     );
 
     expect(result.current.data).toEqual(mockData);
+  });
+
+  it("does not serve one suggestionType's cached instructions to another", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockImplementation(
+      (_method: string, _url: string, body: { suggestionType: string }) =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ instructions: `${body.suggestionType} steps` }),
+        }),
+    );
+    const params = {
+      itemId: 1,
+      suggestionIndex: 0,
+      suggestionTitle: "Test",
+      cacheId: 42,
+      enabled: true,
+    };
+
+    const first = renderHook(
+      () => useSuggestionInstructions({ ...params, suggestionType: "recipe" }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(first.result.current.data?.instructions).toBe("recipe steps");
+    });
+
+    const second = renderHook(
+      () => useSuggestionInstructions({ ...params, suggestionType: "craft" }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(second.result.current.data?.instructions).toBe("craft steps");
+    });
+    expect(mockApiRequest).toHaveBeenCalledTimes(2);
   });
 });

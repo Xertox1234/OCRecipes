@@ -5,9 +5,11 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import {
   checkPremiumFeature,
   formatZodError,
+  checkAiSharing,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
@@ -79,8 +81,6 @@ const attachCandidateSchema = z
   .object({ candidateId: z.string().uuid() })
   .strict();
 
-/** Stored cover-studio sets a user may make in any rolling 24 hours. */
-const COVER_SETS_PER_DAY = 15;
 /** Fewer images than this don't replace the user's current set. */
 const MIN_COVER_CANDIDATES = 2;
 
@@ -371,6 +371,8 @@ export function register(app: Express): void {
     cookbookCoverGenerateRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(
@@ -464,7 +466,7 @@ export function register(app: Express): void {
     // createRateLimiter indirection is invisible to its dataflow (see the
     // same pattern on /api/photos/structure-recipe). One set is four paid
     // image calls plus an LLM call, so the cap is per SET: 2/min, user-keyed
-    // with the Railway-aware IP fallback. The daily cap is in the database
+    // with the Railway-aware IP fallback. The daily cap is a database claim
     // (a MemoryStore limiter resets on every deploy) — see the handler.
     rateLimit({
       windowMs: 60 * 1000,
@@ -479,6 +481,8 @@ export function register(app: Express): void {
     }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        // Privacy audit H3: nothing goes to an AI company without the permission.
+        if (!(await checkAiSharing(req, res))) return;
         const parsed = coverCandidatesSchema.safeParse(req.body);
         if (!parsed.success) {
           sendError(
@@ -510,10 +514,16 @@ export function register(app: Express): void {
           return;
         }
 
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // Claimed BEFORE the paid calls, in one atomic step: a count read
+        // here and a row written after the set is stored would let requests
+        // made at the same moment all pass, and would not count a set that
+        // was paid for and then failed to save.
         if (
-          (await storage.countCoverSetsSince(req.userId, since)) >=
-          COVER_SETS_PER_DAY
+          !(await storage.claimDailyAiCall(
+            req.userId,
+            "cookbookCoverSet",
+            AI_DAILY_CAPS.cookbookCoverSet,
+          ))
         ) {
           sendError(
             res,
@@ -580,13 +590,6 @@ export function register(app: Express): void {
           expiresAt: stored.expiresAt,
           promptIgnored: generated.promptIgnored,
         });
-
-        for (const url of stored.replacedUrls) {
-          fireAndForget(
-            "cookbook-cover-candidates-replace-cleanup",
-            deleteImage(url, "cookbook"),
-          );
-        }
       } catch (error) {
         handleRouteError(res, error, "generate cookbook cover candidates");
       }

@@ -74,6 +74,13 @@ jobs:
 
       - name: Mutation-on-diff
         if: steps.select.outputs.run != 'false'
+        # No Postgres here on purpose. server/db.ts throws at import when
+        # DATABASE_URL is unset, so a module whose imports reach it (e.g.
+        # label-override -> barcode-lookup -> storage) never loaded and Stryker
+        # reported "No tests were executed". db.ts builds a lazy pool, so a set
+        # URL is enough; a test that does query fails fast with ECONNREFUSED.
+        env:
+          DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
         run: node scripts/ci/mutation-on-diff.mjs "$RUNNER_TEMP/changed-files.txt"
 
       - name: Upload reports

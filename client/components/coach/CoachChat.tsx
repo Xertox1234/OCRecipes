@@ -1,7 +1,3 @@
-// The rule is still off globally until every batch lands (todo
-// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
-// eslint-disable below counts as used and lint-staged --fix keeps it.
-/* eslint react-hooks/set-state-in-effect: "error" */
 import React, {
   useCallback,
   useEffect,
@@ -22,6 +18,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import type { AllergenId } from "@shared/constants/allergens";
 
 import * as Haptics from "expo-haptics";
 
@@ -31,6 +28,11 @@ import { useTTS } from "@/hooks/useTTS";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
+import OpeningBrief from "@/components/coach/OpeningBrief";
+import MemoryRefsTag from "@/components/coach/MemoryRefsTag";
+import ReportReplyButton from "@/components/coach/ReportReplyButton";
+import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
+import { COACH_BRIEF_KEY } from "@/hooks/useCoachBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -60,7 +62,7 @@ import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { streamBlockEntranceHoldMs } from "@/constants/animations";
+import { blockEntranceTotalMs } from "@/components/coach/blocks/block-entrance";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import {
   useAddFavouriteRecipe,
@@ -71,14 +73,23 @@ import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import type { WriteCardEdits } from "@shared/schemas/coach-write-cards";
+import type { BriefForm, RenderedBrief } from "@shared/lib/opening-brief";
 import {
   parsePlanDays,
   filterValidBlocks,
+  announcedOffset,
+  getStreamFinishAnnouncement,
+  latestLiveWriteCard,
+  lockOlderWriteCards,
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import StreamingBubble from "@/components/coach/StreamingBubble";
+import { JumpToLatestButton } from "@/components/coach/JumpToLatestButton";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { apiRequest } from "@/lib/query-client";
+import { chatMessagesKey } from "@/lib/query-keys";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
@@ -97,6 +108,25 @@ interface CoachChatProps {
   /** Called once a message send has actually committed (after startStream). */
   onMessageSent?: () => void;
   inputBarStyle?: StyleProp<ViewStyle>;
+  /**
+   * The coach's opening brief for a new chat. Shown above an empty chat; the
+   * conversation-creating send tells the server which form was shown, and
+   * the server saves its own copy (the client never sends assistant text).
+   */
+  openingBrief?: {
+    brief: RenderedBrief;
+    form: BriefForm;
+    onShown?: () => void;
+  } | null;
+  /**
+   * The brief's reminder was answered without a message (its Log button
+   * opens Quick Log), so the host clears the reminder as a send would.
+   */
+  onReminderHandled?: () => void;
+  /** A reply finished streaming (the host looks for new notebook saves). */
+  onReplyDone?: () => void;
+  /** The brief's "Not today": the host clears just that reminder type. */
+  onDismissReminder?: (type: "meal-log") => void;
 }
 
 type ChatListItem =
@@ -121,6 +151,10 @@ export default function CoachChat({
   onInitialMessageSent,
   onMessageSent,
   inputBarStyle,
+  openingBrief,
+  onReminderHandled,
+  onReplyDone,
+  onDismissReminder,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -187,6 +221,16 @@ export default function CoachChat({
     setInputTextState(text);
   }, []);
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
+  // Coach write cards (spec 2026-11-09): the user's edits per card, owned
+  // here so the next message can carry the live card's edits to Coach.
+  const [writeCardEdits, setWriteCardEdits] = useState<
+    Record<string, WriteCardEdits>
+  >({});
+  const handleWriteCardEdit = useCallback(
+    (cardId: string, edits: WriteCardEdits) =>
+      setWriteCardEdits((prev) => ({ ...prev, [cardId]: edits })),
+    [],
+  );
   // The latest assistant message id when the footer took the finished
   // reply's blocks. A newer saved message carrying blocks replaces them.
   const [streamBlocksBaseline, setStreamBlocksBaseline] = useState<
@@ -217,11 +261,34 @@ export default function CoachChat({
   const turnEpochRef = useRef(0);
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
+  // The native ScrollView, not the FlatList: the FlatList works the end out
+  // from cached cell and footer sizes, and a commit that grows the last cell
+  // while dropping the footer (a reply's live blocks handing over to the
+  // saved copy) lands before they catch up, so its scrollToEnd stopped short
+  // with Regenerate hidden under the input bar.
+  const stickToBottom = useStickToBottom(
+    () => {
+      const scrollView = listRef.current?.getNativeScrollRef();
+      return isScrollView(scrollView) ? scrollView : null;
+    },
+    { reducedMotion },
+  );
+  const { followLatest } = stickToBottom;
+  // A different conversation opens at its newest message, whatever the
+  // scroll position was in the last one.
+  useEffect(() => {
+    followLatest();
+  }, [conversationId, followLatest]);
   const prevStreamingRef = useRef(false);
   // Set by onDone when the turn produced something to read. An error or a
   // user stop also ends the stream, without a reply: no "Coach responded".
   const replyArrivedRef = useRef(false);
-  const lastAnnouncedIndexRef = useRef(0);
+  // The prefix of the streaming reply already read out on iOS (see
+  // announcedOffset: a safety override replaces it and restarts at 0).
+  const announcedTextRef = useRef("");
+  // The finished reply's display text, so the finish announcement can speak
+  // the last sentence (the per-sentence announcer never reaches it).
+  const finishedTextRef = useRef("");
   const activeConvIdRef = useRef<number | null>(null);
   const usedQuickRepliesRef = useRef<Set<string>>(new Set());
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
@@ -260,6 +327,16 @@ export default function CoachChat({
     stop: ttsStop,
   } = useTTS();
 
+  // A brief send's reminders are cleared by the server; once its turn ends,
+  // refresh the tab dot and the brief so neither shows a cleared reminder.
+  const briefSendRef = useRef(false);
+  const refreshAfterBriefSend = () => {
+    if (!briefSendRef.current) return;
+    briefSendRef.current = false;
+    void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
+    void queryClient.invalidateQueries({ queryKey: COACH_BRIEF_KEY });
+  };
+
   const {
     startStream,
     abortStream,
@@ -268,9 +345,12 @@ export default function CoachChat({
     isStreaming,
   } = useCoachStream({
     onDone: (fullText, blocks) => {
+      refreshAfterBriefSend();
+      onReplyDone?.();
       // A dead-socket abort also lands here, with whatever partial text came.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
+      finishedTextRef.current = fullText;
       // Finder blocks render from the refetched message (with the right
       // active state); keeping them in the footer too would show two lists.
       const liveBlocks = (blocks ?? []).filter(
@@ -289,7 +369,7 @@ export default function CoachChat({
       const after = lastAssistantIdRef.current;
       const epoch = turnEpochRef.current;
       setPendingSave({ after });
-      const queryKey = [`/api/chat/conversations/${convId}/messages`];
+      const queryKey = chatMessagesKey(convId);
       void queryClient.invalidateQueries({ queryKey }).finally(() => {
         if (turnEpochRef.current !== epoch) return;
         // A saved reply is handed over by `turnSaved` in the render that
@@ -303,6 +383,7 @@ export default function CoachChat({
       });
     },
     onError: (_message, code) => {
+      refreshAfterBriefSend();
       // Branch on the machine-readable code, not a `message.startsWith("429")`
       // prefix (the raw "<status>: <body>" wire format). Never render the raw
       // message — it leaks the server response body into the UI / VoiceOver.
@@ -319,7 +400,7 @@ export default function CoachChat({
       const convId = activeConvIdRef.current;
       if (convId !== null) {
         void queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${convId}/messages`],
+          queryKey: chatMessagesKey(convId),
         });
       }
     },
@@ -332,14 +413,21 @@ export default function CoachChat({
 
     if (isStreaming && !wasStreaming) {
       // Streaming just started
-      lastAnnouncedIndexRef.current = 0;
+      announcedTextRef.current = "";
       replyArrivedRef.current = false;
+      finishedTextRef.current = "";
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
     } else if (!isStreaming && wasStreaming && replyArrivedRef.current) {
       // Streaming just finished with a reply. onDone runs in the same tick
       // that clears isStreaming, so the ref is already set when this runs.
       replyArrivedRef.current = false;
-      AccessibilityInfo.announceForAccessibility("Coach responded");
+      AccessibilityInfo.announceForAccessibility(
+        getStreamFinishAnnouncement(
+          finishedTextRef.current,
+          announcedTextRef.current,
+          Platform.OS,
+        ),
+      );
     }
   }, [isStreaming]);
 
@@ -348,17 +436,17 @@ export default function CoachChat({
     if (!isStreaming || !streamingContent) return;
 
     const text = streamingContent;
-    const startIdx = lastAnnouncedIndexRef.current;
+    const startIdx = announcedOffset(text, announcedTextRef.current);
     const remaining = text.slice(startIdx);
 
     const boundaryMatch = remaining.match(/[.?!]\s/);
     if (!boundaryMatch || boundaryMatch.index === undefined) return;
 
     const endIdx = startIdx + boundaryMatch.index + 1;
-    const sentence = text.slice(lastAnnouncedIndexRef.current, endIdx).trim();
+    const sentence = text.slice(startIdx, endIdx).trim();
 
     if (sentence.length > 0) {
-      lastAnnouncedIndexRef.current = endIdx;
+      announcedTextRef.current = text.slice(0, endIdx);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(sentence);
       }
@@ -438,6 +526,24 @@ export default function CoachChat({
     return map;
   }, [messages]);
 
+  // A newer write card locks the older ones (the server already has; this
+  // shows it before the refetch). The footer's blocks count as newest.
+  const { lockedMessageBlocks, lockedStreamBlocks, writeCardLists } =
+    useMemo(() => {
+      const ids = (messages ?? [])
+        .map((m) => m.id)
+        .filter((id) => messageBlocks.has(id));
+      const lists = lockOlderWriteCards([
+        ...ids.map((id) => messageBlocks.get(id) ?? []),
+        streamBlocks,
+      ]);
+      return {
+        lockedMessageBlocks: new Map(ids.map((id, i) => [id, lists[i]])),
+        lockedStreamBlocks: lists[lists.length - 1],
+        writeCardLists: lists,
+      };
+    }, [messages, messageBlocks, streamBlocks]);
+
   // A Coach message generated by the recipe finder carries RecipeChef's
   // top-level recipe metadata (R5), image included (#1158) — render
   // RecipeChef's card, not the recipe_card block (which needs a recipeId and
@@ -486,7 +592,7 @@ export default function CoachChat({
     if (!streamBlocksEntering) return;
     const timer = setTimeout(
       () => setStreamBlocksEntering(false),
-      streamBlockEntranceHoldMs,
+      blockEntranceTotalMs(streamBlocks),
     );
     return () => clearTimeout(timer);
   }, [streamBlocksEntering, streamBlocks]);
@@ -525,6 +631,9 @@ export default function CoachChat({
       }
       setInputText("");
       turnEpochRef.current += 1;
+      // Sending brings the user back to the conversation's end, even if
+      // they had scrolled up to reread.
+      followLatest();
       setPendingSave(null);
       setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(content);
@@ -534,6 +643,8 @@ export default function CoachChat({
       ttsStop();
 
       let convId = conversationId;
+      // Only the send that creates the conversation carries the brief form.
+      const briefForm = !convId && openingBrief ? openingBrief.form : undefined;
       if (!convId) {
         try {
           convId = await onCreateConversation();
@@ -554,11 +665,26 @@ export default function CoachChat({
 
       activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
-      startStream(convId, content, { warmUpId: currentWarmUpId });
+      const live = latestLiveWriteCard(writeCardLists);
+      const liveEdits = live ? writeCardEdits[live.cardId] : undefined;
+      startStream(convId, content, {
+        warmUpId: currentWarmUpId,
+        ...(briefForm && { openingBrief: briefForm }),
+        writeCards: true,
+        ...(live &&
+          liveEdits && { liveCard: { cardId: live.cardId, edits: liveEdits } }),
+      });
       warmUpHook.reset();
-      onMessageSent?.();
+      if (briefForm) {
+        // The server clears reminders after saving the brief; clearing them
+        // from here too would race it and drop the reminder from that copy.
+        briefSendRef.current = true;
+      } else {
+        onMessageSent?.();
+      }
     },
     [
+      openingBrief,
       // inputText intentionally excluded — handleSend reads the latest value
       // from inputTextRef instead so its identity (and every callback that
       // transitively depends on it: handleRetry, handleBlockAction,
@@ -573,6 +699,9 @@ export default function CoachChat({
       onMessageSent,
       setInputText,
       haptics,
+      followLatest,
+      writeCardEdits,
+      writeCardLists,
     ],
   );
 
@@ -590,7 +719,7 @@ export default function CoachChat({
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUserMsg) return;
 
-    const msgQueryKey = [`/api/chat/conversations/${conversationId}/messages`];
+    const msgQueryKey = chatMessagesKey(conversationId);
     const snapshot = queryClient.getQueryData<ChatMessage[]>(msgQueryKey);
     // Both rows go: the question is resent as a new turn, and a cached copy
     // left here would show it twice while the reply regenerates.
@@ -631,7 +760,12 @@ export default function CoachChat({
   const handleBlockAction = useCallback(
     (action: Record<string, unknown>) => {
       if (action.type === "log_food") {
-        void handleSend(`Please log: ${action.description as string}`);
+        // Re-sending "Please log: …" only drew another unsaved proposal from
+        // the coach's log tool, which pointed back at Quick Log — a loop.
+        // Open Quick Log with the food filled in instead.
+        navigation.navigate("QuickLog", {
+          initialText: action.description as string,
+        });
       } else if (action.type === "navigate") {
         const screen = action.screen as string;
         const params = action.params as Record<string, unknown> | undefined;
@@ -707,9 +841,15 @@ export default function CoachChat({
         navigation.navigate("GroceryLists");
       } else if (action.type === "set_goal") {
         navigation.navigate("GoalSetup");
+      } else if (action.type === "add_allergy") {
+        // The editor asks for the severity; nothing is saved until the user
+        // picks one. The allergen id is schema-checked upstream.
+        navigation.navigate("EditDietaryProfile", {
+          addAllergen: action.allergen as AllergenId,
+        });
       }
     },
-    [handleSend, navigation],
+    [navigation],
   );
 
   const handleCommitmentAccept = useCallback(
@@ -764,6 +904,9 @@ export default function CoachChat({
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       turnEpochRef.current += 1;
+      // Sending brings the user back to the conversation's end, even if
+      // they had scrolled up to reread.
+      followLatest();
       setPendingSave(null);
       setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(label);
@@ -772,7 +915,10 @@ export default function CoachChat({
       setIsAtDailyLimit(false);
       ttsStop();
       activeConvIdRef.current = conversationId;
-      startStream(conversationId, label, { finderAction: action });
+      startStream(conversationId, label, {
+        finderAction: action,
+        writeCards: true,
+      });
       onMessageSent?.();
     },
     [
@@ -784,6 +930,7 @@ export default function CoachChat({
       ttsStop,
       startStream,
       onMessageSent,
+      followLatest,
     ],
   );
 
@@ -868,7 +1015,7 @@ export default function CoachChat({
       if (item.type === "message") {
         const msg = item.message;
         const isAssistant = msg.role === "assistant";
-        const savedBlocks = messageBlocks.get(msg.id);
+        const savedBlocks = lockedMessageBlocks.get(msg.id);
         // A finder message's text is the old-client fallback; the block replaces it.
         const hasFinderBlock =
           savedBlocks?.some((b) => isFinderBlockType(b.type)) ?? false;
@@ -888,6 +1035,12 @@ export default function CoachChat({
           !hasFinderBlock &&
           !isHeld &&
           msg.id === lastAssistantMessageId;
+        // Visible memory R1: the server already kept only confirmed ids.
+        const memoryRefBlock = savedBlocks?.find(
+          (b) => b.type === "memory_refs",
+        );
+        const memoryRefIds =
+          memoryRefBlock?.type === "memory_refs" ? memoryRefBlock.ids : null;
         const generated = generatedRecipes.get(msg.id);
         const savedRecipeId =
           savedRecipeIdsRef.current.get(msg.id) ??
@@ -935,9 +1088,16 @@ export default function CoachChat({
                   expiredFinderFlowIds={expiredFinderFlowIds}
                   messageContent={msg.content}
                   adjustChoices={adjustChoices}
+                  writeCardEdits={
+                    block.type === "write_card"
+                      ? writeCardEdits[block.cardId]
+                      : undefined
+                  }
+                  onWriteCardEdit={handleWriteCardEdit}
                 />
               );
             })}
+            {memoryRefIds ? <MemoryRefsTag ids={memoryRefIds} /> : null}
             {generated ? (
               <GeneratedRecipeCard
                 recipe={generated.recipe}
@@ -957,6 +1117,12 @@ export default function CoachChat({
                   void handleFavouriteGeneratedRecipe(msg.id, savedRecipeId)
                 }
               />
+            ) : null}
+            {/* Privacy audit G7: every saved AI reply can be reported, cards
+                and block-only replies included. Not while the footer still
+                shows the rest of this reply. */}
+            {isAssistant && !isHeld ? (
+              <ReportReplyButton messageId={msg.id} />
             ) : null}
             {isRetryTarget && (
               <Pressable
@@ -990,12 +1156,14 @@ export default function CoachChat({
       handleCommitmentAccept,
       handleQuickReply,
       handleRetry,
+      handleWriteCardEdit,
+      lockedMessageBlocks,
+      writeCardEdits,
       showLiveReply,
       isSpeaking,
       speakingMessageId,
       ttsSpeak,
       lastAssistantMessageId,
-      messageBlocks,
       heldReplyId,
       theme.textSecondary,
       finderLocks,
@@ -1021,7 +1189,9 @@ export default function CoachChat({
           streamingContent={streamingContent}
           statusText={statusText}
           isStreaming={showLiveReply}
-          streamBlocks={streamBlocks}
+          streamBlocks={lockedStreamBlocks}
+          writeCardEdits={writeCardEdits}
+          onWriteCardEdit={handleWriteCardEdit}
           onBlockAction={handleBlockAction}
           onQuickReply={handleQuickReply}
           onCommitmentAccept={handleCommitmentAccept}
@@ -1035,6 +1205,9 @@ export default function CoachChat({
       streamingContent,
       statusText,
       streamBlocks,
+      lockedStreamBlocks,
+      writeCardEdits,
+      handleWriteCardEdit,
       handleBlockAction,
       handleQuickReply,
       handleCommitmentAccept,
@@ -1069,16 +1242,6 @@ export default function CoachChat({
     [showHistoryError, refetchMessages, theme.link],
   );
 
-  // The native ScrollView's scrollToEnd, not the FlatList's: the FlatList
-  // works the end out from cached cell and footer sizes, and a commit that
-  // grows the last cell while dropping the footer (a reply's live blocks
-  // handing over to the saved copy) lands here before they catch up, so the
-  // list stopped short with Regenerate hidden under the input bar.
-  const handleContentSizeChange = useCallback(() => {
-    const scrollView = listRef.current?.getNativeScrollRef();
-    if (isScrollView(scrollView)) scrollView.scrollToEnd({ animated: false });
-  }, []);
-
   useEffect(() => {
     return () => {
       abortStream();
@@ -1089,7 +1252,7 @@ export default function CoachChat({
       const convId = activeConvIdRef.current;
       if (convId !== null) {
         void queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${convId}/messages`],
+          queryKey: chatMessagesKey(convId),
           refetchType: "none",
         });
         void queryClient.invalidateQueries({
@@ -1163,6 +1326,32 @@ export default function CoachChat({
     [isAtDailyLimit, theme.textSecondary, theme.link],
   );
 
+  // Until the server's saved copy arrives with the conversation's messages,
+  // the brief draws here; then it is an ordinary assistant message.
+  const showBrief = !!openingBrief && (messages?.length ?? 0) === 0;
+  const briefHeader = showBrief ? (
+    <OpeningBrief
+      brief={openingBrief.brief}
+      onShown={openingBrief.onShown}
+      onSend={(text) => void handleSend(text)}
+      onQuickLog={() => {
+        onReminderHandled?.();
+        navigation.navigate("QuickLog");
+      }}
+      onDismiss={onDismissReminder}
+      onDrop={(id, message) => {
+        // "Drop it": archive the commitment so it stops coming up, then tell
+        // the coach. A failed archive still sends — the coach can follow up.
+        void Promise.resolve(
+          apiRequest("PATCH", `/api/coach/notebook/${id}`, {
+            status: "archived",
+          }),
+        ).catch(() => undefined);
+        void handleSend(message);
+      }}
+    />
+  ) : null;
+
   return (
     <CoachChatBase
       inputText={inputText}
@@ -1187,12 +1376,26 @@ export default function CoachChat({
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         extraData={listExtraData}
+        ListHeaderComponent={briefHeader ?? undefined}
         ListFooterComponent={streamingFooter ?? undefined}
         ListEmptyComponent={historyErrorEmpty ?? undefined}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={handleContentSizeChange}
+        // Follow a streaming reply only while the user is at the bottom;
+        // scrolling up to reread stops it and offers the jump button.
+        onContentSizeChange={stickToBottom.onContentSizeChange}
+        onScroll={stickToBottom.onScroll}
+        onScrollBeginDrag={stickToBottom.onScrollBeginDrag}
+        onScrollEndDrag={stickToBottom.onScrollEndDrag}
+        onMomentumScrollBegin={stickToBottom.onMomentumScrollBegin}
+        onMomentumScrollEnd={stickToBottom.onMomentumScrollEnd}
+        onLayout={stickToBottom.onLayout}
+        scrollEventThrottle={32}
+      />
+      <JumpToLatestButton
+        visible={stickToBottom.showJumpToLatest}
+        onPress={stickToBottom.jumpToLatest}
       />
       <UpgradeModal
         visible={showUpgrade}

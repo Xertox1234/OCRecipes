@@ -11,10 +11,14 @@ export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   for (const block of rawBlocks) {
     // Finder blocks carry flow state the server derives the next step from;
     // a model-authored one would let model output steer the flow.
+    // Write cards likewise: the server builds them from a write tool call
+    // with numbers it resolved itself, so a model-authored one is dropped.
     if (
       typeof block === "object" &&
       block !== null &&
-      isFinderBlockType((block as { type?: unknown }).type)
+      (isFinderBlockType((block as { type?: unknown }).type) ||
+        (block as { type?: unknown }).type === "write_card" ||
+        (block as { type?: unknown }).type === "checked_trail")
     ) {
       logger.debug(
         { type: (block as { type?: unknown }).type },
@@ -83,7 +87,7 @@ When appropriate, you can include structured interactive content blocks in your 
 To do this, add a fenced code block with the language tag \`coach_blocks\` containing a JSON array of block objects.
 
 Available block types:
-- action_card: { type: "action_card", title, subtitle, action: { type: "log_food"|"navigate"|"set_goal"|"add_meal_plan"|"add_grocery_list", ... }, actionLabel }
+- action_card: { type: "action_card", title, subtitle, action: { type: "log_food"|"navigate"|"set_goal"|"add_meal_plan"|"add_grocery_list"|"add_allergy", ... }, actionLabel }
 - suggestion_list: { type: "suggestion_list", items: [{ title, subtitle, action: { type: "navigate", screen, params } | null }] }
 - inline_chart: { type: "inline_chart", chartType: "bar"|"progress"|"stat_row", title, data: [{ label, value, target?, hit? }], summary? }
 - commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }
@@ -99,6 +103,7 @@ Rules:
 - Never put a recipe image or link in your prose reply (no ![]() markdown images, no [text](url) links). Refer to a recipe by its name.
 - Use a recipe_card only when you have real calories, protein and prep time for that recipe from a tool result — search_recipes does not return calories or protein, so never estimate them to fill a card; name the recipe in prose instead. When you do use a recipe_card, put its image URL in the imageUrl field.
 - For nutrition data, use lookup_nutrition tool first for accuracy
+- If the user says they are allergic to peanuts, tree nuts, milk, eggs, wheat, soy, fish, shellfish or sesame and it is not already in their allergies, avoid it in this reply and add one action_card whose action is { "type": "add_allergy", "allergen": "<peanuts|tree_nuts|milk|eggs|wheat|soy|fish|shellfish|sesame>" }, titled like "Add shellfish to your allergies". Never guess the allergy's severity; the user picks it. For any other allergy, avoid it in this conversation and do not say it has been saved
 
 Example response (match this format exactly — prose first, then the fence):
 You're at 1,400 of 2,000 cal with 60g protein still to go — dinner has room for something substantial.
@@ -119,17 +124,34 @@ const FINDER_RECIPE_CARD_RULE =
   "- Never emit a recipe_card: you have no tool that returns real recipe data";
 
 /**
+ * Write-card mode (spec 2026-11-09): the three write tools show their own
+ * card, so the model must not ALSO emit the old navigate-style action cards.
+ */
+const WRITE_CARDS_RULES = [
+  "- Never emit log_food, add_meal_plan or add_grocery_list action cards; the write tools (log_food_item, add_to_grocery_list, add_to_meal_plan) show their own card for the user to check and save. Nothing is saved until the user taps it, so never say something was logged or added.",
+  "- To plan meals, find recipes with find_plan_recipes or get_my_recipes first and pass their ids; offer up to 3 alternatives per row.",
+  "- Food can be logged for today or yesterday only; for an earlier day, tell the user to use Quick Log on the Home screen.",
+].join("\n");
+
+/**
  * BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. `offer`
  * swaps the finder rule for the offer_recipe tool rule.
  */
 export function getBlocksSystemPrompt(
   finderEnabled: boolean,
-  opts: { offer?: boolean } = {},
+  opts: { offer?: boolean; writeCards?: boolean } = {},
 ): string {
-  if (!finderEnabled) return BLOCKS_SYSTEM_PROMPT;
-  // The offer rule REPLACES the finder rule (never appended).
-  return BLOCKS_SYSTEM_PROMPT.replace(
-    SEARCH_RECIPES_RULE,
-    opts.offer ? OFFER_RECIPE_RULE : FINDER_RECIPE_RULE,
-  ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
+  const base = !finderEnabled
+    ? BLOCKS_SYSTEM_PROMPT
+    : // The offer rule REPLACES the finder rule (never appended).
+      BLOCKS_SYSTEM_PROMPT.replace(
+        SEARCH_RECIPES_RULE,
+        opts.offer ? OFFER_RECIPE_RULE : FINDER_RECIPE_RULE,
+      ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
+  if (!opts.writeCards) return base;
+  // Appended to the Rules list (before the example), never replacing a rule.
+  return base.replace(
+    "\n\nExample response",
+    `\n${WRITE_CARDS_RULES}\n\nExample response`,
+  );
 }

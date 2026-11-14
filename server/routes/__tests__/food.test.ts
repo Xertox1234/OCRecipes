@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
 import express from "express";
 import request from "supertest";
@@ -158,6 +158,39 @@ describe("Food Routes", () => {
   });
 
   describe("POST /api/food/transcribe", () => {
+    // Privacy audit M3 (owner ruling 2026-11-10): the route sends audio
+    // straight to OpenAI, which the app does not name as a recipient, and
+    // nothing in the app calls it. It is off unless the flag is set.
+    describe("switched off (the default)", () => {
+      beforeEach(() => {
+        delete process.env.VOICE_TRANSCRIPTION_ENABLED;
+      });
+
+      it("answers 404 and sends no audio anywhere", async () => {
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+
+        const res = await request(app)
+          .post("/api/food/transcribe")
+          .set("Authorization", "Bearer token")
+          .attach("audio", VALID_M4A_HEADER, {
+            filename: "test.m4a",
+            contentType: "audio/m4a",
+          });
+
+        expect(res.status).toBe(404);
+        expect(res.body.code).toBe("NOT_FOUND");
+        expect(transcribeAudio).not.toHaveBeenCalled();
+        expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
+      });
+    });
+
+    beforeEach(() => {
+      process.env.VOICE_TRANSCRIPTION_ENABLED = "true";
+    });
+    afterAll(() => {
+      delete process.env.VOICE_TRANSCRIPTION_ENABLED;
+    });
+
     it("returns 403 for non-premium users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");

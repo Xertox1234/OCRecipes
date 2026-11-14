@@ -104,7 +104,7 @@ only while the flag never flipped.
   prop is absent rather than leaving a future reader to re-add it.
 - `client/components/nutrition/LogActionBar.tsx` — owns the acknowledgement state whose relocation
   made the guard unreachable.
-- `client/screens/nutrition-detail-utils.ts` — `deriveLogGate`, the condition that made the gated
+- `client/components/nutrition/nutrition-detail-utils.ts` — `deriveLogGate`, the condition that made the gated
   screen and the silenced notice the same screen.
 
 ## See Also

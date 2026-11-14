@@ -1,7 +1,7 @@
 import React from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { SlideInRight, SlideInLeft } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { MarkdownText } from "@/components/MarkdownText";
@@ -9,7 +9,7 @@ import { spokenMarkdown } from "@/components/markdown-text-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, FontFamily, BorderRadius } from "@/constants/theme";
-import { chatBubbleEntrySpring } from "@/constants/animations";
+import { chatReplyTextFadeMs, chatSentEntrance } from "@/constants/animations";
 
 interface ChatBubbleProps {
   role: "user" | "assistant" | "system";
@@ -18,7 +18,7 @@ interface ChatBubbleProps {
   isStreaming?: boolean;
   onSpeak?: () => void;
   isSpeaking?: boolean;
-  /** Slide in on mount. Only a live copy sets this (a message just sent,
+  /** Animate in on mount. Only a live copy sets this (a message just sent,
    *  a reply streaming in); saved messages (history, scroll-back, the swap
    *  once a reply is saved) appear in place instead of replaying it. */
   animateEntry?: boolean;
@@ -37,22 +37,17 @@ export function ChatBubble({
 
   if (!content) return null;
 
-  const entering =
-    reducedMotion || !animateEntry
-      ? undefined
-      : isUser
-        ? SlideInRight.springify()
-            .damping(chatBubbleEntrySpring.damping)
-            .mass(chatBubbleEntrySpring.mass)
-            .stiffness(chatBubbleEntrySpring.stiffness)
-            .duration(200)
-        : SlideInLeft.springify()
-            .damping(chatBubbleEntrySpring.damping)
-            .mass(chatBubbleEntrySpring.mass)
-            .stiffness(chatBubbleEntrySpring.stiffness)
-            .delay(100);
+  const animate = animateEntry && !reducedMotion;
 
   if (isUser) {
+    const entering = animate
+      ? FadeInUp.duration(chatSentEntrance.duration)
+          .easing(chatSentEntrance.easing)
+          .withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: chatSentEntrance.rise }],
+          })
+      : undefined;
     return (
       <Animated.View
         entering={entering}
@@ -75,10 +70,11 @@ export function ChatBubble({
     );
   }
 
-  // Assistant — canvas layout: avatar dot + full-width text
+  // Assistant — canvas layout: avatar dot + full-width text. Only the text
+  // fades in; the dot sits exactly where the thinking dot was, so the reply
+  // takes over in place.
   return (
-    <Animated.View
-      entering={entering}
+    <View
       style={[styles.bubbleRow, styles.bubbleRowAssistant]}
       accessible
       accessibilityRole="text"
@@ -87,7 +83,10 @@ export function ChatBubble({
       <View
         style={[styles.avatarDot, { backgroundColor: theme.accentSolid }]}
       />
-      <View style={styles.assistantContent}>
+      <Animated.View
+        entering={animate ? FadeIn.duration(chatReplyTextFadeMs) : undefined}
+        style={styles.assistantContent}
+      >
         <MarkdownText
           style={{ ...styles.assistantBubbleText, color: theme.text }}
         >
@@ -110,8 +109,8 @@ export function ChatBubble({
             />
           </Pressable>
         )}
-      </View>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
 

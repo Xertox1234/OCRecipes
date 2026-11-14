@@ -17,7 +17,7 @@ On Android the "Save to Cookbook" sheet's title runs into the clock and its clos
 
 ## Background
 
-Seen on a Samsung Galaxy A37, Android 16, 2026-10-27, during the modal-toast Android check (`todos/P3-2026-10-18-modal-toast-host-android-check.md`). The three sheets open as `<Modal presentationStyle="pageSheet">`. iOS shows a card below the status bar; Android ignores `pageSheet` and opens a full-screen window, and that window is edge-to-edge (Expo's prebuild warns "Android 16 makes edge-to-edge mandatory" and no longer lets an app opt out). So the sheet's content starts at y=0, under the 101 px status bar. The toast inside these sheets had the same cause and was fixed in `ModalToastHost` (Android keeps the safe-area top); the sheet headers were outside that todo's scope.
+Seen on a Samsung Galaxy A37, Android 16, 2026-10-27, during the modal-toast Android check (`todos/archive/P3-2026-10-18-modal-toast-host-android-check.md`). The three sheets open as `<Modal presentationStyle="pageSheet">`. iOS shows a card below the status bar; Android ignores `pageSheet` and opens a full-screen window, and that window is edge-to-edge (Expo's prebuild warns "Android 16 makes edge-to-edge mandatory" and no longer lets an app opt out). So the sheet's content starts at y=0, under the 101 px status bar. The toast inside these sheets had the same cause and was fixed in `ModalToastHost` (Android keeps the safe-area top); the sheet headers were outside that todo's scope.
 
 The other 8 `<Modal>`s in `client/` are not `pageSheet` and were not checked here.
 

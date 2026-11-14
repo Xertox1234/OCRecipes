@@ -9,7 +9,7 @@ vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_STREAM_MS: 30_000,
 }));
 vi.mock("../coach-tools", () => ({
-  getToolDefinitions: vi.fn().mockReturnValue([
+  getToolDefinitions: vi.fn((opts?: { writeCards?: boolean }) => [
     {
       type: "function",
       function: {
@@ -26,6 +26,18 @@ vi.mock("../coach-tools", () => ({
         parameters: { type: "object", properties: {} },
       },
     },
+    ...(opts?.writeCards
+      ? [
+          {
+            type: "function",
+            function: {
+              name: "find_plan_recipes",
+              description: "d",
+              parameters: { type: "object", properties: {} },
+            },
+          },
+        ]
+      : []),
   ]),
   executeToolCall: vi.fn(),
   MAX_TOOL_CALLS_PER_RESPONSE: 5,
@@ -86,7 +98,9 @@ function createMockStream(
   };
 }
 
-async function toolNamesSent(): Promise<string[]> {
+async function toolNamesSent(
+  options?: Parameters<typeof generateCoachProResponse>[7],
+): Promise<string[]> {
   vi.mocked(aiChat).mockResolvedValue(
     createMockStream([{ content: "hi" }, { finish_reason: "stop" }]) as any,
   );
@@ -95,6 +109,11 @@ async function toolNamesSent(): Promise<string[]> {
     [{ role: "user", content: "hi" }],
     CONTEXT,
     "u1",
+    undefined,
+    undefined,
+    undefined,
+    "UTC",
+    options,
   )) {
     // drain
   }
@@ -120,5 +139,23 @@ describe("Coach Pro tool list vs RECIPE_FINDER_ENABLED", () => {
   it("flag on retires search_recipes (recipe discovery goes only through the finder)", async () => {
     vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
     expect(await toolNamesSent()).toEqual(["lookup_nutrition"]);
+  });
+});
+
+describe("Coach Pro tool list in write-card mode (spec 2026-11-09)", () => {
+  it("writeCards sends the write-card tool list; finder still retires search_recipes", async () => {
+    vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+    expect(await toolNamesSent({ writeCards: true })).toEqual([
+      "lookup_nutrition",
+      "find_plan_recipes",
+    ]);
+  });
+
+  it("without writeCards the list is today's", async () => {
+    vi.stubEnv("RECIPE_FINDER_ENABLED", "");
+    expect(await toolNamesSent({ writeCards: false })).toEqual([
+      "lookup_nutrition",
+      "search_recipes",
+    ]);
   });
 });

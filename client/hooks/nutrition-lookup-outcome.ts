@@ -16,7 +16,6 @@ import { tokenStorage } from "@/lib/token-storage";
 import type { VerificationLevel } from "@shared/types/verification";
 import { barcodeLookupResponseSchema } from "@shared/types/barcode-lookup";
 import {
-  validateAndNormalizeNutrition,
   type ValidatedNutrition,
   type NutritionPer100g,
   type ServingSizeInfo,
@@ -76,18 +75,16 @@ export interface ConflictState {
 // ---------------------------------------------------------------------------
 // Shared mappers — the ONE definition each, replacing three duplicated call
 // sites in the pre-refactor `fetchBarcodeData` (DB leg, label/conflict leg,
-// direct-OFF fallback).
+// and the since-removed direct-OFF fallback).
 // ---------------------------------------------------------------------------
 
 /**
  * Maps any "perServing-shaped" source (the DB response, its nested
- * `conflict.label`, or an OFF product pre-normalized by the caller) into
- * `NutritionData`. Always reads all 11 nutrient fields off `perServing` —
- * OFF's payload only ever populates the first 7, so the remaining 4 come
- * through as `undefined`. That is behaviour-neutral (matches what the
- * pre-refactor OFF-branch literal already produced by omission), but it does
- * mean these objects must never be compared with `toStrictEqual` against a
- * literal that lists only 7 fields.
+ * `conflict.label`) into
+ * `NutritionData`. Always reads all 11 nutrient fields off `perServing`; a
+ * source that populates fewer comes through with the rest `undefined`, so
+ * these objects must never be compared with `toStrictEqual` against a literal
+ * that lists only some fields.
  */
 function toNutritionData(
   src: {
@@ -156,10 +153,10 @@ function correctionNoticeFrom(servingInfo: ServingSizeInfo): string | null {
 /**
  * Every variant carries `labelReadNotice` — it is computed before any branch
  * point (right after the token read) and applies regardless of how the
- * lookup ends. `off-fallback` and `total-outage` carry a REQUIRED
- * `allergenFlag`: the server-side allergen check never ran on either path, so
- * both must fail safe with the "couldn't verify" warn flag. `not-in-database`
- * and `off-not-found` carry NO allergenFlag field at all — current behaviour
+ * lookup ends. `total-outage` carries a REQUIRED `allergenFlag`: the
+ * server-side allergen check never ran, so it must fail safe with the
+ * "couldn't verify" warn flag. `not-in-database` and `not-found` carry NO
+ * allergenFlag field at all — current behaviour
  * is "no product ⇒ no flag" (pinned by characterization tests, not endorsed
  * as correct; there is simply no product to warn about yet).
  */
@@ -204,17 +201,7 @@ export type LookupOutcome =
       nutrition: NutritionData;
     }
   | {
-      kind: "off-fallback";
-      labelReadNotice: string | null;
-      nutrition: NutritionData;
-      validatedData: ValidatedNutrition;
-      servingSizeGrams: number | null;
-      isPer100g: boolean;
-      correctionNotice: string | null;
-      allergenFlag: ScanFlag;
-    }
-  | {
-      kind: "off-not-found";
+      kind: "not-found";
       labelReadNotice: string | null;
       nutrition: NutritionData;
       error: string;
@@ -237,8 +224,7 @@ export type LookupOutcome =
  * `controller.signal.aborted` once, after this promise settles, before
  * applying the outcome. Threading the signal into the network calls too
  * would need an abort check in both catch layers below to keep a genuine
- * user-initiated abort from being misclassified as an OFF-fallback or
- * total-outage.
+ * user-initiated abort from being misclassified as a total-outage.
  */
 export async function lookupBarcode(
   code: string,
@@ -249,8 +235,7 @@ export async function lookupBarcode(
   let labelReadNotice: string | null = null;
   // Distinguishes "the server responded but its 200 body failed schema
   // validation" from a genuine network/connectivity failure, so the
-  // OFF-fallback and total-outage branches below can pick copy that doesn't
-  // falsely claim we couldn't reach the service.
+  // total-outage copy doesn't falsely claim we couldn't reach the service.
   let serverResponseInvalid = false;
   // The server answered 503: every upstream source errored. That is an
   // outage, not an unknown product — the terminal copy must say "try again".
@@ -263,7 +248,7 @@ export async function lookupBarcode(
       const url = new URL(`/api/nutrition/barcode/${code}`, baseUrl);
       // `labelReadNotice` is computed AFTER this await — a token-read throw
       // (e.g. a keychain failure) lands in this try's catch (warn, then the
-      // OFF fallback) with the notice still null: no label copy was decided.
+      // total outage) with the notice still null: no label copy was decided.
       const token = await tokenStorage.get();
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -408,7 +393,8 @@ export async function lookupBarcode(
         };
       }
 
-      // Server returned an error — check if it's a definitive "not in database".
+      // Server returned an error. A 404 means our server has no such product
+      // (`notInDatabase` additionally opens the manual search).
       if (serverRes.status === 404) {
         try {
           const errData = await serverRes.json();
@@ -420,8 +406,14 @@ export async function lookupBarcode(
             };
           }
         } catch {
-          // Couldn't parse error body — fall through to OFF.
+          // Couldn't parse the error body — still a 404.
         }
+        return {
+          kind: "not-found",
+          labelReadNotice,
+          nutrition: { productName: "Unknown Product", barcode: code },
+          error: "Product not found in database",
+        };
       }
       if (serverRes.status === 503) {
         serverLookupUnavailable = true;
@@ -431,90 +423,23 @@ export async function lookupBarcode(
       // above (and set `serverResponseInvalid`) — it is not a connectivity
       // failure, so it must not also emit the network-outage warn.
       if (!serverResponseInvalid) {
-        logger.warn(
-          "Server barcode lookup unavailable, falling back to OFF:",
-          err,
-        );
+        logger.warn("Server barcode lookup unavailable:", err);
       }
     }
 
-    // ── Fallback: direct Open Food Facts (when server is unreachable) ──
-    const response = await fetch(
-      `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
-    );
-    const data = await response.json();
-
-    if (data.status === 1 && data.product) {
-      const product = data.product;
-      const validated = validateAndNormalizeNutrition(product, code);
-
-      // NOT `?? 100` / `?? 0` — see `useNutritionLookup.ts` history for the
-      // full rationale (an unparseable or zero serving is an absence of data,
-      // not a real basis).
-      const trustedGrams = validated.servingInfo.grams;
-      const servingSizeGrams =
-        trustedGrams != null && trustedGrams > 0 ? trustedGrams : null;
-      const isPer100g = computeIsPer100g(
-        validated.isServingDataTrusted,
-        validated.servingInfo.wasCorrected,
-      );
-      const correctionNotice = correctionNoticeFrom(validated.servingInfo);
-
-      const nutrition = toNutritionData(
-        {
-          productName: product.product_name || "Unknown Product",
-          brandName: product.brands,
-          imageUrl: product.image_url || product.image_front_url,
-          perServing: validated.perServing,
-          servingInfo: validated.servingInfo,
-        },
-        code,
-      );
-
-      // The server-side allergen check never ran for this product (network
-      // error, 5xx, malformed 200, or a non-notInDatabase 404) — fail-safe,
-      // not fail-open: a "couldn't verify" warn flag instead of a silently
-      // clean-looking `flags: []`.
-      return {
-        kind: "off-fallback",
-        labelReadNotice,
-        nutrition,
-        validatedData: validated,
-        servingSizeGrams,
-        isPer100g,
-        correctionNotice,
-        allergenFlag: createAllergenUnavailableFlag({
-          detail: serverResponseInvalid
-            ? "Our service sent back information we couldn't understand, so these values come from a backup source — check the package label."
-            : "We couldn't reach our service to check this against your allergies — check the package label.",
-        }),
-      };
-    }
-
-    // The direct-OFF miss is not proof of absence when our server said every
-    // source was down — show retry copy, not the unknown-product message.
-    if (serverLookupUnavailable) {
-      return {
-        kind: "total-outage",
-        labelReadNotice,
-        nutrition: { productName: "Unknown Product", barcode: code },
-        error: LOOKUP_UNAVAILABLE_COPY,
-        allergenFlag: createAllergenUnavailableFlag({
-          detail:
-            "We couldn't reach our product sources to check this against your allergies — check the package label.",
-        }),
-      };
-    }
-
-    return {
-      kind: "off-not-found",
-      labelReadNotice,
-      nutrition: { productName: "Unknown Product", barcode: code },
-      error: "Product not found in database",
-    };
+    // Privacy audit M1: there is no direct Open Food Facts fallback — calling
+    // a third party from the phone exposed the user's IP address. Every
+    // non-product answer from our server is classified from that answer
+    // alone. The server-side allergen check never ran, so fail safe with a
+    // "couldn't verify" flag rather than a clean-looking `flags: []`.
+    return totalOutage();
   } catch {
-    // Total outage: server AND the direct-OFF fallback both failed, so we
-    // genuinely couldn't check this against the user's allergies.
+    // Unreachable in practice (the server leg catches its own throws), kept so
+    // lookupBarcode stays total.
+    return totalOutage();
+  }
+
+  function totalOutage(): LookupOutcome {
     return {
       kind: "total-outage",
       labelReadNotice,
@@ -523,9 +448,11 @@ export async function lookupBarcode(
         ? LOOKUP_UNAVAILABLE_COPY
         : "Failed to fetch product data",
       allergenFlag: createAllergenUnavailableFlag({
-        detail: serverResponseInvalid
-          ? "Our service sent back information we couldn't understand, and we couldn't reach a backup source either — check the package label."
-          : "We couldn't reach our service to check this against your allergies — check the package label.",
+        detail: serverLookupUnavailable
+          ? "We couldn't reach our product sources to check this against your allergies — check the package label."
+          : serverResponseInvalid
+            ? "Our service sent back information we couldn't understand, so we couldn't check this against your allergies — check the package label."
+            : "We couldn't reach our service to check this against your allergies — check the package label.",
       }),
     };
   }
@@ -590,8 +517,7 @@ export interface LookupState {
    * grams — so the server has to say so.
    *
    * False on every path that falls back to database values the label never
-   * touched (server unreachable, non-`notInDatabase` 404, direct-OFF
-   * fallback, total outage) — every `LookupOutcome` variant except
+   * touched (server unreachable, any 404, total outage) — every `LookupOutcome` variant except
    * `server-ok`/`server-ok-conflict` leaves it at its `INITIAL_LOOKUP_STATE`
    * default via `lookupStateFromOutcome`, so a lookup that never reaches the
    * server-ok branch can never inherit a PRIOR lookup's `true`. Drives
@@ -690,18 +616,7 @@ export function lookupStateFromOutcome(outcome: LookupOutcome): LookupState {
         nutrition: outcome.nutrition,
         showManualSearch: true,
       };
-    case "off-fallback":
-      return {
-        ...INITIAL_LOOKUP_STATE,
-        labelReadNotice: outcome.labelReadNotice,
-        nutrition: outcome.nutrition,
-        flags: [outcome.allergenFlag],
-        validatedData: outcome.validatedData,
-        servingSizeGrams: outcome.servingSizeGrams,
-        isPer100g: outcome.isPer100g,
-        correctionNotice: outcome.correctionNotice,
-      };
-    case "off-not-found":
+    case "not-found":
       return {
         ...INITIAL_LOOKUP_STATE,
         labelReadNotice: outcome.labelReadNotice,
