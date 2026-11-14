@@ -44,15 +44,24 @@ function extractIngredientLines(response: string): string | null {
 // Words that, earlier in the same clause, mean the allergen is being named
 // to steer the user away from it ("without peanuts", "avoid almonds").
 const AVOID_LEAD =
-  /\b(?:without(?! (?:a|any) doubt)|avoid(?:ing|s)?|skip(?:ping)?|steer clear of|no|never|free of|excluding|omit(?:ting)?|allergic to|allergy to|watch out for|beware of|check (?:the )?labels? for|don't (?:eat|have|use))\b/i;
+  /\b(?:without(?! (?:a|any) doubt)|avoid(?:ing|s)?|skip(?:ping)?|steer clear of|no|never (?:eat|have|use)|free of|excluding|omit(?:ting)?|allergic to|allergy to|watch out for|beware of|check (?:the )?labels? for|don't (?:eat|have|use))\b/i;
 // Words that flip the clause back to a suggestion ("avoid sugar, but try X").
 const SUGGEST_WORD =
   /\b(?:but|instead|try|eat|have|enjoy|choose|opt for|use|snack on|swap in|add)\b/i;
 // What may follow the allergen when it is named only as a warning.
+// A negation right before an avoid word turns it into a suggestion
+// ("don't skip X", "never avoid X").
+const NEGATION_BEFORE =
+  /\b(?:don['’]?t|do not|doesn['’]?t|does not|shouldn['’]?t|should not|never|not|no need to)\s+$/i;
 const AVOID_TAIL =
   /^\w*[\s-]+(?:free\b|cross[- ]?contamination|cross[- ]?contact)/i;
 
-function isAvoidanceMention(text: string, start: number, end: number): boolean {
+function isAvoidanceMention(
+  text: string,
+  start: number,
+  end: number,
+  forbidden: RegExp[],
+): boolean {
   if (AVOID_TAIL.test(text.slice(end))) return true;
   const clauseStart =
     Math.max(
@@ -65,7 +74,21 @@ function isAvoidanceMention(text: string, start: number, end: number): boolean {
   const lead = text.slice(clauseStart, start);
   const avoid = AVOID_LEAD.exec(lead);
   if (!avoid) return false;
+  if (NEGATION_BEFORE.test(lead.slice(0, avoid.index))) return false;
   const between = lead.slice(avoid.index + avoid[0].length);
+  // A bare "no" is often an interjection ("No problem, X is great"): it only
+  // does not count when a comma sits between it and the allergen.
+  // A list of forbidden items is the exception ("no peanuts, almonds"): every
+  // comma-separated part before the allergen must itself be a forbidden item.
+  if (/^no$/i.test(avoid[0]) && between.includes(",")) {
+    const parts = between
+      .split(",")
+      .map((part) => part.replace(/^\s*(?:or|and)\b/i, "").trim())
+      .filter(Boolean);
+    if (!parts.every((part) => forbidden.some((re) => re.test(part)))) {
+      return false;
+    }
+  }
   // The allergen must follow the avoid word closely: at most two plain words
   // (commas and parentheses allowed), so "no better snack than X" or
   // "avoid chips - X works well" still count as suggestions.
@@ -75,10 +98,16 @@ function isAvoidanceMention(text: string, start: number, end: number): boolean {
 }
 
 /** True when `regex` matches `text` somewhere other than an avoidance mention. */
-function hasNonAvoidanceMatch(regex: RegExp, text: string): boolean {
+function hasNonAvoidanceMatch(
+  regex: RegExp,
+  text: string,
+  forbidden: RegExp[],
+): boolean {
   const global = new RegExp(regex.source, "gi");
   for (const m of text.matchAll(global)) {
-    if (!isAvoidanceMention(text, m.index, m.index + m[0].length)) return true;
+    if (!isAvoidanceMention(text, m.index, m.index + m[0].length, forbidden)) {
+      return true;
+    }
   }
   return false;
 }
@@ -109,13 +138,21 @@ export function runAssertions(
     const ingredientLines = extractIngredientLines(response);
     const mustNotContainTarget = ingredientLines ?? response;
 
-    for (const pattern of assertions.mustNotContain) {
-      const regex = safeCompile(pattern);
+    // Compiled once: the list also tells the avoidance check which words are
+    // forbidden items ("no peanuts, almonds").
+    const compiled = assertions.mustNotContain.map((pattern) => ({
+      pattern,
+      regex: safeCompile(pattern),
+    }));
+    const forbidden = compiled
+      .map((c) => c.regex)
+      .filter((re): re is RegExp => re !== null);
+    for (const { pattern, regex } of compiled) {
       if (!regex) {
         failures.push(`Invalid mustNotContain regex: "${pattern}"`);
         continue;
       }
-      if (hasNonAvoidanceMatch(regex, mustNotContainTarget)) {
+      if (hasNonAvoidanceMatch(regex, mustNotContainTarget, forbidden)) {
         failures.push(`Response contains forbidden pattern: "${pattern}"`);
       }
     }
