@@ -53,6 +53,8 @@ Deferred, not fixed in the audit, because a shared allergen keyword change follo
 
 - Code done: "pie crust", "pizza dough", "brioche" and "brioches" are direct-tier wheat keywords; `WHEAT_TERMS_MISSING_FROM_SHARED` is removed. Criteria 1–3 met.
 - Still open (criterion 4, owner): prod allergen backfill, then a server restart; an OTA for the client list. This todo stays open until those run.
+- Owner asked ("Batch") for the unambiguous common wheat foods in one more PR before the backfill, so the chain runs once: breads, pasta shapes, pastry, wrappers, freekeh, plus "shellfish"/"crustacean". The "Make gluten-free" remix chip now uses the whole-word matcher.
+- Left out, owner's call (the name also covers gluten-free dishes, or was not in the approved groups): cake, cookie, muffin, biscuit, cereal, granola, gravy, stuffing, toast, sandwich, rolls, pancake mix, waffle, crepe, wafer, cone, pie shell, tart shell, breading, roux, soba, lo mein, vermicelli, graham, rusk.
 
 ### 2026-11-06
 

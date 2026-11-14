@@ -936,7 +936,6 @@ describe("wheat foods named by a crust, a dough or brioche", () => {
     "crustacean stock",
     "almond crust",
     "cauliflower crust",
-    "doughnut",
     "play dough",
   ])("does not flag wheat for %s", (ingredient) => {
     const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
@@ -948,4 +947,133 @@ describe("wheat foods named by a crust, a dough or brioche", () => {
       deriveRecipeAllergens(["gluten-free pie crust"]).map((a) => a.id),
     ).toContain("wheat");
   });
+});
+
+// A probe of common wheat foods (2026-11-14) found most were not named, so a
+// recipe whose only wheat source was a bagel or penne could show the
+// gluten-free icon. Owner asked for the unambiguous ones in one batch. Foods
+// whose name also covers gluten-free dishes ("cake", "cookie", "muffin",
+// "biscuit", "cereal", "gravy", "stuffing", "toast") are deliberately absent.
+describe("common wheat foods (owner batch 2026-11-14)", () => {
+  it.each([
+    // Breads
+    "bagel",
+    "2 bagels",
+    "sourdough",
+    "sourdough starter",
+    "ciabatta",
+    "focaccia",
+    "challah",
+    "flatbread",
+    "flatbreads",
+    "hamburger bun",
+    "hot dog buns",
+    "dinner rolls",
+    "matzo",
+    "matzah",
+    "matzoh meal",
+    "pretzel",
+    "pretzels",
+    "english muffins",
+    // Pasta
+    "penne",
+    "fettuccine",
+    "fettuccini",
+    "linguine",
+    "linguini",
+    "cheese ravioli",
+    "tortellini",
+    "lasagna sheets",
+    "lasagne",
+    "gnocchi",
+    "rigatoni",
+    "fusilli",
+    "tagliatelle",
+    "pappardelle",
+    "farfalle",
+    "ziti",
+    "rotini",
+    "cannelloni",
+    "manicotti",
+    // Pastry and baking
+    "pastry",
+    "puff pastry",
+    "pastries",
+    "phyllo dough",
+    "filo pastry",
+    "pizza crust",
+    "pizza base",
+    "biscotti",
+    "shortbread",
+    "scone",
+    "scones",
+    "doughnut",
+    "doughnuts",
+    "donut",
+    "donuts",
+    "strudel",
+    // Wrappers
+    "dumpling",
+    "dumpling wrappers",
+    "dumplings",
+    "wonton wrappers",
+    "wontons",
+    "gyoza",
+    "potsticker",
+    "potstickers",
+    "egg roll wrappers",
+    // Grain
+    "freekeh",
+    "wheatberries",
+    "1 cup wheatberry salad",
+    // Plurals: single-word keywords match whole words only.
+    "2 strudels",
+    "matzos",
+    "matzahs",
+    "ciabattas",
+    "focaccias",
+    "challahs",
+    "lasagnas",
+    "gyozas",
+    "shortbreads",
+  ])("flags wheat in the direct tier for %s", (ingredient) => {
+    expect(deriveRecipeAllergens([ingredient])).toContainEqual({
+      id: "wheat",
+      viaDerived: false,
+    });
+  });
+
+  // Whole-word matching keeps the short keywords off longer words.
+  it.each([
+    "1 bunch cilantro",
+    "bundt pan spray",
+    "filet mignon",
+    "pastrami",
+    "rice paper wrappers",
+    "spring roll rice paper",
+    "rice cake",
+    "corn muffin mix",
+    "scallions",
+  ])("does not flag wheat for %s", (ingredient) => {
+    const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
+    expect(ids).not.toContain("wheat");
+  });
+
+  it("over-flags 'gluten-free penne' (accepted, safe direction)", () => {
+    expect(
+      deriveRecipeAllergens(["gluten-free penne"]).map((a) => a.id),
+    ).toContain("wheat");
+  });
+});
+
+describe("shellfish named as a group", () => {
+  it.each(["crustacean stock", "crustaceans", "shellfish stock", "shellfish"])(
+    "flags shellfish in the direct tier for %s",
+    (ingredient) => {
+      expect(deriveRecipeAllergens([ingredient])).toContainEqual({
+        id: "shellfish",
+        viaDerived: false,
+      });
+    },
+  );
 });
