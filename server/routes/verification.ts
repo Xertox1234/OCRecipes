@@ -198,7 +198,6 @@ export function register(app: Express): void {
             if (detection.shouldFlag) {
               logger.info(
                 {
-                  barcode,
                   divergentCount: detection.divergentCount,
                   distinctUsers: detection.distinctUsers,
                 },

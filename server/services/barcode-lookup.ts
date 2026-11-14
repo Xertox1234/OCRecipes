@@ -442,10 +442,7 @@ export async function lookupBarcode(
       const json = await res.json();
       if (json.status === 0) offAnswered = true;
       else if (!res.ok) {
-        log.warn(
-          { variant },
-          "Open Food Facts returned a non-OK response without a status",
-        );
+        log.warn("Open Food Facts returned a non-OK response without a status");
         continue;
       }
       if (json.status === 1 && json.product) {
@@ -458,7 +455,7 @@ export async function lookupBarcode(
         break;
       }
     } catch (err) {
-      log.warn({ err: toError(err), variant }, "Open Food Facts fetch error");
+      log.warn({ err: toError(err) }, "Open Food Facts fetch error");
     }
   }
 
@@ -573,7 +570,7 @@ export async function lookupBarcode(
     boundOffPer100g(offPer100gRaw);
   if (offDroppedFields.length > 0) {
     log.warn(
-      { barcode: code, dropped: offDroppedFields },
+      { dropped: offDroppedFields },
       "implausible OFF per-100g values dropped",
     );
   }
@@ -722,7 +719,6 @@ export async function lookupBarcode(
           // return a match we can normalize.
           log.warn(
             {
-              barcode: code,
               match: cnfResult.name,
               servingSize: cnfResult.servingSize,
             },
@@ -767,7 +763,6 @@ export async function lookupBarcode(
           // and the source label keeps its plain form.
           log.warn(
             {
-              barcode: code,
               source: secondary.source,
               servingSize: secondary.servingSize,
             },
@@ -813,7 +808,7 @@ export async function lookupBarcode(
       if (process.env.NODE_ENV !== "production") {
         throw new Error(message);
       }
-      log.error({ barcode: code, secondarySource, secondaryPer100g }, message);
+      log.error({ secondarySource, secondaryPer100g }, message);
     }
     resolvedProductName = usdaByUPC.product.name;
     resolvedBrandName = usdaByUPC.brandName || undefined;
@@ -834,7 +829,6 @@ export async function lookupBarcode(
     if (!usdaPer100g) {
       log.warn(
         {
-          barcode: code,
           servingSize: usdaByUPC.product.servingSize,
         },
         "USDA-by-UPC nutrition dropped — serving size has no gram basis",
