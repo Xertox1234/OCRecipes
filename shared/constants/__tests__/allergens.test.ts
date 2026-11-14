@@ -895,3 +895,57 @@ describe("gluten and dairy keyword gaps (owner ruling 2026-10-17)", () => {
     ).toContain("wheat");
   });
 });
+
+// A recipe whose only wheat source was one of these carried no wheat entry, so
+// it could show the gluten-free icon. The recipe wizard caught them with a
+// private list until the shared list named them.
+describe("wheat foods named by a crust, a dough or brioche", () => {
+  it.each([
+    "pie crust",
+    "pie crusts",
+    "1 refrigerated pie crust",
+    "pizza dough",
+    "store-bought pizza dough",
+    "brioche",
+    "brioches",
+    "brioche buns",
+    "4 slices brioche",
+  ])("flags wheat in the direct tier for %s", (ingredient) => {
+    expect(deriveRecipeAllergens([ingredient])).toContainEqual({
+      id: "wheat",
+      viaDerived: false,
+    });
+  });
+
+  it("flags them for a mild wheat allergy (direct tier)", () => {
+    const matches = detectAllergens(
+      ["pie crust", "pizza dough", "brioche"],
+      [{ name: "wheat", severity: "mild" }],
+    );
+    expect(matches.map((m) => m.ingredientName)).toEqual([
+      "pie crust",
+      "pizza dough",
+      "brioche",
+    ]);
+    expect(matches.every((m) => !m.isDerived)).toBe(true);
+  });
+
+  // Bare "crust" and "dough" are not keywords: they would flag "almond crust"
+  // and "cauliflower crust".
+  it.each([
+    "crustacean stock",
+    "almond crust",
+    "cauliflower crust",
+    "doughnut",
+    "play dough",
+  ])("does not flag wheat for %s", (ingredient) => {
+    const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
+    expect(ids).not.toContain("wheat");
+  });
+
+  it("over-flags 'gluten-free pie crust' (accepted, safe direction)", () => {
+    expect(
+      deriveRecipeAllergens(["gluten-free pie crust"]).map((a) => a.id),
+    ).toContain("wheat");
+  });
+});
