@@ -1,6 +1,6 @@
 ---
 title: "Community recipe delete removes its image without the shared-reference check"
-status: backlog
+status: done
 priority: low
 created: 2026-11-12
 updated: 2026-11-12
@@ -31,10 +31,10 @@ owner deferred it from the audit PR.
 
 ## Acceptance Criteria
 
-- [ ] A failing test first: a community recipe and a meal-plan recipe share an image URL; deleting
+- [x] A failing test first: a community recipe and a meal-plan recipe share an image URL; deleting
       the community recipe must leave the image in place.
-- [ ] Both call sites delete only URLs that `filterUnreferencedImageUrls` returns.
-- [ ] The delete still happens inside storage, after the commit (owner ruling 2026-11-06: R2
+- [x] Both call sites delete only URLs that `filterUnreferencedImageUrls` returns.
+- [x] The delete still happens inside storage, after the commit (owner ruling 2026-11-06: R2
       deletes stay in storage — do not move them to callers).
 
 ## Implementation Notes
@@ -63,3 +63,7 @@ owner deferred it from the audit PR.
 ### 2026-11-12
 
 - Initial creation (security audit 2026-11-12, finding L13)
+
+### 2026-11-12
+
+- Implemented: both call sites now go through deleteImagesIfUnreferenced. Community image URLs are server-generated and no path copies them into a meal plan today, so the shared case is defensive (the documented rule).

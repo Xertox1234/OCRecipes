@@ -20,7 +20,7 @@ import {
 } from "../lib/search-index";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
 import { deriveRecipeDietConflicts } from "@shared/constants/diet-conflicts";
-import { deleteImage } from "../lib/image-store";
+import { deleteImagesIfUnreferenced } from "./account-images";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
@@ -213,10 +213,11 @@ export async function updateCommunityRecipeImageUrl( // idor-safe: internal back
   // The replaced object is orphaned (durable, billed) — clean it up
   // fire-and-forget. In practice this patcher fills a NULL imageUrl, so the
   // delete is usually a no-op; the "recipe" kind scopes it to recipe-images/.
+  // Only unreferenced images go: a meal-plan recipe may share the URL.
   if (existing?.imageUrl && existing.imageUrl !== imageUrl) {
     fireAndForget(
       "community-recipe-image-replace-cleanup",
-      deleteImage(existing.imageUrl, "recipe"),
+      deleteImagesIfUnreferenced([{ url: existing.imageUrl, kind: "recipe" }]),
     );
   }
 }
@@ -454,10 +455,15 @@ export async function deleteCommunityRecipe(
     removeFromIndex(`community:${recipeId}`);
     // Delete the stored image object AFTER the tx commits (rollback safety)
     // and fire-and-forget — an object-store failure must not break the
-    // deletion. The "recipe" kind scopes the delete to recipe-images/ keys.
+    // deletion. The "recipe" kind scopes the delete to recipe-images/ keys, and
+    // an image another row still references is kept.
     fireAndForget(
       "community-recipe-image-cleanup",
-      deleteImage(deletedRow.imageUrl, "recipe"),
+      deleteImagesIfUnreferenced(
+        deletedRow.imageUrl
+          ? [{ url: deletedRow.imageUrl, kind: "recipe" }]
+          : [],
+      ),
     );
   }
   return deletedRow !== null;
