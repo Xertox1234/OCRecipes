@@ -1,9 +1,9 @@
 ---
 title: "Notebook extractor reads coach turns as well as user turns — decide whether model text may become a stored note"
-status: backlog
+status: done
 priority: low
 created: 2026-11-12
-updated: 2026-11-12
+updated: 2026-11-14
 assignee:
 labels: [deferred, security]
 github_issue:
@@ -27,10 +27,10 @@ user", and every later conversation reads it back.
 
 ## Acceptance Criteria
 
-- [ ] Read `server/services/notebook-extraction.ts:150-165` and state which roles reach the
+- [x] Read `server/services/notebook-extraction.ts:150-165` and state which roles reach the
       extractor prompt.
 - [ ] A test shows whether an instruction-like sentence in a coach turn can become a stored entry.
-- [ ] If it can: either pass user turns only, or mark coach turns as context that must not be
+- [x] If it can: either pass user turns only, or mark coach turns as context that must not be
       extracted from, with a test. If it cannot: close with the evidence.
 
 ## Implementation Notes
@@ -58,3 +58,14 @@ user", and every later conversation reads it back.
 ### 2026-11-12
 
 - Initial creation (security audit 2026-11-12, finding L2)
+
+### 2026-11-14
+
+- Roles: user and coach turns both reach the extractor, as a JSON array of `{speaker, text}`;
+  system turns are filtered out. The prompt had no rule limiting entries to user turns.
+- Owner decision (2026-11-14): keep coach turns as context, forbid extracting from them.
+- Done: two prompt rules plus tests for the wording and for coach turns still being sent.
+- Second criterion NOT met as written: no test ran against a real model, so whether an
+  instruction-like coach sentence became a stored entry before, or still can, is unmeasured. The
+  mocked tests prove what is sent, not what the model does. The rule narrows the loop; it does
+  not close it.
