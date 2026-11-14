@@ -11,7 +11,70 @@ import {
   SYSTEM_PROMPT_BOUNDARY,
   DANGEROUS_DIETARY_PATTERNS,
   UNSAFE_MEDICAL_ADVICE_PATTERNS,
+  isFlatModelRefusal,
+  SAFETY_REFUSAL_FALLBACK_MESSAGE,
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
 } from "../ai-safety";
+
+describe("isFlatModelRefusal", () => {
+  it.each([
+    "I'm sorry, but I cannot assist with that request.",
+    "Sorry, I can't help with that.",
+    "I cannot assist with that.",
+    "  I'm sorry, but I can't assist with that request.\n",
+  ])("detects a bare refusal: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(true);
+  });
+
+  it.each([
+    "",
+    "Here is a plan. I cannot assist with allergies beyond what you listed, but a dietitian can help you plan a safe week of meals and snacks for you.",
+    "That sounds really hard. Please talk to a doctor or registered dietitian.",
+  ])("leaves a real reply alone: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(false);
+  });
+
+  // A refusal that goes on to point somewhere, or to stay with the user, is
+  // already the reply we want. Replacing it could delete a crisis line.
+  it.each([
+    "I can't help with that, but please call 988.",
+    "I can't help with that, but I'm here for you.",
+    "I can't help with that - call 988",
+    "I can't help with that — call 988.",
+    "I can't help with that but please call 988",
+    "I can't help with that; please call a crisis line.",
+    "I can't help with that: please talk to a doctor.",
+    "I'm sorry, I can't help with that but a doctor can.",
+  ])("leaves a refusal that carries a referral alone: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(false);
+  });
+
+  it.each([
+    "I can't help you with that.",
+    "I can't do that",
+    "I am unable to assist with this request.",
+    "I won’t help with that!",
+  ])("still detects other bare forms: %s", (text) => {
+    expect(isFlatModelRefusal(text)).toBe(true);
+  });
+
+  it("the fallback has empathy and a professional referral", () => {
+    expect(SAFETY_REFUSAL_FALLBACK_MESSAGE).toMatch(/dietitian/i);
+    expect(SAFETY_REFUSAL_FALLBACK_MESSAGE).toMatch(/doctor|healthcare/i);
+  });
+
+  it("the crisis fallback leads with urgent help and says nothing about food", () => {
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).toMatch(/emergency/i);
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).toMatch(/crisis line/i);
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).not.toMatch(
+      /\b(?:eat|eating|ate|food|diet|dietitian|calories?|meals?|weight)\b/i,
+    );
+    expect(isFlatModelRefusal(SAFETY_CRISIS_FALLBACK_MESSAGE)).toBe(false);
+    expect(containsUnsafeCoachAdvice(SAFETY_CRISIS_FALLBACK_MESSAGE)).toBe(
+      false,
+    );
+  });
+});
 
 describe("sanitizeUserInput", () => {
   it("passes through normal food descriptions unchanged", () => {

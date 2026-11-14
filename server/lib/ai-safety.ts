@@ -220,6 +220,36 @@ export const STANDARD_SAFETY_MESSAGE =
   "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
 
 /**
+ * Shown, and saved, in place of a bare model refusal on a safety-sensitive
+ * turn (distress, disordered eating): warm, and names who can help.
+ */
+export const SAFETY_REFUSAL_FALLBACK_MESSAGE =
+  "That sounds really hard, and I'm glad you said it out loud. I can't help with making up for what you ate, and you don't need to. Eating doesn't have to be undone or earned back. If this feels hard to carry, please talk to a doctor or a registered dietitian who can support you. If you ever feel unsafe, contact local emergency services or a crisis line right away.";
+
+/**
+ * Shown, and saved, in place of a bare model refusal when the user wrote
+ * about suicide or self-harm: urgent help first, and nothing about food.
+ */
+export const SAFETY_CRISIS_FALLBACK_MESSAGE =
+  "I'm really glad you told me. I'm not able to help with this myself, but you deserve support right now. If you are in danger or think you might act on these thoughts, please call your local emergency number now. You can also call or text a crisis line at any time to talk with someone. If you can, tell someone you trust how you are feeling.";
+
+/**
+ * A reply that is only the model's own "I can't help with that". The ending
+ * is a closed list ("you", "with", "that/this/it", "request"), so a refusal
+ * that goes on to anything else, such as "..., but please call a crisis
+ * line", does not match and is kept. A miss leaves the model's reply as it
+ * was; a wrong match would delete a referral.
+ */
+const FLAT_REFUSAL_RE =
+  /^(?:i['’]?m\s+)?(?:sorry|apologi[sz]e)?[,.\s]*(?:but\s+)?i\s+(?:can(?:'|’)?t|cannot|can\s+not|am\s+unable\s+to|won(?:'|’)?t)\s+(?:assist|help|comply|provide|do)(?:\s+you)?(?:\s+with)?(?:\s+(?:that|this|it))?(?:\s+request)?[.!]?$/i;
+
+/** True when the whole reply is a bare "I can't help with that" refusal. */
+export function isFlatModelRefusal(text: string): boolean {
+  const t = text.trim();
+  return t.length > 0 && t.length <= 120 && FLAT_REFUSAL_RE.test(t);
+}
+
+/**
  * Sanitize a screen context field for safe inclusion in AI system prompts.
  * Strips zero-width Unicode characters, control chars, and injection patterns.
  * Preserves intentional newlines but removes other invisible characters.

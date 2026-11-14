@@ -666,3 +666,25 @@ describe("matchesDisorderedEating", () => {
     expect(matchesDisorderedEating("is oat milk ok")).toBe(false);
   });
 });
+
+describe("matchesSelfHarm", () => {
+  it.each([
+    "I've been thinking about suicide",
+    "I feel suicidal tonight",
+    "I want to self-harm",
+    "thinking about self harm",
+    "I want to throw up and I am thinking about suicide",
+  ])("is true for self-harm or suicide: %s", async (text) => {
+    const { matchesSelfHarm } = await import("../coach-intent-classifier");
+    expect(matchesSelfHarm(text)).toBe(true);
+  });
+
+  it.each([
+    "I want to purge after dinner",
+    "I feel disgusting. I want to throw up to undo those calories",
+    "is oat milk ok",
+  ])("is false for an eating-only or ordinary message: %s", async (text) => {
+    const { matchesSelfHarm } = await import("../coach-intent-classifier");
+    expect(matchesSelfHarm(text)).toBe(false);
+  });
+});

@@ -25,7 +25,12 @@ import {
   SAFETY_OVERRIDE_SENTINEL,
   type CoachContext,
 } from "./nutrition-coach";
-import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
+import {
+  classifyIntent,
+  matchesDisorderedEating,
+  matchesSelfHarm,
+  type CoachIntent,
+} from "./coach-intent-classifier";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "./coach-blocks";
 import { buildTrail, plainStatusLabel, toolStep } from "./coach-step-labels";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
@@ -33,6 +38,9 @@ import {
   sanitizeContextField,
   containsUnsafeCoachAdvice,
   STANDARD_SAFETY_MESSAGE,
+  SAFETY_REFUSAL_FALLBACK_MESSAGE,
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
+  isFlatModelRefusal,
 } from "../lib/ai-safety";
 import {
   buildWriteCardPayload,
@@ -795,6 +803,29 @@ export async function* handleCoachChat(
       fullResponse += chunk;
       yield { type: "content", content: chunk };
     }
+  }
+
+  // The model itself sometimes answers a safety-sensitive turn (distress,
+  // disordered eating) with only a bare refusal. Replace it like an unsafe
+  // reply: the client swaps what it showed, and the supportive text is saved.
+  if (
+    !safetyOverridden &&
+    intent === "safety_refusal" &&
+    !isAborted() &&
+    isFlatModelRefusal(fullResponse)
+  ) {
+    // Suicide or self-harm comes first, and gets the crisis message even when
+    // the same message also mentions purging. The warm fallback is worded for
+    // distress about eating; other safety turns (medical, injection, ...) get
+    // the generic referral message.
+    const replacement = matchesSelfHarm(content)
+      ? SAFETY_CRISIS_FALLBACK_MESSAGE
+      : matchesDisorderedEating(content)
+        ? SAFETY_REFUSAL_FALLBACK_MESSAGE
+        : STANDARD_SAFETY_MESSAGE;
+    fullResponse = replacement;
+    safetyOverridden = true;
+    yield { type: "safety_override", message: replacement };
   }
 
   // Parse blocks from response for Coach Pro
