@@ -32,7 +32,7 @@ Two separate traps:
 `boundedNumericStringField(max, { nullable? })` in `server/routes/_schemas.ts`:
 
 - `z.preprocess` trims strings and maps a blank string to absent.
-- `z.union([z.number(), z.string().regex(/^\d*\.?\d+(e[-+]?\d+)?$/i).transform(Number)])` — only a number or a decimal string (the exponent form is what `Number#toString` writes for tiny values).
+- `z.union([z.number(), z.string().regex(/^(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?$/i).transform(Number)])` — only a number or a decimal string (the exponent form is what `Number#toString` writes for tiny values).
 - `.pipe(z.number().finite().min(0).max(max))`, then `.toString()`.
 - Per-field caps come from `NUTRITION_CAPS` in `shared/constants/nutrition.ts` (calories 50,000, macros 5,000 g, sodium 100,000 mg, servings 999.99).
 

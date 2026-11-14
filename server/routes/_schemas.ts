@@ -38,8 +38,12 @@ const blankToAbsent = (v: unknown) => {
  * Number#toString writes very small/large values) is a number here. Never
  * z.coerce.number() on its own: it is Number(v), which turns null, true, []
  * and "0x10" into numbers and stores a silent 0 kcal.
+ *
+ * Each alternative starts differently, so the match is linear. The earlier
+ * form `\d*\.?\d+` backtracked quadratically on a long digit run with one bad
+ * character: a 40 KB string took 1.6 s and blocked the event loop.
  */
-const DECIMAL_STRING = /^\d*\.?\d+(e[-+]?\d+)?$/i;
+const DECIMAL_STRING = /^(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?$/i;
 
 /**
  * Zod schema for a decimal column sent as a string or number: a finite number

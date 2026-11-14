@@ -81,4 +81,26 @@ describe("boundedNumericStringField", () => {
     expect(perServing.parse(undefined)).toBeNull();
     expect(perServing.safeParse(5_001).success).toBe(false);
   });
+
+  // The pattern must not backtrack: a long digit run with one bad character
+  // used to take seconds per field and block the event loop for every user.
+  it("rejects a 40,000-digit string with a trailing letter quickly", () => {
+    const field = boundedNumericStringField(5_000);
+    const input = "1".repeat(40_000) + "x";
+    const started = performance.now();
+    const result = field.safeParse(input);
+    const elapsedMs = performance.now() - started;
+    expect(result.success).toBe(false);
+    expect(elapsedMs).toBeLessThan(200);
+  });
+
+  it("accepts the same decimal forms as before", () => {
+    const field = boundedNumericStringField(5_000);
+    for (const ok of ["7", "7.5", ".5", "1e2", "1.5E+2", "5e-1"]) {
+      expect(field.safeParse(ok).success, ok).toBe(true);
+    }
+    for (const bad of ["7.", ".", "e5", "1e", "1.2.3", "0x10", "-1", "+1"]) {
+      expect(field.safeParse(bad).success, bad).toBe(false);
+    }
+  });
 });
