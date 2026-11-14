@@ -103,9 +103,10 @@ export async function createNotebookEntries(
 }
 
 /**
- * Rows `refreshRepeats` compares against, newest first. Bounds the read so it
- * does not grow with a user's whole notebook history; a fact rejected so long
- * ago that it falls outside the window may be saved again.
+ * Active rows `refreshRepeats` compares against, newest first. Bounds that
+ * read so it does not grow with a user's whole notebook history; an active
+ * fact outside the window can be saved as a second row. Rejected rows are
+ * not bounded: see `refreshRepeats`.
  */
 export const REPEAT_SCAN_LIMIT = 200;
 
@@ -114,30 +115,41 @@ export const REPEAT_SCAN_LIMIT = 200;
  * the existing entry instead of piling up a duplicate, and a fact the user
  * rejected (Undo / Remove) is never re-saved. Returns the entries still to
  * insert. Matching: same user and type, `sameTip` on normalised text.
+ *
+ * Every rejected row is read, with no limit, so a rejection holds however
+ * many rows came after it. A row is rejected only by the user's own action,
+ * so that set stays small. Active rows are read up to `REPEAT_SCAN_LIMIT`.
  */
 async function refreshRepeats(
   entries: InsertCoachNotebookEntry[],
 ): Promise<InsertCoachNotebookEntry[]> {
   const userIds = [...new Set(entries.map((e) => e.userId))];
   const types = [...new Set(entries.map((e) => e.type))];
-  const existing = await db
-    .select({
-      id: coachNotebook.id,
-      userId: coachNotebook.userId,
-      type: coachNotebook.type,
-      content: coachNotebook.content,
-      status: coachNotebook.status,
-    })
+  const columns = {
+    id: coachNotebook.id,
+    userId: coachNotebook.userId,
+    type: coachNotebook.type,
+    content: coachNotebook.content,
+    status: coachNotebook.status,
+  };
+  const scope = [
+    inArray(coachNotebook.userId, userIds),
+    inArray(coachNotebook.type, types),
+  ];
+  // One after the other: this can run on a transaction client, which takes
+  // one query at a time.
+  const rejected = await db
+    .select(columns)
     .from(coachNotebook)
-    .where(
-      and(
-        inArray(coachNotebook.userId, userIds),
-        inArray(coachNotebook.type, types),
-        inArray(coachNotebook.status, ["active", "rejected"]),
-      ),
-    )
+    .where(and(...scope, eq(coachNotebook.status, "rejected")));
+  const active = await db
+    .select(columns)
+    .from(coachNotebook)
+    .where(and(...scope, eq(coachNotebook.status, "active")))
     .orderBy(desc(coachNotebook.updatedAt))
     .limit(REPEAT_SCAN_LIMIT);
+  // Rejected first: when a fact matches both, the rejection wins.
+  const existing = [...rejected, ...active];
   const toRefresh: number[] = [];
   const fresh: InsertCoachNotebookEntry[] = [];
   for (const entry of entries) {

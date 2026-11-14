@@ -151,7 +151,7 @@ describe("Coach Notebook Storage", () => {
       );
     });
 
-    it("scans a bounded, recency-ordered window when matching repeats", async () => {
+    it("bounds the scan of active rows but never forgets a rejected fact", async () => {
       const day = 24 * 60 * 60 * 1000;
       const rows: (typeof coachNotebook.$inferInsert)[] = Array.from(
         { length: REPEAT_SCAN_LIMIT + 5 },
@@ -164,7 +164,16 @@ describe("Coach Notebook Storage", () => {
           updatedAt: new Date(Date.now() - (i + 1) * day),
         }),
       );
-      // Oldest row, outside the window: a rejected fact.
+      // An active fact older than every filler row, outside the window.
+      rows.push({
+        userId: testUser.id,
+        type: "insight" as const,
+        content: "Likes very spicy curry",
+        status: "active",
+        dedupeKey: "old-active",
+        updatedAt: new Date(Date.now() - 9_000 * day),
+      });
+      // Oldest row of all: a fact the user rejected long ago.
       rows.push({
         userId: testUser.id,
         type: "insight" as const,
@@ -195,7 +204,8 @@ describe("Coach Notebook Storage", () => {
       ]);
       expect(result).toEqual([]);
 
-      const beyond = await createNotebookEntries([
+      // The user's Undo / Remove holds however many rows came after it.
+      const oldRejected = await createNotebookEntries([
         {
           userId: testUser.id,
           type: "insight",
@@ -204,7 +214,20 @@ describe("Coach Notebook Storage", () => {
           dedupeKey: "again-old",
         },
       ]);
-      expect(beyond).toHaveLength(1);
+      expect(oldRejected).toEqual([]);
+
+      // The active scan stays bounded: a match outside the window is not
+      // seen, so the fact is saved as a new row.
+      const oldActive = await createNotebookEntries([
+        {
+          userId: testUser.id,
+          type: "insight",
+          content: "Likes very spicy curry",
+          status: "active",
+          dedupeKey: "again-old-active",
+        },
+      ]);
+      expect(oldActive).toHaveLength(1);
     });
 
     it("does not warn when all entries have a dedupeKey", async () => {
