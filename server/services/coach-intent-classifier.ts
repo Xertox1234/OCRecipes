@@ -65,7 +65,9 @@ const PROLONGED_STARVATION = new RegExp(
  * coach hears a lot of food talk that shares the words: "this diet is
  * killing me", "to die for", "I cut myself chopping onions". "hurt / harm /
  * cut myself" therefore needs an intent verb in front, and "don't want to
- * live" must not run on into "on salads" / "without bread".
+ * live" must not run on into "on salads" / "off shakes". That veto is
+ * kept to those two words on purpose: "like this", "with this pain" and
+ * "without him" are how people say it, and over-matching is the safe side.
  */
 const SELF_HARM_RE = new RegExp(
   [
@@ -77,7 +79,7 @@ const SELF_HARM_RE = new RegExp(
     "\\bwant\\s+to\\s+die\\b",
     "\\bwish\\s+i\\s+(?:was|were)\\s+dead\\b",
     "\\bbetter\\s+off\\s+(?:dead|without\\s+me)\\b",
-    "\\b(?:don['’]?t|do\\s+not)\\s+want\\s+to\\s+(?:be\\s+alive\\b|live\\b(?!\\s+(?:on|off|with|without|in|like|for)\\b))",
+    "\\b(?:don['’]?t|do\\s+not)\\s+want\\s+to\\s+(?:be\\s+alive\\b|live\\b(?!\\s+(?:on|off)\\b))",
     "\\b(?:want(?:ed)?|going|plan(?:ning)?|thinking\\s+(?:of|about))\\s+(?:to\\s+)?(?:hurt|harm|cut)(?:t?ing)?\\s+my\\s?self\\b",
   ].join("|"),
   "i",
