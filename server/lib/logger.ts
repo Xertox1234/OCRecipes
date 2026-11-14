@@ -38,8 +38,12 @@ export const logger = rootLogger;
  *
  * @example
  * const log = createServiceLogger("nutrition-lookup");
- * log.info({ barcode }, "starting lookup");
- * // → { service: "nutrition-lookup", requestId: "...", barcode: "...", msg: "starting lookup" }
+ * log.info({ cacheHit: true }, "lookup finished");
+ * // → { service: "nutrition-lookup", requestId: "...", userId: "...", cacheHit: true, msg: "lookup finished" }
+ *
+ * The mixin adds userId to every in-request line, so a field that names what
+ * the user scanned, ate or typed (a barcode, a food name) is tied to them.
+ * Keep such fields out of info, warn and error lines.
  */
 export function createServiceLogger(service: string): pino.Logger {
   return logger.child({ service });
