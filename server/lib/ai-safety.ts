@@ -229,9 +229,13 @@ export const SAFETY_REFUSAL_FALLBACK_MESSAGE =
 /**
  * Shown, and saved, in place of a bare model refusal when the user wrote
  * about suicide or self-harm: urgent help first, and nothing about food.
+ * The server has no country for a user, so the message names the national
+ * line for each launch country: 988 (US and Canada, call or text) and Línea
+ * de la Vida (Mexico, call). Checked 2026-11-14 against samhsa.gov,
+ * canada.ca and gob.mx/conasama; re-check before adding a country.
  */
 export const SAFETY_CRISIS_FALLBACK_MESSAGE =
-  "I'm really glad you told me. I'm not able to help with this myself, but you deserve support right now. If you are in danger or think you might act on these thoughts, please call your local emergency number now. You can also call or text a crisis line at any time to talk with someone. If you can, tell someone you trust how you are feeling.";
+  "I'm really glad you told me. I'm not able to help with this myself, but you deserve support right now. If you are in danger or think you might act on these thoughts, please call your local emergency number now. You can also call or text a crisis line at any time to talk with someone. In the US or Canada, call or text 988. In Mexico, call Línea de la Vida at 800 911 2000. If you can, tell someone you trust how you are feeling.";
 
 /**
  * A reply that is only the model's own "I can't help with that". The ending
