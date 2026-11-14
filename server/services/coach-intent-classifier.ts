@@ -82,8 +82,9 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     name: "medication_glp1",
   },
   {
-    // Disordered eating / self-harm signals
-    pattern: /(throw up|purge|vomit|self.?harm|suicide)/i,
+    // Disordered eating / self-harm signals. "suicid" is a stem: it covers
+    // "suicide" and "suicidal".
+    pattern: /(throw up|purge|vomit|self.?harm|suicid)/i,
     name: "disordered_eating",
   },
   {
