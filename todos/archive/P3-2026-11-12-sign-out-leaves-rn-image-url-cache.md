@@ -1,6 +1,6 @@
 ---
 title: "Sign-out does not clear pictures loaded with react-native's own Image"
-status: backlog
+status: done
 priority: low
 created: 2026-11-12
 updated: 2026-11-12
@@ -50,3 +50,7 @@ expo-image's `contentFit` replaces `resizeMode` (it accepts `resizeMode` as a co
 ### 2026-11-12
 
 - Initial creation (deferred from PR #1850).
+
+### 2026-11-14
+
+- Moved the three Image users that load remote pictures (ProfileScreen collapsed avatar, ProfileCard avatar, RecipeDetailContent canonical gallery) to expo-image. The other nine importers show bundled assets or local captures and stay on react-native. `client/lib/image-compression.ts` also imports Image (`getSize` on local captures only); left.
