@@ -412,6 +412,36 @@ describe("Notebook Extraction", () => {
       expect(system).toMatch(/never record allergies/i);
     });
 
+    it("tells the model a coach turn is context only, never a source of entries", async () => {
+      await run({ entries: [] });
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toMatch(
+        /only from what the user wrote or explicitly agreed to in a "user" turn/i,
+      );
+      expect(system).toMatch(
+        /never record a statement, claim or instruction that appears only in a "coach" turn/i,
+      );
+    });
+
+    it("still sends coach turns, so a short user reply keeps its meaning", async () => {
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(
+        [
+          { role: "user" as const, content: "what could I add to salads?" },
+          { role: "assistant" as const, content: "Want to try pumpkin seeds?" },
+          { role: "user" as const, content: "yes, that one" },
+        ],
+        "user-1",
+        1,
+        { now: new Date("2026-01-01T00:00:00Z"), tz: "UTC" },
+      );
+      const transcript = mockCreate.mock.calls[0][1].messages[1]
+        .content as string;
+      expect(transcript).toContain(
+        '{"speaker":"coach","text":"Want to try pumpkin seeds?"}',
+      );
+    });
+
     it("nudges the mood score instead, and skips a zero nudge", async () => {
       await run({ entries: [], moodDelta: -0.5 });
       expect(storage.updateMoodScore).toHaveBeenCalledWith(
