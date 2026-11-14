@@ -74,6 +74,21 @@ describe("isFlatModelRefusal", () => {
       false,
     );
   });
+
+  it("the crisis fallback gives the national number for each launch country", () => {
+    // US 988 Lifeline and Canada 9-8-8 take calls and texts; Mexico's Línea
+    // de la Vida is a call line.
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).toContain(
+      "In the US or Canada, call or text 988.",
+    );
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE).toContain(
+      "In Mexico, call Línea de la Vida at 800 911 2000.",
+    );
+    // The emergency-number sentence still comes first.
+    expect(SAFETY_CRISIS_FALLBACK_MESSAGE.indexOf("emergency")).toBeLessThan(
+      SAFETY_CRISIS_FALLBACK_MESSAGE.indexOf("988"),
+    );
+  });
 });
 
 describe("sanitizeUserInput", () => {
