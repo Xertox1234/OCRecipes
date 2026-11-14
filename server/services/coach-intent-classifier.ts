@@ -68,6 +68,9 @@ const PROLONGED_STARVATION = new RegExp(
  * live" must not run on into "on salads" / "off shakes". That veto is
  * kept to those two words on purpose: "like this", "with this pain" and
  * "without him" are how people say it, and over-matching is the safe side.
+ * "cut myself" also stops short of "a slice", "some slack" and "off from
+ * sugar", but only for those named continuations: "cut myself a little"
+ * and "cut myself a lot" still match.
  */
 const SELF_HARM_RE = new RegExp(
   [
@@ -80,7 +83,7 @@ const SELF_HARM_RE = new RegExp(
     "\\bwish\\s+i\\s+(?:was|were)\\s+dead\\b",
     "\\bbetter\\s+off\\s+(?:dead|without\\s+me)\\b",
     "\\b(?:don['’]?t|do\\s+not)\\s+want\\s+to\\s+(?:be\\s+alive\\b|live\\b(?!\\s+(?:on|off)\\b))",
-    "\\b(?:want(?:ed)?|going|plan(?:ning)?|thinking\\s+(?:of|about))\\s+(?:to\\s+)?(?:hurt|harm|cut)(?:t?ing)?\\s+my\\s?self\\b",
+    "\\b(?:want(?:ed)?|going|plan(?:ning)?|thinking\\s+(?:of|about))\\s+(?:to\\s+)?(?:(?:hurt|harm)(?:ing)?\\s+my\\s?self\\b|cut(?:ting)?\\s+my\\s?self\\b(?!\\s+(?:(?:a|an|some)\\s+(?:\\w+\\s+)?(?:slice|piece|portion|serving|wedge|slack|break)|off|loose|free)\\b))",
   ].join("|"),
   "i",
 );
