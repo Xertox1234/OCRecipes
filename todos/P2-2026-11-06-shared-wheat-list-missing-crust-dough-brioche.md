@@ -49,6 +49,11 @@ Deferred, not fixed in the audit, because a shared allergen keyword change follo
 
 ## Updates
 
+### 2026-11-14
+
+- Code done: "pie crust", "pizza dough", "brioche" and "brioches" are direct-tier wheat keywords; `WHEAT_TERMS_MISSING_FROM_SHARED` is removed. Criteria 1–3 met.
+- Still open (criterion 4, owner): prod allergen backfill, then a server restart; an OTA for the client list. This todo stays open until those run.
+
 ### 2026-11-06
 
 - Initial creation (data-integrity audit 2026-11-05, M3 review follow-up)

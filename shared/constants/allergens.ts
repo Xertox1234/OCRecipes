@@ -280,6 +280,14 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "stout",
       "soy sauce",
       "teriyaki",
+      // Wheat foods named by their form. Bare "crust" and "dough" stay out:
+      // they would flag "almond crust" and "cauliflower crust". The two-word
+      // entries match by substring, so "gluten-free pie crust" over-flags;
+      // accepted (safe direction).
+      "pie crust",
+      "pizza dough",
+      "brioche",
+      "brioches",
     ],
     derivedIngredients: [
       "gluten",
