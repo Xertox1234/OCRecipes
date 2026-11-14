@@ -1024,6 +1024,18 @@ describe("common wheat foods (owner batch 2026-11-14)", () => {
     "egg roll wrappers",
     // Grain
     "freekeh",
+    "wheatberries",
+    "1 cup wheatberry salad",
+    // Plurals: single-word keywords match whole words only.
+    "2 strudels",
+    "matzos",
+    "matzahs",
+    "ciabattas",
+    "focaccias",
+    "challahs",
+    "lasagnas",
+    "gyozas",
+    "shortbreads",
   ])("flags wheat in the direct tier for %s", (ingredient) => {
     expect(deriveRecipeAllergens([ingredient])).toContainEqual({
       id: "wheat",
