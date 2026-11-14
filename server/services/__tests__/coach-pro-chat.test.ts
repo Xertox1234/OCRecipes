@@ -32,6 +32,7 @@ import { fireAndForget } from "../../lib/fire-and-forget";
 import {
   sanitizeContextField,
   SAFETY_REFUSAL_FALLBACK_MESSAGE,
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
 } from "../../lib/ai-safety";
 import { extractNotebookEntries } from "../notebook-extraction";
 import { civilDateToInstant } from "../../lib/civil-date";
@@ -595,6 +596,68 @@ describe("handleCoachChat", () => {
         expect(SAFETY_REFUSAL_FALLBACK_MESSAGE).toMatch(/dietitian/i);
       },
     );
+
+    // The eating-focused text would be wrong, and could read as dismissive,
+    // for someone who wrote about suicide or self-harm.
+    it.each([
+      [false, "I've been thinking about suicide"],
+      [true, "I've been thinking about suicide"],
+      [false, "I want to self-harm"],
+      [false, "I keep thinking about self harm"],
+      // Both kinds of signal: the crisis message wins.
+      [false, "I want to throw up and I am thinking about suicide"],
+    ])(
+      "uses the crisis message for self-harm or suicide (pro=%s): %s",
+      async (isCoachPro, content) => {
+        vi.mocked(generateCoachResponse).mockReturnValue(fakeStream([REFUSAL]));
+        vi.mocked(generateCoachProResponse).mockReturnValue(
+          fakeProStream([REFUSAL]),
+        );
+        vi.mocked(parseBlocksFromContent).mockImplementation(
+          (text: string) => ({ text, blocks: [] }),
+        );
+        const events = await collectEvents(
+          handleCoachChat(makeParams({ isCoachPro, content })),
+        );
+
+        expect(events).toContainEqual({
+          type: "safety_override",
+          message: SAFETY_CRISIS_FALLBACK_MESSAGE,
+        });
+        expect(storage.createChatMessage).toHaveBeenCalledWith(
+          1,
+          "user-42",
+          "assistant",
+          SAFETY_CRISIS_FALLBACK_MESSAGE,
+          null,
+        );
+      },
+    );
+
+    it("keeps a reply that already carries a referral", async () => {
+      const WITH_REFERRAL = "I can't help with that, but please call 988.";
+      vi.mocked(generateCoachResponse).mockReturnValue(
+        fakeStream([WITH_REFERRAL]),
+      );
+
+      const events = await collectEvents(
+        handleCoachChat(
+          makeParams({
+            isCoachPro: false,
+            content: "I've been thinking about suicide",
+          }),
+        ),
+      );
+
+      expect(events.some((e) => e.type === "safety_override")).toBe(false);
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        WITH_REFERRAL,
+        null,
+      );
+    });
 
     it("uses the generic referral on a safety turn that is not distress", async () => {
       vi.mocked(generateCoachResponse).mockReturnValue(fakeStream([REFUSAL]));

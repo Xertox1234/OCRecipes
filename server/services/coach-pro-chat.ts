@@ -28,6 +28,7 @@ import {
 import {
   classifyIntent,
   matchesDisorderedEating,
+  matchesSelfHarm,
   type CoachIntent,
 } from "./coach-intent-classifier";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "./coach-blocks";
@@ -38,6 +39,7 @@ import {
   containsUnsafeCoachAdvice,
   STANDARD_SAFETY_MESSAGE,
   SAFETY_REFUSAL_FALLBACK_MESSAGE,
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
   isFlatModelRefusal,
 } from "../lib/ai-safety";
 import {
@@ -812,11 +814,15 @@ export async function* handleCoachChat(
     !isAborted() &&
     isFlatModelRefusal(fullResponse)
   ) {
-    // The warm fallback is worded for distress; other safety turns (medical,
-    // injection, ...) get the generic referral message.
-    const replacement = matchesDisorderedEating(content)
-      ? SAFETY_REFUSAL_FALLBACK_MESSAGE
-      : STANDARD_SAFETY_MESSAGE;
+    // Suicide or self-harm comes first, and gets the crisis message even when
+    // the same message also mentions purging. The warm fallback is worded for
+    // distress about eating; other safety turns (medical, injection, ...) get
+    // the generic referral message.
+    const replacement = matchesSelfHarm(content)
+      ? SAFETY_CRISIS_FALLBACK_MESSAGE
+      : matchesDisorderedEating(content)
+        ? SAFETY_REFUSAL_FALLBACK_MESSAGE
+        : STANDARD_SAFETY_MESSAGE;
     fullResponse = replacement;
     safetyOverridden = true;
     yield { type: "safety_override", message: replacement };

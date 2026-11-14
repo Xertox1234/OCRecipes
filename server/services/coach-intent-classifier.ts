@@ -269,6 +269,15 @@ export function matchesDisorderedEating(text: string): boolean {
 }
 
 /**
+ * True when a message names suicide or self-harm. It picks which safety
+ * message a turn gets once the turn is already routed to safety; it does not
+ * route. The stem also covers "suicidal".
+ */
+export function matchesSelfHarm(text: string): boolean {
+  return /(?:self.?harm|suicid)/i.test(text);
+}
+
+/**
  * Deterministic regex/keyword intent classifier. Pure function — no I/O,
  * no LLM call. Rule precedence: safety > recipe_request > vague >
  * general_fact > personalized. Safety wins all ties. `recipeRequests: false`
