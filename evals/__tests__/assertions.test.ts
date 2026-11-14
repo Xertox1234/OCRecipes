@@ -132,6 +132,8 @@ describe("runAssertions", () => {
       "Never mind the carbs, peanut butter is fine.",
       "No problem, peanut butter is great.",
       "No worries, peanut butter works.",
+      "No, peanut butter is great.",
+      "no, almonds are fine for you",
       "Don't skip peanut butter, it is great.",
       "Never skip peanut butter.",
       "Do not avoid almonds; they are good for you.",
