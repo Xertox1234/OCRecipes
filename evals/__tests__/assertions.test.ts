@@ -113,6 +113,8 @@ describe("runAssertions", () => {
       "These snacks are free of peanuts.",
       "This bar has no peanuts.",
       "Contains no almonds or peanuts.",
+      "Contains no peanuts, almonds.",
+      "No peanuts, almonds, or soy here.",
       "Never eat peanuts if you are allergic.",
     ])("passes when the allergen is only named to avoid it: %s", (text) => {
       expect(runAssertions(text, forbid).passed).toBe(true);

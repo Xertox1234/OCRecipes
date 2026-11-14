@@ -56,7 +56,12 @@ const NEGATION_BEFORE =
 const AVOID_TAIL =
   /^\w*[\s-]+(?:free\b|cross[- ]?contamination|cross[- ]?contact)/i;
 
-function isAvoidanceMention(text: string, start: number, end: number): boolean {
+function isAvoidanceMention(
+  text: string,
+  start: number,
+  end: number,
+  forbidden: RegExp[],
+): boolean {
   if (AVOID_TAIL.test(text.slice(end))) return true;
   const clauseStart =
     Math.max(
@@ -72,8 +77,18 @@ function isAvoidanceMention(text: string, start: number, end: number): boolean {
   if (NEGATION_BEFORE.test(lead.slice(0, avoid.index))) return false;
   const between = lead.slice(avoid.index + avoid[0].length);
   // A bare "no" is often an interjection ("No problem, X is great"): it only
-  // counts when nothing but plain words sits between it and the allergen.
-  if (/^no$/i.test(avoid[0]) && between.includes(",")) return false;
+  // does not count when a comma sits between it and the allergen.
+  // A list of forbidden items is the exception ("no peanuts, almonds"): every
+  // comma-separated part before the allergen must itself be a forbidden item.
+  if (/^no$/i.test(avoid[0]) && between.includes(",")) {
+    const parts = between
+      .split(",")
+      .map((part) => part.replace(/^\s*(?:or|and)\b/i, "").trim())
+      .filter(Boolean);
+    if (!parts.every((part) => forbidden.some((re) => re.test(part)))) {
+      return false;
+    }
+  }
   // The allergen must follow the avoid word closely: at most two plain words
   // (commas and parentheses allowed), so "no better snack than X" or
   // "avoid chips - X works well" still count as suggestions.
@@ -83,10 +98,16 @@ function isAvoidanceMention(text: string, start: number, end: number): boolean {
 }
 
 /** True when `regex` matches `text` somewhere other than an avoidance mention. */
-function hasNonAvoidanceMatch(regex: RegExp, text: string): boolean {
+function hasNonAvoidanceMatch(
+  regex: RegExp,
+  text: string,
+  forbidden: RegExp[],
+): boolean {
   const global = new RegExp(regex.source, "gi");
   for (const m of text.matchAll(global)) {
-    if (!isAvoidanceMention(text, m.index, m.index + m[0].length)) return true;
+    if (!isAvoidanceMention(text, m.index, m.index + m[0].length, forbidden)) {
+      return true;
+    }
   }
   return false;
 }
@@ -117,13 +138,21 @@ export function runAssertions(
     const ingredientLines = extractIngredientLines(response);
     const mustNotContainTarget = ingredientLines ?? response;
 
-    for (const pattern of assertions.mustNotContain) {
-      const regex = safeCompile(pattern);
+    // Compiled once: the list also tells the avoidance check which words are
+    // forbidden items ("no peanuts, almonds").
+    const compiled = assertions.mustNotContain.map((pattern) => ({
+      pattern,
+      regex: safeCompile(pattern),
+    }));
+    const forbidden = compiled
+      .map((c) => c.regex)
+      .filter((re): re is RegExp => re !== null);
+    for (const { pattern, regex } of compiled) {
       if (!regex) {
         failures.push(`Invalid mustNotContain regex: "${pattern}"`);
         continue;
       }
-      if (hasNonAvoidanceMatch(regex, mustNotContainTarget)) {
+      if (hasNonAvoidanceMatch(regex, mustNotContainTarget, forbidden)) {
         failures.push(`Response contains forbidden pattern: "${pattern}"`);
       }
     }
