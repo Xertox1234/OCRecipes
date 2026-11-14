@@ -94,6 +94,32 @@ describe("generateRemixChips", () => {
     expect(chips.some((c) => c.label === "Make gluten-free")).toBe(false);
   });
 
+  // The chip read the wheat list by substring, so a short keyword matched
+  // inside a longer word ("rye" in "dryer", "bun" in "bunch").
+  it("skips gluten-free chip when a wheat keyword only appears inside another word", () => {
+    const chips = generateRemixChips(
+      {
+        ingredients: [
+          { name: "1 bunch cilantro" },
+          { name: "air-dryer crisped chickpeas" },
+        ],
+        dietTags: [],
+      },
+      {},
+    );
+
+    expect(chips.some((c) => c.label === "Make gluten-free")).toBe(false);
+  });
+
+  it("generates gluten-free chip for a wheat food named by a single word", () => {
+    const chips = generateRemixChips(
+      { ingredients: [{ name: "2 Bagels" }], dietTags: [] },
+      {},
+    );
+
+    expect(chips.some((c) => c.label === "Make gluten-free")).toBe(true);
+  });
+
   it("deduplicates gluten chips — no 'Make gluten-free' when 'Remove gluten' exists", () => {
     const chips = generateRemixChips(dairyRecipe, {
       allergies: [{ name: "wheat", severity: "moderate" }],

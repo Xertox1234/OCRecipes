@@ -1,5 +1,6 @@
 import {
   detectAllergens,
+  ingredientContainsKeyword,
   ALLERGEN_INGREDIENT_MAP,
   type AllergenId,
   type AllergySeverity,
@@ -97,8 +98,10 @@ export function generateRemixChips(
   if (!tags.has("gluten-free")) {
     const hasGluten = ingredientNames.some((name) => {
       const lower = name.toLowerCase();
+      // The allergen checks' own whole-word matcher: a plain substring test
+      // found "rye" in "dryer" and "bun" in "bunch".
       return ALLERGEN_INGREDIENT_MAP.wheat.directIngredients.some((kw) =>
-        lower.includes(kw),
+        ingredientContainsKeyword(lower, kw),
       );
     });
     if (hasGluten) {
