@@ -604,6 +604,9 @@ describe("handleCoachChat", () => {
       [true, "I've been thinking about suicide"],
       [false, "I want to self-harm"],
       [false, "I keep thinking about self harm"],
+      // No "suicid" stem: the router and the message picker share one pattern.
+      [false, "I want to kill myself"],
+      [true, "I don't want to live anymore"],
       // Both kinds of signal: the crisis message wins.
       [false, "I want to throw up and I am thinking about suicide"],
     ])(
