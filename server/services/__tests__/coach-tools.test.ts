@@ -23,7 +23,7 @@ vi.mock("../../storage", () => ({
       .mockResolvedValue({ totalCalories: 800, totalProtein: 60 }),
     getPantryItems: vi.fn().mockResolvedValue([]),
     getExpiringPantryItems: vi.fn().mockResolvedValue([]),
-    getMealPlanItems: vi.fn().mockResolvedValue([]),
+    getMealPlanItemSummaries: vi.fn().mockResolvedValue([]),
     addMealPlanItem: vi.fn().mockResolvedValue({ id: 1 }),
     addGroceryListItems: vi.fn().mockResolvedValue([{ id: 1 }]),
     createGroceryListWithLimitCheck: vi
@@ -182,13 +182,13 @@ describe("Coach Tools Service", () => {
       code: "INVALID_ARGS",
       message: expect.stringContaining("14 days"),
     });
-    expect(storage.getMealPlanItems).not.toHaveBeenCalled();
+    expect(storage.getMealPlanItemSummaries).not.toHaveBeenCalled();
   });
 
   // A planned recipe can be another user's community recipe and a planned
   // scan carries a barcode-database product name (audit 2026-10-29 L-sec-10).
   it("sanitizes get_meal_plan recipe titles and product names", async () => {
-    vi.mocked(storage.getMealPlanItems).mockResolvedValueOnce([
+    vi.mocked(storage.getMealPlanItemSummaries).mockResolvedValueOnce([
       {
         id: 1,
         plannedDate: "2026-04-29",
@@ -219,7 +219,9 @@ describe("Coach Tools Service", () => {
           fat: "8",
         },
       },
-    ] as unknown as Awaited<ReturnType<typeof storage.getMealPlanItems>>);
+    ] as unknown as Awaited<
+      ReturnType<typeof storage.getMealPlanItemSummaries>
+    >);
 
     const result = await executeToolCall(
       "get_meal_plan",
@@ -231,7 +233,7 @@ describe("Coach Tools Service", () => {
   });
 
   it("returns compact get_meal_plan items", async () => {
-    vi.mocked(storage.getMealPlanItems).mockResolvedValueOnce([
+    vi.mocked(storage.getMealPlanItemSummaries).mockResolvedValueOnce([
       {
         id: 1,
         userId: "user-1",
@@ -275,7 +277,9 @@ describe("Coach Tools Service", () => {
         },
         scannedItem: null,
       },
-    ] as Awaited<ReturnType<typeof storage.getMealPlanItems>>);
+    ] as unknown as Awaited<
+      ReturnType<typeof storage.getMealPlanItemSummaries>
+    >);
 
     const result = (await executeToolCall(
       "get_meal_plan",

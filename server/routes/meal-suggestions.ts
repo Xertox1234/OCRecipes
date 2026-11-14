@@ -105,7 +105,7 @@ export function register(app: Express): void {
           await Promise.all([
             storage.getUserProfile(req.userId),
             storage.getUser(req.userId),
-            storage.getMealPlanItems(
+            storage.getMealPlanItemSummaries(
               req.userId,
               parsed.data.date,
               parsed.data.date,

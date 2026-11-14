@@ -1,7 +1,6 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { civilDateToInstant } from "../lib/civil-date";
 import { autoGenerateRecipeImage } from "../services/recipe-auto-image";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -22,7 +21,6 @@ import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
-  parseTimezone,
 } from "./_helpers";
 
 import { logger, toError } from "../lib/logger";
@@ -514,39 +512,9 @@ export function register(app: Express): void {
           return;
         }
 
-        // Check for duplicate confirmation.
-        //
-        // `plannedDate` is a `yyyy-mm-dd` date column, so it must be converted
-        // to an instant inside that civil day IN THE USER'S ZONE. The previous
-        // `new Date(plannedDate)` produced UTC midnight, so this searched the
-        // UTC day, which overlaps the user's actual day only partially.
-        //
-        // This pre-check is an optimisation, not the guarantee: correctness
-        // comes from `daily_logs_unique_meal_plan_confirm`, and the catch below
-        // maps a unique violation to the same 409. Note that index is on
-        // `(user_id, meal_plan_item_id)` with NO date component, so a duplicate
-        // that slips past here still returns the identical response — the cost
-        // of the old behaviour was a wasted round-trip, not a wrong answer.
-        // (A pre-check that actually matched the constraint would be an
-        // existence query on those two columns; this one bounds
-        // `daily_logs.logged_at` by `plannedDate`'s day, and those two columns
-        // have no enforced relationship — confirming a Sept 2 meal on Sept 4
-        // misses in every timezone. Left as-is: out of scope here.)
-        const tz = parseTimezone(req.headers["x-timezone"]);
-        const confirmedIds = await storage.getConfirmedMealPlanItemIds(
-          req.userId,
-          civilDateToInstant(mealPlanItem.plannedDate, tz),
-          tz,
-        );
-        if (confirmedIds.includes(id)) {
-          sendError(
-            res,
-            409,
-            "Meal plan item already confirmed",
-            ErrorCode.ALREADY_CONFIRMED,
-          );
-          return;
-        }
+        // No duplicate pre-check: the unique index
+        // `daily_logs_unique_meal_plan_confirm` (user_id, meal_plan_item_id)
+        // is the guarantee, and the catch below maps its violation to 409.
 
         // Create daily log entry
         const dailyLog = await storage.createDailyLog({

@@ -223,7 +223,7 @@ function sanitizePantryItems(
 }
 
 function compactMealPlanItems(
-  items: Awaited<ReturnType<typeof storage.getMealPlanItems>>,
+  items: Awaited<ReturnType<typeof storage.getMealPlanItemSummaries>>,
 ) {
   return items.map((item) => ({
     id: item.id,
@@ -960,7 +960,11 @@ export async function executeToolCall(
         );
       }
 
-      const items = await storage.getMealPlanItems(userId, startDate, endDate);
+      const items = await storage.getMealPlanItemSummaries(
+        userId,
+        startDate,
+        endDate,
+      );
       return { startDate, endDate, items: compactMealPlanItems(items) };
     }
 

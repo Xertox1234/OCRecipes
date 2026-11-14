@@ -35,12 +35,14 @@ const {
   getActiveNotebookEntries,
   createNotebookEntry,
   createNotebookEntries,
+  REPEAT_SCAN_LIMIT,
   updateNotebookEntryStatus,
   getCommitmentsWithDueFollowUp,
   getDueCommitmentsAllUsers,
   archiveOldEntries,
   getNotebookEntryCount,
   getNotebookEntryById,
+  getNotebookEntriesByIds,
 } = await import("../coach-notebook");
 const { logger } = await import("../../lib/logger");
 const { civilDateToInstant } = await import("../../lib/civil-date");
@@ -147,6 +149,85 @@ describe("Coach Notebook Storage", () => {
         }),
         expect.stringContaining("missing dedupeKey"),
       );
+    });
+
+    it("bounds the scan of active rows but never forgets a rejected fact", async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const rows: (typeof coachNotebook.$inferInsert)[] = Array.from(
+        { length: REPEAT_SCAN_LIMIT + 5 },
+        (_, i) => ({
+          userId: testUser.id,
+          type: "insight" as const,
+          content: `Filler fact number ${i} zzqx${i}`,
+          status: "active" as const,
+          dedupeKey: `filler-${i}`,
+          updatedAt: new Date(Date.now() - (i + 1) * day),
+        }),
+      );
+      // An active fact older than every filler row, outside the window.
+      rows.push({
+        userId: testUser.id,
+        type: "insight" as const,
+        content: "Likes very spicy curry",
+        status: "active",
+        dedupeKey: "old-active",
+        updatedAt: new Date(Date.now() - 9_000 * day),
+      });
+      // Oldest row of all: a fact the user rejected long ago.
+      rows.push({
+        userId: testUser.id,
+        type: "insight" as const,
+        content: "Drinks oat milk in coffee",
+        status: "rejected",
+        dedupeKey: "old-rejected",
+        updatedAt: new Date(Date.now() - 10_000 * day),
+      });
+      // Newest row, inside the window: a rejected fact.
+      rows.push({
+        userId: testUser.id,
+        type: "insight" as const,
+        content: "Prefers morning workouts",
+        status: "rejected",
+        dedupeKey: "new-rejected",
+        updatedAt: new Date(),
+      });
+      await tx.insert(coachNotebook).values(rows);
+
+      const result = await createNotebookEntries([
+        {
+          userId: testUser.id,
+          type: "insight",
+          content: "Prefers morning workouts",
+          status: "active",
+          dedupeKey: "again-new",
+        },
+      ]);
+      expect(result).toEqual([]);
+
+      // The user's Undo / Remove holds however many rows came after it.
+      const oldRejected = await createNotebookEntries([
+        {
+          userId: testUser.id,
+          type: "insight",
+          content: "Drinks oat milk in coffee",
+          status: "active",
+          dedupeKey: "again-old",
+        },
+      ]);
+      expect(oldRejected).toEqual([]);
+
+      // The active scan stays bounded: a match outside the window is not
+      // seen, so the fact is saved as a new row.
+      const oldActive = await createNotebookEntries([
+        {
+          userId: testUser.id,
+          type: "insight",
+          content: "Likes very spicy curry",
+          status: "active",
+          dedupeKey: "again-old-active",
+        },
+      ]);
+      expect(oldActive).toHaveLength(1);
     });
 
     it("does not warn when all entries have a dedupeKey", async () => {
@@ -674,6 +755,34 @@ describe("Coach Notebook Storage", () => {
       const active = await getActiveNotebookEntries(testUser.id);
       expect(active).toHaveLength(1);
       expect(active[0].content).toBe("Try breakfast prep this week");
+    });
+  });
+
+  describe("getNotebookEntriesByIds", () => {
+    it("returns only the requesting user's entries among the ids (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const mine = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "mine",
+        status: "active",
+      });
+      const theirs = await createNotebookEntry({
+        userId: otherUser.id,
+        type: "commitment",
+        content: "theirs",
+        status: "active",
+      });
+
+      const result = await getNotebookEntriesByIds(
+        [mine.id, theirs.id, 999999],
+        testUser.id,
+      );
+      expect(result.map((e) => e.id)).toEqual([mine.id]);
+    });
+
+    it("returns an empty array for no ids", async () => {
+      expect(await getNotebookEntriesByIds([], testUser.id)).toEqual([]);
     });
   });
 
