@@ -85,7 +85,11 @@ function isAvoidanceMention(
       .split(",")
       .map((part) => part.replace(/^\s*(?:or|and)\b/i, "").trim())
       .filter(Boolean);
-    if (!parts.every((part) => forbidden.some((re) => re.test(part)))) {
+    // No parts at all is "No, X is great": the comma directly follows "no".
+    if (
+      parts.length === 0 ||
+      !parts.every((part) => forbidden.some((re) => re.test(part)))
+    ) {
       return false;
     }
   }
