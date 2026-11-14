@@ -230,7 +230,7 @@ export const SAFETY_REFUSAL_FALLBACK_MESSAGE =
 const FLAT_REFUSAL_RE =
   /^(?:i['’]?m\s+)?(?:sorry|apologi[sz]e)?[,.\s]*(?:but\s+)?i\s+(?:can(?:'|’)?t|cannot|can\s+not|am\s+unable\s+to|won(?:'|’)?t)\s+(?:assist|help|comply|provide|do)\b[^.!?\n]{0,60}[.!]?$/i;
 
-/** True when the whole reply is a bare refusal with no empathy or referral. */
+/** True when the whole reply is a short "I can't help with that" refusal. */
 export function isFlatModelRefusal(text: string): boolean {
   const t = text.trim();
   return t.length > 0 && t.length <= 120 && FLAT_REFUSAL_RE.test(t);
