@@ -6,13 +6,13 @@ import React, {
   useRef,
 } from "react";
 import {
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
   useWindowDimensions,
 } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -290,7 +290,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
                 key={`img-${i}`}
                 source={{ uri: resolveImageUrl(url) ?? undefined }}
                 style={{ width: screenWidth, height: HERO_IMAGE_HEIGHT }}
-                resizeMode="cover"
+                contentFit="cover"
                 accessibilityLabel={`Photo ${i + 1} of ${props.canonicalImages!.length} of ${props.title}`}
               />
             ))}
