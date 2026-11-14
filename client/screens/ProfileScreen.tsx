@@ -1,11 +1,6 @@
 import React, { useRef, useState } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  Image,
-  AccessibilityInfo,
-} from "react-native";
+import { StyleSheet, View, Pressable, AccessibilityInfo } from "react-native";
+import { Image } from "expo-image";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -188,6 +183,7 @@ export default function ProfileScreen() {
             <Image
               source={{ uri: resolveImageUrl(user.avatarUrl)! }}
               style={styles.collapsedAvatar}
+              contentFit="cover"
             />
           ) : (
             <View
