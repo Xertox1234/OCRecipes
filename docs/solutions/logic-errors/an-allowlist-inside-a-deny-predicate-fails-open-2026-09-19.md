@@ -7,7 +7,7 @@ module: shared
 applies_to: [".claude/hooks/**/*.sh", ".claude/hooks/lib/*.sh", "server/services/coach-intent-classifier.ts"]
 symptoms: ["a deny gate that used to block a command spelling now allows it, with green CI and every count pin reconciled", "the new predicate is more specific and better commented than the one it replaced, and the PR fixes a real over-denial", "review keeps finding one more spelling the pattern misses, and each fix's own comment declares the class closed", "an argument that the pattern is exhaustive cites a grammar (RFC, CLI help) rather than the exact string the code consumes"]
 created: 2026-09-19
-last_updated: 2026-10-09
+last_updated: 2026-11-14
 severity: critical
 ---
 
@@ -138,6 +138,24 @@ put ("can I go a week without eating meat"). For a safety router that is the rig
 
 Prevention, added: before the second review round on a deny-shaped change, ask whether the change
 can be expressed as an added entry. If it can, do that instead of editing the shipped one.
+
+## Also seen: self-harm wording in the same router (#1864, #1865, 2026-11-14)
+
+Adding first-person self-harm phrases to the router needed two exclusions for food talk, and both
+were first written as a list of grammar words:
+
+1. After "don't want to live", the exclusion listed `on|off|with|without|in|like|for` to let
+   "live on salads" through. It also let through "I don't want to live like this" and "with this
+   pain anymore". Fixed by keeping `on|off` only.
+2. After "cut myself", the exclusion listed `a|an|some|off|down|loose|free` to let "a slice of
+   cake" through. A bare `a` also let through "cut myself a little" and "a lot", which the branch
+   base matched. Fixed by requiring a named continuation: `a|an|some` followed by slice, piece,
+   portion, serving, wedge, slack or break.
+
+Both are the open-vocabulary veto again. **An exclusion in a safety matcher names the harmless
+thing ("a slice", "some slack"), never the grammar around it (an article, a preposition).** The
+test table carries both sides: the everyday sentences that must not match and the crisis sentences
+that share the same first words and must.
 
 ## Related Files
 
