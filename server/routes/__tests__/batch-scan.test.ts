@@ -57,6 +57,31 @@ describe("Batch Scan Routes", () => {
   });
 
   describe("POST /api/batch/save", () => {
+    it("saves once when a double tap sends two overlapping requests", async () => {
+      const pending: (() => void)[] = [];
+      vi.mocked(storage.batchCreateScannedItemsWithLogs).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() => resolve({ scannedCount: 1, logCount: 1 }));
+          }),
+      );
+      const send = () =>
+        request(app)
+          .post("/api/batch/save")
+          .set("Authorization", "Bearer token")
+          .send({ items: [validItem], destination: "daily_log" })
+          .then((r) => r);
+
+      const first = send();
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const second = await send();
+      pending.splice(0).forEach((go) => go());
+
+      expect(second.status).toBe(409);
+      expect((await first).status).toBe(200);
+      expect(storage.batchCreateScannedItemsWithLogs).toHaveBeenCalledTimes(1);
+    });
+
     it("saves to daily_log destination", async () => {
       vi.mocked(storage.batchCreateScannedItemsWithLogs).mockResolvedValue({
         scannedCount: 2,

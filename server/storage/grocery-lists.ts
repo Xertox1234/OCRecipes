@@ -174,11 +174,16 @@ export async function getGroceryListItemForUser(
   return row?.item;
 }
 
+/**
+ * `also.addedToPantry` sets the pantry flag in the SAME update, so a request
+ * carrying both flags never leaves the item half-updated.
+ */
 export async function updateGroceryListItemChecked(
   id: number,
   groceryListId: number,
   isChecked: boolean,
   userId?: string,
+  also: { addedToPantry?: boolean } = {},
 ): Promise<GroceryListItem | undefined> {
   if (userId) {
     // Defense-in-depth: verify list ownership via JOIN before mutating
@@ -198,6 +203,9 @@ export async function updateGroceryListItemChecked(
     .set({
       isChecked,
       checkedAt: isChecked ? new Date() : null,
+      ...(also.addedToPantry !== undefined
+        ? { addedToPantry: also.addedToPantry }
+        : {}),
     })
     .where(
       and(

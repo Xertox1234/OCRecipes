@@ -21,6 +21,7 @@ vi.mock("../../storage", () => ({
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     getMonthlyReceiptScanCount: vi.fn(),
+    claimDailyAiCall: vi.fn().mockResolvedValue(true),
     createReceiptScan: vi.fn(),
     createPantryItemsUnderCap: vi.fn(),
   },
@@ -122,6 +123,62 @@ describe("Receipt Routes", () => {
   });
 
   describe("POST /api/receipt/scan", () => {
+    it("refuses once the daily receipt-scan cap is spent, before calling the AI", async () => {
+      setupPremiumMock();
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
+      vi.mocked(storage.claimDailyAiCall).mockResolvedValueOnce(false);
+
+      const res = await request(app)
+        .post("/api/receipt/scan")
+        .set("Authorization", "Bearer token")
+        .attach("photos", Buffer.from("fake"), "receipt.jpg");
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "receiptScan",
+        expect.any(Number),
+      );
+      expect(analyzeReceiptPhotos).not.toHaveBeenCalled();
+    });
+
+    it("refuses an overlapping second scan, so both cannot pass the monthly count", async () => {
+      setupPremiumMock();
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
+      vi.mocked(storage.createReceiptScan).mockResolvedValue(
+        createMockReceiptScan(),
+      );
+      const pending: (() => void)[] = [];
+      vi.mocked(analyzeReceiptPhotos).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() =>
+              resolve({
+                items: [],
+                isPartialExtraction: false,
+                overallConfidence: 0.9,
+              }),
+            );
+          }),
+      );
+      const send = () =>
+        request(app)
+          .post("/api/receipt/scan")
+          .set("Authorization", "Bearer token")
+          .attach("photos", Buffer.from("fake"), "receipt.jpg")
+          .then((r) => r);
+
+      const first = send();
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const second = await send();
+      pending.splice(0).forEach((go) => go());
+      await first;
+
+      expect(second.status).toBe(409);
+      expect(analyzeReceiptPhotos).toHaveBeenCalledTimes(1);
+    });
+
     it("analyzes receipt photos and returns results", async () => {
       setupPremiumMock();
       vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
@@ -311,6 +368,41 @@ describe("Receipt Routes", () => {
   });
 
   describe("POST /api/receipt/confirm", () => {
+    it("adds the items once when a double tap sends two overlapping confirms", async () => {
+      setupPremiumMock();
+      const pending: (() => void)[] = [];
+      vi.mocked(storage.createPantryItemsUnderCap).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() => resolve({ created: [], skipped: 0 }));
+          }),
+      );
+      const send = () =>
+        request(app)
+          .post("/api/receipt/confirm")
+          .set("Authorization", "Bearer token")
+          .send({
+            items: [
+              {
+                name: "Milk",
+                quantity: 1,
+                category: "dairy",
+                estimatedShelfLifeDays: 14,
+              },
+            ],
+          })
+          .then((r) => r);
+
+      const first = send();
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const second = await send();
+      pending.splice(0).forEach((go) => go());
+
+      expect(second.status).toBe(409);
+      expect((await first).status).toBe(200);
+      expect(storage.createPantryItemsUnderCap).toHaveBeenCalledTimes(1);
+    });
+
     it("creates pantry items from confirmed receipt items", async () => {
       setupPremiumMock();
 

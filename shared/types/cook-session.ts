@@ -109,6 +109,11 @@ export interface CookSessionNutritionSummary {
   items: CookSessionNutritionItem[];
   /** Distinct names of ingredients whose lookup missed (counted as 0). Empty when every lookup hit. */
   missedLookups: string[];
+  /**
+   * Distinct names of ingredients whose unit has no weight ("6 egg", "2 clove"),
+   * counted as 100 g. Logging needs the same confirmation as a missed lookup.
+   */
+  unweighedIngredients: string[];
 }
 
 // ============================================================================

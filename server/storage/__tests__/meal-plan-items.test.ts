@@ -74,6 +74,15 @@ async function createScannedItem(
   return s;
 }
 
+/** addMealPlanItem for fixtures: it returns undefined when the recipe isn't the user's live one. */
+async function addItem(
+  ...args: Parameters<typeof addMealPlanItem>
+): Promise<NonNullable<Awaited<ReturnType<typeof addMealPlanItem>>>> {
+  const item = await addMealPlanItem(...args);
+  if (!item) throw new Error("fixture: addMealPlanItem refused the recipe");
+  return item;
+}
+
 describe("meal-plan-items storage", () => {
   beforeEach(async () => {
     tx = await setupTestTransaction();
@@ -91,16 +100,91 @@ describe("meal-plan-items storage", () => {
   describe("addMealPlanItem", () => {
     it("inserts and returns a meal plan item", async () => {
       const recipe = await createRecipe(testUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
         mealType: "breakfast",
       });
-      expect(item.id).toBeGreaterThan(0);
-      expect(item.userId).toBe(testUser.id);
-      expect(item.recipeId).toBe(recipe.id);
-      expect(item.mealType).toBe("breakfast");
+      expect(item!.id).toBeGreaterThan(0);
+      expect(item!.userId).toBe(testUser.id);
+      expect(item!.recipeId).toBe(recipe.id);
+      expect(item!.mealType).toBe("breakfast");
+    });
+
+    // The route checks the recipe first; a soft delete committing in between
+    // used to leave a plan item on a deleted recipe (the FK no longer refuses
+    // it), still counted by planned totals and grocery lists.
+    it("refuses a recipe that has been soft-deleted", async () => {
+      const recipe = await createRecipe(testUser.id);
+      await tx
+        .update(mealPlanRecipes)
+        .set({ deletedAt: new Date() })
+        .where(eq(mealPlanRecipes.id, recipe.id));
+
+      const item = await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "lunch",
+      });
+
+      expect(item).toBeUndefined();
+      const rows = await tx
+        .select()
+        .from(mealPlanItems)
+        .where(eq(mealPlanItems.recipeId, recipe.id));
+      expect(rows).toHaveLength(0);
+    });
+
+    // A Coach write-card save passes its own transaction: the live-recipe
+    // check must run there too, not only on the default path.
+    it("refuses a soft-deleted recipe when the caller passes its transaction", async () => {
+      const recipe = await createRecipe(testUser.id);
+      await tx
+        .update(mealPlanRecipes)
+        .set({ deletedAt: new Date() })
+        .where(eq(mealPlanRecipes.id, recipe.id));
+
+      const item = await addMealPlanItem(
+        {
+          userId: testUser.id,
+          recipeId: recipe.id,
+          plannedDate: "2026-05-15",
+          mealType: "lunch",
+        },
+        tx,
+      );
+
+      expect(item).toBeUndefined();
+    });
+
+    it("inserts through the caller's transaction for a live recipe", async () => {
+      const recipe = await createRecipe(testUser.id);
+      const item = await addMealPlanItem(
+        {
+          userId: testUser.id,
+          recipeId: recipe.id,
+          plannedDate: "2026-05-15",
+          mealType: "lunch",
+        },
+        tx,
+      );
+      expect(item?.recipeId).toBe(recipe.id);
+    });
+
+    it("refuses another user's recipe", async () => {
+      const other = await createTestUser(tx);
+      const recipe = await createRecipe(other.id);
+
+      const item = await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "lunch",
+      });
+
+      expect(item).toBeUndefined();
     });
   });
 
@@ -290,7 +374,7 @@ describe("meal-plan-items storage", () => {
     it("returns undefined when the item belongs to another user", async () => {
       const otherUser = await createTestUser(tx);
       const recipe = await createRecipe(otherUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: otherUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
@@ -308,7 +392,7 @@ describe("meal-plan-items storage", () => {
 
     it("returns the item with recipe attached when owned by the user", async () => {
       const recipe = await createRecipe(testUser.id, { title: "Mine" });
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
@@ -329,7 +413,7 @@ describe("meal-plan-items storage", () => {
 
     it("deletes the row and returns true when owned", async () => {
       const recipe = await createRecipe(testUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
@@ -347,7 +431,7 @@ describe("meal-plan-items storage", () => {
     it("does not delete items owned by another user", async () => {
       const otherUser = await createTestUser(tx);
       const recipe = await createRecipe(otherUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: otherUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
@@ -374,14 +458,14 @@ describe("meal-plan-items storage", () => {
 
     it("updates sortOrder for owned items only", async () => {
       const recipe = await createRecipe(testUser.id);
-      const a = await addMealPlanItem({
+      const a = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
         mealType: "lunch",
         sortOrder: 0,
       });
-      const b = await addMealPlanItem({
+      const b = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
@@ -409,7 +493,7 @@ describe("meal-plan-items storage", () => {
     it("does not touch items owned by other users", async () => {
       const otherUser = await createTestUser(tx);
       const recipe = await createRecipe(otherUser.id);
-      const other = await addMealPlanItem({
+      const other = await addItem({
         userId: otherUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
@@ -441,7 +525,7 @@ describe("meal-plan-items storage", () => {
 
     it("returns mealPlanItemIds for meal_plan_confirm logs on the given day", async () => {
       const recipe = await createRecipe(testUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",
@@ -466,7 +550,7 @@ describe("meal-plan-items storage", () => {
 
     it("excludes logs from a different source", async () => {
       const recipe = await createRecipe(testUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2026-05-15",

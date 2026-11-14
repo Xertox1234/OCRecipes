@@ -160,6 +160,32 @@ describe("cookbooks storage", () => {
       expect(result[0].recipeCount).toBe(1);
     });
 
+    it("does not count a community recipe its author has since made private", async () => {
+      const author = await createTestUser(tx);
+      const recipe = await createTestCommunityRecipe(author.id, {
+        isPublic: true,
+      });
+      const cookbook = await createCookbook({
+        userId: testUser.id,
+        name: "Saved from others",
+      });
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "community",
+        testUser.id,
+      );
+      const { eq } = await import("drizzle-orm");
+      await tx
+        .update(communityRecipes)
+        .set({ isPublic: false })
+        .where(eq(communityRecipes.id, recipe.id));
+
+      // The cookbook's list hides the now-private recipe; the badge must agree.
+      const [result] = await getUserCookbooks(testUser.id);
+      expect(result.recipeCount).toBe(0);
+    });
+
     it("does not return cookbooks owned by other users", async () => {
       const otherUser = await createTestUser(tx);
       await createCookbook({ userId: otherUser.id, name: "Other Cookbook" });

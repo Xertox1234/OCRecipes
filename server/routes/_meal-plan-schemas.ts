@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { isValidCalendarDate } from "../utils/date-validation";
-import { numericStringField, nullableNumericStringField } from "./_schemas";
+import {
+  boundedNumericStringField,
+  nullableNumericStringField,
+  numericStringField,
+} from "./_schemas";
+import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 import { isOurRecipeImageUrl } from "../services/recipe-image-rehost";
 
 // Zod schemas for meal plan endpoints
@@ -29,10 +34,18 @@ export const createMealPlanRecipeSchema = z.object({
     .nullable(),
   instructions: z.array(z.string().max(2000)).max(100).optional(),
   dietTags: z.array(z.string().max(50)).max(20).optional(),
-  caloriesPerServing: nullableNumericStringField,
-  proteinPerServing: nullableNumericStringField,
-  carbsPerServing: nullableNumericStringField,
-  fatPerServing: nullableNumericStringField,
+  caloriesPerServing: boundedNumericStringField(NUTRITION_CAPS.calories, {
+    nullable: true,
+  }),
+  proteinPerServing: boundedNumericStringField(NUTRITION_CAPS.grams, {
+    nullable: true,
+  }),
+  carbsPerServing: boundedNumericStringField(NUTRITION_CAPS.grams, {
+    nullable: true,
+  }),
+  fatPerServing: boundedNumericStringField(NUTRITION_CAPS.grams, {
+    nullable: true,
+  }),
   sourceType: z
     .enum(["user_created", "quick_entry", "ai_suggestion", "photo_import"])
     .optional()
@@ -60,7 +73,7 @@ export const addMealPlanItemSchema = z.object({
     .optional(),
   plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
-  servings: numericStringField,
+  servings: boundedNumericStringField(NUTRITION_CAPS.servings),
 });
 
 /** YYYY-MM-DD format guard for meal-plan date-range query params. */

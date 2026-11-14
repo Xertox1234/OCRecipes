@@ -38,6 +38,7 @@ import {
   createMealPlanRecipeSchema,
   validateMealPlanDateRange,
 } from "./_meal-plan-schemas";
+import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 
 export { validateMealPlanDateRange };
 
@@ -412,6 +413,11 @@ export function register(app: Express): void {
           ...itemData,
           userId: req.userId,
         });
+        // The recipe was deleted between the check above and the write.
+        if (!mealPlanItem) {
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
+          return;
+        }
 
         res.status(201).json(mealPlanItem);
       } catch (error) {
@@ -647,10 +653,12 @@ export function register(app: Express): void {
             .max(200),
           instructions: z.array(z.string().max(2000)).max(100).optional(),
           dietTags: z.array(z.string().max(50)).max(20).optional(),
-          caloriesPerServing: z.number().min(0),
-          proteinPerServing: z.number().min(0),
-          carbsPerServing: z.number().min(0),
-          fatPerServing: z.number().min(0),
+          // Bounded like every other nutrition boundary: an unbounded value
+          // stringifies to "1e+21" and fails the numeric(10,2) insert.
+          caloriesPerServing: z.number().min(0).max(NUTRITION_CAPS.calories),
+          proteinPerServing: z.number().min(0).max(NUTRITION_CAPS.grams),
+          carbsPerServing: z.number().min(0).max(NUTRITION_CAPS.grams),
+          fatPerServing: z.number().min(0).max(NUTRITION_CAPS.grams),
           plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         });
 

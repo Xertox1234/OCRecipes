@@ -1,5 +1,6 @@
 import type { LabelExtractionResult } from "@/lib/photo-upload";
 import type { LocalNutritionData } from "@/lib/nutrition-ocr-parser";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 export interface NutrientRow {
   label: string;
@@ -177,4 +178,21 @@ export function shouldReplaceWithAI(
     if (diff / base > 0.1) return true;
   }
   return false;
+}
+
+/**
+ * Toast copy for a failed "Log" on the label screen, by the error code
+ * /api/photos/confirm-label sent. Never the raw error.message.
+ */
+export function labelLogErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case ErrorCode.CALORIES_UNREADABLE:
+      return "We couldn't read the calories on this label. Please scan it again.";
+    case ErrorCode.NOT_FOUND:
+      return "This scan expired. Please scan the label again.";
+    case ErrorCode.RATE_LIMITED:
+      return "Too many requests. Please wait a moment and try again.";
+    default:
+      return "Couldn't log this item. Please try again.";
+  }
 }

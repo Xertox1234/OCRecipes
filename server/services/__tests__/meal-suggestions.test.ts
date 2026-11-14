@@ -2,6 +2,7 @@ import { ZodError } from "zod";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   buildSuggestionCacheKey,
+  buildBudgetHash,
   buildDietaryContext,
   mealSuggestionSchema,
   aiResponseSchema,
@@ -30,6 +31,7 @@ describe("meal-suggestions", () => {
         "profile-hash",
         "plan-hash",
         "",
+        "budget",
       );
       expect(key).toMatch(/^[0-9a-f]{64}$/);
     });
@@ -42,6 +44,7 @@ describe("meal-suggestions", () => {
         "ph1",
         "plan1",
         "",
+        "budget",
       );
       const key2 = buildSuggestionCacheKey(
         "user1",
@@ -50,6 +53,7 @@ describe("meal-suggestions", () => {
         "ph1",
         "plan1",
         "",
+        "budget",
       );
       expect(key1).not.toBe(key2);
     });
@@ -62,6 +66,7 @@ describe("meal-suggestions", () => {
         "ph",
         "plan",
         "",
+        "budget",
       );
       const key2 = buildSuggestionCacheKey(
         "user1",
@@ -70,6 +75,7 @@ describe("meal-suggestions", () => {
         "ph",
         "plan",
         "",
+        "budget",
       );
       expect(key1).toBe(key2);
     });
@@ -82,6 +88,7 @@ describe("meal-suggestions", () => {
         "ph",
         "plan",
         "[1,2,3]",
+        "budget",
       );
       const key2 = buildSuggestionCacheKey(
         "user1",
@@ -90,6 +97,7 @@ describe("meal-suggestions", () => {
         "ph",
         "plan",
         "[4,5,6]",
+        "budget",
       );
       expect(key1).not.toBe(key2);
     });
@@ -102,6 +110,7 @@ describe("meal-suggestions", () => {
         "ph",
         "plan",
         "[1,2,3]",
+        "budget",
       );
       const key2 = buildSuggestionCacheKey(
         "user1",
@@ -110,8 +119,48 @@ describe("meal-suggestions", () => {
         "ph",
         "plan",
         "[1,2,3]",
+        "budget",
       );
       expect(key1).toBe(key2);
+    });
+    it("should produce different keys for different remaining budgets", () => {
+      const key1 = buildSuggestionCacheKey(
+        "user1",
+        "2025-01-15",
+        "lunch",
+        "ph",
+        "plan",
+        "[]",
+        buildBudgetHash({ calories: 1200, protein: 80, carbs: 150, fat: 40 }),
+      );
+      const key2 = buildSuggestionCacheKey(
+        "user1",
+        "2025-01-15",
+        "lunch",
+        "ph",
+        "plan",
+        "[]",
+        buildBudgetHash({ calories: 600, protein: 80, carbs: 150, fat: 40 }),
+      );
+      expect(key1).not.toBe(key2);
+    });
+  });
+
+  describe("buildBudgetHash", () => {
+    it("buckets calories to 50 and macros to 5 g so a small snack keeps the key", () => {
+      expect(
+        buildBudgetHash({ calories: 1210, protein: 81, carbs: 149, fat: 41 }),
+      ).toBe(
+        buildBudgetHash({ calories: 1190, protein: 79, carbs: 151, fat: 39 }),
+      );
+    });
+
+    it("changes when the remaining calories move a full bucket", () => {
+      expect(
+        buildBudgetHash({ calories: 1200, protein: 80, carbs: 150, fat: 40 }),
+      ).not.toBe(
+        buildBudgetHash({ calories: 1100, protein: 80, carbs: 150, fat: 40 }),
+      );
     });
   });
 

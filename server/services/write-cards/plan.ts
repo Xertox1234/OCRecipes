@@ -278,6 +278,10 @@ export async function performPlanSave(
         { ...planItem, recipeId: row.recipe.id },
         tx,
       );
+      // The recipe was deleted between the check above and the write.
+      if (!item) {
+        throw new WriteCardEditError("A recipe on this plan is gone.");
+      }
       mealPlanItemIds.push(item.id);
       if (edits.addShopping) {
         const full = await getMealPlanRecipeWithIngredients(

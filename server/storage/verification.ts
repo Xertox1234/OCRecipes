@@ -435,12 +435,16 @@ export async function confirmFrontLabelData(
       })
       .where(eq(barcodeVerifications.barcode, barcode));
 
-    // Mark user's verification history entry as having completed a front-label scan
+    // Mark user's verification history entry as having completed a front-label
+    // scan. The date stays the FIRST scan's: it counts as a streak day, so a
+    // re-scan of the same barcode must not earn a new one.
     await tx
       .update(verificationHistory)
       .set({
         frontLabelScanned: true,
-        frontLabelScannedAt: new Date(),
+        // ISO string, as drizzle writes this timestamp column itself (a raw
+        // Date in sql`` would go through pg's local-time serialiser).
+        frontLabelScannedAt: sql`COALESCE(${verificationHistory.frontLabelScannedAt}, ${new Date().toISOString()})`,
       })
       .where(
         and(

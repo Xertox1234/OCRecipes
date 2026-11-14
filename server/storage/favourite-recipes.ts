@@ -40,7 +40,11 @@ export async function toggleFavouriteRecipe(
             eq(mealPlanRecipes.userId, userId),
             isNull(mealPlanRecipes.deletedAt),
           ),
-        );
+        )
+        // FOR SHARE: a concurrent delete waits for this insert (and then its
+        // junction cleanup removes it) or commits first and this finds nothing.
+        // Without it the favourite could commit after the cleanup — an orphan.
+        .for("share");
       if (!recipe) return false;
     } else {
       const [recipe] = await tx
@@ -54,7 +58,8 @@ export async function toggleFavouriteRecipe(
               eq(communityRecipes.authorId, userId),
             ),
           ),
-        );
+        )
+        .for("share");
       if (!recipe) return false;
     }
 

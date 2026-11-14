@@ -18,6 +18,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import type * as schema from "@shared/schema";
 import {
+  mealPlanItems as mealPlanItemsTable,
   recipeIngredients,
   scannedItems,
   communityRecipes,
@@ -121,6 +122,15 @@ async function createTestCommunityRecipe(
     .values({ ...defaults, ...overrides })
     .returning();
   return recipe;
+}
+
+/** addMealPlanItem for fixtures: it returns undefined when the recipe isn't the user's live one. */
+async function addItem(
+  ...args: Parameters<typeof addMealPlanItem>
+): Promise<NonNullable<Awaited<ReturnType<typeof addMealPlanItem>>>> {
+  const item = await addMealPlanItem(...args);
+  if (!item) throw new Error("fixture: addMealPlanItem refused the recipe");
+  return item;
 }
 
 describe("meal-plans storage", () => {
@@ -546,7 +556,7 @@ describe("meal-plans storage", () => {
     it("creates a meal plan item and returns it", async () => {
       const recipe = await createTestMealPlanRecipe(testUser.id);
 
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",
@@ -650,7 +660,9 @@ describe("meal-plans storage", () => {
       const otherRecipe = await createTestMealPlanRecipe(otherUser.id, {
         title: "Other User Recipe",
       });
-      await addMealPlanItem({
+      // Planted directly: addMealPlanItem itself now refuses another user's
+      // recipe, so the corrupted row can only come from outside it.
+      await tx.insert(mealPlanItemsTable).values({
         userId: testUser.id,
         recipeId: otherRecipe.id,
         plannedDate: "2025-06-15",
@@ -717,7 +729,7 @@ describe("meal-plans storage", () => {
       const recipe = await createTestMealPlanRecipe(testUser.id, {
         title: "Joined Recipe",
       });
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",
@@ -734,7 +746,7 @@ describe("meal-plans storage", () => {
     it("returns undefined when a different user requests it (IDOR)", async () => {
       const otherUser = await createTestUser(tx);
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",
@@ -754,7 +766,7 @@ describe("meal-plans storage", () => {
       const scanned = await createTestScannedItem(testUser.id, {
         discardedAt: new Date(),
       });
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         scannedItemId: scanned.id,
         plannedDate: "2025-06-15",
@@ -770,7 +782,7 @@ describe("meal-plans storage", () => {
   describe("removeMealPlanItem", () => {
     it("removes an item owned by the user and returns true", async () => {
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",
@@ -787,7 +799,7 @@ describe("meal-plans storage", () => {
     it("returns false when another user tries to remove (IDOR)", async () => {
       const otherUser = await createTestUser(tx);
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",
@@ -842,7 +854,7 @@ describe("meal-plans storage", () => {
         carbsPerServing: "40",
         fatPerServing: "15",
       });
-      const item1 = await addMealPlanItem({
+      const item1 = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",
@@ -887,7 +899,7 @@ describe("meal-plans storage", () => {
       const recipe = await createTestMealPlanRecipe(testUser.id, {
         caloriesPerServing: "500",
       });
-      const item = await addMealPlanItem({
+      const item = await addItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",

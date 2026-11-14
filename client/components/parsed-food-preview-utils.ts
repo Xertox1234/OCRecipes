@@ -17,3 +17,17 @@ export function formatMacroLine(
 ): string {
   return `${formatNutrientValue(calories)} cal | P: ${formatNutrientValue(protein)} | C: ${formatNutrientValue(carbs)} | F: ${formatNutrientValue(fat)}`;
 }
+
+/**
+ * The caption under a parsed item. A lookup miss is stored with no calories,
+ * which the day total counts as 0 — so it says so instead of showing nothing.
+ */
+export function nutritionCaption(item: {
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+}): string {
+  if (item.calories == null) return "No nutrition found — logs as 0 cal";
+  return formatMacroLine(item.calories, item.protein, item.carbs, item.fat);
+}

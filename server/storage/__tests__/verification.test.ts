@@ -573,6 +573,41 @@ describe("verification storage", () => {
       // .$type<>() annotation — no cast needed to read .brand.
       expect(verification!.frontLabelData?.brand).toBe("Second");
     });
+
+    it("keeps the first scan's date on a repeat, so a re-scan earns no new streak day", async () => {
+      const barcode = makeBarcode();
+      await seedBarcodeVerification(barcode);
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
+      await confirmFrontLabelData(
+        barcode,
+        testUser.id,
+        makeFrontLabel(testUser.id, { brand: "First" }),
+      );
+      // Pretend the first scan happened three days ago.
+      const firstScanAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const historyRow = and(
+        eq(verificationHistory.barcode, barcode),
+        eq(verificationHistory.userId, testUser.id),
+      );
+      await tx
+        .update(verificationHistory)
+        .set({ frontLabelScannedAt: firstScanAt })
+        .where(historyRow);
+
+      await confirmFrontLabelData(
+        barcode,
+        testUser.id,
+        makeFrontLabel(testUser.id, { brand: "Again" }),
+      );
+
+      const [history] = await tx
+        .select()
+        .from(verificationHistory)
+        .where(historyRow);
+      expect(history.frontLabelScannedAt?.getTime()).toBe(
+        firstScanAt.getTime(),
+      );
+    });
   });
 
   // ==========================================================================

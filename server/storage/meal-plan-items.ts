@@ -244,17 +244,38 @@ export async function getMealPlanItemById(
 }
 
 /** A caller inside a transaction (a Coach write-card save/undo) passes its `tx`. */
-type Executor = Pick<typeof db, "insert" | "delete">;
+type Executor = Pick<typeof db, "insert" | "delete" | "select">;
 
+/**
+ * Returns undefined when `item.recipeId` is not the user's live (not
+ * soft-deleted) recipe. The check runs in the write's own transaction under a
+ * FOR SHARE lock, so a soft delete can't commit between check and insert — the
+ * FK no longer refuses a soft-deleted recipe. A caller that passes its `tx`
+ * gets the check and the insert in that transaction.
+ */
 export async function addMealPlanItem(
   item: InsertMealPlanItem,
-  executor: Executor = db,
-): Promise<MealPlanItem> {
-  const [created] = await executor
-    .insert(mealPlanItems)
-    .values(item)
-    .returning();
-  return created;
+  executor?: Executor,
+): Promise<MealPlanItem | undefined> {
+  const run = async (ex: Executor) => {
+    if (item.recipeId != null) {
+      const [live] = await ex
+        .select({ id: mealPlanRecipes.id })
+        .from(mealPlanRecipes)
+        .where(
+          and(
+            eq(mealPlanRecipes.id, item.recipeId),
+            eq(mealPlanRecipes.userId, item.userId),
+            isNull(mealPlanRecipes.deletedAt),
+          ),
+        )
+        .for("share");
+      if (!live) return undefined;
+    }
+    const [created] = await ex.insert(mealPlanItems).values(item).returning();
+    return created;
+  };
+  return executor ? run(executor) : db.transaction((tx) => run(tx));
 }
 
 export async function removeMealPlanItem(

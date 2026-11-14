@@ -1,3 +1,5 @@
+import { ErrorCode } from "@shared/constants/error-codes";
+
 /**
  * Custom error class for API responses with machine-readable error codes.
  */
@@ -18,4 +20,13 @@ export class ApiError extends Error {
     this.code = code;
     this.status = status;
   }
+}
+
+/**
+ * True for the server's refusal of a duplicate request while the first is
+ * still saving (a double tap). The first request owns the success or failure,
+ * so the caller shows nothing for this one.
+ */
+export function isDuplicateInFlight(err: unknown): boolean {
+  return err instanceof ApiError && err.code === ErrorCode.REQUEST_IN_FLIGHT;
 }

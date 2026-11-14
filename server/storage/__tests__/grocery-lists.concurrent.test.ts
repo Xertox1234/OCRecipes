@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { db, pool } from "../../db";
 import { users, groceryLists } from "@shared/schema";
 import { createGroceryListWithLimitCheck } from "../grocery-lists";
+import { batchCreateGroceryItems } from "../batch";
 
 const MAX_LISTS = 5;
 const createdUserIds: string[] = [];
@@ -74,6 +75,38 @@ describe("createGroceryListWithLimitCheck: concurrent multi-connection safety", 
 
       expect(results.filter((r) => r !== null)).toHaveLength(1);
       expect(await committedCount(userId)).toBe(MAX_LISTS);
+    }
+  });
+
+  it("batch-scan auto-create shares the same lock: one list when it races a create at the cap - 1", async () => {
+    const BATCH_CAP = 50; // batchCreateGroceryItems' own limit
+    const item = {
+      id: "b-1",
+      productName: "Oats",
+      quantity: 1,
+      status: "resolved" as const,
+      calories: 150,
+      protein: 5,
+      carbs: 27,
+      fat: 3,
+    };
+    for (let iter = 0; iter < 5; iter++) {
+      const userId = await createCommittedUser();
+      await db
+        .insert(groceryLists)
+        .values(
+          Array.from({ length: BATCH_CAP - 1 }, (_, i) =>
+            list(userId, `Seed ${i}`),
+          ),
+        );
+
+      const results = await Promise.allSettled([
+        batchCreateGroceryItems([item], userId, "UTC"),
+        batchCreateGroceryItems([item], userId, "UTC"),
+      ]);
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(await committedCount(userId)).toBe(BATCH_CAP);
     }
   });
 });

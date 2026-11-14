@@ -199,6 +199,8 @@ interface IngredientPortion {
   cookable: { per100g: Nutrients; grams: number } | null;
   /** True when the lookup found nothing, so the values are zeros rather than measurements. */
   lookupMissed: boolean;
+  /** True when the unit has no weight ("6 egg"), so 100 g stands in for the real amount. */
+  portionUnknown: boolean;
 }
 
 /**
@@ -219,6 +221,7 @@ function ingredientPortion(
       servingSize: label,
       cookable: null,
       lookupMissed: true,
+      portionUnknown: false,
     };
   }
 
@@ -229,6 +232,7 @@ function ingredientPortion(
       servingSize: nutrition.servingSize || label,
       cookable: null,
       lookupMissed: false,
+      portionUnknown: false,
     };
   }
 
@@ -240,6 +244,7 @@ function ingredientPortion(
       servingSize: "100 g (portion unknown)",
       cookable: { per100g: orZero(per100g), grams: 100 },
       lookupMissed: false,
+      portionUnknown: true,
     };
   }
   return {
@@ -247,6 +252,7 @@ function ingredientPortion(
     servingSize: label,
     cookable: { per100g: orZero(per100g), grams },
     lookupMissed: false,
+    portionUnknown: false,
   };
 }
 
@@ -297,11 +303,13 @@ export async function calculateSessionNutrition(
 
   const items: CookSessionNutritionItem[] = [];
   const total = { ...ZERO_NUTRIENTS };
+  const unweighed = new Set<string>();
 
   for (let i = 0; i < ingredients.length; i++) {
     const ingredient = ingredients[i];
     const portion = portions[i];
     let finalNutrition = portion.nutrients;
+    if (portion.portionUnknown) unweighed.add(ingredient.name);
 
     // Apply cooking method adjustment if specified
     const methodStr = ingredient.preparationMethod || globalCookingMethod;
@@ -366,5 +374,10 @@ export async function calculateSessionNutrition(
     ...new Set(items.filter((i) => i.lookupMissed).map((i) => i.name)),
   ];
 
-  return { total, items, missedLookups };
+  return {
+    total,
+    items,
+    missedLookups,
+    unweighedIngredients: [...unweighed],
+  };
 }

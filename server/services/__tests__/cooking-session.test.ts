@@ -661,4 +661,29 @@ describe("calculateSessionNutrition", () => {
 
     expect(result.missedLookups).toEqual([]);
   });
+
+  it("lists a count unit it cannot weigh, which is counted as 100 g", async () => {
+    const eggs: CookingSessionIngredient = {
+      ...chicken,
+      id: "ing-eggs",
+      name: "egg",
+      quantity: 6,
+      unit: "piece",
+    };
+    mockLookups({ egg: chickenPer100g, "chicken breast": chickenPer100g });
+
+    const result = await calculateSessionNutrition([chicken, eggs]);
+
+    expect(result.unweighedIngredients).toEqual(["egg"]);
+    // A weighed ingredient and a missed lookup are not "unweighed".
+    expect(result.missedLookups).toEqual([]);
+  });
+
+  it("reports no unweighed ingredients when every unit has a weight", async () => {
+    mockLookups({ "chicken breast": chickenPer100g });
+
+    const result = await calculateSessionNutrition([chicken]);
+
+    expect(result.unweighedIngredients).toEqual([]);
+  });
 });

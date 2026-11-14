@@ -36,6 +36,7 @@ const {
   invalidateSuggestionCacheForUser,
   getMealSuggestionCache,
   createMealSuggestionCache,
+  createMealSuggestionCacheWithLimitCheck,
   incrementMealSuggestionCacheHit,
   getDailyMealSuggestionCount,
   getMicronutrientCache,
@@ -261,20 +262,54 @@ describe("cache storage", () => {
         futureDate(),
       );
 
-      // Should not throw
       await createInstructionCache(
         scId,
         0,
+        { userId: testUser.id, scannedItemId: item.id },
         "Banana Smoothie",
         "recipe",
         "Step 1: Blend banana...",
       );
+      const cached = await getInstructionCache(scId, 0, {
+        userId: testUser.id,
+        scannedItemId: item.id,
+      });
+      expect(cached?.instructions).toBe("Step 1: Blend banana...");
+    });
+
+    it("writes nothing when the cache id belongs to another user", async () => {
+      const victimItem = await createTestScannedItem(tx, testUser.id);
+      const { id: victimCacheId } = await createSuggestionCache(
+        victimItem.id,
+        testUser.id,
+        "hash_victim",
+        sampleSuggestions,
+        futureDate(),
+      );
+      const attacker = await createTestUser(tx);
+      const attackerItem = await createTestScannedItem(tx, attacker.id);
+
+      await createInstructionCache(
+        victimCacheId,
+        0,
+        { userId: attacker.id, scannedItemId: attackerItem.id },
+        "Attacker title",
+        "recipe",
+        "Attacker-steered text",
+      );
+
+      const cached = await getInstructionCache(victimCacheId, 0, {
+        userId: testUser.id,
+        scannedItemId: victimItem.id,
+      });
+      expect(cached).toBeUndefined();
     });
   });
 
   describe("getInstructionCache", () => {
     it("returns cached instruction when found", async () => {
       const item = await createTestScannedItem(tx, testUser.id);
+      const scope = { userId: testUser.id, scannedItemId: item.id };
       const { id: scId } = await createSuggestionCache(
         item.id,
         testUser.id,
@@ -286,11 +321,12 @@ describe("cache storage", () => {
       await createInstructionCache(
         scId,
         0,
+        scope,
         "Banana Smoothie",
         "recipe",
         "Step 1: Blend banana",
       );
-      const cached = await getInstructionCache(scId, 0);
+      const cached = await getInstructionCache(scId, 0, scope);
       expect(cached).toBeDefined();
       expect(cached!.instructions).toBe("Step 1: Blend banana");
     });
@@ -305,8 +341,96 @@ describe("cache storage", () => {
         futureDate(),
       );
 
-      const cached = await getInstructionCache(scId, 99);
+      const cached = await getInstructionCache(scId, 99, {
+        userId: testUser.id,
+        scannedItemId: item.id,
+      });
       expect(cached).toBeUndefined();
+    });
+
+    it("returns undefined to another user holding the cache id", async () => {
+      const item = await createTestScannedItem(tx, testUser.id);
+      const scope = { userId: testUser.id, scannedItemId: item.id };
+      const { id: scId } = await createSuggestionCache(
+        item.id,
+        testUser.id,
+        "hash_other_user",
+        sampleSuggestions,
+        futureDate(),
+      );
+      await createInstructionCache(
+        scId,
+        0,
+        scope,
+        "Smoothie",
+        "recipe",
+        "Mine",
+      );
+      const other = await createTestUser(tx);
+      const otherItem = await createTestScannedItem(tx, other.id);
+
+      const cached = await getInstructionCache(scId, 0, {
+        userId: other.id,
+        scannedItemId: otherItem.id,
+      });
+      expect(cached).toBeUndefined();
+    });
+
+    it("returns undefined for the same user's other scanned item", async () => {
+      const item = await createTestScannedItem(tx, testUser.id);
+      const otherItem = await createTestScannedItem(tx, testUser.id);
+      const { id: scId } = await createSuggestionCache(
+        item.id,
+        testUser.id,
+        "hash_other_item",
+        sampleSuggestions,
+        futureDate(),
+      );
+      await createInstructionCache(
+        scId,
+        0,
+        { userId: testUser.id, scannedItemId: item.id },
+        "Smoothie",
+        "recipe",
+        "For item one",
+      );
+
+      const cached = await getInstructionCache(scId, 0, {
+        userId: testUser.id,
+        scannedItemId: otherItem.id,
+      });
+      expect(cached).toBeUndefined();
+    });
+
+    it("drops old instructions when the suggestions are regenerated", async () => {
+      const item = await createTestScannedItem(tx, testUser.id);
+      const scope = { userId: testUser.id, scannedItemId: item.id };
+      const { id: scId } = await createSuggestionCache(
+        item.id,
+        testUser.id,
+        "hash_refresh",
+        sampleSuggestions,
+        futureDate(),
+      );
+      await createInstructionCache(
+        scId,
+        0,
+        scope,
+        "Banana Smoothie",
+        "recipe",
+        "Old steps",
+      );
+
+      const { id: refreshedId } = await createSuggestionCache(
+        item.id,
+        testUser.id,
+        "hash_refresh",
+        [{ type: "recipe", title: "Oat Bake", description: "New idea" }],
+        futureDate(),
+      );
+
+      expect(refreshedId).toBe(scId);
+      expect(await getInstructionCache(scId, 0, scope)).toBeUndefined();
     });
   });
 
@@ -320,9 +444,17 @@ describe("cache storage", () => {
         sampleSuggestions,
         futureDate(),
       );
-      await createInstructionCache(scId, 0, "Smoothie", "recipe", "Blend it");
+      const scope = { userId: testUser.id, scannedItemId: item.id };
+      await createInstructionCache(
+        scId,
+        0,
+        scope,
+        "Smoothie",
+        "recipe",
+        "Blend it",
+      );
 
-      const cached = await getInstructionCache(scId, 0);
+      const cached = await getInstructionCache(scId, 0, scope);
       expect(cached).toBeDefined();
 
       await incrementInstructionCacheHit(cached!.id);
@@ -422,6 +554,55 @@ describe("cache storage", () => {
       expect(entry.cacheKey).toBe("meal_key_1");
       expect(entry.userId).toBe(testUser.id);
       expect(entry.hitCount).toBe(0);
+    });
+  });
+
+  describe("createMealSuggestionCacheWithLimitCheck", () => {
+    it("refreshes an expired row with the same key instead of failing", async () => {
+      // An expired row lingers until the purge job runs.
+      await tx.insert(schema.mealSuggestionCache).values({
+        cacheKey: "meal_limit_expired",
+        userId: testUser.id,
+        suggestions: [sampleMealSuggestion],
+        expiresAt: pastDate(1),
+        createdAt: pastDate(72),
+      });
+
+      const entry = await createMealSuggestionCacheWithLimitCheck(
+        "meal_limit_expired",
+        testUser.id,
+        [{ ...sampleMealSuggestion, title: "Fresh Bowl" }],
+        futureDate(6),
+        10,
+      );
+
+      expect(entry?.suggestions[0].title).toBe("Fresh Bowl");
+      const cached = await getMealSuggestionCache("meal_limit_expired");
+      expect(cached?.suggestions[0].title).toBe("Fresh Bowl");
+      // The regeneration is a new AI call, so it counts toward today's
+      // limit: createdAt moves to now (24h-tolerant, per the TZ-drift rule).
+      expect(Math.abs(entry!.createdAt.getTime() - Date.now())).toBeLessThan(
+        24 * 60 * 60 * 1000,
+      );
+    });
+
+    it("returns null once the daily limit is reached", async () => {
+      await createMealSuggestionCacheWithLimitCheck(
+        "meal_limit_1",
+        testUser.id,
+        [sampleMealSuggestion],
+        futureDate(6),
+        1,
+      );
+
+      const second = await createMealSuggestionCacheWithLimitCheck(
+        "meal_limit_2",
+        testUser.id,
+        [sampleMealSuggestion],
+        futureDate(6),
+        1,
+      );
+      expect(second).toBeNull();
     });
   });
 
