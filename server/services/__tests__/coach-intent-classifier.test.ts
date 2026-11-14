@@ -496,6 +496,18 @@ describe("classifyIntent", () => {
     });
   });
 
+  describe("suicide and self-harm wording routes to safety", () => {
+    it.each([
+      "I feel suicidal",
+      "I've been having suicidal thoughts lately",
+      "I've been thinking about suicide",
+      "Feeling SUICIDAL tonight",
+      "I want to self-harm",
+    ])("safety_refusal: %s", (message) => {
+      expect(classifyIntent(message).intent).toBe("safety_refusal");
+    });
+  });
+
   describe("recipe_request routing (R4)", () => {
     it.each([
       "meal ideas",
