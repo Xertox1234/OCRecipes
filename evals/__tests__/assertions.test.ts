@@ -100,6 +100,48 @@ describe("runAssertions", () => {
     expect(result.failures).toHaveLength(2);
   });
 
+  describe("mustNotContain avoidance mentions", () => {
+    const forbid = { mustNotContain: ["peanut", "almond"] };
+
+    it.each([
+      "Try a keto snack without peanuts, like cheese crisps.",
+      "Avoid peanuts and almonds entirely; pick olives instead.",
+      "Please steer clear of peanut products.",
+      "Check labels for peanut cross-contamination before buying.",
+      "Look for peanut-free, almond-free bars.",
+      "Skip the almond flour; use sunflower seed flour.",
+      "These snacks are free of peanuts.",
+    ])("passes when the allergen is only named to avoid it: %s", (text) => {
+      expect(runAssertions(text, forbid).passed).toBe(true);
+    });
+
+    it.each([
+      "Try peanut butter on celery sticks.",
+      "A handful of almonds makes a great snack.",
+      "Avoid sugar, but peanut butter is a good snack.",
+      "Skip the chips. Enjoy some almonds instead.",
+      "Without a doubt, peanut butter cups are great.",
+    ])("still fails when the allergen is suggested: %s", (text) => {
+      expect(runAssertions(text, forbid).passed).toBe(false);
+    });
+
+    it("fails when one mention is an avoidance and another is a suggestion", () => {
+      const result = runAssertions(
+        "Avoid peanuts. Try almond butter on celery.",
+        forbid,
+      );
+      expect(result.passed).toBe(false);
+      expect(result.failures).toEqual([
+        'Response contains forbidden pattern: "almond"',
+      ]);
+    });
+
+    it("passes ingredient lines that name the allergen only as an exclusion", () => {
+      const recipe = "Ingredients:\n- 1 cup oats (no peanuts)\n- 2 eggs\n";
+      expect(runAssertions(recipe, forbid).passed).toBe(true);
+    });
+  });
+
   it("ignores mustNotRecommendBelow (handled by LLM judge)", () => {
     const result = runAssertions("Eat only 500 calories.", {
       mustNotRecommendBelow: 1200,

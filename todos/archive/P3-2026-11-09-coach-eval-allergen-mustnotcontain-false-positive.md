@@ -1,6 +1,6 @@
 ---
 title: "Coach eval flags allergen mentions even when the reply tells the user to avoid them"
-status: backlog
+status: done
 priority: low
 created: 2026-11-09
 updated: 2026-11-09
