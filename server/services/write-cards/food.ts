@@ -6,6 +6,8 @@ import {
 } from "@shared/schemas/coach-write-cards";
 import { foodCounts } from "@shared/lib/coach-write-card-math";
 import { lookupNutrition as defaultLookupNutrition } from "../nutrition-lookup";
+import { parseServingGrams } from "../barcode-lookup";
+import { scaleToGrams } from "../portion-nutrition";
 import { inferMealTimeHint } from "../../lib/meal-time-hint";
 import { civilHourInTz } from "../../lib/civil-date";
 import {
@@ -21,17 +23,103 @@ export { logFoodCardArgsSchema, type LogFoodCardArgs } from "./tool-args";
 
 /**
  * Food write card (spec 2026-11-09). The model proposes items, counts and an
- * estimate; the server replaces the estimate with a nutrition lookup when one
- * answers on a plausible basis. Saving writes one log entry per kept item with
+ * estimate; the server replaces the estimate with a nutrition lookup when the
+ * unit states its weight and the lookup agrees with the estimate. Saving writes one log entry per kept item with
  * `servings` = the count — the same shape Quick Log uses for a servings stepper.
  */
 
+type PerUnit = FoodCardPayload["items"][number]["perUnit"];
+
 /**
- * A lookup further than this factor from the model's per-unit estimate is
- * almost always a different basis (a per-100 g row for "one egg"), so the
- * estimate stands.
+ * A lookup further than this factor from the model's per-unit calories is
+ * almost always a different food or amount, so the estimate stands.
  */
 const PLAUSIBLE_FACTOR = 3;
+
+/**
+ * How far a lookup's protein, carbs and fat may sit from the estimate's,
+ * counted in calories (4/4/9) as a share of the larger calorie figure. The
+ * calorie check alone let "Eggs, Grade A, Large, egg white" answer for a whole
+ * egg: close calories, no fat.
+ */
+const MAX_MACRO_SPLIT_DISTANCE = 0.5;
+
+/**
+ * A row whose macros account for less than half or more than 1.5x its
+ * calories is not trusted (below ENERGY_CHECK_MIN_CALORIES the rounding alone
+ * breaks the ratio). Alcohol fails this too, and keeps the estimate.
+ */
+const ENERGY_CHECK_MIN_CALORIES = 20;
+
+function macroCalories(v: PerUnit): number {
+  return 4 * v.protein + 4 * v.carbs + 9 * v.fat;
+}
+
+function lookupAgreesWithEstimate(found: PerUnit, estimate: PerUnit): boolean {
+  if (
+    found.calories > estimate.calories * PLAUSIBLE_FACTOR ||
+    found.calories < estimate.calories / PLAUSIBLE_FACTOR
+  ) {
+    return false;
+  }
+  if (found.calories >= ENERGY_CHECK_MIN_CALORIES) {
+    const ratio = macroCalories(found) / found.calories;
+    if (ratio < 0.5 || ratio > 1.5) return false;
+  }
+  const distance =
+    4 * Math.abs(found.protein - estimate.protein) +
+    4 * Math.abs(found.carbs - estimate.carbs) +
+    9 * Math.abs(found.fat - estimate.fat);
+  const scale = Math.max(found.calories, estimate.calories);
+  return distance <= scale * MAX_MACRO_SPLIT_DISTANCE;
+}
+
+/**
+ * The lookup's values for ONE unit, or null when they can't be worked out.
+ *
+ * The sources answer a text query per 100 g (CNF, USDA) or per a weighed
+ * serving (API Ninjas), never per "egg" or "slice". So a row can stand in for
+ * one unit only when the unit states its weight ("100 g", "cup (240 g)"), and
+ * it is scaled to that weight. For a counted unit the model's estimate stands,
+ * and no lookup is made.
+ */
+async function lookupPerUnit(
+  item: LogFoodCardArgs["items"][number],
+  lookupNutrition: typeof defaultLookupNutrition,
+): Promise<PerUnit | null> {
+  const unitGrams = parseServingGrams(item.unitLabel);
+  if (!unitGrams) return null;
+
+  let found: Awaited<ReturnType<typeof defaultLookupNutrition>> = null;
+  try {
+    // The food alone: a quantity in the query hurts the sources' matching.
+    found = await lookupNutrition(item.name);
+  } catch (err) {
+    logger.warn(
+      { err: toError(err) },
+      "write card nutrition lookup failed; using the estimate",
+    );
+  }
+  if (!found) return null;
+
+  const scaled = scaleToGrams(found, unitGrams);
+  if (
+    !scaled ||
+    scaled.calories == null ||
+    scaled.protein == null ||
+    scaled.carbs == null ||
+    scaled.fat == null
+  ) {
+    return null;
+  }
+  const perUnit = {
+    calories: scaled.calories,
+    protein: scaled.protein,
+    carbs: scaled.carbs,
+    fat: scaled.fat,
+  };
+  return lookupAgreesWithEstimate(perUnit, item.estimate) ? perUnit : null;
+}
 
 export async function buildFoodPayload(
   args: LogFoodCardArgs,
@@ -43,35 +131,13 @@ export async function buildFoodPayload(
   const items: FoodCardPayload["items"] = [];
   // One at a time: lookups hit external APIs; a reply has at most 8 items.
   for (const item of args.items) {
-    let found: Awaited<ReturnType<typeof defaultLookupNutrition>> = null;
-    try {
-      found = await deps.lookupNutrition(`1 ${item.unitLabel} ${item.name}`);
-    } catch (err) {
-      logger.warn(
-        { err: toError(err) },
-        "write card nutrition lookup failed; using the estimate",
-      );
-    }
-    const est = item.estimate.calories;
-    const plausible =
-      found != null &&
-      (est === 0 ||
-        (found.calories <= est * PLAUSIBLE_FACTOR &&
-          found.calories >= est / PLAUSIBLE_FACTOR));
+    const looked = await lookupPerUnit(item, deps.lookupNutrition);
     items.push({
       name: item.name,
       unitLabel: item.unitLabel,
       count: item.count,
-      source: plausible ? "lookup" : "estimate",
-      perUnit:
-        plausible && found
-          ? {
-              calories: found.calories,
-              protein: found.protein,
-              carbs: found.carbs,
-              fat: found.fat,
-            }
-          : item.estimate,
+      source: looked ? "lookup" : "estimate",
+      perUnit: looked ?? item.estimate,
     });
   }
   return {
