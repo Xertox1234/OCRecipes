@@ -60,8 +60,9 @@ vi.mock("@/hooks/useMealPlan", () => ({
   invalidateMealPlanItems: vi.fn(),
 }));
 
-vi.mock("@/hooks/useDailyBudget", () => ({
-  useDailyBudget: () => ({ data: undefined, isError: false, refetch: vi.fn() }),
+vi.mock("@/hooks/useCalorieGoal", () => ({
+  GOALS_QUERY_KEY: ["/api/goals"],
+  useCalorieGoal: () => ({ data: undefined, isError: false, refetch: vi.fn() }),
 }));
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({

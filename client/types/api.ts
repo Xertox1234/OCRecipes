@@ -54,12 +54,13 @@ export type DailySummaryResponse = {
 };
 
 /**
- * Goals response from /api/goals.
- * Contains daily macro and calorie targets.
+ * Goals response from GET /api/goals (server/routes/goals.ts), field for
+ * field. A goal the user has not set is null.
  */
 export type GoalsResponse = {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
+  dailyCalorieGoal: number | null;
+  dailyProteinGoal: number | null;
+  dailyCarbsGoal: number | null;
+  dailyFatGoal: number | null;
+  goalsCalculatedAt: string | null;
 };
