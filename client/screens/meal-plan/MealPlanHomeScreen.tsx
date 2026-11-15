@@ -71,7 +71,7 @@ import {
   useAddMealPlanItem,
   useConfirmMealPlanItem,
 } from "@/hooks/useMealPlan";
-import { useDailyBudget } from "@/hooks/useDailyBudget";
+import { GOALS_QUERY_KEY, useCalorieGoal } from "@/hooks/useCalorieGoal";
 import { useDailySummary } from "@/hooks/useDailySummary";
 import { useMealPlanSheets } from "@/hooks/useMealPlanSheets";
 import { DateStripItem } from "@/components/meal-plan/DateStrip";
@@ -299,12 +299,14 @@ export default function MealPlanHomeScreen() {
     return result;
   }, [itemsByMealType]);
 
-  // Calorie ring data
+  // Calorie ring data. Only the goal is needed here, so it comes from the
+  // goals read rather than /api/daily-budget, which would total the day's log
+  // a second time (the daily-summary read above already does).
   const {
     data: budgetData,
     isError: budgetError,
     refetch: refetchBudget,
-  } = useDailyBudget(selectedDateStr);
+  } = useCalorieGoal();
   const calorieGoal = budgetData?.calorieGoal ?? 2000;
 
   // Suppress the 2000 default against a failed budget fetch, so we don't show a
@@ -566,11 +568,11 @@ export default function MealPlanHomeScreen() {
     // invalidateMealPlanItems fires-and-forgets internally (its own callers
     // never await it either); the pull-to-refresh spinner is driven by
     // useMealPlanItems' own `isRefetching`, not by this callback's await, so
-    // that's still coordinated. Daily-budget and daily-summary (L6, 2026-09-23
-    // audit) were previously never refreshed here at all.
+    // that's still coordinated. The calorie goal and daily-summary (L6,
+    // 2026-09-23 audit) were previously never refreshed here at all.
     invalidateMealPlanItems(queryClient);
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailyBudget }),
+      queryClient.invalidateQueries({ queryKey: GOALS_QUERY_KEY }),
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary }),
     ]);
     haptics.impact();

@@ -176,9 +176,18 @@ vi.mock("@/hooks/useMealPlan", () => ({
   invalidateMealPlanItems: vi.fn(),
 }));
 
+// The screen must NOT load /api/daily-budget: that endpoint totals the day's
+// log, which /api/daily-summary already does for this screen (perf audit L5).
 vi.mock("@/hooks/useDailyBudget", () => ({
   useDailyBudget: (...args: unknown[]) => {
     hookCalls.dailyBudget.push(args);
+    return { data: undefined, isError: false, refetch: vi.fn() };
+  },
+}));
+
+vi.mock("@/hooks/useCalorieGoal", () => ({
+  GOALS_QUERY_KEY: ["/api/goals"],
+  useCalorieGoal: () => {
     return {
       data: dailyBudgetQueryState.data,
       isError: dailyBudgetQueryState.isError,
@@ -674,10 +683,9 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
     expect(new Date().toISOString()).toBe("2026-09-01T22:30:00.000Z");
   });
 
-  it("keys the selected day to the local date, not the UTC date of local midnight", () => {
+  it("takes the calorie goal from the goals read, never the daily-budget endpoint", () => {
     renderComponent(<MealPlanHomeScreen />);
-    // Local calendar day is Sep 2; the UTC day of that same instant is Sep 1.
-    expect(hookCalls.dailyBudget.at(-1)?.[0]).toBe("2026-09-02");
+    expect(hookCalls.dailyBudget).toEqual([]);
   });
 
   it("requests a 7-day window covering exactly the days the strip renders", () => {
@@ -731,8 +739,8 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   // is kept because it does guard the narrower property named below: a
   // single-site edit to either line breaks it. It is NOT a basis guard — the
   // literal pins above are. (Confirmed by mutation: reverting the import to
-  // `toDateString` fails those three — the daily-budget, window, and
-  // daily-summary pins — and leaves this one green.) Selection is exposed via
+  // `toDateString` fails the window and daily-summary pins and leaves this
+  // one green. A third pin, on the daily-budget read, went with that read.) Selection is exposed via
   // `accessibilityState`/`aria-selected`, not a label suffix (see the
   // dedicated single-announce test below), so this guard now keys off
   // `aria-selected` instead of a `", selected"` label substring.
@@ -893,10 +901,10 @@ describe("MealPlanHomeScreen — Android TalkBack background trap", () => {
 
 // P1-2026-09-23 (L6): handleRefresh used to hand-roll an
 // `invalidateQueries({ queryKey: ["/api/meal-plan"] })` call instead of the
-// shared `invalidateMealPlanItems` helper, and never refreshed daily-budget
-// or daily-summary at all — so pull-to-refresh on this screen never updated
-// the calorie ring or the confirmed-checkmarks.
-describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, daily-budget, and daily-summary", () => {
+// shared `invalidateMealPlanItems` helper, and never refreshed the calorie
+// goal or daily-summary at all — so pull-to-refresh on this screen never
+// updated the calorie ring or the confirmed-checkmarks.
+describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, the calorie goal, and daily-summary", () => {
   beforeEach(() => {
     capturedSheets.clear();
     mockApiRequest.mockReset();
@@ -908,7 +916,7 @@ describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, daily-budg
     cleanup();
   });
 
-  it("calls invalidateMealPlanItems and invalidates daily-budget + daily-summary on refresh", async () => {
+  it("calls invalidateMealPlanItems and invalidates the goals + daily-summary on refresh", async () => {
     const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
 
     renderComponent(<MealPlanHomeScreen />);
@@ -921,7 +929,7 @@ describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, daily-budg
 
     expect(invalidateMealPlanItems).toHaveBeenCalled();
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["/api/daily-budget"],
+      queryKey: ["/api/goals"],
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["/api/daily-summary"],

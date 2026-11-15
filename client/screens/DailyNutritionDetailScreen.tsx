@@ -168,16 +168,16 @@ export default function DailyNutritionDetailScreen() {
   }, [isError]);
 
   const consumed = summary?.totalCalories ?? 0;
-  const calorieGoal = budget?.calorieGoal ?? goals?.calories ?? 0;
+  const calorieGoal = budget?.calorieGoal ?? goals?.dailyCalorieGoal ?? 0;
   const remaining = budget?.remaining ?? calorieGoal - consumed;
   const protein = summary?.totalProtein ?? 0;
   const carbs = summary?.totalCarbs ?? 0;
   const fat = summary?.totalFat ?? 0;
   const itemCount = summary?.itemCount ?? 0;
 
-  const proteinGoal = goals?.protein ?? 0;
-  const carbsGoal = goals?.carbs ?? 0;
-  const fatGoal = goals?.fat ?? 0;
+  const proteinGoal = goals?.dailyProteinGoal ?? 0;
+  const carbsGoal = goals?.dailyCarbsGoal ?? 0;
+  const fatGoal = goals?.dailyFatGoal ?? 0;
 
   const macros: MacroInfo[] = useMemo(
     () => [
