@@ -1,9 +1,9 @@
 ---
 title: "Shared wheat/gluten allergen list misses pie crust, pizza dough and brioche"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-06
-updated: 2026-11-06
+updated: 2026-11-15
 assignee:
 labels: [deferred, data-integrity, allergens]
 github_issue:
@@ -59,3 +59,9 @@ Deferred, not fixed in the audit, because a shared allergen keyword change follo
 ### 2026-11-06
 
 - Initial creation (data-integrity audit 2026-11-05, M3 review follow-up)
+
+## Resolution (2026-11-15)
+
+- #1875 added pie crust, pizza dough and brioche; #1876 added 71 more wheat keywords and moved the "Make gluten-free" chip to the whole-word matcher; #1877 added the "possible" level for ambiguous foods across all nine allergens.
+- Production allergen backfill and server redeploy ran on 2026-11-14 and again on 2026-11-15 (31 community + 0 meal-plan recipes each time).
+- Preview OTA published 2026-11-15 (update group fbf6ad41, runtime 5.2.0). The production channel was not published: production builds are still on runtime 5.0.0.
