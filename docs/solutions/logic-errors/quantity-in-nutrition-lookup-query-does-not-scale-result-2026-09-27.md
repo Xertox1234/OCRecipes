@@ -4,10 +4,10 @@ track: bug
 category: logic-errors
 tags: [architecture, ai-prompting, nutrition, unit-conversion, caching]
 module: server
-applies_to: [server/services/portion-nutrition.ts, server/services/food-nlp.ts, server/services/nutrition-lookup.ts, server/services/cooking-session.ts, server/routes/photos.ts, server/routes/beverages.ts]
+applies_to: [server/services/portion-nutrition.ts, server/services/food-nlp.ts, server/services/nutrition-lookup.ts, server/services/cooking-session.ts, server/routes/photos.ts, server/routes/beverages.ts, server/services/write-cards/food.ts]
 symptoms: ["A logged entry's calories are the food's per-100 g values regardless of the amount typed — \"2 eggs and toast\" = 470 + 305 kcal", "The lookup result carries servingSize \"100g\" while the UI shows the user's own quantity", "The only source that returns a per-serving value (API Ninjas) is the last-resort fallback, so the bug hides on the rare path that happens to work"]
 created: 2026-09-27
-last_updated: 2026-09-27
+last_updated: 2026-11-15
 severity: high
 ---
 
@@ -74,6 +74,24 @@ ingredient's `grain`/`vegetable`/`fruit`/`protein` category and 1 g/ml for liqui
 (`dairy`, `beverage`, `other`). Leafy greens are still ~4× high: a residual, disclosed. Read
 unit tables with `Object.hasOwn`, since units are free text.
 
+### A fifth caller, and why a "plausible vs the estimate" check did not catch it
+
+The coach food card (`server/services/write-cards/food.ts`, added in #1812) had the same
+copy-through shape: `lookupNutrition("1 egg large egg")`, values used as one unit. It carried
+a guard, "refuse a lookup more than 3x from the model's per-unit calories", meant to catch a
+per-100 g row. That guard only fires when the unit is far from 100 g. An egg is ~50 g, so
+"Eggs, Grade A, Large, egg white" per 100 g (55 kcal, 10.7 g protein, 0 g fat) passed for one
+egg (#1881).
+
+- A range check on calories is not a basis check. Read the basis from `servingSize` and scale;
+  the card now uses a lookup only when the unit label states its weight ("100 g",
+  "cup (240 g)") and keeps the model's estimate for a counted unit.
+- A 4/4/9 energy check (do the macros add up to the calories?) does not catch a wrong food
+  either: the egg-white row adds up to 52 kcal against 55. What rejects it is comparing the
+  protein/carbs/fat split with the estimate's.
+- The card's test passed because its fixture used `servingSize: "1 large"`, a basis no source
+  returns. Build lookup fixtures from a row a source really returned.
+
 ## Prevention
 
 - Any caller of `lookupNutrition` / `batchNutritionLookup` that logs or displays values must scale them to a known portion through the result's `servingSize`. Grep the callers when touching the lookup chain. The copy-through shape recurs.
@@ -87,6 +105,7 @@ unit tables with `Object.hasOwn`, since units are free text.
 - `server/services/food-nlp.ts`: `toPortion`, `parseNaturalLanguageFood`
 - `server/services/nutrition-lookup.ts`: `lookupNutrition`, source chain, cache
 - `server/services/barcode-lookup.ts`: `parseServingGrams`, `scaleNutrients`
+- `server/services/write-cards/food.ts`: `lookupPerUnit`, the coach food card (PR #1881)
 - `server/routes/beverages.ts`: fixed by `todos/archive/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md` (PR #1124)
 - `server/services/cooking-session.ts`, `server/routes/photos.ts`: fixed by `todos/archive/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md` (PR #1127 cooking; PR #1129 photo, which also asks the model for a `lookupName`, as Quick Log does)
 
