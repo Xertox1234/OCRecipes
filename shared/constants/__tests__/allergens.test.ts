@@ -1051,13 +1051,22 @@ describe("common wheat foods (owner batch 2026-11-14)", () => {
     "pastrami",
     "rice paper wrappers",
     "spring roll rice paper",
-    "rice cake",
-    "corn muffin mix",
     "scallions",
   ])("does not flag wheat for %s", (ingredient) => {
     const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
     expect(ids).not.toContain("wheat");
   });
+
+  // "cake" and "muffin" are possible-tier words since 2026-11-15: a warning,
+  // never a definite wheat entry.
+  it.each(["rice cake", "corn muffin mix"])(
+    "%s is a possible wheat match, not a definite one",
+    (ingredient) => {
+      expect(
+        deriveRecipeAllergens([ingredient]).find((a) => a.id === "wheat"),
+      ).toEqual({ id: "wheat", viaDerived: true, possible: true });
+    },
+  );
 
   it("over-flags 'gluten-free penne' (accepted, safe direction)", () => {
     expect(

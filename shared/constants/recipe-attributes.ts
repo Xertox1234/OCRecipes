@@ -120,7 +120,11 @@ export function getRecipeAttributes(
   const conflicts = parseDietConflicts(facts.dietConflicts);
   const allergens = facts.allergens;
   if (claimed.size > 0 && conflicts !== null && Array.isArray(allergens)) {
-    const allergenIds = new Set(allergens.map((a) => a.id));
+    // A possible-only entry ("chocolate" for milk) is a warning, not a
+    // finding: it never removes a diet icon (owner ruling 2026-11-15).
+    const allergenIds = new Set(
+      allergens.filter((a) => a.possible !== true).map((a) => a.id),
+    );
     const conflictIds = new Set(conflicts);
     const passes = (diet: CheckableDietId) =>
       claimed.has(diet) &&

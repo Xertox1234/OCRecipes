@@ -33,6 +33,12 @@ export const RECIPE_ATTRIBUTE_VISUALS: Record<
 export const CONTAINS_COLOR_KEY: BadgeSeverityColorKey =
   LOW_SEVERITY_VISUALS.colorKey;
 
+/**
+ * The "Possible:" chips use the neutral badge colour (the "quick" chip's):
+ * calmer than "Contains:", because the recipe may or may not carry them.
+ */
+export const POSSIBLE_COLOR_KEY: BadgeSeverityColorKey = "badgeNeutralText";
+
 // The set has no shellfish or sesame glyph; the chip's word carries the meaning.
 export const ALLERGEN_ICON: Record<AllergenId, AttributeIconName> = {
   peanuts: "peanut",

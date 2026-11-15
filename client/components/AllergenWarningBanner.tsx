@@ -5,6 +5,7 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { getAllergenBannerMessage } from "./allergen-badge-utils";
 import type {
   AllergenMatch,
   AllergySeverity,
@@ -23,11 +24,7 @@ export const AllergenWarningBanner = React.memo(function AllergenWarningBanner({
 }: AllergenWarningBannerProps) {
   const { theme } = useTheme();
 
-  const count = new Set(matches.map((m) => m.ingredientName)).size;
-  const message =
-    count === 1
-      ? "1 ingredient contains your allergens"
-      : `${count} ingredients contain your allergens`;
+  const message = getAllergenBannerMessage(matches);
 
   useEffect(() => {
     if (matches.length > 0 && Platform.OS === "ios") {

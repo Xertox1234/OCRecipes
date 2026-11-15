@@ -153,3 +153,23 @@ describe("RECIPE_ATTRIBUTE_LABELS", () => {
     }
   });
 });
+
+describe("possible allergen matches and diet icons (owner ruling 2026-11-15)", () => {
+  it("keeps the gluten-free icon when wheat is only possible", () => {
+    expect(
+      getRecipeAttributes(facts(["Gluten Free"], ["crushed cookies", "sugar"])),
+    ).toEqual(["gluten_free"]);
+  });
+  it("keeps vegan and dairy-free when milk is only possible", () => {
+    expect(
+      getRecipeAttributes(
+        facts(["Vegan", "Dairy Free"], ["chocolate chips", "margarine"]),
+      ),
+    ).toEqual(["vegan", "dairy_free"]);
+  });
+  it("still removes the icon on a definite match", () => {
+    expect(
+      getRecipeAttributes(facts(["Gluten Free"], ["cookies", "wheat flour"])),
+    ).toEqual([]);
+  });
+});

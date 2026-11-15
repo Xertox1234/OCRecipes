@@ -88,6 +88,9 @@ export interface RecipeSearchResponse {
 const derivedRecipeAllergenSchema = z.object({
   id: allergenIdSchema,
   viaDerived: z.boolean(),
+  // Possible-only entries carry this mark; a plain z.object would strip it
+  // and the label would say "Contains" for a guess.
+  possible: z.literal(true).optional(),
 });
 
 const searchableRecipeSchema = z.object({

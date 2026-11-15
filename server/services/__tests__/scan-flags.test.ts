@@ -112,3 +112,54 @@ describe("buildScanResponseFlags — profile outcome", () => {
     expect(flags[0].allergenId).toBe("peanuts");
   });
 });
+
+describe("evaluateScanFlags — possible matches (owner ruling 2026-11-15)", () => {
+  const milk = (severity: "mild" | "moderate" | "severe") => [
+    { name: "milk", severity },
+  ];
+
+  it.each([
+    ["mild", "info"],
+    ["moderate", "warn"],
+    ["severe", "danger"],
+  ] as const)(
+    "words a possible-only match as possible at %s severity",
+    (severity, flagSeverity) => {
+      const flags = evaluateScanFlags(
+        withData({ ingredientsText: "sugar, dark chocolate, salt" }),
+        milk(severity),
+      );
+      expect(flags).toHaveLength(1);
+      expect(flags[0]).toMatchObject({
+        id: "allergen:milk",
+        kind: "allergen",
+        allergenId: "milk",
+        severity: flagSeverity,
+        title: "Possible Dairy/Milk",
+      });
+      expect(flags[0].detail).toContain("may contain");
+      expect(flags[0].title).not.toContain("Contains");
+    },
+  );
+
+  it("says Contains when a definite ingredient is also present", () => {
+    const flags = evaluateScanFlags(
+      withData({ ingredientsText: "dark chocolate, butter" }),
+      milk("mild"),
+    );
+    expect(flags).toHaveLength(1);
+    expect(flags[0].title).toBe("Contains Dairy/Milk");
+  });
+
+  it("says Contains when the declared tag names it, whatever the text says", () => {
+    const flags = evaluateScanFlags(
+      withData({
+        allergenTags: ["en:milk"],
+        ingredientsText: "dark chocolate",
+      }),
+      milk("mild"),
+    );
+    expect(flags).toHaveLength(1);
+    expect(flags[0].title).toBe("Contains Dairy/Milk");
+  });
+});

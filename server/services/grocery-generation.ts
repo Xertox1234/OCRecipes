@@ -1,6 +1,7 @@
 import type { RecipeIngredient } from "@shared/schema";
 import {
   detectAllergens,
+  firstMatchPerIngredient,
   type AllergenMatch,
   type AllergySeverity,
 } from "@shared/constants/allergens";
@@ -377,12 +378,6 @@ export function flagAllergenicGroceryItems(
   const names = items.map((i) => i.name);
   const matches = detectAllergens(names, userAllergies);
 
-  // One match per item name (first match wins)
-  const flagMap = new Map<string, AllergenMatch>();
-  for (const m of matches) {
-    if (!flagMap.has(m.ingredientName)) {
-      flagMap.set(m.ingredientName, m);
-    }
-  }
-  return flagMap;
+  // One match per item name: a definite match wins over a possible one.
+  return firstMatchPerIngredient(matches);
 }

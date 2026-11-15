@@ -184,6 +184,7 @@ describe("Menu Routes", () => {
             ingredientName: "shrimp",
             matchedKeyword: "shrimp",
             isDerived: false,
+            isPossible: false,
           },
         },
       };

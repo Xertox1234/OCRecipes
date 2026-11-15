@@ -406,6 +406,37 @@ describe("ingredient-substitution", () => {
     });
   });
 
+  describe("filterSafeSubstitutions — possible matches (2026-11-15)", () => {
+    const suggestion = (substitute: string) => ({
+      originalIngredientId: "1",
+      substitute,
+      reason: "test",
+      ratio: "1:1",
+      macroDelta: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      confidence: 0.9,
+    });
+
+    it("drops a possible match for moderate and severe allergies", () => {
+      for (const severity of ["moderate", "severe"] as const) {
+        expect(
+          filterSafeSubstitutions(
+            [suggestion("dark chocolate"), suggestion("carob")],
+            [{ name: "milk", severity }],
+          ).map((s) => s.substitute),
+        ).toEqual(["carob"]);
+      }
+    });
+
+    it("keeps a possible match for a mild allergy", () => {
+      expect(
+        filterSafeSubstitutions(
+          [suggestion("dark chocolate"), suggestion("butter")],
+          [{ name: "milk", severity: "mild" }],
+        ).map((s) => s.substitute),
+      ).toEqual(["dark chocolate"]);
+    });
+  });
+
   describe("buildExclusionList", () => {
     it("returns empty string for no allergies", () => {
       expect(buildExclusionList([])).toBe("");

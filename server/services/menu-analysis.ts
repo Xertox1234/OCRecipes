@@ -7,6 +7,7 @@ import { createServiceLogger, toError } from "../lib/logger";
 import { parseAiJson } from "../lib/ai-json";
 import {
   detectAllergens,
+  firstMatchPerIngredient,
   parseUserAllergies,
   type AllergenMatch,
   type AllergySeverity,
@@ -207,7 +208,8 @@ export async function analyzeMenuPhoto(
       const matches = detectAllergens(textToCheck, userAllergies);
       if (matches.length > 0) {
         allergenFlags = {};
-        for (const m of matches) {
+        // One flag per item: a definite match wins over a possible one.
+        for (const m of firstMatchPerIngredient(matches).values()) {
           const idx = textToIndex.get(m.ingredientName);
           const itemName =
             idx !== undefined ? validated.menuItems[idx].name : undefined;

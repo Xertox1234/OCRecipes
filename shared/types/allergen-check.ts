@@ -49,6 +49,8 @@ export const allergenCheckMatchSchema = z.object({
   ingredientName: z.string(),
   matchedKeyword: z.string(),
   isDerived: z.boolean(),
+  // Absent from a server that predates the possible tier: read as definite.
+  isPossible: z.boolean().optional(),
 });
 
 export const allergenSubstitutionSchema = z.object({
