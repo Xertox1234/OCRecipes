@@ -338,6 +338,8 @@ async function extractAndStoreNotebook(a: {
   /** Turn-start instant. */
   today: Date;
   tz: string;
+  /** The reply carries a write card built this turn. */
+  wroteCard: boolean;
 }): Promise<void> {
   const {
     messageHistory,
@@ -347,6 +349,7 @@ async function extractAndStoreNotebook(a: {
     conversationId,
     today,
     tz,
+    wroteCard,
   } = a;
   const allMessages = [
     ...messageHistory,
@@ -366,7 +369,7 @@ async function extractAndStoreNotebook(a: {
     // that is a separate, independently-defaulted `new Date()` in
     // nutrition-coach.ts's `buildSystemPrompt` — just the closer and
     // more correct of the two available anchors.
-    { now: today, tz },
+    { now: today, tz, wroteCard },
   );
   if (entries.length > 0) {
     // Build a per-entry dedup fingerprint so SSE retries that replay
@@ -856,13 +859,17 @@ export async function* handleCoachChat(
   // The write card is built (and its row created) only for a client still
   // here: the row locks the previous live card, which an abandoned turn must
   // not do.
+  let wroteCard = false;
   if (writeCardProposal && fullResponse && !isAborted()) {
     const card = await createWriteCardBlock(writeCardProposal, {
       conversationId,
       userId,
       tz,
     });
-    if (card) blocks = [...blocks, card];
+    if (card) {
+      blocks = [...blocks, card];
+      wroteCard = true;
+    }
   }
 
   // The trail leads the reply's blocks, so it sits right under the text and
@@ -939,6 +946,7 @@ export async function* handleCoachChat(
         conversationId,
         today,
         tz,
+        wroteCard,
       }),
     );
   }

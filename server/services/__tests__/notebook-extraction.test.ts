@@ -463,6 +463,109 @@ describe("Notebook Extraction", () => {
     });
   });
 
+  describe("one-off requests (log, shop, plan)", () => {
+    const at = { now: new Date("2026-01-01T00:00:00Z"), tz: "UTC" };
+    const run = (
+      userText: string,
+      entries: unknown[],
+      opts: { wroteCard?: boolean } = {},
+    ) => {
+      mockCreate.mockResolvedValue(
+        mockCompletion(JSON.stringify({ entries, moodDelta: 0.5 })),
+      );
+      return extractNotebookEntries(
+        [
+          { role: "user" as const, content: userText },
+          { role: "assistant" as const, content: "Here is a card for that." },
+        ],
+        "user-1",
+        1,
+        { ...at, ...opts },
+      );
+    };
+
+    // The two entries the model really wrote in the #1812 simulator check.
+    it("a food-log request answered with a card saves no entry", async () => {
+      const entries = await run(
+        "I had two eggs and a slice of toast",
+        [
+          {
+            type: "commitment",
+            content:
+              "You are trying 3 eggs and 2 slices of toast for breakfast",
+            label: "eggs and toast for breakfast",
+            followUpDate: null,
+          },
+        ],
+        { wroteCard: true },
+      );
+      expect(entries).toEqual([]);
+    });
+
+    it("a planning request answered with a card saves no entry", async () => {
+      const entries = await run(
+        "Plan my dinners for the next three days, high protein",
+        [
+          {
+            type: "commitment",
+            content:
+              "You have committed to planning your dinners for the next three days",
+            label: "planning three dinners",
+            followUpDate: null,
+          },
+          {
+            type: "conversation_summary",
+            content: "The user asked for three high-protein dinners.",
+          },
+        ],
+        { wroteCard: true },
+      );
+      expect(entries).toEqual([]);
+    });
+
+    it("a card turn still keeps a lasting fact from the same message, and the mood", async () => {
+      vi.mocked(storage.updateMoodScore).mockClear();
+      const entries = await run(
+        "I'm vegetarian now. Log two eggs for breakfast.",
+        [
+          { type: "preference", content: "You are vegetarian" },
+          {
+            type: "commitment",
+            content: "You are trying two eggs for breakfast",
+            label: "two eggs for breakfast",
+          },
+        ],
+        { wroteCard: true },
+      );
+      expect(entries.map((e) => e.type)).toEqual(["preference"]);
+      expect(storage.updateMoodScore).toHaveBeenCalledWith(
+        "user-1",
+        0.5,
+        at.now,
+      );
+    });
+
+    it("a turn with no card keeps its commitment", async () => {
+      const entries = await run("Ok, I'll try meal prep on Sunday", [
+        {
+          type: "commitment",
+          content: "You agreed to try meal prep on Sunday",
+          label: "Sunday meal prep",
+        },
+      ]);
+      expect(entries.map((e) => e.type)).toEqual(["commitment"]);
+    });
+
+    it("tells the model a request to log, shop or plan is not an entry", async () => {
+      await run("hi there coach", []);
+      const prompt = String(mockCreate.mock.calls[0]?.[1].messages[0].content);
+      expect(prompt).toContain(
+        "A request to log food, add to a grocery list or plan meals is an action for the coach to carry out",
+      );
+      expect(prompt).toContain("What the user ate at one meal");
+    });
+  });
+
   it("returns empty array on parse failure", async () => {
     mockCreate.mockResolvedValue(mockCompletion("not json"));
 
