@@ -27,6 +27,16 @@ A merge plus Railway's auto-deploy updates only the server's **live** checks. Th
    Use the **Postgres** service's `DATABASE_PUBLIC_URL`. The app service's `DATABASE_URL` is `postgres.railway.internal`, which fails with `ENOTFOUND` off-network. The script re-derives every row, so a re-run is harmless.
 3. **Search index: restart, but only if a cached row changed.** `initSearchIndex` (`server/services/recipe-search.ts`) snapshots recipes, including `allergens`, once at boot. First query whether any row actually contains the new keyword. Include a control term that must match, so a zero means something.
 
+## Before the merge: choosing and checking a keyword
+
+Added 2026-11-15, from #1875–#1877.
+
+- **A multi-word keyword matches as plain text; a single word matches whole words.** `ingredientContainsKeyword` uses `includes()` for any keyword with a space. So "nut milk" would hit "coconut milk" and "nut butter" would hit "peanut butter". Check a new multi-word keyword against common ingredients that end with its first word. A single-word keyword needs its plural listed too.
+- **Pick the list by certainty.** A food that carries the allergen by definition (satay, mayo, baklava) goes in `directIngredients`. A food that often does but not always (cookies, chocolate, pesto) goes in `possibleIngredients`: it warns, is hidden from "Safe for me" for moderate and severe allergies, and never removes a diet icon (owner ruling 2026-11-15).
+- **Every reader of the lists must use the shared matcher.** The "Make gluten-free" chip had its own substring test and drifted (#1876). Use `detectAllergens` / `ingredientContainsKeyword`, never a local `includes`.
+- **A new list name must be taught to the verdict-diff reader.** `scripts/harness/verdict-diff/keywords.ts` finds keywords by list name with a regex. A list it does not name is invisible to the diff, so `possibleIngredients` had to be added to that regex in #1877.
+- Run `bash scripts/harness/verdict-diff.sh` after committing and check that no row **loses** an allergen.
+
 ## Why
 
 On 2026-10-16 the oats change was merged and deployed, yet "Safe for me" would still have passed an oat recipe saved earlier for a severe-gluten user, and the phone app would still have shown no warning. The keyword list is one source of truth with three downstream copies: the client bundle, the DB cache and the boot-time index.
