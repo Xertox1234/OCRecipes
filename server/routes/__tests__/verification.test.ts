@@ -62,6 +62,7 @@ vi.mock("../../db", () => ({
   db: { transaction: vi.fn() },
 }));
 
+vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
 vi.mock("../../lib/image-mime", () => ({
@@ -326,6 +327,41 @@ describe("Verification Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("nutrition label first");
+    });
+
+    it("reports a front-label data validation failure to Sentry and keeps the 500 body", async () => {
+      const { reportError } = await import("../../lib/error-reporter");
+      vi.mocked(reportError).mockClear();
+      _testInternals.frontLabelSessionStore.set("test-session", {
+        userId: "1",
+        data: {
+          brand: "Test",
+          productName: "Product",
+          netWeight: "100g",
+          // The stored shape allows at most 20 claims.
+          claims: Array.from({ length: 21 }, (_, i) => `Claim ${i}`),
+          confidence: 0.9,
+        },
+        barcode: "1234567890",
+        createdAt: Date.now(),
+      });
+      vi.mocked(storage.hasUserVerified).mockResolvedValue(true);
+
+      const res = await request(app)
+        .post("/api/verification/front-label/confirm")
+        .send({ barcode: "1234567890", sessionId: "test-session" });
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({
+        error: "Failed to validate front label data",
+        code: "INTERNAL_ERROR",
+      });
+      expect(storage.confirmFrontLabelData).not.toHaveBeenCalled();
+      expect(reportError).toHaveBeenCalledTimes(1);
+      expect(reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "front label confirm",
+      );
     });
   });
 

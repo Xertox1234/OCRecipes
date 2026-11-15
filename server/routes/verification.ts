@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 import { detectImageMimeType } from "../lib/image-mime";
 import { extractVerificationNutrition } from "../services/verification-comparison";
 import { invalidateCache as invalidateStreakCache } from "../services/verification-streak-cache";
@@ -378,10 +379,17 @@ export function register(app: Express): void {
         // Validate with Zod before storing
         const parsed = frontLabelDataSchema.safeParse(frontLabelData);
         if (!parsed.success) {
-          logger.warn(
-            { zodErrors: parsed.error.flatten() },
+          // Our own stored session failed our own schema: a server fault, not
+          // bad input. Responds directly (keeps this body), so report the
+          // handled 5xx here — same chokepoint duty handleRouteError carries.
+          const validationError = new Error(
             "front label data validation failed",
           );
+          logger.error(
+            { err: validationError, zodErrors: parsed.error.flatten() },
+            "front label data validation failed",
+          );
+          reportError(validationError, "front label confirm");
           return sendError(
             res,
             500,

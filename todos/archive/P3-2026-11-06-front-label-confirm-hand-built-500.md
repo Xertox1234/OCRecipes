@@ -1,9 +1,9 @@
 ---
 title: "Front-label confirm hand-builds a 500 after a warn — never reaches Sentry"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
-updated: 2026-11-06
+updated: 2026-11-15
 assignee:
 labels: [deferred, api]
 github_issue:
@@ -21,8 +21,8 @@ Noticed during the 2026-11-05 data-integrity audit (cluster 3, L10) — out of t
 
 ## Acceptance Criteria
 
-- [ ] The validation-failure branch reports through the handled-5xx chokepoint (`handleRouteError`) or logs at `error`, so Sentry sees it
-- [ ] A route test asserts the failure path reports (mirroring the existing handled-5xx tests)
+- [x] The validation-failure branch reports through the handled-5xx chokepoint (`handleRouteError`) or logs at `error`, so Sentry sees it
+- [x] A route test asserts the failure path reports (mirroring the existing handled-5xx tests)
 
 ## Implementation Notes
 
@@ -48,3 +48,7 @@ Noticed during the 2026-11-05 data-integrity audit (cluster 3, L10) — out of t
 ### 2026-11-06
 
 - Initial creation (data-integrity audit 2026-11-05, noticed out of scope)
+
+### 2026-11-15
+
+- Resolved. The branch now logs at `error` and calls `reportError` with the same Error, keeping the 500 body the client already gets. Route test added in `server/routes/__tests__/verification.test.ts`.
