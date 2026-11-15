@@ -10,6 +10,7 @@ import { generateCoachProResponse } from "../nutrition-coach";
 import type { CoachContext, CoachProChunk } from "../nutrition-coach";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "../coach-blocks";
 import { buildWriteCardPayload } from "../write-cards";
+import { extractNotebookEntries } from "../notebook-extraction";
 import type { WriteCardProposal } from "../write-cards";
 import {
   createMockChatMessage,
@@ -220,6 +221,23 @@ describe("handleCoachChat with write cards", () => {
     expect(blocksEvent(events)?.blocks).toEqual([block]);
     expect(vi.mocked(storage.createChatMessage).mock.calls[0][4]).toEqual({
       blocks: [block],
+    });
+  });
+
+  it("tells notebook extraction the turn was answered with a card", async () => {
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposing({ kind: "food", args: foodArgs }),
+    );
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+    expect(vi.mocked(extractNotebookEntries).mock.calls[0][3]).toMatchObject({
+      wroteCard: true,
+    });
+  });
+
+  it("a turn with no card says so to notebook extraction", async () => {
+    await collect(handleCoachChat(makeParams()));
+    expect(vi.mocked(extractNotebookEntries).mock.calls[0][3]).toMatchObject({
+      wroteCard: false,
     });
   });
 

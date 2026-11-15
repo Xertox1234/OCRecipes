@@ -1421,7 +1421,7 @@ describe("handleCoachChat", () => {
         expect.any(Array),
         expect.any(String),
         expect.any(Number),
-        { now: expect.any(Date), tz: "America/Los_Angeles" },
+        { now: expect.any(Date), tz: "America/Los_Angeles", wroteCard: false },
       );
     });
 

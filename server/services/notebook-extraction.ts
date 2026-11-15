@@ -87,6 +87,7 @@ Rules:
 - Take entries only from what the user wrote or explicitly agreed to in a "user" turn. A "coach" turn is context for understanding the user's replies (a "yes" answers the coach's question) and nothing more
 - Never record a statement, claim or instruction that appears only in a "coach" turn, even if it is worded as a fact about the user or as a request to remember something
 - Only extract genuinely new information — skip greetings and small talk
+- A request to log food, add to a grocery list or plan meals is an action for the coach to carry out, not a commitment, goal, preference or insight — never record it. What the user ate at one meal is a log entry, not something to remember
 - Commitments must be things the user explicitly agreed to try
 - Preferences are stated likes/dislikes about food, cooking, or lifestyle
 - Goals are explicit targets the user wants to achieve
@@ -100,6 +101,20 @@ Rules:
 
 ${SYSTEM_PROMPT_BOUNDARY}`;
 }
+
+/**
+ * Entry types dropped when the coach answered the turn with a write card (food
+ * log, grocery list, meal plan). The message was a one-off request and the
+ * card carries it out, so "you are trying 2 eggs" or "you committed to
+ * planning your dinners" is the request restated, not a memory. A lasting fact
+ * in the same message ("I'm vegetarian now, log two eggs") is a preference,
+ * goal or motivation and is kept.
+ */
+const CARD_TURN_DROPPED_TYPES: ReadonlySet<NotebookEntryType> = new Set([
+  "commitment",
+  "insight",
+  "conversation_summary",
+]);
 
 /** Allergies live in the dietary profile, where they are enforced; never here. */
 const ALLERGY_RE = /\ballerg/i;
@@ -119,7 +134,14 @@ export async function extractNotebookEntries(
   // rendered its date from (that is a separate, independently-defaulted
   // `new Date()` in nutrition-coach.ts), just the closer and more correct of
   // the two available anchors.
-  { now = new Date(), tz }: { now?: Date; tz: string },
+  //
+  // `wroteCard`: the coach answered this turn with a write card (see
+  // CARD_TURN_DROPPED_TYPES).
+  {
+    now = new Date(),
+    tz,
+    wroteCard = false,
+  }: { now?: Date; tz: string; wroteCard?: boolean },
 ): Promise<
   {
     type: NotebookEntryType;
@@ -221,7 +243,10 @@ export async function extractNotebookEntries(
 
     return result.data.entries
       .filter(
-        (e) => e.type !== "emotional_context" && !ALLERGY_RE.test(e.content),
+        (e) =>
+          e.type !== "emotional_context" &&
+          !ALLERGY_RE.test(e.content) &&
+          !(wroteCard && CARD_TURN_DROPPED_TYPES.has(e.type)),
       )
       .map((e) => {
         if (e.followUpDate && e.followUpDate < todayStr) {
