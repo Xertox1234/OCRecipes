@@ -28,17 +28,17 @@ describe("incrementRecipePopularity", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("increments favorites counter by 1", async () => {
-    await incrementRecipePopularity(42, "favorite");
+    await incrementRecipePopularity(42, "favorite", "user-1");
     expect(db.update).toHaveBeenCalled();
   });
 
   it("increments mealPlan counter by 1", async () => {
-    await incrementRecipePopularity(42, "mealPlan");
+    await incrementRecipePopularity(42, "mealPlan", "user-1");
     expect(db.update).toHaveBeenCalled();
   });
 
   it("increments cookSession counter by 1", async () => {
-    await incrementRecipePopularity(42, "cookSession");
+    await incrementRecipePopularity(42, "cookSession", "user-1");
     expect(db.update).toHaveBeenCalled();
   });
 });

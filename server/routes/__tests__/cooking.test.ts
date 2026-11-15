@@ -1498,6 +1498,7 @@ describe("Cooking Routes", () => {
       expect(vi.mocked(storage.incrementRecipePopularity)).toHaveBeenCalledWith(
         55,
         "cookSession",
+        "1",
       );
     });
 

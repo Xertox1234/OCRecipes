@@ -515,6 +515,7 @@ export function register(app: Express): void {
             storage.incrementRecipePopularity(
               sourceCommunityRecipeId,
               "cookSession",
+              req.userId,
             ),
           );
         }

@@ -124,7 +124,7 @@ export async function toggleFavouriteRecipe(
   if (result === true && recipeType === "community") {
     fireAndForget(
       "favourite recipe popularity increment",
-      incrementRecipePopularity(recipeId, "favorite"),
+      incrementRecipePopularity(recipeId, "favorite", userId),
     );
   }
   return result;
