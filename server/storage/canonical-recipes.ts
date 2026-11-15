@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, and, or, gte, desc, sql, isNull } from "drizzle-orm";
+import { eq, ne, and, or, gte, desc, sql, isNull } from "drizzle-orm";
 import { communityRecipes, type CommunityRecipe } from "@shared/schema";
 import { ownerAllowsAiSharing } from "./ai-sharing";
 
@@ -11,10 +11,19 @@ const PROMOTION_THRESHOLD = {
 
 type PopularityEvent = "favorite" | "mealPlan" | "cookSession";
 
-/** Increment a popularity counter and recompute the weighted score. */
+/**
+ * Increment a popularity counter and recompute the weighted score.
+ *
+ * `recipeId` can come straight from a request body (a cook session or a
+ * meal-plan save names its source recipe), so the rules live in the WHERE:
+ * only a public recipe counts, and never the author's own event (owner ruling
+ * 2026-11-15) — otherwise one user could push any recipe, or their own, into
+ * the promoted set. A recipe with no author counts for anyone.
+ */
 export async function incrementRecipePopularity(
   recipeId: number,
   event: PopularityEvent,
+  actorUserId: string,
 ): Promise<void> {
   const updates =
     event === "favorite"
@@ -35,7 +44,16 @@ export async function incrementRecipePopularity(
   await db
     .update(communityRecipes)
     .set(updates)
-    .where(eq(communityRecipes.id, recipeId));
+    .where(
+      and(
+        eq(communityRecipes.id, recipeId),
+        eq(communityRecipes.isPublic, true),
+        or(
+          isNull(communityRecipes.authorId),
+          ne(communityRecipes.authorId, actorUserId),
+        ),
+      ),
+    );
 }
 
 /** Mark a recipe as canonical. */

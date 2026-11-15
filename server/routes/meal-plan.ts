@@ -160,6 +160,7 @@ export function register(app: Express): void {
             storage.incrementRecipePopularity(
               sourceCommunityRecipeId,
               "mealPlan",
+              req.userId,
             ),
           );
         }

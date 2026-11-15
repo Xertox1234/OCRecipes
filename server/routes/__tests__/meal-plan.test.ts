@@ -402,6 +402,7 @@ describe("Meal Plan Routes", () => {
       expect(vi.mocked(storage.incrementRecipePopularity)).toHaveBeenCalledWith(
         99,
         "mealPlan",
+        "1",
       );
     });
 
