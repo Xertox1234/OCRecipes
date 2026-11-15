@@ -1,6 +1,6 @@
 ---
 title: "Trim redundant server reads on the meal-plan and coach paths (perf audit M3, L5–L8)"
-status: backlog
+status: done
 priority: low
 created: 2026-11-08
 updated: 2026-11-15
@@ -30,7 +30,7 @@ bytes only. The local `meal_plan_recipes` table was empty, so no real size was m
 - [x] **L5** — `MealPlanHomeScreen` loads `useDailySummary` and `useDailyBudget`; both endpoints (`server/routes/nutrition.ts` ~L738, `server/routes/goals.ts` L143-200) run `getDailySummary`. Derive the budget from one response, or serve both from one endpoint.
 - [x] **L6** — `pickReminder` in `server/services/coach-brief.ts` (~L40-48) awaits `getNotebookEntryById` per commitment reminder; batch with `inArray` or reuse `getCommitmentsWithDueFollowUp`, which the same function already loads.
 - [x] **L7** — `refreshRepeats` in `server/storage/coach-notebook.ts` (~L111-130) loads every active + rejected row for the types with no limit; bound it (recency-ordered limit, or active + a capped number of rejected).
-- [ ] **L8** — redundant lookups: grocery item toggle checks ownership in the route (`server/routes/grocery.ts` ~L267) and again in storage (`server/storage/grocery-lists.ts` ~L145-175); add-to-pantry (~L352) loads the whole list to find one item; `GET /grocery-lists/:id` (~L226) awaits `getUserProfile` serially; meal confirm (`server/routes/meal-plan.ts` ~L530) pre-checks with `getConfirmedMealPlanItemIds` although the unique index already guards it.
+- [x] **L8** — redundant lookups: grocery item toggle checks ownership in the route (`server/routes/grocery.ts` ~L267) and again in storage (`server/storage/grocery-lists.ts` ~L145-175); add-to-pantry (~L352) loads the whole list to find one item; `GET /grocery-lists/:id` (~L226) awaits `getUserProfile` serially; meal confirm (`server/routes/meal-plan.ts` ~L530) pre-checks with `getConfirmedMealPlanItemIds` although the unique index already guards it.
 
 ## Implementation Notes
 
@@ -48,3 +48,4 @@ Source: audit manifest `docs/audits/2026-11-08-performance.md` (local, gitignore
 - Done: L5. `MealPlanHomeScreen` only ever used the calorie goal from `/api/daily-budget`, so it now reads the goal from `/api/goals` (`useCalorieGoal`, one user read, not dated) and no longer calls the budget endpoint. The day's log is totalled once per load (by `/api/daily-summary`) instead of twice. Client change: reaches phones with the next OTA.
 - Found on the way: the client's `GoalsResponse` type did not match what `/api/goals` returns, so `DailyNutritionDetailScreen` always showed "No goal set" for protein, carbs and fat. Type and screen fixed.
 - Still open: the L8 toggle double ownership check (owner decision).
+- Owner decision (2026-11-15): the grocery toggle keeps both ownership checks (route `verifyGroceryListOwnership` and the storage check). The second check is a deliberate security layer and the saving is negligible. L8 is closed with that item left as is; the rest of L8 shipped on 2026-11-12.
