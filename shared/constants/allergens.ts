@@ -35,14 +35,23 @@ export interface AllergenDefinition {
   directIngredients: string[];
   /** Hidden/processed derivatives — flagged only for moderate+ severity. */
   derivedIngredients: string[];
+  /**
+   * Foods that MAY carry the allergen depending on the recipe or brand
+   * ("cookies", "chocolate"). Reported as "possible", never as "contains";
+   * the person with the allergy decides (owner ruling 2026-11-15).
+   */
+  possibleIngredients: string[];
 }
 
 /**
- * Maps each allergen to the ingredient keywords it covers. Two tiers:
+ * Maps each allergen to the ingredient keywords it covers. Three tiers:
  *
  * - **direct**: common whole-food names a consumer would recognize.
  * - **derived**: processed derivatives that may not be obvious on a label.
  *   Only surfaced when the user's severity is moderate or severe.
+ * - **possible**: foods that often, but not always, carry the allergen.
+ *   Surfaced at every severity as a "possible" warning. Direct and derived
+ *   win over possible when both match.
  */
 export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
   peanuts: {
@@ -61,12 +70,34 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "beer nuts",
       "peanut flour",
       "peanut sauce",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "satay",
+      "kung pao",
+      "gado gado",
+      "mixed nuts",
     ],
     derivedIngredients: [
       "arachis oil",
       "arachis hypogaea",
       "hydrolyzed peanut protein",
       "peanut extract",
+    ],
+    possibleIngredients: [
+      "trail mix",
+      "mole",
+      "granola",
+      "pad thai",
+      "egg roll",
+      "nougat",
+      "energy bar",
+      "candy bar",
+      "massaman curry",
+      "brittle",
+      "cereal",
+      "cereals",
+      "cookie",
+      "cookies",
+      "dan dan noodles",
     ],
   },
 
@@ -106,6 +137,17 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "marzipan",
       "nougat",
       "gianduja",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "baklava",
+      "frangipane",
+      "amaretti",
+      "mixed nuts",
+      "turron",
+      "turrón",
+      "romesco",
+      "dukkah",
+      "macaron",
+      "macarons",
     ],
     derivedIngredients: [
       "nut extract",
@@ -114,6 +156,30 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "nut meal",
       "mandelonas",
       "nutella",
+    ],
+    possibleIngredients: [
+      "pesto",
+      "granola",
+      "muesli",
+      "trail mix",
+      "amaretto",
+      "macaroon",
+      "macaroons",
+      "mortadella",
+      "mole",
+      "biscotti",
+      "energy bar",
+      "korma",
+      "pilaf",
+      "fruitcake",
+      "brownie",
+      "brownies",
+      "chocolate spread",
+      "cereal",
+      "cereals",
+      "cookie",
+      "cookies",
+      "ice cream",
     ],
   },
 
@@ -160,6 +226,13 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       // Pesto is made with parmesan (owner ruling 2026-10-17). "Vegan pesto"
       // over-flags; accepted (safe direction).
       "pesto",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "queso",
+      "lassi",
+      "kefir",
+      "bechamel",
+      "béchamel",
+      "alfredo",
     ],
     derivedIngredients: [
       "whey",
@@ -180,6 +253,37 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "milk fat",
       "anhydrous milk fat",
       "ghee solids",
+    ],
+    possibleIngredients: [
+      "chocolate",
+      "caramel",
+      "pudding",
+      "frosting",
+      "ranch",
+      "nougat",
+      "sherbet",
+      "whipped topping",
+      "creamer",
+      "margarine",
+      "toffee",
+      "fudge",
+      "mashed potatoes",
+      "chowder",
+      "gratin",
+      "pizza",
+      "cocoa mix",
+      "protein powder",
+      "naan",
+      "brioche",
+      "croissant",
+      "croissants",
+      "pancake mix",
+      "biscuit",
+      "biscuits",
+      "cake",
+      "cakes",
+      "caesar dressing",
+      "white sauce",
     ],
   },
 
@@ -209,6 +313,17 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "aioli",
       "hollandaise",
       "eggnog",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "mayo",
+      "custard",
+      "souffle",
+      "soufflé",
+      "lemon curd",
+      "royal icing",
+      "french toast",
+      "tartar sauce",
+      "macaron",
+      "macarons",
     ],
     derivedIngredients: [
       "albumin",
@@ -224,6 +339,51 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "egg solids",
       "dried egg",
       "powdered egg",
+    ],
+    possibleIngredients: [
+      "marshmallow",
+      "marshmallows",
+      "fresh pasta",
+      "noodles",
+      "caesar dressing",
+      "brioche",
+      "challah",
+      "cake",
+      "cakes",
+      "cookie",
+      "cookies",
+      "muffin",
+      "muffins",
+      "pancake",
+      "pancakes",
+      "waffle",
+      "waffles",
+      "crepe",
+      "crepes",
+      "meatball",
+      "meatballs",
+      "meatloaf",
+      "batter",
+      "breaded",
+      "tempura",
+      "mousse",
+      "ice cream",
+      "nougat",
+      "macaroon",
+      "macaroons",
+      "pudding",
+      "frosting",
+      "pretzel",
+      "pretzels",
+      "doughnut",
+      "doughnuts",
+      "donut",
+      "donuts",
+      "ramen",
+      "pad thai",
+      "fried rice",
+      "surimi",
+      "ranch",
     ],
   },
 
@@ -389,6 +549,68 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "oatcake",
       "oatcakes",
     ],
+    possibleIngredients: [
+      "cake",
+      "cakes",
+      "cookie",
+      "cookies",
+      "muffin",
+      "muffins",
+      "biscuit",
+      "biscuits",
+      "cereal",
+      "cereals",
+      "granola",
+      "gravy",
+      "stuffing",
+      "toast",
+      "sandwich",
+      "sandwiches",
+      "rolls",
+      "pancake mix",
+      "pancake",
+      "pancakes",
+      "waffle",
+      "waffles",
+      "crepe",
+      "crepes",
+      "wafer",
+      "wafers",
+      "cone",
+      "cones",
+      "pie shell",
+      "tart shell",
+      "breading",
+      "breaded",
+      "roux",
+      "soba",
+      "lo mein",
+      "vermicelli",
+      "graham",
+      "rusk",
+      "rusks",
+      "batter",
+      "tempura",
+      "meatball",
+      "meatballs",
+      "meatloaf",
+      "sausage",
+      "sausages",
+      "bouillon",
+      "stock cube",
+      "brownie",
+      "brownies",
+      "licorice",
+      "surimi",
+      "miso",
+      "worcestershire",
+      "hoisin",
+      "oyster sauce",
+      "cream of mushroom soup",
+      "veggie burger",
+      "fish sticks",
+      "chicken nuggets",
+    ],
   },
 
   soy: {
@@ -408,6 +630,13 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "soy cream",
       "soy cheese",
       "tamari",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "teriyaki",
+      "hoisin",
+      "ponzu",
+      "natto",
+      "gochujang",
+      "black bean sauce",
     ],
     derivedIngredients: [
       "soy lecithin",
@@ -419,6 +648,24 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "hydrolyzed soy protein",
       "textured vegetable protein",
       "tvp",
+    ],
+    possibleIngredients: [
+      "worcestershire",
+      "vegetable broth",
+      "bouillon",
+      "oyster sauce",
+      "veggie burger",
+      "vegan cheese",
+      "vegan sausage",
+      "imitation bacon",
+      "margarine",
+      "shortening",
+      "mayonnaise",
+      "chocolate",
+      "protein bar",
+      "protein powder",
+      "stir fry sauce",
+      "stir-fry sauce",
     ],
   },
 
@@ -455,6 +702,11 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "groupers",
       "caviar",
       "roe",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "nam pla",
+      "taramasalata",
+      "bouillabaisse",
+      "imitation crab",
     ],
     derivedIngredients: [
       "fish sauce",
@@ -470,6 +722,27 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "fumet",
       "isinglass",
       "worcestershire sauce",
+    ],
+    possibleIngredients: [
+      "caesar dressing",
+      "kimchi",
+      "curry paste",
+      "oyster sauce",
+      "tapenade",
+      "puttanesca",
+      "caponata",
+      "furikake",
+      "pad thai",
+      "som tam",
+      "gumbo",
+      "paella",
+      "sushi",
+      "ramen",
+      "miso soup",
+      "xo sauce",
+      "sambal",
+      "remoulade",
+      "rémoulade",
     ],
   },
 
@@ -509,6 +782,13 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "shellfish",
       "crustacean",
       "crustaceans",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "belacan",
+      "cioppino",
+      "etouffee",
+      "étouffée",
+      "seafood stock",
+      "xo sauce",
     ],
     derivedIngredients: [
       "shellfish extract",
@@ -521,6 +801,33 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "chitin",
       "chitosan",
       "glucosamine",
+    ],
+    possibleIngredients: [
+      "kimchi",
+      "curry paste",
+      "paella",
+      "surimi",
+      "fish sauce",
+      "gumbo",
+      "jambalaya",
+      "bouillabaisse",
+      "pad thai",
+      "sambal",
+      "fish stock",
+      "tom yum",
+      "laksa",
+      "fried rice",
+      "egg roll",
+      "dumpling",
+      "dumplings",
+      "wonton",
+      "wontons",
+      "sushi",
+      "ramen",
+      "bisque",
+      "chowder",
+      "seafood seasoning",
+      "ceviche",
     ],
   },
 
@@ -538,6 +845,16 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "hummus",
       "sesame paste",
       "sesame butter",
+      // Dishes and sauces that carry it by definition (2026-11-15).
+      "furikake",
+      "gomasio",
+      "za'atar",
+      "zaatar",
+      "dukkah",
+      "goma",
+      "benne",
+      "baba ganoush",
+      "everything bagel",
     ],
     derivedIngredients: [
       "sesame flour",
@@ -548,6 +865,32 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "til oil",
       "benne seed",
       "benne seeds",
+    ],
+    possibleIngredients: [
+      "bagel",
+      "bagels",
+      "falafel",
+      "burger bun",
+      "sushi",
+      "granola",
+      "breadsticks",
+      "crackers",
+      "bibimbap",
+      "stir fry",
+      "stir-fry",
+      "teriyaki",
+      "hoisin",
+      "chili oil",
+      "dan dan noodles",
+      "ramen",
+      "poke",
+      "seaweed salad",
+      "energy bar",
+      "veggie burger",
+      "pretzel",
+      "pretzels",
+      "challah",
+      "dumpling sauce",
     ],
   },
 };
@@ -567,6 +910,42 @@ export interface AllergenMatch {
   matchedKeyword: string;
   /** Whether the match came from the derived (hidden) ingredient list. */
   isDerived: boolean;
+  /**
+   * True when only a possible-tier keyword matched: the ingredient MAY carry
+   * the allergen. Word it as "possible", never "contains".
+   */
+  isPossible: boolean;
+}
+
+/**
+ * Whether a match should stop something being offered or shown as safe, as
+ * opposed to only raising a warning. Definite matches always block. A
+ * possible match blocks for moderate and severe allergies and only warns for
+ * mild ones — the same line `isRecipeSafeForAllergies` draws. A match with no
+ * `isPossible` field (older data) blocks.
+ */
+export function isBlockingAllergenMatch(
+  match: Pick<AllergenMatch, "severity"> & { isPossible?: boolean },
+): boolean {
+  return match.isPossible !== true || match.severity !== "mild";
+}
+
+/**
+ * One match per ingredient, for surfaces that show a single flag per row.
+ * A definite match wins over a possible one; within a kind, the first match
+ * in `matches` order wins.
+ */
+export function firstMatchPerIngredient(
+  matches: readonly AllergenMatch[],
+): Map<string, AllergenMatch> {
+  const map = new Map<string, AllergenMatch>();
+  for (const m of matches) {
+    const current = map.get(m.ingredientName);
+    if (!current || (current.isPossible === true && m.isPossible !== true)) {
+      map.set(m.ingredientName, m);
+    }
+  }
+  return map;
 }
 
 /**
@@ -574,6 +953,10 @@ export interface AllergenMatch {
  *
  * - **Mild** severity: only `directIngredients` are flagged.
  * - **Moderate / Severe**: both `direct` and `derivedIngredients` are flagged.
+ * - **Every severity**: `possibleIngredients` are reported with
+ *   `isPossible: true`, but only when no definite keyword matched the same
+ *   ingredient. Callers that block (not just warn) use
+ *   `isBlockingAllergenMatch`.
  *
  * Matching is case-insensitive and uses word-boundary–aware substring search
  * so that "cod" doesn't falsely match "avocado".
@@ -594,25 +977,42 @@ export function detectAllergens(
     const includeDerived =
       allergy.severity === "moderate" || allergy.severity === "severe";
 
-    const keywords = includeDerived
+    const definiteKeywords = includeDerived
       ? [...definition.directIngredients, ...definition.derivedIngredients]
       : definition.directIngredients;
 
     for (const ingredientName of ingredientNames) {
       const lower = ingredientName.toLowerCase();
 
-      for (const keyword of keywords) {
-        if (ingredientContainsKeyword(lower, keyword)) {
-          matches.push({
-            allergenId,
-            severity: allergy.severity,
-            ingredientName,
-            matchedKeyword: keyword,
-            isDerived: definition.derivedIngredients.includes(keyword),
-          });
-          // One match per ingredient–allergen pair is enough
-          break;
-        }
+      // One match per ingredient–allergen pair is enough. Definite keywords
+      // are tried first, so "wheat flour cookies" is a definite match.
+      const definite = definiteKeywords.find((keyword) =>
+        ingredientContainsKeyword(lower, keyword),
+      );
+      if (definite !== undefined) {
+        matches.push({
+          allergenId,
+          severity: allergy.severity,
+          ingredientName,
+          matchedKeyword: definite,
+          isDerived: definition.derivedIngredients.includes(definite),
+          isPossible: false,
+        });
+        continue;
+      }
+
+      const possible = definition.possibleIngredients.find((keyword) =>
+        ingredientContainsKeyword(lower, keyword),
+      );
+      if (possible !== undefined) {
+        matches.push({
+          allergenId,
+          severity: allergy.severity,
+          ingredientName,
+          matchedKeyword: possible,
+          isDerived: false,
+          isPossible: true,
+        });
       }
     }
   }
@@ -631,6 +1031,15 @@ export function detectAllergens(
 export interface DerivedRecipeAllergen {
   id: AllergenId;
   viaDerived: boolean;
+  /**
+   * Present (always `true`) when ONLY possible-tier keywords matched: the
+   * recipe MAY carry the allergen. Such an entry also has `viaDerived: true`,
+   * so a reader that does not know this field treats it as a hidden-tier hit
+   * — stronger wording, never weaker — and `isRecipeSafeForAllergies` already
+   * hides it from moderate and severe allergies and keeps it for mild ones.
+   * Absent on definite entries.
+   */
+  possible?: true;
 }
 
 /**
@@ -653,6 +1062,7 @@ export function deriveRecipeAllergens(
   for (const definition of Object.values(ALLERGEN_INGREDIENT_MAP)) {
     let directHit = false;
     let derivedHit = false;
+    let possibleHit = false;
 
     for (const lower of lowerIngredients) {
       if (!directHit) {
@@ -671,12 +1081,23 @@ export function deriveRecipeAllergens(
           }
         }
       }
+      if (!possibleHit) {
+        for (const keyword of definition.possibleIngredients) {
+          if (ingredientContainsKeyword(lower, keyword)) {
+            possibleHit = true;
+            break;
+          }
+        }
+      }
       if (directHit && derivedHit) break;
     }
 
     if (directHit || derivedHit) {
       // Direct wins: a direct-tier hit means viaDerived is false.
       result.push({ id: definition.id, viaDerived: !directHit });
+    } else if (possibleHit) {
+      // Possible only: stored as a hidden-tier hit plus the `possible` mark.
+      result.push({ id: definition.id, viaDerived: true, possible: true });
     }
   }
 

@@ -12,6 +12,7 @@ const match: AllergenMatch = {
   ingredientName: "peanut butter",
   matchedKeyword: "peanut",
   isDerived: false,
+  isPossible: false,
 };
 
 describe("getCookPhotoAllergenState", () => {

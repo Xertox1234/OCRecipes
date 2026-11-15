@@ -57,7 +57,12 @@ export function generateRemixChips(
 
   // 1. Allergen-based chips
   if (userProfile?.allergies && userProfile.allergies.length > 0) {
-    const matches = detectAllergens(ingredientNames, userProfile.allergies);
+    // "Remove X" is only offered for something the recipe does contain; a
+    // possible-only match ("chocolate" for milk) gets no chip.
+    const matches = detectAllergens(
+      ingredientNames,
+      userProfile.allergies,
+    ).filter((m) => !m.isPossible);
     const uniqueAllergens = [...new Set(matches.map((m) => m.allergenId))];
 
     for (const allergenId of uniqueAllergens) {

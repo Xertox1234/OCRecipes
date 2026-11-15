@@ -5,8 +5,16 @@ import { ThemedText } from "@/components/ThemedText";
 import { AttributeChip } from "@/components/AttributeChip";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, MAX_FONT_SCALE_CONSTRAINED } from "@/constants/theme";
-import { toRecipeAllergenLabels } from "./recipe-allergen-label-utils";
-import { ALLERGEN_ICON, CONTAINS_COLOR_KEY } from "./recipe-attribute-visuals";
+import {
+  composeRecipeAllergenText,
+  toPossibleRecipeAllergenLabels,
+  toRecipeAllergenLabels,
+} from "./recipe-allergen-label-utils";
+import {
+  ALLERGEN_ICON,
+  CONTAINS_COLOR_KEY,
+  POSSIBLE_COLOR_KEY,
+} from "./recipe-attribute-visuals";
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 
 interface RecipeAllergenLabelProps {
@@ -33,10 +41,16 @@ export const RecipeAllergenLabel = React.memo(function RecipeAllergenLabel({
 }: RecipeAllergenLabelProps) {
   const { theme } = useTheme();
   const labels = toRecipeAllergenLabels(allergens);
+  const possibleLabels = toPossibleRecipeAllergenLabels(allergens);
 
-  if (labels.length === 0) return null;
+  if (labels.length === 0 && possibleLabels.length === 0) return null;
 
-  const composedLabel = `Contains: ${labels.map((l) => l.label).join(", ")}`;
+  // "Check the ingredients" is said once, only when something is possible:
+  // the person with the allergy decides (owner ruling 2026-11-15).
+  const composedLabel =
+    possibleLabels.length > 0
+      ? `${composeRecipeAllergenText(allergens)}. Check the ingredients.`
+      : composeRecipeAllergenText(allergens);
 
   return (
     <View
@@ -49,28 +63,54 @@ export const RecipeAllergenLabel = React.memo(function RecipeAllergenLabel({
           a11y label; hide the visible lead-in + chips from the a11y tree so
           VoiceOver/TalkBack doesn't drill into the chips' own Text
           descendants and double-announce. */}
-      <View
-        style={styles.row}
-        accessible={false}
-        accessibilityElementsHidden={true}
-        importantForAccessibility="no-hide-descendants"
-      >
-        <ThemedText
-          type="caption"
-          maxScale={MAX_FONT_SCALE_CONSTRAINED}
-          style={{ color: theme.text, fontWeight: "600" }}
+      {labels.length > 0 ? (
+        <View
+          style={styles.row}
+          accessible={false}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
         >
-          Contains:
-        </ThemedText>
-        {labels.map(({ id, label }) => (
-          <AttributeChip
-            key={id}
-            icon={ALLERGEN_ICON[id]}
-            colorKey={CONTAINS_COLOR_KEY}
-            word={label}
-          />
-        ))}
-      </View>
+          <ThemedText
+            type="caption"
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
+            style={{ color: theme.text, fontWeight: "600" }}
+          >
+            Contains:
+          </ThemedText>
+          {labels.map(({ id, label }) => (
+            <AttributeChip
+              key={id}
+              icon={ALLERGEN_ICON[id]}
+              colorKey={CONTAINS_COLOR_KEY}
+              word={label}
+            />
+          ))}
+        </View>
+      ) : null}
+      {possibleLabels.length > 0 ? (
+        <View
+          style={[styles.row, labels.length > 0 && styles.secondRow]}
+          accessible={false}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
+          <ThemedText
+            type="caption"
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
+            style={{ color: theme.text, fontWeight: "600" }}
+          >
+            Possible:
+          </ThemedText>
+          {possibleLabels.map(({ id, label }) => (
+            <AttributeChip
+              key={id}
+              icon={ALLERGEN_ICON[id]}
+              colorKey={POSSIBLE_COLOR_KEY}
+              word={label}
+            />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -78,6 +118,9 @@ export const RecipeAllergenLabel = React.memo(function RecipeAllergenLabel({
 const styles = StyleSheet.create({
   container: {
     marginBottom: Spacing.sm,
+  },
+  secondRow: {
+    marginTop: Spacing.xs,
   },
   row: {
     flexDirection: "row",

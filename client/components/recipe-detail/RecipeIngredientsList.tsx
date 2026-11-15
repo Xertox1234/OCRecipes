@@ -73,16 +73,24 @@ export function RecipeIngredientsList({
   const allergenMatchMap = useMemo(() => {
     const map = new Map<
       string,
-      { allergenId: string; severity: AllergySeverity; label: string }
+      {
+        allergenId: string;
+        severity: AllergySeverity;
+        label: string;
+        possible: boolean;
+      }
     >();
     if (!allergenMatches) return map;
+    // One badge per row: a definite match wins over a possible one.
     for (const m of allergenMatches) {
-      if (!map.has(m.ingredientName)) {
+      const current = map.get(m.ingredientName);
+      if (!current || (current.possible && m.isPossible !== true)) {
         const def = ALLERGEN_INGREDIENT_MAP[m.allergenId];
         map.set(m.ingredientName, {
           allergenId: m.allergenId,
           severity: m.severity,
           label: def?.label ?? m.allergenId,
+          possible: m.isPossible === true,
         });
       }
     }
@@ -201,6 +209,7 @@ export function RecipeIngredientsList({
                   <AllergenBadge
                     allergenLabel={match.label}
                     severity={match.severity}
+                    possible={match.possible}
                   />
                 </View>
               )}

@@ -16,6 +16,7 @@ import {
 } from "@shared/types/cook-session";
 import {
   detectAllergens,
+  isBlockingAllergenMatch,
   parseUserAllergies,
   ALLERGEN_INGREDIENT_MAP,
   type AllergySeverity,
@@ -428,8 +429,11 @@ function filterSafeSubstitutions(
   if (userAllergies.length === 0) return suggestions;
 
   return suggestions.filter((s) => {
-    const matches = detectAllergens([s.substitute], userAllergies);
-    return matches.length === 0;
+    // A possible-only match ("chocolate" for milk) is dropped for moderate
+    // and severe allergies and kept for mild ones.
+    return !detectAllergens([s.substitute], userAllergies).some(
+      isBlockingAllergenMatch,
+    );
   });
 }
 

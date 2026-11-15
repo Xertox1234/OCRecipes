@@ -70,10 +70,16 @@ export function evaluateScanFlags(
   if (userSeverity.size === 0) return [];
 
   const matched = new Set<AllergenId>();
+  // Allergens with a definite signal. One matched only by a possible-tier
+  // word ("chocolate" for milk) is worded "Possible", never "Contains".
+  const definite = new Set<AllergenId>();
 
   // Signal (a): OFF declared allergen tags (authoritative — flag at any severity).
   for (const id of mapOffAllergenTags(product.allergenTags)) {
-    if (userSeverity.has(id)) matched.add(id);
+    if (userSeverity.has(id)) {
+      matched.add(id);
+      definite.add(id);
+    }
   }
 
   // Signal (b): ingredient-text detection (respects the engine's severity tiers).
@@ -82,6 +88,7 @@ export function evaluateScanFlags(
     allergies,
   )) {
     matched.add(m.allergenId);
+    if (!m.isPossible) definite.add(m.allergenId);
   }
 
   const flags: ScanFlag[] = [];
@@ -93,8 +100,10 @@ export function evaluateScanFlags(
       kind: "allergen",
       severity: SEVERITY_TO_FLAG[severity],
       tier: "safety",
-      title: `Contains ${label}`,
-      detail: `You listed a ${severity} ${label.toLowerCase()} allergy`,
+      title: definite.has(id) ? `Contains ${label}` : `Possible ${label}`,
+      detail: definite.has(id)
+        ? `You listed a ${severity} ${label.toLowerCase()} allergy`
+        : `An ingredient may contain it — check the label. You listed a ${severity} ${label.toLowerCase()} allergy`,
       allergenId: id,
     });
   }

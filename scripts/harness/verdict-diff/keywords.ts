@@ -86,7 +86,7 @@ function allergenKeywords(root: string): string[] {
   );
   const out = new Set<string>();
   for (const m of src.matchAll(
-    /(?:directIngredients|derivedIngredients):\s*\[([\s\S]*?)\]/g,
+    /(?:directIngredients|derivedIngredients|possibleIngredients):\s*\[([\s\S]*?)\]/g,
   )) {
     for (const k of quoted(m[1])) out.add(k);
   }

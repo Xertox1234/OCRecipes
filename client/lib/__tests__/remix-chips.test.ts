@@ -172,4 +172,12 @@ describe("generateRemixChips", () => {
     // Macro chips still present
     expect(chips.some((c) => c.label === "Lower calorie")).toBe(true);
   });
+
+  it("offers no 'Remove' chip for a possible-only match (2026-11-15)", () => {
+    const chips = generateRemixChips(
+      { ingredients: [{ name: "dark chocolate" }], dietTags: [] },
+      { allergies: [{ name: "milk", severity: "severe" }] },
+    );
+    expect(chips.some((c) => c.label.startsWith("Remove"))).toBe(false);
+  });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 import {
   toRecipeAllergenLabels,
+  toPossibleRecipeAllergenLabels,
   toRecipeAllergenA11ySuffix,
 } from "../recipe-allergen-label-utils";
 
@@ -94,6 +95,47 @@ describe("recipe-allergen-label-utils", () => {
       ] as unknown as DerivedRecipeAllergen[];
 
       expect(toRecipeAllergenA11ySuffix(stale)).toBe("");
+    });
+  });
+
+  describe("possible entries (owner ruling 2026-11-15)", () => {
+    const mixed: DerivedRecipeAllergen[] = [
+      { id: "milk", viaDerived: false },
+      { id: "wheat", viaDerived: true, possible: true },
+      { id: "eggs", viaDerived: true },
+    ];
+
+    it("leaves possible entries out of the Contains labels", () => {
+      expect(toRecipeAllergenLabels(mixed)).toEqual([
+        { id: "milk", label: "Dairy/Milk" },
+        { id: "eggs", label: "Eggs" },
+      ]);
+    });
+
+    it("lists possible entries separately", () => {
+      expect(toPossibleRecipeAllergenLabels(mixed)).toEqual([
+        { id: "wheat", label: "Wheat/Gluten" },
+      ]);
+      expect(toPossibleRecipeAllergenLabels(null)).toEqual([]);
+      expect(toPossibleRecipeAllergenLabels(undefined)).toEqual([]);
+    });
+
+    it("skips stale ids in the possible list too", () => {
+      const stale = [
+        { id: "gluten", viaDerived: true, possible: true },
+      ] as unknown as DerivedRecipeAllergen[];
+      expect(toPossibleRecipeAllergenLabels(stale)).toEqual([]);
+    });
+
+    it("says both parts in the screen-reader suffix", () => {
+      expect(toRecipeAllergenA11ySuffix(mixed)).toBe(
+        ". Contains: Dairy/Milk, Eggs. Possible: Wheat/Gluten",
+      );
+      expect(
+        toRecipeAllergenA11ySuffix([
+          { id: "wheat", viaDerived: true, possible: true },
+        ]),
+      ).toBe(". Possible: Wheat/Gluten");
     });
   });
 });

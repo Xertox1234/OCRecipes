@@ -95,4 +95,37 @@ describe("RecipeAllergenLabel", () => {
   // see docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
   // The exact composed-label assertions above are the harness-appropriate
   // proxy; verify the real subtree collapse on-device (TalkBack/VoiceOver).
+
+  it("shows possible allergens on their own line, apart from Contains", () => {
+    const { getByText, container } = renderComponent(
+      <RecipeAllergenLabel
+        allergens={[
+          { id: "milk", viaDerived: false },
+          { id: "wheat", viaDerived: true, possible: true },
+        ]}
+      />,
+    );
+    expect(getByText("Contains:")).toBeTruthy();
+    expect(getByText("Possible:")).toBeTruthy();
+    expect(
+      container.querySelector(
+        '[aria-label="Contains: Dairy/Milk. Possible: Wheat/Gluten. Check the ingredients."]',
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows only the possible line when nothing is definite", () => {
+    const { queryByText, getByText, container } = renderComponent(
+      <RecipeAllergenLabel
+        allergens={[{ id: "wheat", viaDerived: true, possible: true }]}
+      />,
+    );
+    expect(queryByText("Contains:")).toBeNull();
+    expect(getByText("Possible:")).toBeTruthy();
+    expect(
+      container.querySelector(
+        '[aria-label="Possible: Wheat/Gluten. Check the ingredients."]',
+      ),
+    ).toBeTruthy();
+  });
 });
