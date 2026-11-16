@@ -2,6 +2,7 @@
 import { renderHook, waitFor, act } from "@testing-library/react";
 import {
   useFamilyContext,
+  useFamilyProfilesList,
   useDeleteFamilyProfile,
   useSetFamilyPlanning,
 } from "../useFamily";
@@ -130,5 +131,46 @@ describe("mutations", () => {
     const calls = spy.mock.calls.map((c) => c[0]);
     expect(calls).toContainEqual({ queryKey: QUERY_KEYS.dietaryProfile });
     expect(calls).toContainEqual({ queryKey: familyProfilesKey() });
+  });
+});
+
+describe("useFamilyProfilesList (management screens)", () => {
+  beforeEach(() => {
+    mockApiRequest.mockReset();
+    mockState.flag = true;
+    mockState.planUnknown = false;
+  });
+
+  it("loads the list even when the premium flag is off and the switch is off", async () => {
+    mockState.flag = false;
+    route(false);
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useFamilyProfilesList(), { wrapper });
+    await waitFor(() => expect(result.current.profiles).toEqual([ivy]));
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/family-profiles",
+      undefined,
+      expect.anything(),
+    );
+  });
+
+  it("shares the query key with useFamilyContext, so one cache entry serves both", async () => {
+    route(true);
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { result } = renderHook(() => useFamilyProfilesList(), { wrapper });
+    await waitFor(() => expect(result.current.profiles).toEqual([ivy]));
+    expect(queryClient.getQueryData(familyProfilesKey())).toEqual({
+      enabled: true,
+      profiles: [ivy],
+    });
+  });
+
+  it("reports a failed load", async () => {
+    mockApiRequest.mockRejectedValue(new Error("boom"));
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useFamilyProfilesList(), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.profiles).toEqual([]);
   });
 });

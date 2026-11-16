@@ -1,11 +1,18 @@
 import React from "react";
-import { StyleSheet, View, Pressable, AccessibilityInfo } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  AccessibilityInfo,
+  Platform,
+  Switch,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing } from "@/constants/theme";
+import { Spacing, withOpacity } from "@/constants/theme";
 import type { ThemePreference } from "@/context/ThemeContext";
 
 const THEME_LABELS: Record<ThemePreference, string> = {
@@ -20,16 +27,30 @@ const THEME_CYCLE: Record<ThemePreference, ThemePreference> = {
   dark: "system",
 };
 
+/** The "Plan for my family" switch and its "Family" link; see `useFamilySwitch`. */
+export interface FamilySettings {
+  /** False while the plan is unknown: no row at all. */
+  visible: boolean;
+  value: boolean;
+  /** True while a change is saving. */
+  disabled: boolean;
+  onToggle: (next: boolean) => void;
+  showFamilyRow: boolean;
+  onOpenProfiles: () => void;
+}
+
 interface InlineSettingsProps {
   themePreference: ThemePreference;
   onThemeToggle: () => void;
   onDietaryProfile: () => void;
+  family?: FamilySettings;
 }
 
 export const InlineSettings = React.memo(function InlineSettings({
   themePreference,
   onThemeToggle,
   onDietaryProfile,
+  family,
 }: InlineSettingsProps) {
   const { theme } = useTheme();
 
@@ -61,6 +82,70 @@ export const InlineSettings = React.memo(function InlineSettings({
         </Pressable>
 
         <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+        {family?.visible ? (
+          <>
+            {/* Layout only: the Switch below is the accessible control, as on
+                the Coach reminders screen. */}
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <Feather name="users" size={20} color={theme.textSecondary} />
+                <ThemedText style={styles.label}>Plan for my family</ThemedText>
+              </View>
+              <Switch
+                accessibilityRole="switch"
+                accessibilityLabel="Plan for my family"
+                accessibilityHint="Plan meals for other people in your household"
+                accessibilityState={{
+                  checked: family.value,
+                  disabled: family.disabled,
+                }}
+                value={family.value}
+                onValueChange={family.onToggle}
+                disabled={family.disabled}
+                trackColor={{
+                  false: withOpacity(theme.textSecondary, 0.3),
+                  true: theme.link,
+                }}
+                thumbColor={
+                  Platform.OS === "android" ? "#FFFFFF" : undefined // hardcoded
+                }
+              />
+            </View>
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+            {family.showFamilyRow ? (
+              <>
+                <Pressable
+                  onPress={family.onOpenProfiles}
+                  accessibilityLabel="Family"
+                  accessibilityRole="button"
+                  accessibilityHint="Tap to open"
+                  style={({ pressed }) => [
+                    styles.row,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <View style={styles.rowLeft}>
+                    <Feather
+                      name="user-plus"
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                    <ThemedText style={styles.label}>Family</ThemedText>
+                  </View>
+                  <Feather
+                    name="chevron-right"
+                    size={18}
+                    color={theme.textSecondary}
+                  />
+                </Pressable>
+                <View
+                  style={[styles.divider, { backgroundColor: theme.border }]}
+                />
+              </>
+            ) : null}
+          </>
+        ) : null}
 
         <Pressable
           onPress={handleThemeToggle}

@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { FamilyProfile } from "@shared/schema";
 import {
   isFamilyPlanningActive,
@@ -11,6 +16,25 @@ import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 
 const NO_PROFILES: FamilyProfile[] = [];
+
+/**
+ * The one owner of the profile-list query. `useFamilyContext` (only while
+ * family planning is active) and `useFamilyProfilesList` (the management
+ * screens, always) both spread it, so the two cannot drift: one key, one
+ * queryFn. GET /api/family-profiles is not premium-gated on the server.
+ */
+export const familyProfilesQueryOptions = queryOptions({
+  queryKey: familyProfilesKey(),
+  queryFn: async ({ signal }) => {
+    const res = await apiRequest("GET", "/api/family-profiles", undefined, {
+      signal,
+    });
+    return (await res.json()) as {
+      enabled: boolean;
+      profiles: FamilyProfile[];
+    };
+  },
+});
 
 /**
  * Whether family planning is live, and the profiles when it is. The switch
@@ -32,24 +56,33 @@ export function useFamilyContext(): {
     !planUnknown &&
     isFamilyPlanningActive({ familyProfiles: flag }, dietaryProfile);
 
-  const list = useQuery({
-    queryKey: familyProfilesKey(),
-    queryFn: async ({ signal }) => {
-      const res = await apiRequest("GET", "/api/family-profiles", undefined, {
-        signal,
-      });
-      return (await res.json()) as {
-        enabled: boolean;
-        profiles: FamilyProfile[];
-      };
-    },
-    enabled: active,
-  });
+  const list = useQuery({ ...familyProfilesQueryOptions, enabled: active });
 
   return {
     active,
     profiles: active ? (list.data?.profiles ?? NO_PROFILES) : NO_PROFILES,
     isLoading: active && list.isLoading,
+  };
+}
+
+/**
+ * The profile list for the screens that manage profiles. Unlike
+ * `useFamilyContext` it loads whenever the screen is mounted, whatever the
+ * plan or the switch: a lapsed-premium user still has to see their profiles to
+ * delete them. Only mount it on those screens.
+ */
+export function useFamilyProfilesList(): {
+  profiles: FamilyProfile[];
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+} {
+  const list = useQuery(familyProfilesQueryOptions);
+  return {
+    profiles: list.data?.profiles ?? NO_PROFILES,
+    isLoading: list.isLoading,
+    isError: list.isError,
+    refetch: () => void list.refetch(),
   };
 }
 

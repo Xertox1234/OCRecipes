@@ -17,11 +17,14 @@ import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
 import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import RecipeEntryHubScreen from "@/screens/meal-plan/RecipeEntryHubScreen";
+import FamilyProfilesScreen from "@/screens/FamilyProfilesScreen";
+import FamilyProfileEditScreen from "@/screens/FamilyProfileEditScreen";
 import RecipeAIGenerateScreen from "@/screens/meal-plan/RecipeAIGenerateScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import {
   LIBRARY_SCREEN_OPTIONS,
   cookbookCreateOptions,
+  familyProfileEditOptions,
 } from "@/navigation/library-screen-options";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
@@ -84,6 +87,9 @@ export type MealPlanStackParamList = {
   CookbookList: undefined;
   CookbookDetail: { cookbookId: number };
   FavouriteRecipes: undefined;
+  FamilyProfiles: undefined;
+  /** No `profileId` adds a person; with one, edits that person. */
+  FamilyProfileEdit: { profileId?: number };
 };
 
 const Stack = createNativeStackNavigator<MealPlanStackParamList>();
@@ -213,6 +219,16 @@ export default function MealPlanStackNavigator() {
             <HeaderTitle title="Favourites" showIcon={false} />
           ),
         }}
+      />
+      <Stack.Screen
+        name="FamilyProfiles"
+        component={FamilyProfilesScreen}
+        options={LIBRARY_SCREEN_OPTIONS.FamilyProfiles}
+      />
+      <Stack.Screen
+        name="FamilyProfileEdit"
+        component={FamilyProfileEditScreen}
+        options={familyProfileEditOptions}
       />
     </Stack.Navigator>
   );

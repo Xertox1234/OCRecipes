@@ -5,6 +5,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SelectableTile } from "@/components/SelectableTile";
+import { AllergenGrid } from "@/components/AllergenPicker";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { EmptyState } from "@/components/EmptyState";
@@ -18,8 +19,6 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
-  COMMON_ALLERGENS,
-  SEVERITY_OPTIONS,
   DIET_TYPES,
   HEALTH_CONDITIONS,
   GOALS,
@@ -292,115 +291,12 @@ export default function EditDietaryProfileScreen({
           <ThemedText type="h4" style={styles.sectionTitle}>
             Allergies
           </ThemedText>
-          <View style={styles.optionsGrid}>
-            {COMMON_ALLERGENS.map((allergen) => {
-              const allergy = allergies.find((a) => a.name === allergen.id);
-              const selected = !!allergy;
-              return (
-                <SelectableTile
-                  shape="chip"
-                  key={allergen.id}
-                  onPress={() => toggleAllergen(allergen.id)}
-                  accessibilityLabel={allergen.name}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
-                  style={[
-                    styles.optionChip,
-                    {
-                      backgroundColor: selected
-                        ? allergy?.severity === "severe"
-                          ? withOpacity(theme.error, 0.12)
-                          : allergy?.severity === "moderate"
-                            ? withOpacity(theme.warning, 0.12)
-                            : withOpacity(theme.success, 0.12)
-                        : theme.backgroundDefault,
-                      borderColor: selected
-                        ? allergy?.severity === "severe"
-                          ? theme.error
-                          : allergy?.severity === "moderate"
-                            ? theme.warning
-                            : theme.success
-                        : theme.border,
-                    },
-                  ]}
-                >
-                  <ThemedText
-                    type="small"
-                    style={{ fontWeight: selected ? "600" : "400" }}
-                  >
-                    {allergen.name}
-                  </ThemedText>
-                  {allergy && (
-                    <View
-                      style={[
-                        styles.severityBadge,
-                        {
-                          backgroundColor:
-                            allergy.severity === "severe"
-                              ? theme.error
-                              : allergy.severity === "moderate"
-                                ? theme.warning
-                                : theme.success,
-                        },
-                      ]}
-                    >
-                      <ThemedText
-                        type="caption"
-                        style={{ color: theme.buttonText, fontSize: 10 }}
-                      >
-                        {allergy.severity.charAt(0).toUpperCase()}
-                      </ThemedText>
-                    </View>
-                  )}
-                </SelectableTile>
-              );
-            })}
-          </View>
-
-          {selectedAllergen && (
-            <View
-              style={[
-                styles.severityModal,
-                { backgroundColor: theme.backgroundDefault },
-              ]}
-            >
-              <ThemedText type="body" style={{ fontWeight: "600" }}>
-                Severity for{" "}
-                {COMMON_ALLERGENS.find((a) => a.id === selectedAllergen)?.name}?
-              </ThemedText>
-              <View style={styles.severityOptions}>
-                {SEVERITY_OPTIONS.map((option) => (
-                  <SelectableTile
-                    key={option.value}
-                    onPress={() => setSeverity(option.value)}
-                    accessibilityLabel={`${option.label}: ${option.description}`}
-                    accessibilityRole="button"
-                    style={[
-                      styles.severityOption,
-                      {
-                        backgroundColor:
-                          option.value === "severe"
-                            ? withOpacity(theme.error, 0.08)
-                            : option.value === "moderate"
-                              ? withOpacity(theme.warning, 0.08)
-                              : withOpacity(theme.success, 0.08),
-                        borderColor:
-                          option.value === "severe"
-                            ? theme.error
-                            : option.value === "moderate"
-                              ? theme.warning
-                              : theme.success,
-                      },
-                    ]}
-                  >
-                    <ThemedText type="small" style={{ fontWeight: "600" }}>
-                      {option.label}
-                    </ThemedText>
-                  </SelectableTile>
-                ))}
-              </View>
-            </View>
-          )}
+          <AllergenGrid
+            allergies={allergies}
+            pendingAllergen={selectedAllergen}
+            onToggle={toggleAllergen}
+            onSeverity={setSeverity}
+          />
         </View>
 
         {/* Health Conditions Section */}
@@ -873,40 +769,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.sm,
-  },
-  optionChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    gap: Spacing.xs,
-  },
-  severityBadge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  severityModal: {
-    marginTop: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-  },
-  severityOptions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  severityOption: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    alignItems: "center",
   },
   dietChip: {
     paddingHorizontal: Spacing.lg,

@@ -21,6 +21,7 @@ import { LibraryGrid } from "@/components/profile/LibraryGrid";
 import { ProfileWeekCard } from "@/components/weekly-report/YourWeekCard";
 import { InlineSettings } from "@/components/profile/InlineSettings";
 import { useProfileData } from "@/hooks/useProfileData";
+import { useFamilySwitch } from "@/hooks/useFamilySwitch";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { resolveImageUrl } from "@/lib/query-client";
 import { Colors, Spacing, FontFamily, withOpacity } from "@/constants/theme";
@@ -56,6 +57,9 @@ export default function ProfileScreen() {
     handleDietaryProfile,
     handleCloseUpgradeModal,
   } = useProfileData();
+
+  // The free-plan press reuses the locked-tile prompt (Warning haptic, upgrade modal).
+  const family = useFamilySwitch({ onLocked: handleLockedPress });
 
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
@@ -277,6 +281,7 @@ export default function ProfileScreen() {
             themePreference={themePreference}
             onThemeToggle={handleThemeToggle}
             onDietaryProfile={handleDietaryProfile}
+            family={family}
           />
         </Animated.View>
       </Animated.ScrollView>

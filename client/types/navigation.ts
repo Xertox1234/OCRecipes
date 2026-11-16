@@ -272,6 +272,20 @@ export type FavouriteRecipesScreenNavigationProp = CompositeNavigationProp<
 >;
 
 /**
+ * Navigation props for the family-profile screens, registered in both the
+ * MealPlan and Profile stacks (intersection covers both hosts, as for
+ * FavouriteRecipes).
+ */
+export type FamilyProfilesScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList & ProfileStackParamList,
+  "FamilyProfiles"
+>;
+export type FamilyProfileEditScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList & ProfileStackParamList,
+  "FamilyProfileEdit"
+>;
+
+/**
  * Navigation prop for CookbookDetailScreen
  * Uses CompositeNavigationProp to navigate across stacks:
  * - Navigate within MealPlanStack (RecipeDetail, CookbookEdit)
