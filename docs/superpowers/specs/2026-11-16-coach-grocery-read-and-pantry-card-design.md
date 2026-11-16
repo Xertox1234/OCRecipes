@@ -4,7 +4,10 @@ Date: 2026-11-16. Status: proposed, awaiting owner approval.
 
 Two features, shipped as two PRs in this order:
 
-1. **Grocery read tool** — Coach can see the user's grocery lists. Server only.
+1. **Grocery read tool** — Coach can see the user's grocery lists. Server
+   change plus one new line in the AI-sharing disclosure, which the app shows
+   from a shared file, so that line reaches phones only with the next app
+   update.
 2. **Pantry card** — Coach can propose pantry changes on a tap-to-save card.
    Server, a migration and a client card (needs an app update).
 
@@ -107,10 +110,18 @@ to add to a list they already have. A step label ("Checking your grocery
 lists…") and a "Checked:" trail entry, as the pantry tool has.
 
 **Privacy.** Add one line to `AI_SHARED_DATA`: "Your pantry items and grocery
-lists, when Coach looks at them", and bump `AI_SHARING_VERSION`. The privacy
-page text gets the same line. This also covers the pantry rows the existing
-tool already sends. **Owner decision:** confirm the wording, and whether the
-privacy page needs anything beyond that line.
+lists, when Coach looks at them", and bump `AI_SHARING_VERSION`. This also
+covers the pantry rows the existing tool already sends. Two limits to know:
+
+- `AiSharingScreen.tsx` renders `AI_SHARED_DATA` from the app bundle, so an
+  installed build shows the old list until an app update, while the server
+  starts sending list contents as soon as PR 1 deploys. Accepted because the
+  app has no users (owner ruling 2026-10-06); the PR must say so.
+- The public privacy page is not in this repo's served files (searched
+  `server/` and `docs/` for the recipient names; nothing found). The builder
+  locates it before PR 1 merges, or reports that it lives elsewhere.
+
+**Owner decision:** confirm the wording of the line.
 
 **Not included.** No pagination past 4 lists and 60 items; Coach says there
 are more and the user opens the list.
@@ -166,7 +177,14 @@ The payload stores, per row: the action, the display name and amount, and for
 
 ### Saving
 
-One transaction, under the pantry's per-user lock:
+One transaction: the card's existing save transaction (`saveWriteCard` locks
+the card row, then runs the kind's save). The pantry save takes the pantry's
+per-user advisory lock as its first step, for every action, not only adds, so
+the cap count and the "changed since" check are both read under the lock. The
+lock helper in `server/storage/pantry.ts` is private today and gets exported.
+Card-row lock then pantry lock is the only order used; no pantry path takes a
+card lock, so the two cannot deadlock. Queries on the transaction run one
+after another (database rule: no `Promise.all` on one transaction client).
 
 - New rows go through `insertPantryItemsUnderCap`; rows that do not fit under
   the 500 cap are skipped and the receipt says how many.
@@ -193,12 +211,35 @@ offers `update_pantry` only when that list includes `pantry`. A build without
 it never gets the tool, so Coach answers as it does today. The existing three
 kinds stay tied to `writeCards: true` alone.
 
+A saved conversation can still be opened later on an older build. There the
+pantry block fails the block schema and is dropped, as any unknown block is;
+the message text stays. That is accepted.
+
+Adding a kind touches every place that switches on the card kind (about 11
+sites: the payload and edits schema maps, build, save, revert, receipt, the
+tool-for-kind map, the live-card description, and the client's `canSave` and
+locked summary). The builder finds them with the LSP references of
+`WriteCardKind` and lets the type checker's exhaustiveness errors confirm
+none is missed.
+
 ### Database
 
-Migration 0048 replaces the `coach_write_cards_kind_check` constraint to add
-`pantry`. No new tables or columns: the row copies live in the existing
-`saved_refs` JSON. Per the standing rule, the constraint is confirmed on prod
-before the PR merges.
+Schema and migrations are on the repo's hard-exclusion list: they need a
+human-approved plan. **Owner decision:** approving this spec approves the
+following, and nothing else in the schema.
+
+- Migration 0048 drops and re-adds `coach_write_cards_kind_check` as
+  `kind IN ('food', 'grocery', 'plan', 'pantry')`, in one transaction, written
+  to be safe to run twice. The matching `check(...)` in `shared/schema.ts`
+  and `WRITE_CARD_KINDS` change in the same PR.
+- No new tables or columns: the row copies live in the existing `saved_refs`
+  JSON (`CoachWriteCardSavedRefs` gains two optional fields).
+- Order: apply to prod before the PR merges. The wider constraint is harmless
+  to the old server, which never writes `pantry`.
+- Verify on prod and paste the output in the PR. `to_regclass` cannot see a
+  constraint, so the check is
+  `SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'coach_write_cards_kind_check'`,
+  and the output must name `pantry`.
 
 ### Client
 
@@ -220,6 +261,15 @@ gate.
   the card with VoiceOver.
 - Not planned: a paid model eval of how Coach uses the tools (evals need the
   owner's OK for the spend).
+
+## Review notes (2026-11-16)
+
+Self-reviewed with the repo's spec-review procedure, calibrated against the
+write-cards and show-the-work specs. Edits made from it: the disclosure's
+app-update lag, the missing privacy page location, the lock order on save,
+the hard-exclusion callout and exact prod check for the migration, the
+old-build history case, and the list of kind switch sites. No domain reviewer
+was dispatched on the spec; the implementation PRs get the normal review.
 
 ## Left to the builder
 
