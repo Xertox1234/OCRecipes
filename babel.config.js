@@ -6,7 +6,11 @@ module.exports = function (api) {
       [
         "module-resolver",
         {
-          root: ["./"],
+          // No `root`: nothing imports by a project-root path, and the option
+          // makes the plugin call `glob.default`, which glob 14 does not export
+          // (package.json overrides put every glob at 14). With it set, Metro
+          // fails on every file.
+          // Guard: scripts/ci/__tests__/babel-config-transforms.test.ts
           alias: {
             "@": "./client",
             "@shared": "./shared",
