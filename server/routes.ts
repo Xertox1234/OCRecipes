@@ -19,6 +19,7 @@ import { register as registerRecipeImport } from "./routes/recipe-import";
 import { register as registerMealPlan } from "./routes/meal-plan";
 import { register as registerRecipeGenerate } from "./routes/recipe-generate";
 import { register as registerGrocery } from "./routes/grocery";
+import { register as registerFamily } from "./routes/family";
 import { register as registerPantry } from "./routes/pantry";
 import { register as registerSubscription } from "./routes/subscription";
 import { register as registerGoals } from "./routes/goals";
@@ -88,6 +89,7 @@ export function registerRoutes(app: Express): Server {
   registerRecipeGenerate(app);
   registerGrocery(app);
   registerPantry(app);
+  registerFamily(app);
   registerSubscription(app);
   registerGoals(app);
   registerMealSuggestions(app);

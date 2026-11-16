@@ -143,6 +143,7 @@ export const storage = {
   createUserProfile: users.createUserProfile,
   updateUserProfile: users.updateUserProfile,
   saveReminderMutes: users.saveReminderMutes,
+  setFamilyPlanningEnabled: users.setFamilyPlanningEnabled,
   upsertProfileWithOnboarding: users.upsertProfileWithOnboarding,
   withdrawHealthConsent: users.withdrawHealthConsent,
   getAiSharingStatus: aiSharing.getAiSharingStatus,
