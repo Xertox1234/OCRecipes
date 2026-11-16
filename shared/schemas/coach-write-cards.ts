@@ -10,7 +10,7 @@ import { z } from "zod";
  * or ids of its own. Every edit schema is strict for that reason.
  */
 
-export const WRITE_CARD_KINDS = ["food", "grocery", "plan"] as const;
+export const WRITE_CARD_KINDS = ["food", "grocery", "plan", "pantry"] as const;
 export type WriteCardKind = (typeof WRITE_CARD_KINDS)[number];
 
 export const WRITE_CARD_STATUSES = [
@@ -104,6 +104,33 @@ export const planCardPayloadSchema = z.object({
 });
 export type PlanCardPayload = z.infer<typeof planCardPayloadSchema>;
 
+/**
+ * The pantry card (spec 2026-11-16): one row per change. `add` with an
+ * `itemId` tops up that pantry row; without one it makes a new row. `use` and
+ * `remove` always name a row. `held` is what the row held when the card was
+ * built: the save skips a row whose quantity has changed since.
+ */
+export const pantryCardPayloadSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        action: z.enum(["add", "use", "remove"]),
+        name: z.string().min(1).max(200),
+        /** The amount added or used; null for a remove, or when unknown. */
+        quantity: z.string().max(40).nullable(),
+        unit: z.string().max(40).nullable(),
+        itemId: z.number().int().positive().nullable(),
+        held: z.string().max(40).nullable(),
+        /** A `use` that empties the row: the row is removed on save. */
+        all: z.boolean(),
+        expiresInDays: z.number().int().min(1).max(365).nullable(),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+export type PantryCardPayload = z.infer<typeof pantryCardPayloadSchema>;
+
 // ── Edits (client-sent, strict) ─────────────────────────────────────
 
 export const foodEditsSchema = z
@@ -135,23 +162,36 @@ export const planEditsSchema = z
   .strict();
 export type PlanCardEdits = z.infer<typeof planEditsSchema>;
 
+export const pantryEditsSchema = z
+  .object({ ticked: z.array(z.boolean()).max(20) })
+  .partial()
+  .strict();
+export type PantryCardEdits = z.infer<typeof pantryEditsSchema>;
+
 export const WRITE_CARD_EDITS_SCHEMAS = {
   food: foodEditsSchema,
   grocery: groceryEditsSchema,
   plan: planEditsSchema,
+  pantry: pantryEditsSchema,
 } as const;
 
 export const WRITE_CARD_PAYLOAD_SCHEMAS = {
   food: foodCardPayloadSchema,
   grocery: groceryCardPayloadSchema,
   plan: planCardPayloadSchema,
+  pantry: pantryCardPayloadSchema,
 } as const;
 
 export type WriteCardPayload =
   | FoodCardPayload
   | GroceryCardPayload
-  | PlanCardPayload;
-export type WriteCardEdits = FoodCardEdits | GroceryCardEdits | PlanCardEdits;
+  | PlanCardPayload
+  | PantryCardPayload;
+export type WriteCardEdits =
+  | FoodCardEdits
+  | GroceryCardEdits
+  | PlanCardEdits
+  | PantryCardEdits;
 
 // ── Block ───────────────────────────────────────────────────────────
 
@@ -169,6 +209,7 @@ export const writeCardBlockObjectSchema = z.object({
     foodCardPayloadSchema,
     groceryCardPayloadSchema,
     planCardPayloadSchema,
+    pantryCardPayloadSchema,
   ]),
   status: z.enum(WRITE_CARD_STATUSES),
   replacesCardId: z.string().uuid().optional(),

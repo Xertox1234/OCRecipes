@@ -98,12 +98,12 @@ defects were fixed first in #1892.
 **Result.** Up to 4 most recent lists (or up to 4 matches for `listName`).
 For each: `id`, `title`, the date range, how many items are bought, and the
 items still to buy (name, quantity, unit, category), capped at 60 per list
-with a `more` count when cut. Bought items are counted, not listed. Titles,
+with a `moreItems` count when cut. Bought items are counted, not listed. Titles,
 names, units and categories pass through `sanitizeUserInput`.
 
 **Storage.** A new user-scoped read in `server/storage/grocery-lists.ts`
-that returns the lists with their items in one query pair. Every query filters
-on `userId`.
+that returns the lists with their items in one query pair. The lists query filters on `userId`; the items query reads only
+the list ids it returned.
 
 **Coach's view of it.** Tool description says when to call it: questions
 about what is on a list, and before `add_to_grocery_list` when the user asks
@@ -154,11 +154,20 @@ card. The receipt and Undo behave as on the other cards.
 user has `pantryTracking`. Arguments: `changes` (1 to 20), each one of:
 
 - `add`: `name`, optional `quantity`, `unit`, `expiresInDays` (1 to 365).
-- `use`: `itemId` from `get_pantry_items`, and `quantity` or `all: true`.
+- `use`: `itemId` from `get_pantry_items`, and `quantity` or `all: true`. The
+  amount is in the unit the pantry row already has; there is no unit argument.
 - `remove`: `itemId`.
 
 Text fields use the same `cardText` screen as the other cards. The tool
 description tells Coach to call `get_pantry_items` first for a use or remove.
+
+The tool handler itself refuses the call unless the app declared the pantry
+card and the user has `pantryTracking`: a model can call a tool name it was
+not offered, so leaving it out of the tool list is not enough.
+
+Use and remove rows show the pantry row's own name, which the user typed.
+Wherever that name goes back to the model (the tool result, the description of
+the card on screen) it passes the prompt sanitizer first.
 
 ### Building the card (during the tool call)
 
@@ -192,18 +201,31 @@ after another (database rule: no `Promise.all` on one transaction client).
 - A `use`, `remove` or top-up whose row is gone, or whose quantity no longer
   equals the one seen at build time, is skipped ("1 changed since" on the
   receipt). The card never overwrites a change the user made elsewhere.
+  The pantry screen's own update and delete do not take the advisory lock, so
+  the save reads each row `FOR UPDATE` before comparing and writing; a
+  concurrent edit from the pantry screen waits for the save or is seen by it.
+  Quantities are compared as numbers ("2.00" equals "2").
 - Update and delete get transaction-taking variants in
   `server/storage/pantry.ts`, both filtered on `userId`.
 
 `savedRefs` records the ids of rows added, and a full copy of every row
 updated or deleted.
 
+The save checks `pantryTracking` again: a card can outlive the subscription,
+and the pantry screen refuses the same user. Undo is not gated. An amount
+larger than the quantity column can hold is treated as no amount when the
+card is built, and a top-up whose sum would pass that limit becomes a new row.
+
 ### Undo
 
 Deletes the added rows, restores updated rows to their copied quantity, and
-re-inserts deleted rows from the copy (they get new ids). A restore that would
-pass the cap is impossible, since Undo only puts back what the save removed.
-A row the user changed after the save is left as the user has it.
+re-inserts deleted rows from the copy (they get new ids). The user may have
+added items between the save and Undo, so the re-insert goes through the same
+cap check; a row that no longer fits is left out. A row the user changed after
+the save is left as the user has it: the copy records the quantity the save
+wrote, and Undo restores only a row that still holds it. The copies are JSON,
+so dates come back as text and are turned into dates again, and the owner is
+always the card's user, never a value from the copy.
 
 ### Old app builds
 
@@ -221,7 +243,10 @@ sites: the payload and edits schema maps, build, save, revert, receipt, the
 tool-for-kind map, the live-card description, and the client's `canSave` and
 locked summary). The builder finds them with the LSP references of
 `WriteCardKind` and lets the type checker's exhaustiveness errors confirm
-none is missed.
+none is missed. Three sites are not caught by the type checker and need
+tests: the render choice and the locked summary in `WriteCard.tsx` (both fall
+through to the plan card), and the payload union in the block schema (a
+pantry block would fail to parse and be dropped).
 
 ### Database
 

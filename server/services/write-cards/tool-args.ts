@@ -83,10 +83,44 @@ export type AddMealPlanCardArgs = z.infer<typeof addMealPlanCardArgsSchema>;
 
 export type RecipeRefArg = z.infer<typeof recipeRefArgSchema>;
 
+/**
+ * Pantry card (spec 2026-11-16). A `use` or `remove` names a pantry row by the
+ * id `get_pantry_items` returned; the amount of a `use` is in that row's unit.
+ */
+const pantryChangeSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("add"),
+    name: cardText(z.string().trim().min(1).max(200)),
+    quantity: cardText(z.string().trim().max(40)).optional(),
+    unit: cardText(z.string().trim().max(40)).optional(),
+    expiresInDays: z.number().int().min(1).max(365).optional(),
+  }),
+  z
+    .object({
+      action: z.literal("use"),
+      itemId: z.number().int().positive(),
+      quantity: z.string().trim().min(1).max(40).optional(),
+      all: z.boolean().optional(),
+    })
+    .refine((c) => c.all === true || c.quantity !== undefined, {
+      message: "Give a quantity, or all: true.",
+    }),
+  z.object({
+    action: z.literal("remove"),
+    itemId: z.number().int().positive(),
+  }),
+]);
+
+export const updatePantryCardArgsSchema = z.object({
+  changes: z.array(pantryChangeSchema).min(1).max(20),
+});
+export type UpdatePantryCardArgs = z.infer<typeof updatePantryCardArgsSchema>;
+
 /** A write tool call in write-card mode, args already validated. */
 export type WriteCardProposal =
   | { kind: "food"; args: LogFoodCardArgs }
   | { kind: "grocery"; args: AddGroceryCardArgs }
+  | { kind: "pantry"; args: UpdatePantryCardArgs }
   | {
       kind: "plan";
       args: AddMealPlanCardArgs;
@@ -95,11 +129,14 @@ export type WriteCardProposal =
     };
 
 /**
- * What became of a proposal, when the caller already knows. Only the grocery
- * card reports one: its pantry check runs during the tool call, so the model
- * hears what was left off before it writes the reply. The names are the
- * model's own item names, never pantry text.
+ * What became of a proposal, when the caller already knows. The grocery and
+ * pantry cards report one: each is worked out during the tool call, so the
+ * model hears what changed before it writes the reply.
+ *   - grocery: the names are the model's own item names.
+ *   - pantry: `rows` describe the card's rows and DO carry pantry row names,
+ *     which the user typed; the tool sanitizes them before the model sees them.
  */
 export type WriteCardOutcome =
-  | { shown: true; leftOff: string[]; unticked: string[] }
-  | { shown: false; leftOff: string[] };
+  | { kind: "grocery"; shown: true; leftOff: string[]; unticked: string[] }
+  | { kind: "grocery"; shown: false; leftOff: string[] }
+  | { kind: "pantry"; shown: boolean; rows: string[]; dropped: number };

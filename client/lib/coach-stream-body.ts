@@ -14,6 +14,13 @@ export interface CoachStreamExtras {
   liveCard?: { cardId: string; edits: WriteCardEdits };
 }
 
+/**
+ * Card kinds this build can draw beyond the first three (spec 2026-11-16).
+ * The server gives Coach a card's tool only when its kind is listed, so a
+ * build without the card is never told one is on screen.
+ */
+const EXTRA_CARD_KINDS = ["pantry"] as const;
+
 /** The POST body for a coach message; unset extras are left out. */
 export function buildCoachStreamBody(
   content: string,
@@ -25,7 +32,10 @@ export function buildCoachStreamBody(
   if (extras?.screenContext) body.screenContext = extras.screenContext;
   if (extras?.finderAction) body.finderAction = extras.finderAction;
   if (extras?.openingBrief) body.openingBrief = extras.openingBrief;
-  if (extras?.writeCards) body.writeCards = true;
+  if (extras?.writeCards) {
+    body.writeCards = true;
+    body.cardKinds = [...EXTRA_CARD_KINDS];
+  }
   if (extras?.liveCard) body.liveCard = extras.liveCard;
   return body;
 }

@@ -39,6 +39,10 @@ export const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
 export const WRITE_CARD_TOOL_DEFINITIONS = Object.freeze(
   getToolDefinitions({ writeCards: true }),
 );
+/** Write-card mode plus the pantry card (spec 2026-11-16). */
+export const PANTRY_CARD_TOOL_DEFINITIONS = Object.freeze(
+  getToolDefinitions({ writeCards: true, pantryCard: true }),
+);
 
 /**
  * Sentinel yielded by generateCoachResponse when the safety check fires after
@@ -697,6 +701,8 @@ export async function* generateCoachProResponse(
     offerRecipe?: boolean;
     /** The app can show write cards (spec 2026-11-09). */
     writeCards?: boolean;
+    /** The app can show the pantry card and the plan has the pantry. */
+    pantryCard?: boolean;
     onWriteCardProposal?: ExecuteToolOptions["onWriteCardProposal"];
     planRecipePool?: ExecuteToolOptions["planRecipePool"];
   },
@@ -733,9 +739,11 @@ export async function* generateCoachProResponse(
   // could still call it on any message the classifier does not route to
   // recipe_request and give the prose "couldn't find" answer the finder
   // replaces (spec §3.3). Flag off → today's tools.
-  const toolList = options?.writeCards
-    ? WRITE_CARD_TOOL_DEFINITIONS
-    : TOOL_DEFINITIONS;
+  const toolList = !options?.writeCards
+    ? TOOL_DEFINITIONS
+    : options.pantryCard
+      ? PANTRY_CARD_TOOL_DEFINITIONS
+      : WRITE_CARD_TOOL_DEFINITIONS;
   const baseTools = isRecipeFinderEnabled()
     ? toolList.filter(
         (t) => !("function" in t && t.function.name === "search_recipes"),
@@ -1006,6 +1014,7 @@ export async function* generateCoachProResponse(
               ? [
                   {
                     writeCards: true,
+                    pantryCard: !!options.pantryCard,
                     onWriteCardProposal: options.onWriteCardProposal,
                     planRecipePool: options.planRecipePool,
                   },

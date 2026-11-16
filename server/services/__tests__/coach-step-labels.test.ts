@@ -141,6 +141,14 @@ describe("coach step labels (show-the-work spec 2026-11-09)", () => {
     });
   });
 
+  it("the pantry card has a step label and a trail entry", () => {
+    expect(toolStep(call("update_pantry", {}), { writeCards: true })).toEqual({
+      label: "Preparing a pantry card…",
+      trail: "pantry card",
+    });
+    expect(plainStatusLabel("update_pantry")).toBe("Preparing pantry changes…");
+  });
+
   it("plainStatusLabel keeps today's labels for read tools", () => {
     expect(plainStatusLabel("get_pantry_items")).toBe("Checking your pantry…");
     expect(plainStatusLabel("get_grocery_lists")).toBe(

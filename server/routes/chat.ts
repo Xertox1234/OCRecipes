@@ -301,6 +301,13 @@ export function register(app: Express): void {
           // the card on screen with the user's edits. Only edits — the
           // server never takes numbers or ids from here.
           writeCards: z.literal(true).optional(),
+          // Card kinds added after the first three (spec 2026-11-16). An app
+          // that cannot draw a kind does not list it, and the coach is then
+          // never given the tool that makes that card.
+          cardKinds: z
+            .array(z.enum(["pantry"]))
+            .max(4)
+            .optional(),
           liveCard: z
             .object({
               cardId: z.string().uuid(),

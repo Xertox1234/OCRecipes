@@ -149,3 +149,51 @@ describe("writeCardReceiptFor", () => {
     ).toBe("✓ Added 1 item to Weekly shop");
   });
 });
+
+describe("pantry card in the dispatcher", () => {
+  const pantryCard = createMockCoachWriteCard({
+    kind: "pantry",
+    payload: {
+      rows: [
+        {
+          action: "use",
+          name: "Milk",
+          quantity: "1",
+          unit: "L",
+          itemId: 7,
+          held: "2.00",
+          all: false,
+          expiresInDays: null,
+        },
+        {
+          action: "add",
+          name: "Eggs",
+          quantity: "12",
+          unit: null,
+          itemId: null,
+          held: null,
+          all: false,
+          expiresInDays: null,
+        },
+      ],
+    },
+    edits: { ticked: [true, false] },
+  });
+
+  it("describes the card on screen with the user's ticks", () => {
+    expect(describeLiveCard(pantryCard)).toBe(
+      "Card on screen (pantry, not saved): Use Milk 1 L of 2 L — ticked; Add Eggs 12 — unticked. To change it, call update_pantry again with the full updated contents.",
+    );
+  });
+
+  it("the receipt counts what the save did", () => {
+    expect(
+      writeCardReceiptFor({
+        ...pantryCard,
+        savedRefs: {
+          pantryCounts: { added: 0, used: 1, removed: 0, skipped: 0 },
+        },
+      }),
+    ).toBe("✓ Pantry updated · 1 used");
+  });
+});

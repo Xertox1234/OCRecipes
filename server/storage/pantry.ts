@@ -22,7 +22,7 @@ export type PantryTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * not queue behind unrelated per-user locks. Must be the first statement of the
  * transaction that goes on to insert.
  */
-async function lockPantryAndGetRoom(
+export async function lockPantryAndGetRoom(
   tx: PantryTx,
   userId: string,
 ): Promise<number> {
@@ -126,6 +126,50 @@ export async function addGroceryItemToPantryAtomically(
     const [created] = await tx.insert(pantryItems).values(item).returning();
     return created;
   });
+}
+
+// ── Inside a caller's transaction (the Coach pantry card) ────────────
+// The pantry screen's update and delete below do not take the advisory lock,
+// so a card save reads each row FOR UPDATE before it compares and writes: a
+// concurrent edit either waits for the save or is seen by it.
+
+export async function getPantryItemForUpdate(
+  tx: PantryTx,
+  id: number,
+  userId: string,
+): Promise<PantryItem | undefined> {
+  const [row] = await tx
+    .select()
+    .from(pantryItems)
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
+    .for("update");
+  return row;
+}
+
+export async function setPantryItemQuantityInTx(
+  tx: PantryTx,
+  id: number,
+  userId: string,
+  quantity: string | null,
+): Promise<boolean> {
+  const updated = await tx
+    .update(pantryItems)
+    .set({ quantity, updatedAt: new Date() })
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
+    .returning({ id: pantryItems.id });
+  return updated.length > 0;
+}
+
+export async function deletePantryItemInTx(
+  tx: PantryTx,
+  id: number,
+  userId: string,
+): Promise<boolean> {
+  const deleted = await tx
+    .delete(pantryItems)
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
+    .returning({ id: pantryItems.id });
+  return deleted.length > 0;
 }
 
 export type PantryItemUpdates = Partial<
