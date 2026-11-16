@@ -144,4 +144,22 @@ describe("isFamilyPlanningActive", () => {
       false,
     );
   });
+
+  describe("an omitted note", () => {
+    it("is accepted and stored as null, since the note is optional", () => {
+      expect(
+        familyProfileInputSchema.parse({ name: "Ivy", allergies: [] }),
+      ).toEqual({ name: "Ivy", allergies: [], note: null });
+    });
+
+    it("still rejects a note that is not text", () => {
+      expect(
+        familyProfileInputSchema.safeParse({
+          name: "Ivy",
+          allergies: [],
+          note: 5,
+        }).success,
+      ).toBe(false);
+    });
+  });
 });

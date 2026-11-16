@@ -11,11 +11,13 @@ export const FAMILY_NAME_MAX = 50;
 export const FAMILY_NOTE_MAX = 200;
 export const FAMILY_ALLERGIES_MAX = 30;
 
-/** Body of a family-profile create or update. The name is trimmed; a blank note becomes null. */
+/** Body of a family-profile create or update. The name is trimmed; a blank or omitted note becomes null. */
 export const familyProfileInputSchema = z.object({
   name: z.string().trim().min(1).max(FAMILY_NAME_MAX),
   allergies: z.array(allergySchema).max(FAMILY_ALLERGIES_MAX),
   note: z.preprocess((value) => {
+    // The note is optional: a body that leaves it out means "no note".
+    if (value === undefined) return null;
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? null : trimmed;
