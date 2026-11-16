@@ -6,7 +6,12 @@ import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
 import { renderComponent } from "../../../../test/utils/render-component";
 import { WeekGrid } from "../WeekGrid";
-import { CELL_HEIGHT, DAY_HEADER_HEIGHT } from "../WeekGridCell";
+import {
+  CELL_HEIGHT,
+  DAY_HEADER_HEIGHT,
+  GRID_MAX_FONT_SCALE,
+  getCellContentHeight,
+} from "../WeekGridCell";
 import {
   GRID_COLUMN_GAP,
   buildWeekGrid,
@@ -187,6 +192,36 @@ describe("WeekGrid", () => {
     expect(DAY_HEADER_HEIGHT).toBeGreaterThanOrEqual(44);
     expect(getGridColumnWidth(320)).toBeGreaterThanOrEqual(44);
     expect(getGridColumnWidth(402)).toBeGreaterThan(getGridColumnWidth(320));
+  });
+
+  describe("with a larger system text size", () => {
+    it("caps text scaling on every piece of grid text, since the cells cannot grow", () => {
+      const { container } = renderGrid();
+      // The icon double also renders a span (its glyph name); icons are a
+      // fixed size and are not text.
+      const texts = Array.from(container.querySelectorAll("span")).filter(
+        (el) => el.textContent !== "plus",
+      );
+      // Row labels, day headers, cell text and day totals.
+      expect(texts.length).toBeGreaterThanOrEqual(30);
+      const uncapped = texts.filter(
+        (el) =>
+          el.getAttribute("maxfontsizemultiplier") !==
+          String(GRID_MAX_FONT_SCALE),
+      );
+      expect(uncapped.map((el) => el.textContent)).toEqual([]);
+    });
+
+    it("still fits a cell's text inside the cell at the cap, with and without an image", () => {
+      expect(
+        getCellContentHeight(GRID_MAX_FONT_SCALE, true),
+      ).toBeLessThanOrEqual(CELL_HEIGHT);
+      expect(
+        getCellContentHeight(GRID_MAX_FONT_SCALE, false),
+      ).toBeLessThanOrEqual(CELL_HEIGHT);
+      // And the cap is a real allowance, not a ban on scaling.
+      expect(GRID_MAX_FONT_SCALE).toBeGreaterThan(1);
+    });
   });
 
   it("does not re-render its cells when the parent re-renders with the same days and handlers", () => {

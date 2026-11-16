@@ -38,6 +38,10 @@ import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
 import { SIMPLE_ENTRY_SNAP_POINTS } from "@/components/meal-plan/SimpleEntrySheet";
 import { WeekGrid } from "@/components/meal-plan/WeekGrid";
 import {
+  CELL_HEIGHT,
+  DAY_HEADER_HEIGHT,
+} from "@/components/meal-plan/WeekGridCell";
+import {
   type MealType,
   suggestionToPlanItem,
 } from "@/components/meal-plan/meal-plan-utils";
@@ -496,7 +500,7 @@ export default function MealPlanHomeScreen() {
                     <View key={col} style={styles.skeletonCell}>
                       <SkeletonBox
                         width="100%"
-                        height={row === 0 ? 52 : 96}
+                        height={row === 0 ? DAY_HEADER_HEIGHT : CELL_HEIGHT}
                         borderRadius={BorderRadius.sm}
                       />
                     </View>

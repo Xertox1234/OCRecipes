@@ -18,7 +18,12 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 
 import { MEAL_LABELS, type MealType } from "./meal-plan-utils";
-import { CELL_HEIGHT, DAY_HEADER_HEIGHT, WeekGridCell } from "./WeekGridCell";
+import {
+  CELL_HEIGHT,
+  DAY_HEADER_HEIGHT,
+  GRID_MAX_FONT_SCALE,
+  WeekGridCell,
+} from "./WeekGridCell";
 import {
   GRID_COLUMN_GAP,
   GRID_LABEL_COLUMN_WIDTH,
@@ -60,6 +65,7 @@ const DayHeader = React.memo(function DayHeader({
       accessibilityLabel={getDayHeaderAccessibilityLabel(day)}
     >
       <ThemedText
+        maxScale={GRID_MAX_FONT_SCALE}
         style={[
           styles.dayName,
           { color: day.isToday ? theme.buttonText : theme.textSecondary },
@@ -68,6 +74,7 @@ const DayHeader = React.memo(function DayHeader({
         {dayName}
       </ThemedText>
       <ThemedText
+        maxScale={GRID_MAX_FONT_SCALE}
         style={[
           styles.dayNum,
           { color: day.isToday ? theme.buttonText : theme.text },
@@ -123,8 +130,11 @@ export function WeekGrid({
         {GRID_MEAL_TYPES.map((mealType) => (
           <View key={mealType} style={styles.rowLabel}>
             <ThemedText
+              maxScale={GRID_MAX_FONT_SCALE}
               style={[styles.rowLabelText, { color: theme.textSecondary }]}
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
             >
               {MEAL_LABELS[mealType]}
             </ThemedText>
@@ -132,6 +142,7 @@ export function WeekGrid({
         ))}
         <View style={styles.kcalLabel}>
           <ThemedText
+            maxScale={GRID_MAX_FONT_SCALE}
             style={[styles.rowLabelText, { color: theme.textSecondary }]}
           >
             kcal
@@ -172,6 +183,7 @@ export function WeekGrid({
               importantForAccessibility="no-hide-descendants"
             >
               <ThemedText
+                maxScale={GRID_MAX_FONT_SCALE}
                 style={[
                   styles.kcalText,
                   {

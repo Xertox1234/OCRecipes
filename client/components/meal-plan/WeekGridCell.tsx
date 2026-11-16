@@ -15,12 +15,37 @@ import { type GridDay, getCellAccessibilityLabel } from "./week-grid-utils";
 // ── Sizes ────────────────────────────────────────────────────────────
 // A day column is only about 100pt wide, so a cell holds exactly this much:
 // an optional image strip, a title, and one bottom line. Heights are fixed
-// so a larger system font can never grow a cell out of the grid.
-export const CELL_HEIGHT = 96;
+// so the grid stays a grid; text scaling is capped to what still fits (the
+// day screen shows every meal at full Dynamic Type size).
+export const CELL_HEIGHT = 100;
 export const CELL_IMAGE_HEIGHT = 36;
 export const DAY_HEADER_HEIGHT = 52;
+/** Cap on Dynamic Type inside the grid. See `getCellContentHeight`. */
+export const GRID_MAX_FONT_SCALE = 1.2;
 const TITLE_FONT_SIZE = 12;
+const TITLE_LINE_HEIGHT = 15;
 const BOTTOM_LINE_FONT_SIZE = 11;
+const BOTTOM_LINE_HEIGHT = 14;
+const BODY_PADDING_TOP = 5;
+const BODY_PADDING_BOTTOM = 6;
+const TITLE_LINES_WITH_IMAGE = 2;
+const TITLE_LINES_WITHOUT_IMAGE = 3;
+
+/** Height a filled cell's contents need at a given text scale. */
+export function getCellContentHeight(
+  fontScale: number,
+  hasImage: boolean,
+): number {
+  const titleLines = hasImage
+    ? TITLE_LINES_WITH_IMAGE
+    : TITLE_LINES_WITHOUT_IMAGE;
+  return (
+    (hasImage ? CELL_IMAGE_HEIGHT : 0) +
+    BODY_PADDING_TOP +
+    (titleLines * TITLE_LINE_HEIGHT + BOTTOM_LINE_HEIGHT) * fontScale +
+    BODY_PADDING_BOTTOM
+  );
+}
 
 /** "610", or "1,150 · +1" when more items share the slot. */
 function formatBottomLine(calories: number, extraCount: number): string {
@@ -89,13 +114,17 @@ export const WeekGridCell = React.memo(function WeekGridCell({
       <View style={styles.body}>
         <ThemedText
           style={[styles.title, { color: theme.text }]}
-          numberOfLines={imageUri ? 2 : 3}
+          numberOfLines={
+            imageUri ? TITLE_LINES_WITH_IMAGE : TITLE_LINES_WITHOUT_IMAGE
+          }
+          maxScale={GRID_MAX_FONT_SCALE}
         >
           {cell.title}
         </ThemedText>
         <ThemedText
           style={[styles.bottomLine, { color: theme.textSecondary }]}
           numberOfLines={1}
+          maxScale={GRID_MAX_FONT_SCALE}
         >
           {formatBottomLine(cell.calories, cell.extraCount)}
         </ThemedText>
@@ -124,17 +153,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "space-between",
     paddingHorizontal: 6,
-    paddingTop: 5,
-    paddingBottom: 6,
+    paddingTop: BODY_PADDING_TOP,
+    paddingBottom: BODY_PADDING_BOTTOM,
   },
   title: {
     fontSize: TITLE_FONT_SIZE,
-    lineHeight: 15,
+    lineHeight: TITLE_LINE_HEIGHT,
     fontFamily: FontFamily.semiBold,
   },
   bottomLine: {
     fontSize: BOTTOM_LINE_FONT_SIZE,
-    lineHeight: 14,
+    lineHeight: BOTTOM_LINE_HEIGHT,
     fontFamily: FontFamily.medium,
   },
 });
