@@ -41,6 +41,10 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     getUser: vi.fn(),
     reorderMealPlanItems: vi.fn(),
+    updateMealPlanItemAudience: vi.fn(),
+    isMealPlanItemConfirmed: vi.fn(),
+    getFamilyProfile: vi.fn(),
+    getFamilyProfiles: vi.fn(),
     createMealPlanFromSuggestions: vi.fn(),
     incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
   },
@@ -90,6 +94,17 @@ function mockPremium() {
     expiresAt: null,
   });
   vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+}
+
+/** Premium tier plus the user's own family-planning switch. */
+function mockFamily({ premium = true, switchOn = true } = {}) {
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue(
+    premium ? "premium" : "free",
+  );
+  vi.mocked(storage.getUserProfile).mockResolvedValue({
+    familyPlanningEnabled: switchOn,
+  } as Awaited<ReturnType<typeof storage.getUserProfile>>);
+  vi.mocked(storage.getFamilyProfiles).mockResolvedValue([]);
 }
 
 const mockRecipe = createMockMealPlanRecipe({
@@ -500,6 +515,24 @@ describe("Meal Plan Routes", () => {
       expect(res.status).toBe(200);
     });
 
+    it.each([
+      ["active", { premium: true, switchOn: true }, true],
+      ["switch off", { premium: true, switchOn: false }, false],
+      ["free", { premium: false, switchOn: true }, false],
+    ])("passes includeProfileMeals for %s", async (_n, opts, expected) => {
+      mockFamily(opts);
+      vi.mocked(storage.getMealPlanItems).mockResolvedValue([]);
+      await request(app)
+        .get("/api/meal-plan?start=2025-01-01&end=2025-01-07")
+        .set("Authorization", "Bearer token");
+      expect(storage.getMealPlanItems).toHaveBeenCalledWith(
+        expect.any(String),
+        "2025-01-01",
+        "2025-01-07",
+        { includeProfileMeals: expected },
+      );
+    });
+
     it("returns 400 for missing dates", async () => {
       const res = await request(app)
         .get("/api/meal-plan")
@@ -593,6 +626,129 @@ describe("Meal Plan Routes", () => {
       expect(res.status).toBe(404);
     });
 
+    describe("audience", () => {
+      const base = {
+        recipeId: 1,
+        plannedDate: "2025-01-01",
+        mealType: "dinner",
+      };
+      beforeEach(() => {
+        vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(mockRecipe);
+        vi.mocked(storage.addMealPlanItem).mockResolvedValue(
+          createMockMealPlanItem(),
+        );
+      });
+      const post = (body: object) =>
+        request(app)
+          .post("/api/meal-plan/items")
+          .set("Authorization", "Bearer token")
+          .send(body);
+
+      it("defaults to self without any family lookup", async () => {
+        const res = await post(base);
+        expect(res.status).toBe(201);
+        expect(storage.addMealPlanItem).toHaveBeenCalledWith(
+          expect.objectContaining({ audience: "self", familyProfileId: null }),
+        );
+        expect(storage.getUserProfile).not.toHaveBeenCalled();
+        expect(storage.getFamilyProfile).not.toHaveBeenCalled();
+      });
+
+      it("accepts shared when family planning is active", async () => {
+        mockFamily();
+        const res = await post({ ...base, audience: "shared" });
+        expect(res.status).toBe(201);
+        expect(storage.addMealPlanItem).toHaveBeenCalledWith(
+          expect.objectContaining({ audience: "shared" }),
+        );
+      });
+
+      it("403 PREMIUM_REQUIRED for shared on a free plan", async () => {
+        mockFamily({ premium: false });
+        const res = await post({ ...base, audience: "shared" });
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe("PREMIUM_REQUIRED");
+        expect(storage.addMealPlanItem).not.toHaveBeenCalled();
+      });
+
+      it("409 FAMILY_PLANNING_OFF when only the switch is off", async () => {
+        mockFamily({ switchOn: false });
+        const res = await post({ ...base, audience: "shared" });
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("FAMILY_PLANNING_OFF");
+        expect(storage.addMealPlanItem).not.toHaveBeenCalled();
+      });
+
+      it("404 when the profile is not the user's", async () => {
+        mockFamily();
+        vi.mocked(storage.getFamilyProfile).mockResolvedValue(undefined);
+        const res = await post({
+          ...base,
+          audience: "profile",
+          familyProfileId: 7,
+        });
+        expect(res.status).toBe(404);
+        expect(storage.getFamilyProfile).toHaveBeenCalledWith(
+          7,
+          expect.any(String),
+        );
+        expect(storage.addMealPlanItem).not.toHaveBeenCalled();
+      });
+
+      it("stores a profile meal for an owned profile", async () => {
+        mockFamily();
+        vi.mocked(storage.getFamilyProfile).mockResolvedValue({
+          id: 7,
+        } as Awaited<ReturnType<typeof storage.getFamilyProfile>>);
+        const res = await post({
+          ...base,
+          audience: "profile",
+          familyProfileId: 7,
+        });
+        expect(res.status).toBe(201);
+        expect(storage.addMealPlanItem).toHaveBeenCalledWith(
+          expect.objectContaining({ audience: "profile", familyProfileId: 7 }),
+        );
+      });
+
+      it.each([
+        ["profile without an id", { audience: "profile" }],
+        ["shared with an id", { audience: "shared", familyProfileId: 7 }],
+        ["self with an id", { audience: "self", familyProfileId: 7 }],
+      ])("400 for %s", async (_n, extra) => {
+        mockFamily();
+        const res = await post({ ...base, ...extra });
+        expect(res.status).toBe(400);
+        expect(storage.addMealPlanItem).not.toHaveBeenCalled();
+      });
+
+      it("carries the audience through the inline-recipe path", async () => {
+        mockFamily();
+        vi.mocked(storage.createMealPlanFromSuggestions).mockResolvedValue([
+          { recipeId: 5, mealPlanItemId: 6 },
+        ]);
+        const res = await post({
+          recipe: {
+            title: "Overnight oats",
+            instructions: ["Soak the oats overnight"],
+            ingredients: [{ name: "oats", quantity: "1", unit: "cup" }],
+          },
+          plannedDate: "2025-01-01",
+          mealType: "dinner",
+          audience: "shared",
+        });
+        expect(res.status).toBe(201);
+        expect(storage.createMealPlanFromSuggestions).toHaveBeenCalledWith([
+          expect.objectContaining({
+            planItem: expect.objectContaining({
+              audience: "shared",
+              familyProfileId: null,
+            }),
+          }),
+        ]);
+      });
+    });
+
     describe("inline recipe (atomic create + plan)", () => {
       const inlineBody = {
         recipe: {
@@ -670,6 +826,115 @@ describe("Meal Plan Routes", () => {
         expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
         expect(storage.addMealPlanItem).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe("PATCH /api/meal-plan/items/:id", () => {
+    const patch = (id: string, body: object) =>
+      request(app)
+        .patch(`/api/meal-plan/items/${id}`)
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+    it("updates the audience (200)", async () => {
+      mockFamily();
+      vi.mocked(storage.updateMealPlanItemAudience).mockResolvedValue(
+        createMockMealPlanItem({ audience: "shared" }),
+      );
+      const res = await patch("3", {
+        audience: "shared",
+        familyProfileId: null,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.audience).toBe("shared");
+      expect(storage.updateMealPlanItemAudience).toHaveBeenCalledWith(
+        3,
+        expect.any(String),
+        "shared",
+        null,
+      );
+    });
+
+    it("404 for an unknown item", async () => {
+      mockFamily();
+      vi.mocked(storage.updateMealPlanItemAudience).mockResolvedValue(
+        undefined,
+      );
+      const res = await patch("3", {
+        audience: "shared",
+        familyProfileId: null,
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("400 for an invalid pair and for a bad id", async () => {
+      mockFamily();
+      expect(
+        (await patch("3", { audience: "profile", familyProfileId: null }))
+          .status,
+      ).toBe(400);
+      expect(
+        (await patch("abc", { audience: "self", familyProfileId: null }))
+          .status,
+      ).toBe(400);
+      expect(storage.updateMealPlanItemAudience).not.toHaveBeenCalled();
+    });
+
+    it("self skips family lookups", async () => {
+      vi.mocked(storage.updateMealPlanItemAudience).mockResolvedValue(
+        createMockMealPlanItem(),
+      );
+      const res = await patch("3", { audience: "self", familyProfileId: null });
+      expect(res.status).toBe(200);
+      expect(storage.getUserProfile).not.toHaveBeenCalled();
+    });
+
+    it("403 on a free plan and 409 with the switch off", async () => {
+      mockFamily({ premium: false });
+      const free = await patch("3", {
+        audience: "shared",
+        familyProfileId: null,
+      });
+      expect(free.status).toBe(403);
+      expect(free.body.code).toBe("PREMIUM_REQUIRED");
+      mockFamily({ switchOn: false });
+      const off = await patch("3", {
+        audience: "shared",
+        familyProfileId: null,
+      });
+      expect(off.status).toBe(409);
+      expect(off.body.code).toBe("FAMILY_PLANNING_OFF");
+      expect(storage.updateMealPlanItemAudience).not.toHaveBeenCalled();
+    });
+
+    it("404 for a profile that is not the user's", async () => {
+      mockFamily();
+      vi.mocked(storage.getFamilyProfile).mockResolvedValue(undefined);
+      const res = await patch("3", { audience: "profile", familyProfileId: 7 });
+      expect(res.status).toBe(404);
+      expect(storage.updateMealPlanItemAudience).not.toHaveBeenCalled();
+    });
+
+    it("409 ALREADY_CONFIRMED when moving a confirmed meal to a profile", async () => {
+      mockFamily();
+      vi.mocked(storage.getFamilyProfile).mockResolvedValue({
+        id: 7,
+      } as Awaited<ReturnType<typeof storage.getFamilyProfile>>);
+      vi.mocked(storage.isMealPlanItemConfirmed).mockResolvedValue(true);
+      const res = await patch("3", { audience: "profile", familyProfileId: 7 });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("ALREADY_CONFIRMED");
+      expect(storage.updateMealPlanItemAudience).not.toHaveBeenCalled();
+    });
+
+    it("is not shadowed by the reorder route", async () => {
+      vi.mocked(storage.reorderMealPlanItems).mockResolvedValue(undefined);
+      const res = await request(app)
+        .patch("/api/meal-plan/reorder")
+        .set("Authorization", "Bearer token")
+        .send({ items: [{ id: 1, sortOrder: 0 }] });
+      expect(res.status).toBe(200);
+      expect(storage.updateMealPlanItemAudience).not.toHaveBeenCalled();
     });
   });
 
@@ -890,6 +1155,20 @@ describe("Meal Plan Routes", () => {
   });
 
   describe("POST /api/meal-plan/items/:id/confirm", () => {
+    it("400 for a meal planned for a family profile", async () => {
+      mockPremium();
+      vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
+        ...createMockMealPlanItem({ audience: "profile", familyProfileId: 7 }),
+        recipe: null,
+        scannedItem: null,
+      });
+      const res = await request(app)
+        .post("/api/meal-plan/items/1/confirm")
+        .set("Authorization", "Bearer token");
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_ERROR");
+      expect(storage.createDailyLog).not.toHaveBeenCalled();
+    });
     it("confirms a meal plan item", async () => {
       mockPremium();
       vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
@@ -1078,6 +1357,7 @@ describe("Meal Plan Routes", () => {
       expect(buildPantryMealPlanForUser).toHaveBeenCalledWith(
         expect.any(String),
         3,
+        expect.objectContaining({ aiMealSuggestions: true }),
       );
     });
 
@@ -1181,6 +1461,52 @@ describe("Meal Plan Routes", () => {
             }),
           }),
         ]),
+      );
+    });
+
+    describe("family headcount", () => {
+      const clientMeal = { ...validMeal, servings: 4 };
+
+      async function save() {
+        vi.mocked(storage.createMealPlanFromSuggestions).mockResolvedValue([
+          { recipeId: 10, mealPlanItemId: 20 },
+        ]);
+        const res = await request(app)
+          .post("/api/meal-plan/save-generated")
+          .set("Authorization", "Bearer token")
+          .send({ meals: [clientMeal] });
+        expect(res.status).toBe(201);
+        return vi.mocked(storage.createMealPlanFromSuggestions).mock
+          .calls[0][0][0];
+      }
+
+      it("saves shared meals with servings 1 when active with profiles", async () => {
+        mockFamily();
+        vi.mocked(storage.getFamilyProfiles).mockResolvedValue([
+          { id: 1 },
+        ] as Awaited<ReturnType<typeof storage.getFamilyProfiles>>);
+        const saved = await save();
+        expect(saved.planItem).toEqual(
+          expect.objectContaining({ audience: "shared", servings: "1" }),
+        );
+        expect(saved.recipe.servings).toBe(4);
+      });
+
+      it.each([
+        ["inactive (switch off)", { switchOn: false }, [{ id: 1 }]],
+        ["not premium", { premium: false }, [{ id: 1 }]],
+        ["active with no profiles", {}, []],
+      ])(
+        "keeps self and the client servings when %s",
+        async (_l, opts, profiles) => {
+          mockFamily(opts);
+          vi.mocked(storage.getFamilyProfiles).mockResolvedValue(
+            profiles as Awaited<ReturnType<typeof storage.getFamilyProfiles>>,
+          );
+          const saved = await save();
+          expect(saved.planItem.servings).toBe("4");
+          expect(saved.planItem.audience ?? "self").toBe("self");
+        },
       );
     });
 

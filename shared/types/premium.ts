@@ -63,6 +63,13 @@ export interface PremiumFeatures {
    * is made for them (owner decision 2026-10-31).
    */
   recipeAutoImages: boolean;
+  /**
+   * Family profiles: plan meals for other people (allergies, a note) and mark
+   * who each planned meal is for. Creating or editing a profile, turning the
+   * switch on and writing a non-`self` audience need it; listing and deleting
+   * profiles and turning the switch off do not, so a lapsed user can clean up.
+   */
+  familyProfiles: boolean;
 }
 
 /**
@@ -144,6 +151,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     itemSuggestions: false,
     cookbookCoverGeneration: false,
     recipeAutoImages: false,
+    familyProfiles: false,
   },
   premium: {
     maxDailyScans: UNLIMITED_SCANS,
@@ -179,6 +187,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     itemSuggestions: true,
     cookbookCoverGeneration: true,
     recipeAutoImages: true,
+    familyProfiles: true,
   },
 };
 

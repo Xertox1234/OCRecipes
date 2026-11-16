@@ -46,6 +46,7 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     getUser: vi.fn(),
     getMealPlanItemSummaries: vi.fn(),
+    getMealPlanItems: vi.fn(),
     getRecentDismissedRecipeIds: vi.fn().mockResolvedValue([]),
     getCommunityRecipeTitlesByIds: vi.fn().mockResolvedValue(new Map()),
     getMealSuggestionCache: vi.fn(),
@@ -298,6 +299,23 @@ describe("Meal Suggestions Routes", () => {
         storage.createMealSuggestionCacheWithLimitCheck,
       ).mockResolvedValue(createMockMealSuggestionCache());
     }
+
+    it("reads what is already planned through the summary reader, never the full one", async () => {
+      mockBudgetSetup([]);
+
+      const res = await request(app)
+        .post("/api/meal-plan/suggest")
+        .set("Authorization", "Bearer token")
+        .send({ date: "2025-01-01", mealType: "lunch" });
+
+      expect(res.status).toBe(200);
+      expect(storage.getMealPlanItemSummaries).toHaveBeenCalledWith(
+        expect.any(String),
+        "2025-01-01",
+        "2025-01-01",
+      );
+      expect(storage.getMealPlanItems).not.toHaveBeenCalled();
+    });
 
     it("accounts for existing meal plan items with recipe data in budget", async () => {
       mockBudgetSetup([

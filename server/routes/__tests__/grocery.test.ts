@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { generateGroceryItems } from "../../services/grocery-generation";
+import { getFamilyContext } from "../../services/family-context";
 import { register } from "../grocery";
 import { installContractSnapshotMiddleware } from "../../lib/contract-snapshot";
 import { _testInternals as streakCacheInternals } from "../../services/verification-streak-cache";
@@ -57,6 +58,10 @@ vi.mock("../../services/grocery-generation", async (importOriginal) => {
   };
 });
 
+vi.mock("../../services/family-context", () => ({
+  getFamilyContext: vi.fn(),
+}));
+
 vi.mock("../../services/pantry-deduction", () => ({
   deductPantryFromGrocery: vi.fn(),
 }));
@@ -88,10 +93,47 @@ describe("Grocery Routes", () => {
     vi.mocked(storage.getUserVerificationStats).mockResolvedValue(
       noStreakStats,
     );
+    vi.mocked(getFamilyContext).mockResolvedValue({
+      active: false,
+      profiles: [],
+    });
     app = createApp();
   });
 
   describe("POST /api/meal-plan/grocery-lists", () => {
+    it("passes the family headcount to the ingredient query", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ subscriptionTier: "premium" }),
+      );
+      vi.mocked(getFamilyContext).mockResolvedValue({
+        active: true,
+        profiles: [{ id: 1 }, { id: 2 }, { id: 3 }] as Awaited<
+          ReturnType<typeof getFamilyContext>
+        >["profiles"],
+      });
+      vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
+        [],
+      );
+      vi.mocked(generateGroceryItems).mockReturnValue([]);
+      vi.mocked(storage.createGroceryListWithLimitCheck).mockResolvedValue({
+        list: mockList,
+        items: [],
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists")
+        .set("Authorization", "Bearer token")
+        .send({ startDate: "2025-01-01", endDate: "2025-01-07" });
+
+      expect(res.status).toBe(201);
+      expect(storage.getMealPlanIngredientsForDateRange).toHaveBeenCalledWith(
+        expect.any(String),
+        "2025-01-01",
+        "2025-01-07",
+        { active: true, profileCount: 3 },
+      );
+    });
+
     it("creates one list when a double tap sends two overlapping requests", async () => {
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ subscriptionTier: "premium" }),

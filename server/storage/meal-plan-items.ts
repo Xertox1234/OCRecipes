@@ -9,17 +9,24 @@ import {
   mealPlanItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, gte, lte, lt, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, gte, lte, lt, ne, sql, inArray, isNull } from "drizzle-orm";
+import type { MealAudience } from "@shared/types/family";
 import { getDayBounds } from "./helpers";
 
 // ============================================================================
 // MEAL PLAN ITEMS
 // ============================================================================
 
+/**
+ * `includeProfileMeals` defaults to false: a meal planned for one family
+ * profile is returned only to the caller that asks (the user's own plan screen,
+ * and only while family planning is active).
+ */
 export async function getMealPlanItems(
   userId: string,
   startDate: string,
   endDate: string,
+  opts: { includeProfileMeals?: boolean } = {},
 ): Promise<
   (MealPlanItem & {
     recipe: MealPlanRecipe | null;
@@ -34,6 +41,9 @@ export async function getMealPlanItems(
         eq(mealPlanItems.userId, userId),
         gte(mealPlanItems.plannedDate, startDate),
         lte(mealPlanItems.plannedDate, endDate),
+        opts.includeProfileMeals
+          ? undefined
+          : ne(mealPlanItems.audience, "profile"),
       ),
     )
     .orderBy(mealPlanItems.plannedDate, mealPlanItems.createdAt);
@@ -112,6 +122,10 @@ export type ScannedItemSummary = Pick<
  * filters, but the joined recipe and scanned item carry only the nutrition
  * summary columns (no `instructions`, `ingredients`, image URLs, ...). For
  * server-side callers that never forward the full rows.
+ *
+ * Never returns a meal planned for a family profile: every caller is AI-bound
+ * (coach tool, coach brief, meal suggestions) and nothing about the family may
+ * reach a provider. There is deliberately no opt-in.
  */
 export async function getMealPlanItemSummaries(
   userId: string,
@@ -131,6 +145,7 @@ export async function getMealPlanItemSummaries(
         eq(mealPlanItems.userId, userId),
         gte(mealPlanItems.plannedDate, startDate),
         lte(mealPlanItems.plannedDate, endDate),
+        ne(mealPlanItems.audience, "profile"),
       ),
     )
     .orderBy(mealPlanItems.plannedDate, mealPlanItems.createdAt);
@@ -290,6 +305,21 @@ export async function removeMealPlanItem(
   return result.length > 0;
 }
 
+/** Sets who a planned meal is for; undefined when the item is not the user's. */
+export async function updateMealPlanItemAudience(
+  id: number,
+  userId: string,
+  audience: MealAudience,
+  familyProfileId: number | null,
+): Promise<MealPlanItem | undefined> {
+  const [updated] = await db
+    .update(mealPlanItems)
+    .set({ audience, familyProfileId })
+    .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
+    .returning();
+  return updated;
+}
+
 export async function reorderMealPlanItems(
   userId: string,
   items: { id: number; sortOrder: number }[],
@@ -352,4 +382,20 @@ export async function getConfirmedMealPlanItemIds(
     );
 
   return rows.map((r) => r.mealPlanItemId!);
+}
+
+/**
+ * Whether the user has confirmed this meal-plan item (a `daily_logs` row
+ * carries its id; see the unique index `daily_logs_unique_meal_plan_confirm`).
+ */
+export async function isMealPlanItemConfirmed(
+  id: number,
+  userId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: dailyLogs.id })
+    .from(dailyLogs)
+    .where(and(eq(dailyLogs.mealPlanItemId, id), eq(dailyLogs.userId, userId)))
+    .limit(1);
+  return row !== undefined;
 }

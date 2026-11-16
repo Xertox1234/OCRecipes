@@ -6,6 +6,8 @@ import {
   detectAllergens,
   deriveRecipeAllergens,
   isRecipeSafeForAllergies,
+  getRecipeAllergyClashes,
+  type DerivedRecipeAllergen,
   _testInternals,
   type AllergySeverity,
 } from "../allergens";
@@ -1085,4 +1087,155 @@ describe("shellfish named as a group", () => {
       });
     },
   );
+});
+
+// ============================================================================
+// getRecipeAllergyClashes — which allergens clash, and at what level
+// ============================================================================
+
+describe("getRecipeAllergyClashes", () => {
+  const severities = ["mild", "moderate", "severe"] as const;
+
+  it("returns [] when there are no allergies, even for a null cache", () => {
+    expect(getRecipeAllergyClashes(null, [])).toEqual([]);
+    expect(
+      getRecipeAllergyClashes([{ id: "peanuts", viaDerived: false }], []),
+    ).toEqual([]);
+  });
+
+  it('returns "unknown" for a null cache with at least one allergy', () => {
+    expect(
+      getRecipeAllergyClashes(null, [{ name: "peanuts", severity: "mild" }]),
+    ).toBe("unknown");
+  });
+
+  it("reports a direct entry as contains and blocking at every severity", () => {
+    for (const severity of severities) {
+      expect(
+        getRecipeAllergyClashes(
+          [{ id: "peanuts", viaDerived: false }],
+          [{ name: "peanuts", severity }],
+        ),
+      ).toEqual([{ allergenId: "peanuts", level: "contains", blocking: true }]);
+    }
+  });
+
+  it("reports a derived entry as contains and blocking for moderate and severe only", () => {
+    const cache: DerivedRecipeAllergen[] = [{ id: "milk", viaDerived: true }];
+    expect(
+      getRecipeAllergyClashes(cache, [{ name: "milk", severity: "mild" }]),
+    ).toEqual([]);
+    for (const severity of ["moderate", "severe"] as const) {
+      expect(
+        getRecipeAllergyClashes(cache, [{ name: "milk", severity }]),
+      ).toEqual([{ allergenId: "milk", level: "contains", blocking: true }]);
+    }
+  });
+
+  it("reports a possible entry as possible: not blocking at mild, blocking at moderate/severe", () => {
+    const cache: DerivedRecipeAllergen[] = [
+      { id: "tree_nuts", viaDerived: true, possible: true },
+    ];
+    expect(
+      getRecipeAllergyClashes(cache, [{ name: "tree nuts", severity: "mild" }]),
+    ).toEqual([
+      { allergenId: "tree_nuts", level: "possible", blocking: false },
+    ]);
+    for (const severity of ["moderate", "severe"] as const) {
+      expect(
+        getRecipeAllergyClashes(cache, [{ name: "tree nuts", severity }]),
+      ).toEqual([
+        { allergenId: "tree_nuts", level: "possible", blocking: true },
+      ]);
+    }
+  });
+
+  it('never words a possible entry as "contains" (owner ruling 2026-11-15)', () => {
+    for (const id of allergenIds) {
+      for (const severity of severities) {
+        const clashes = getRecipeAllergyClashes(
+          [{ id, viaDerived: true, possible: true }],
+          [{ name: id, severity }],
+        );
+        expect(clashes).not.toBe("unknown");
+        expect(clashes).toHaveLength(1);
+        expect((clashes as { level: string }[])[0].level).toBe("possible");
+      }
+    }
+  });
+
+  it("returns one clash per allergen, contains winning over possible", () => {
+    const cache: DerivedRecipeAllergen[] = [
+      { id: "soy", viaDerived: true, possible: true },
+    ];
+    // Same allergen twice against a possible entry: one clash, still possible,
+    // blocking because the severe listing blocks.
+    expect(
+      getRecipeAllergyClashes(cache, [
+        { name: "soy", severity: "mild" },
+        { name: "Soybean", severity: "severe" },
+      ]),
+    ).toEqual([{ allergenId: "soy", level: "possible", blocking: true }]);
+    expect(
+      getRecipeAllergyClashes(cache, [
+        { name: "soy", severity: "severe" },
+        { name: "soy", severity: "mild" },
+      ]),
+    ).toEqual([{ allergenId: "soy", level: "possible", blocking: true }]);
+  });
+
+  it("ignores allergies that do not normalise to a known allergen", () => {
+    expect(
+      getRecipeAllergyClashes(
+        [{ id: "peanuts", viaDerived: false }],
+        [{ name: "pollen", severity: "severe" }],
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports several allergens in allergy order", () => {
+    expect(
+      getRecipeAllergyClashes(
+        [
+          { id: "eggs", viaDerived: false },
+          { id: "fish", viaDerived: false },
+        ],
+        [
+          { name: "fish", severity: "mild" },
+          { name: "eggs", severity: "mild" },
+        ],
+      ),
+    ).toEqual([
+      { allergenId: "fish", level: "contains", blocking: true },
+      { allergenId: "eggs", level: "contains", blocking: true },
+    ]);
+  });
+
+  it("has a blocking clash exactly when isRecipeSafeForAllergies is false (generated grid)", () => {
+    let cases = 0;
+    for (const id of allergenIds) {
+      const entryKinds: Record<string, DerivedRecipeAllergen | null> = {
+        direct: { id, viaDerived: false },
+        derived: { id, viaDerived: true },
+        possible: { id, viaDerived: true, possible: true },
+        absent: null,
+      };
+      for (const severity of severities) {
+        for (const [kind, entry] of Object.entries(entryKinds)) {
+          const cache: DerivedRecipeAllergen[] = entry ? [entry] : [];
+          const allergies = [{ name: id, severity }];
+          const clashes = getRecipeAllergyClashes(cache, allergies);
+          const hasBlocking =
+            clashes !== "unknown" && clashes.some((c) => c.blocking);
+          expect(hasBlocking, `${id} / ${severity} / ${kind}`).toBe(
+            !isRecipeSafeForAllergies(cache, allergies),
+          );
+          cases++;
+        }
+      }
+    }
+    expect(cases).toBe(allergenIds.length * 3 * 4);
+    expect(cases).toBeGreaterThan(0);
+    console.log(`getRecipeAllergyClashes property cases: ${cases}`);
+  });
 });

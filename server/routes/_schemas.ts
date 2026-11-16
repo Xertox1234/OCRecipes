@@ -362,6 +362,8 @@ export const userProfileInputSchema = insertUserProfileSchema
     healthDataConsentHistory: true,
     moodScore: true,
     moodUpdatedAt: true,
+    // Written only by PUT /api/family-planning, behind the premium gate.
+    familyPlanningEnabled: true,
   })
   .extend({
     allergies: z.array(allergySchema).max(30).optional(),
