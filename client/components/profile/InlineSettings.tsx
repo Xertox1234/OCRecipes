@@ -93,6 +93,7 @@ export const InlineSettings = React.memo(function InlineSettings({
                 <ThemedText style={styles.label}>Plan for my family</ThemedText>
               </View>
               <Switch
+                testID="family-planning-switch"
                 accessibilityRole="switch"
                 accessibilityLabel="Plan for my family"
                 accessibilityHint="Plan meals for other people in your household"
