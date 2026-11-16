@@ -914,7 +914,7 @@ export async function executeToolCall(
         if (!card.success) {
           return invalidArgs("log_food_item", card.error.message);
         }
-        opts.onWriteCardProposal?.({ kind: "food", args: card.data });
+        await opts.onWriteCardProposal?.({ kind: "food", args: card.data });
         return { card_shown: true, message: CARD_SHOWN_MESSAGE };
       }
       const parsed = logFoodItemSchema.safeParse(args);
@@ -1004,7 +1004,7 @@ export async function executeToolCall(
         if (!card.success) {
           return invalidArgs("add_to_meal_plan", card.error.message);
         }
-        opts.onWriteCardProposal?.({
+        await opts.onWriteCardProposal?.({
           kind: "plan",
           args: card.data,
           pool: [...(opts.planRecipePool ?? [])],

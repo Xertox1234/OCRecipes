@@ -484,7 +484,7 @@ describe("handleCoachChat with write cards", () => {
     vi.mocked(generateCoachProResponse).mockImplementation(async function* (
       ...args: Parameters<typeof generateCoachProResponse>
     ): AsyncGenerator<CoachProChunk> {
-      args[7]?.onWriteCardProposal?.({ kind: "food", args: foodArgs });
+      await args[7]?.onWriteCardProposal?.({ kind: "food", args: foodArgs });
       const chunk: CoachProChunk = { type: "content", content: "Here." };
       yield chunk;
       aborted = true;
