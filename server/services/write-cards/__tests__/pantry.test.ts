@@ -77,7 +77,12 @@ const ctx = () => ({ userId: user.id, now: NOW });
 describe("pantry write card", () => {
   beforeEach(async () => {
     tx = await setupTestTransaction();
-    user = await createTestUser(tx, { subscriptionTier: "premium" });
+    user = await createTestUser(tx);
+    // The pantry is a paid feature, and the save checks the plan.
+    await tx
+      .update(schema.users)
+      .set({ subscriptionTier: "premium" })
+      .where(eq(schema.users.id, user.id));
   });
   afterEach(async () => {
     await rollbackTestTransaction();
