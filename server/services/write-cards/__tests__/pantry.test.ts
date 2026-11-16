@@ -77,7 +77,7 @@ const ctx = () => ({ userId: user.id, now: NOW });
 describe("pantry write card", () => {
   beforeEach(async () => {
     tx = await setupTestTransaction();
-    user = await createTestUser(tx);
+    user = await createTestUser(tx, { subscriptionTier: "premium" });
   });
   afterEach(async () => {
     await rollbackTestTransaction();
@@ -189,6 +189,28 @@ describe("pantry write card", () => {
       );
       expect(plan.dropped).toBe(3);
       expect(plan.payload?.rows.map((r) => r.name)).toEqual(["Milk"]);
+    });
+
+    it("an amount too large for the pantry is dropped, and never tops a row past the limit", async () => {
+      const rice = await stock("Rice", { quantity: "99999999", unit: "g" });
+      const plan = await planPantryCard(
+        args([
+          { action: "add", name: "Eggs", quantity: "99999999999" },
+          { action: "add", name: "Rice", quantity: "5", unit: "g" },
+        ]),
+        user.id,
+      );
+      expect(plan.payload?.rows[0]).toMatchObject({
+        name: "Eggs",
+        quantity: null,
+      });
+      // 99999999 + 5 would overflow the column: a new row, not a top-up.
+      expect(plan.payload?.rows[1]).toMatchObject({
+        name: "Rice",
+        itemId: null,
+        quantity: "5",
+      });
+      expect(rice.id).toBeGreaterThan(0);
     });
 
     it("with nothing left there is no card", async () => {
@@ -362,6 +384,28 @@ describe("pantry write card", () => {
       const refs = await performPantrySave(tx, card(payload), {}, ctx());
       expect(refs.pantryCounts).toMatchObject({ added: 1, skipped: 1 });
       expect(await pantryOf()).toHaveLength(MAX_PANTRY_ITEMS);
+    });
+
+    it("refuses the save once the plan no longer includes the pantry, but Undo still works", async () => {
+      const milk = await stock("Milk", { quantity: "2" });
+      const payload = await buildPantryPayload(
+        args([{ action: "remove", itemId: milk.id }]),
+        user.id,
+      );
+      const refs = await performPantrySave(tx, card(payload), {}, ctx());
+      expect(await pantryOf()).toHaveLength(0);
+      await tx
+        .update(schema.users)
+        .set({ subscriptionTier: "free" })
+        .where(eq(schema.users.id, user.id));
+      await expect(
+        performPantrySave(tx, card(payload), {}, ctx()),
+      ).rejects.toBeInstanceOf(WriteCardEditError);
+      await revertPantrySave(
+        tx,
+        card(payload, JSON.parse(JSON.stringify(refs))),
+      );
+      expect(await names()).toEqual(["Milk"]);
     });
 
     it("says so when nothing could be changed", async () => {

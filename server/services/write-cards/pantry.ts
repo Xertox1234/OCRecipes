@@ -25,7 +25,9 @@ import {
   lockPantryAndGetRoom,
   setPantryItemQuantityInTx,
 } from "../../storage/pantry";
+import { getEffectiveTierForUser } from "../../storage/subscription-status";
 import type { WriteCardTx } from "../../storage/coach-write-cards";
+import { TIER_FEATURES } from "@shared/types/premium";
 import {
   categorizeIngredient,
   parseQuantityForSum,
@@ -50,6 +52,14 @@ export {
 type Row = PantryCardPayload["rows"][number];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The pantry's quantity column is numeric(10,2); the pantry routes cap at this too. */
+const MAX_AMOUNT = 99_999_999.99;
+
+/** A model-written amount as a number, or null when unknown or too large to store. */
+function amountOf(raw: string | null | undefined): number | null {
+  const n = parseQuantityForSum(raw);
+  return n === null || n > MAX_AMOUNT ? null : n;
+}
 
 /** The same amount, compared as numbers ("2.00" is "2"); null only equals null. */
 function sameAmount(a: string | null, b: string | null): boolean {
@@ -82,9 +92,9 @@ export async function planPantryCard(
 
   for (const change of args.changes) {
     if (change.action === "add") {
-      const amount = parseQuantityForSum(change.quantity);
-      // A top-up needs amounts on both sides and the same unit; anything
-      // else is its own new row.
+      const amount = amountOf(change.quantity);
+      // A top-up needs amounts on both sides and the same unit, and a sum the
+      // column can hold; anything else is its own new row.
       const match =
         amount === null
           ? undefined
@@ -93,7 +103,8 @@ export async function planPantryCard(
                 !touched.has(p.id) &&
                 matchKey(p.name) === matchKey(change.name) &&
                 unitKey(p.unit) === unitKey(change.unit) &&
-                parseQuantityForSum(p.quantity) !== null,
+                (parseQuantityForSum(p.quantity) ?? Infinity) + amount <=
+                  MAX_AMOUNT,
             );
       if (match) touched.add(match.id);
       rows.push({
@@ -127,7 +138,7 @@ export async function planPantryCard(
       continue;
     }
     const held = parseQuantityForSum(row.quantity);
-    const amount = parseQuantityForSum(change.quantity);
+    const amount = amountOf(change.quantity);
     // Using more than the row holds, or from a row with no amount, uses it up.
     const all =
       change.all === true || held === null || amount === null || amount >= held;
@@ -198,6 +209,13 @@ export async function performPantrySave(
   const payload = card.payload as PantryCardPayload;
   const kept = pantryKept(payload, parsePantryEdits(payload, rawEdits));
   if (kept.length === 0) throw new WriteCardEditError("Nothing to change.");
+  // The plan is checked when the card is built, and again here: a card can
+  // outlive the subscription, and the pantry screen refuses the same user.
+  // Undo is not gated, so a save made in time can always be taken back.
+  const tier = await getEffectiveTierForUser(ctx.userId);
+  if (!TIER_FEATURES[tier].pantryTracking) {
+    throw new WriteCardEditError("Your plan no longer includes the pantry.");
+  }
 
   // A nested transaction only to reach the full transaction client the pantry
   // storage needs; the advisory lock it takes is held until the card's own

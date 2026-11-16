@@ -296,16 +296,6 @@ function compactMealPlanItems(
 // Tool Definitions
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the full array of OpenAI function-calling tool definitions.
- * Pass this array directly to OpenAI's `tools` parameter.
- */
-/**
- * The model's tools. `writeCards` (the app sent `writeCards: true` — it can
- * show write cards, spec 2026-11-09) swaps the three write tools for their
- * card-building forms and adds the two recipe-id tools a plan card needs.
- * Without it the list is exactly today's, so an older app is unaffected.
- */
 const UPDATE_PANTRY_TOOL: ChatCompletionTool = {
   type: "function",
   function: {
@@ -364,6 +354,16 @@ const UPDATE_PANTRY_TOOL: ChatCompletionTool = {
   },
 };
 
+/**
+ * Returns the full array of OpenAI function-calling tool definitions.
+ * Pass this array directly to OpenAI's `tools` parameter.
+ */
+/**
+ * The model's tools. `writeCards` (the app sent `writeCards: true` — it can
+ * show write cards, spec 2026-11-09) swaps the three write tools for their
+ * card-building forms and adds the two recipe-id tools a plan card needs.
+ * Without it the list is exactly today's, so an older app is unaffected.
+ */
 export function getToolDefinitions(
   opts: { writeCards?: boolean; pantryCard?: boolean } = {},
 ): ChatCompletionTool[] {

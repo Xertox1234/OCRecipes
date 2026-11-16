@@ -211,6 +211,11 @@ after another (database rule: no `Promise.all` on one transaction client).
 `savedRefs` records the ids of rows added, and a full copy of every row
 updated or deleted.
 
+The save checks `pantryTracking` again: a card can outlive the subscription,
+and the pantry screen refuses the same user. Undo is not gated. An amount
+larger than the quantity column can hold is treated as no amount when the
+card is built, and a top-up whose sum would pass that limit becomes a new row.
+
 ### Undo
 
 Deletes the added rows, restores updated rows to their copied quantity, and
