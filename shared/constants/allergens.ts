@@ -1138,7 +1138,7 @@ export function isRecipeSafeForAllergies(
   if (recipeAllergens.length === 0) return true;
 
   for (const allergy of userAllergies) {
-    if (recipeAllergyClash(recipeAllergens, allergy)?.level === "contains") {
+    if (recipeAllergyClash(recipeAllergens, allergy)?.blocking) {
       return false;
     }
   }
@@ -1149,20 +1149,27 @@ export function isRecipeSafeForAllergies(
 /** One allergen of a recipe that clashes with a person's allergies. */
 export interface RecipeAllergyClash {
   allergenId: AllergenId;
+  /**
+   * What the recipe evidence is: "possible" for a possible-tier entry,
+   * otherwise "contains". Drives wording only.
+   */
   level: "contains" | "possible";
+  /**
+   * True when this clash makes the recipe unsafe for that person's severity —
+   * exactly the line `isRecipeSafeForAllergies` draws.
+   */
+  blocking: boolean;
 }
 
 /**
  * The single per-allergy tier decision, shared by `isRecipeSafeForAllergies`
  * and `getRecipeAllergyClashes` so the two can never disagree.
  *
- * - `"contains"`: the recipe is unsafe for this allergy — a direct-tier entry
- *   at any severity, or a derived or possible entry (both stored with
- *   `viaDerived: true`) at moderate/severe.
- * - `"possible"`: not unsafe, but the recipe MAY carry the allergen (a
- *   possible-tier entry at mild severity).
- * - `null`: no clash (unknown allergy name, allergen absent, or a derived-only
- *   entry at mild severity).
+ * - direct entry: `contains`, blocking at every severity
+ * - derived entry: `contains`, blocking at moderate/severe; no clash at mild
+ * - possible entry: always `possible` (never "contains" — owner ruling
+ *   2026-11-15), blocking at moderate/severe, not at mild
+ * - no entry, or an allergy name that is not a known allergen: `null`
  */
 function recipeAllergyClash(
   recipeAllergens: readonly DerivedRecipeAllergen[],
@@ -1176,22 +1183,22 @@ function recipeAllergyClash(
 
   const includeDerived =
     allergy.severity === "moderate" || allergy.severity === "severe";
+  // Direct-tier hits are always unsafe. Derived-tier hits (and possible ones,
+  // stored as derived) are unsafe only for moderate/severe severity.
+  const blocking = !entry.viaDerived || includeDerived;
 
-  // Direct-tier hits are always unsafe. Derived-tier hits are unsafe only
-  // for moderate/severe severity.
-  if (!entry.viaDerived || includeDerived) {
-    return { allergenId, level: "contains" };
-  }
-  return entry.possible ? { allergenId, level: "possible" } : null;
+  if (entry.possible) return { allergenId, level: "possible", blocking };
+  return blocking ? { allergenId, level: "contains", blocking } : null;
 }
 
 /**
  * Which of a recipe's allergens clash with a person's allergies, and how
  * strongly, for wording like "Contains tree nuts" / "May contain tree nuts".
  *
- * Shares `recipeAllergyClash` with `isRecipeSafeForAllergies`, so a `contains`
+ * Shares `recipeAllergyClash` with `isRecipeSafeForAllergies`, so a `blocking`
  * clash exists exactly when that function returns `false` because of the
- * allergen. One clash per allergen; `contains` wins over `possible`.
+ * allergen. `level` is the wording only. One clash per allergen: `contains`
+ * wins over `possible`, and `blocking` is true if either listing blocks.
  *
  * - no allergies → `[]` (nothing to clash with, even for a `null` cache)
  * - `null` cache with at least one allergy → `"unknown"` (not yet derived)
@@ -1208,12 +1215,19 @@ export function getRecipeAllergyClashes(
     const clash = recipeAllergyClash(recipeAllergens, allergy);
     if (!clash) continue;
     const existing = byAllergen.get(clash.allergenId);
-    if (
-      !existing ||
-      (existing.level === "possible" && clash.level === "contains")
-    ) {
-      byAllergen.set(clash.allergenId, clash);
-    }
+    byAllergen.set(
+      clash.allergenId,
+      existing
+        ? {
+            allergenId: clash.allergenId,
+            level:
+              existing.level === "contains" || clash.level === "contains"
+                ? "contains"
+                : "possible",
+            blocking: existing.blocking || clash.blocking,
+          }
+        : clash,
+    );
   }
   return [...byAllergen.values()];
 }
