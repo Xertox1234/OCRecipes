@@ -132,8 +132,20 @@ describe("coach step labels (show-the-work spec 2026-11-09)", () => {
     ).toEqual(["today's log", "a", "b", "c", "d"]);
   });
 
+  it("the grocery list read has a step label and a trail entry", () => {
+    expect(
+      toolStep(call("get_grocery_lists", {}), { writeCards: true }),
+    ).toEqual({
+      label: "Checking your grocery lists…",
+      trail: "your grocery lists",
+    });
+  });
+
   it("plainStatusLabel keeps today's labels for read tools", () => {
     expect(plainStatusLabel("get_pantry_items")).toBe("Checking your pantry…");
+    expect(plainStatusLabel("get_grocery_lists")).toBe(
+      "Checking your grocery lists…",
+    );
     expect(plainStatusLabel("find_plan_recipes")).toBe("Finding recipes…");
     expect(plainStatusLabel("mystery")).toBe("Working on it…");
   });

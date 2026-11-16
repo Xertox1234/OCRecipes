@@ -1,6 +1,7 @@
 # Coach: read grocery lists, change the pantry
 
-Date: 2026-11-16. Status: proposed, awaiting owner approval.
+Date: 2026-11-16. Status: approved by the owner on 2026-11-16 ("looks good"),
+including the three owner decisions below.
 
 Two features, shipped as two PRs in this order:
 
@@ -117,9 +118,9 @@ covers the pantry rows the existing tool already sends. Two limits to know:
   installed build shows the old list until an app update, while the server
   starts sending list contents as soon as PR 1 deploys. Accepted because the
   app has no users (owner ruling 2026-10-06); the PR must say so.
-- The public privacy page is not in this repo's served files (searched
-  `server/` and `docs/` for the recipient names; nothing found). The builder
-  locates it before PR 1 merges, or reports that it lives elsewhere.
+- The public privacy page is `site/privacy/index.html`. Its row on what the AI
+  providers receive gets a matching sentence, pinned by a test in
+  `shared/__tests__/`.
 
 **Owner decision:** confirm the wording of the line.
 
@@ -266,7 +267,7 @@ gate.
 
 Self-reviewed with the repo's spec-review procedure, calibrated against the
 write-cards and show-the-work specs. Edits made from it: the disclosure's
-app-update lag, the missing privacy page location, the lock order on save,
+app-update lag, the privacy page location, the lock order on save,
 the hard-exclusion callout and exact prod check for the migration, the
 old-build history case, and the list of kind switch sites. No domain reviewer
 was dispatched on the spec; the implementation PRs get the normal review.

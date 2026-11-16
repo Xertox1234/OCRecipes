@@ -14,6 +14,7 @@
  *   7. add_to_meal_plan      — schedule a recipe/food on the meal plan
  *   8. add_to_grocery_list   — create a new grocery list with items
  *   9. get_substitutions     — suggest ingredient swaps
+ *  10. get_grocery_lists     — recent grocery lists with the items still to buy
  */
 
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -103,6 +104,14 @@ const logFoodItemSchema = z.object({
 const getPantryItemsSchema = z.object({
   expiringWithinDays: z.number().optional(),
 });
+
+const getGroceryListsSchema = z.object({
+  listName: z.string().trim().max(100).optional(),
+});
+
+/** How much of the user's lists one call hands the model. */
+const GROCERY_LISTS_RETURNED = 4;
+const GROCERY_ITEMS_PER_LIST = 60;
 
 const getMealPlanSchema = z.object({
   startDate: isoDateSchema.optional(),
@@ -221,6 +230,34 @@ function sanitizePantryItems(
     unit: item.unit === null ? null : sanitizeUserInput(item.unit),
     category: item.category === null ? null : sanitizeUserInput(item.category),
   }));
+}
+
+/**
+ * A list as the model sees it: titles and item text are the user's own words,
+ * so each passes the prompt sanitizer; row ids and flags are left out.
+ */
+function compactGroceryList(
+  list: Awaited<
+    ReturnType<typeof storage.getGroceryListsWithOpenItems>
+  >[number],
+) {
+  const shown = list.items.slice(0, GROCERY_ITEMS_PER_LIST);
+  const moreItems = list.items.length - shown.length;
+  return {
+    id: list.id,
+    title: sanitizeUserInput(list.title),
+    dateRangeStart: list.dateRangeStart,
+    dateRangeEnd: list.dateRangeEnd,
+    boughtCount: list.boughtCount,
+    items: shown.map((item) => ({
+      name: sanitizeUserInput(item.name),
+      quantity: item.quantity,
+      unit: item.unit === null ? null : sanitizeUserInput(item.unit),
+      category:
+        item.category === null ? null : sanitizeUserInput(item.category),
+    })),
+    ...(moreItems > 0 && { moreItems }),
+  };
 }
 
 function compactMealPlanItems(
@@ -405,6 +442,25 @@ function baseToolDefinitions(): ChatCompletionTool[] {
               type: "number",
               description:
                 "If provided, only return items expiring within this many days.",
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_grocery_lists",
+        description:
+          "Read the user's most recent grocery lists: each list's title and the items still to buy, plus how many are already bought. Call this when the user asks what is on a list or what they still need to buy, and before add_to_grocery_list when they want to add to a list they already have, so you do not propose items it already holds.",
+        parameters: {
+          type: "object",
+          properties: {
+            listName: {
+              type: "string",
+              description:
+                "Part of a list's title, to read only matching lists. Omit for the most recent lists.",
             },
           },
           required: [],
@@ -960,6 +1016,18 @@ export async function executeToolCall(
 
       const items = await storage.getPantryItems(userId);
       return { items: sanitizePantryItems(items) };
+    }
+
+    case "get_grocery_lists": {
+      const parsed = getGroceryListsSchema.safeParse(args);
+      if (!parsed.success) {
+        return invalidArgs("get_grocery_lists", parsed.error.message);
+      }
+      const lists = await storage.getGroceryListsWithOpenItems(userId, {
+        titleContains: parsed.data.listName || undefined,
+        limit: GROCERY_LISTS_RETURNED,
+      });
+      return { lists: lists.map(compactGroceryList) };
     }
 
     case "get_meal_plan": {

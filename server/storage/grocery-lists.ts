@@ -7,7 +7,8 @@ import {
   groceryListItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, ilike, inArray } from "drizzle-orm";
+import { escapeLike } from "./helpers";
 
 // ============================================================================
 // GROCERY LISTS
@@ -38,6 +39,56 @@ export async function getGroceryLists(
     .where(eq(groceryLists.userId, userId))
     .orderBy(desc(groceryLists.createdAt))
     .limit(limit);
+}
+
+export type GroceryListWithOpenItems = GroceryList & {
+  /** The items still to buy. */
+  items: GroceryListItem[];
+  /** How many items are already ticked off. */
+  boughtCount: number;
+};
+
+/**
+ * The user's newest lists (optionally those whose title contains some text)
+ * with the items still to buy. For Coach's read tool: bought items are only
+ * counted. The items query reads lists this user-scoped query returned.
+ */
+export async function getGroceryListsWithOpenItems(
+  userId: string,
+  opts: { titleContains?: string; limit?: number } = {},
+): Promise<GroceryListWithOpenItems[]> {
+  const lists = await db
+    .select()
+    .from(groceryLists)
+    .where(
+      and(
+        eq(groceryLists.userId, userId),
+        opts.titleContains
+          ? ilike(groceryLists.title, `%${escapeLike(opts.titleContains)}%`)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(groceryLists.createdAt))
+    .limit(opts.limit ?? 4);
+  if (lists.length === 0) return [];
+
+  const items = await db
+    .select()
+    .from(groceryListItems)
+    .where(
+      inArray(
+        groceryListItems.groceryListId,
+        lists.map((l) => l.id),
+      ),
+    )
+    .orderBy(groceryListItems.category, groceryListItems.name);
+
+  return lists.map((list) => {
+    const mine = items.filter((i) => i.groceryListId === list.id);
+    // is_checked is nullable: NULL counts as not yet bought.
+    const open = mine.filter((i) => i.isChecked !== true);
+    return { ...list, items: open, boughtCount: mine.length - open.length };
+  });
 }
 
 export async function getGroceryListWithItems(
