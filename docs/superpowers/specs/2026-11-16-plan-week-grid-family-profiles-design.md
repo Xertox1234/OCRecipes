@@ -125,11 +125,14 @@ kids-only dinner is entered once per child.
 
 - **Grid.** Meal-type labels stay fixed on the left; the seven day columns scroll sideways, about
   three visible at a time, opening on today. Today's column is marked with the existing accent.
-  Week arrows and the swipe-to-change-week behaviour stay. Weeks keep starting on Sunday, and the
+  Week arrows stay. The old swipe-to-change-week gesture is dropped: the grid itself scrolls
+  sideways and the two would fight (my call). Weeks keep starting on Sunday, and the
   free 7-days-ahead / premium 90-days-ahead limit stays exactly as it is today (my calls). The
   slot counter covers the visible Sunday-to-Saturday week.
 - **Empty cell.** A "+" button that opens the existing add-item sheet for that date and meal type
-  (it already offers suggestions where the plan allows them).
+  The sheet gains a "Suggest a meal" row that opens the existing AI suggestions for that slot
+  (existing premium gate; hidden while the plan is unknown). Today suggestions are reachable only
+  from a day's section header, so this row is new.
 - **Filled cell.** The first item's image, title and calories (the user's portion, as today). A
   slot with more items shows "+N". Scanned items show the same way as recipes. Tapping opens the
   day view.
