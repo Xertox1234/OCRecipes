@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -16,7 +17,22 @@ import {
   parsePositiveIntParam,
 } from "./_helpers";
 import { hasHealthConsent, sendHealthConsentRequired } from "./_health-consent";
-import { familyRateLimit } from "./_rate-limiters";
+import { ipKeyGenerator, resolveRateLimitMax } from "./_rate-limiters";
+
+/**
+ * Limiters are built with rateLimit() inline in each route, not the
+ * _rate-limiters factory, so CodeQL's js/missing-rate-limiting can trace them
+ * — the factory indirection is invisible to its dataflow (same as
+ * coach-write-cards.ts). Same behaviour as a factory limiter: user-keyed with
+ * the IP fallback (after requireAuth, so req.userId is set) and the
+ * E2E-relaxed max. 30 a minute, the same as the pantry routes.
+ */
+const FAMILY_LIMIT_WINDOW_MS = 60_000;
+const FAMILY_LIMIT_MAX = 30;
+const familyLimitMessage = {
+  error: "Too many family profile requests. Please wait.",
+  code: ErrorCode.RATE_LIMITED,
+};
 
 const familyPlanningSchema = z.object({ enabled: z.boolean() });
 
@@ -50,7 +66,14 @@ export function register(app: Express): void {
   app.get(
     "/api/family-profiles",
     requireAuth,
-    familyRateLimit,
+    rateLimit({
+      windowMs: FAMILY_LIMIT_WINDOW_MS,
+      max: resolveRateLimitMax(FAMILY_LIMIT_MAX, process.env),
+      message: familyLimitMessage,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const [userProfile, profiles] = await Promise.all([
@@ -70,7 +93,14 @@ export function register(app: Express): void {
   app.post(
     "/api/family-profiles",
     requireAuth,
-    familyRateLimit,
+    rateLimit({
+      windowMs: FAMILY_LIMIT_WINDOW_MS,
+      max: resolveRateLimitMax(FAMILY_LIMIT_MAX, process.env),
+      message: familyLimitMessage,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
@@ -126,7 +156,14 @@ export function register(app: Express): void {
   app.put(
     "/api/family-profiles/:id",
     requireAuth,
-    familyRateLimit,
+    rateLimit({
+      windowMs: FAMILY_LIMIT_WINDOW_MS,
+      max: resolveRateLimitMax(FAMILY_LIMIT_MAX, process.env),
+      message: familyLimitMessage,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
@@ -189,7 +226,14 @@ export function register(app: Express): void {
   app.delete(
     "/api/family-profiles/:id",
     requireAuth,
-    familyRateLimit,
+    rateLimit({
+      windowMs: FAMILY_LIMIT_WINDOW_MS,
+      max: resolveRateLimitMax(FAMILY_LIMIT_MAX, process.env),
+      message: familyLimitMessage,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -219,7 +263,14 @@ export function register(app: Express): void {
   app.put(
     "/api/family-planning",
     requireAuth,
-    familyRateLimit,
+    rateLimit({
+      windowMs: FAMILY_LIMIT_WINDOW_MS,
+      max: resolveRateLimitMax(FAMILY_LIMIT_MAX, process.env),
+      message: familyLimitMessage,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = familyPlanningSchema.safeParse(req.body);

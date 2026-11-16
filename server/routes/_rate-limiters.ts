@@ -364,12 +364,6 @@ export const pantryRateLimit = createRateLimiter({
   message: "Too many pantry requests. Please wait.",
 });
 
-export const familyRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: "Too many family profile requests. Please wait.",
-});
-
 export const mealConfirmRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 20,
