@@ -8,6 +8,7 @@ import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import * as RN from "react-native";
 
 import { TIER_FEATURES } from "@shared/types/premium";
+import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 import { renderComponent } from "../../../../test/utils/render-component";
 import MealPlanHomeScreen from "../MealPlanHomeScreen";
@@ -18,6 +19,14 @@ type AddItemMenuProps = SheetContentProps & {
   onChooseRecipe: () => void;
   onSimpleEntry: () => void;
   onImportRecipe: () => void;
+  onSuggest?: () => void;
+  dayLabel?: string;
+};
+type SuggestionsModalProps = {
+  visible: boolean;
+  date: string;
+  mealType: string;
+  onSelectSuggestion: (suggestion: MealSuggestion) => Promise<void> | void;
 };
 type CapturedSheet = { onDismiss?: () => void };
 
@@ -36,7 +45,13 @@ const {
   interactionQueue,
   refreshControlProps,
   upgradeModalProps,
+  suggestionsModalProps,
+  addMealPlanItem,
+  toast,
 } = vi.hoisted(() => ({
+  suggestionsModalProps: { current: null as null | SuggestionsModalProps },
+  addMealPlanItem: vi.fn(),
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   hookCalls: { mealPlanItems: [] as unknown[][] },
   itemsData: { value: [] as unknown[] | undefined },
   queryState: {
@@ -73,7 +88,10 @@ vi.mock("@/hooks/useMealPlan", () => ({
       refetch: queryState.refetch,
     };
   },
-  useAddMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAddMealPlanItem: () => ({
+    mutateAsync: addMealPlanItem,
+    isPending: false,
+  }),
   invalidateMealPlanItems: vi.fn(),
 }));
 
@@ -88,7 +106,14 @@ vi.mock("@/hooks/usePantry", () => ({
 vi.mock("@/hooks/useHaptics", () => ({ useHaptics: () => haptics }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => toast,
+}));
+
+vi.mock("@/components/MealSuggestionsModal", () => ({
+  MealSuggestionsModal: (props: SuggestionsModalProps) => {
+    suggestionsModalProps.current = props;
+    return null;
+  },
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
@@ -135,7 +160,7 @@ vi.mock("@/components/meal-plan/AddItemMenuSheet", () => ({
     addItemMenuProps.current = props;
     return null;
   },
-  ADD_ITEM_MENU_SNAP_POINTS: ["add-item-menu"],
+  ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS: ["add-item-menu"],
 }));
 
 vi.mock("@/components/meal-plan/ImportRecipeSheet", () => ({
@@ -293,6 +318,8 @@ describe("MealPlanHomeScreen — the week grid", () => {
     addItemMenuProps.current = null;
     simpleEntryProps.current = null;
     upgradeModalProps.current = null;
+    suggestionsModalProps.current = null;
+    addMealPlanItem.mockResolvedValue({ id: 1 });
     capturedSheets.clear();
     interactionQueue.length = 0;
   });
@@ -517,5 +544,159 @@ describe("MealPlanHomeScreen — the week grid", () => {
       "quick-add",
       "simple-entry",
     ]);
+  });
+
+  describe("the add menu's title", () => {
+    it("names the day of the cell, since the grid shows seven of them", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(
+        screen.getByLabelText("Tuesday lunch, empty, add a meal"),
+      );
+      expect(addItemMenuProps.current?.dayLabel).toBe("Tue, Nov 17");
+    });
+  });
+
+  describe("suggesting a meal from a cell", () => {
+    const SUGGESTION: MealSuggestion = {
+      title: "Lemon salmon",
+      description: "Bright and quick",
+      reasoning: "High in protein",
+      calories: 520,
+      protein: 38,
+      carbs: 12,
+      fat: 30,
+      prepTimeMinutes: 20,
+      difficulty: "Easy",
+      ingredients: [{ name: "Salmon", quantity: "2", unit: "fillets" }],
+      instructions: ["Roast", "Serve"],
+      dietTags: ["pescatarian"],
+    };
+
+    /** Tuesday lunch → the menu's Suggest row → the deferred handoff. */
+    function chooseSuggest() {
+      fireEvent.click(
+        screen.getByLabelText("Tuesday lunch, empty, add a meal"),
+      );
+      act(() => addItemMenuProps.current?.onSuggest?.());
+      act(() => {
+        interactionQueue.splice(0).forEach((run) => run());
+      });
+    }
+
+    it("opens the suggestions for that cell's day and meal on a plan that includes them", () => {
+      plan.isPremium = true;
+      renderComponent(<MealPlanHomeScreen />);
+      expect(suggestionsModalProps.current?.visible).toBe(false);
+      chooseSuggest();
+      expect(suggestionsModalProps.current).toEqual(
+        expect.objectContaining({
+          visible: true,
+          date: "2026-11-17",
+          mealType: "lunch",
+        }),
+      );
+      expect(upgradeModalProps.current?.visible).toBe(false);
+    });
+
+    it("adds the picked suggestion to that slot in one call and confirms it", async () => {
+      plan.isPremium = true;
+      renderComponent(<MealPlanHomeScreen />);
+      chooseSuggest();
+      await act(async () => {
+        await suggestionsModalProps.current?.onSelectSuggestion(SUGGESTION);
+      });
+      expect(addMealPlanItem).toHaveBeenCalledTimes(1);
+      expect(addMealPlanItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          plannedDate: "2026-11-17",
+          mealType: "lunch",
+          recipe: expect.objectContaining({
+            title: "Lemon salmon",
+            sourceType: "ai_suggestion",
+          }),
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledTimes(1);
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(suggestionsModalProps.current?.visible).toBe(false);
+    });
+
+    it("a failed add shows the error, no success, and keeps the suggestions open", async () => {
+      plan.isPremium = true;
+      addMealPlanItem.mockRejectedValue(new Error("nope"));
+      renderComponent(<MealPlanHomeScreen />);
+      chooseSuggest();
+      await act(async () => {
+        await suggestionsModalProps.current?.onSelectSuggestion(SUGGESTION);
+      });
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(suggestionsModalProps.current?.visible).toBe(true);
+    });
+
+    it("shows a free user the upgrade prompt instead", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      chooseSuggest();
+      expect(upgradeModalProps.current?.visible).toBe(true);
+      expect(suggestionsModalProps.current?.visible).toBe(false);
+      expect(haptics.notification).toHaveBeenCalledTimes(1);
+    });
+
+    it("offers no Suggest row while the plan is unknown", () => {
+      planCheck.planUnknown = true;
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(
+        screen.getByLabelText("Tuesday lunch, empty, add a meal"),
+      );
+      expect(addItemMenuProps.current?.onSuggest).toBeUndefined();
+    });
+  });
+
+  describe("the actions under the grid", () => {
+    it("opens the grocery lists for everyone", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByLabelText("Open grocery lists"));
+      expect(navigate).toHaveBeenLastCalledWith("GroceryLists");
+    });
+
+    it("hides Plan from pantry from a free user", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      expect(screen.queryByLabelText("Plan meals from your pantry")).toBeNull();
+    });
+
+    it("hides Plan from pantry while the plan is unknown", () => {
+      plan.isPremium = true;
+      planCheck.planUnknown = true;
+      renderComponent(<MealPlanHomeScreen />);
+      expect(screen.queryByLabelText("Plan meals from your pantry")).toBeNull();
+    });
+
+    it("opens the pantry planner with its own default start for the current week", () => {
+      plan.isPremium = true;
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByLabelText("Plan meals from your pantry"));
+      expect(navigate).toHaveBeenLastCalledWith("ReceiptMealPlan", {
+        startDate: undefined,
+      });
+    });
+
+    it("starts the pantry planner on a future week's first day", () => {
+      plan.isPremium = true;
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByLabelText("Next week"));
+      fireEvent.click(screen.getByLabelText("Plan meals from your pantry"));
+      expect(navigate).toHaveBeenLastCalledWith("ReceiptMealPlan", {
+        startDate: "2026-11-22",
+      });
+    });
+
+    it("shows neither action when the week failed to load", () => {
+      itemsData.value = undefined;
+      queryState.isLoadingError = true;
+      plan.isPremium = true;
+      renderComponent(<MealPlanHomeScreen />);
+      expect(screen.queryByLabelText("Open grocery lists")).toBeNull();
+      expect(screen.queryByLabelText("Plan meals from your pantry")).toBeNull();
+    });
   });
 });

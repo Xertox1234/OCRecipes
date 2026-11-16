@@ -18,12 +18,18 @@ import {
 } from "@/components/meal-plan/meal-plan-utils";
 
 export const ADD_ITEM_MENU_SNAP_POINTS = ["45%"];
+/** Taller: for a screen whose menu also carries the "Suggest a meal" row. */
+export const ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS = ["58%"];
 
 interface AddItemMenuSheetContentProps {
   mealType: MealType | null;
   onChooseRecipe: () => void;
   onSimpleEntry: () => void;
   onImportRecipe: () => void;
+  /** Offers a "Suggest a meal" row. Omit it and the row is not shown. */
+  onSuggest?: () => void;
+  /** The day being added to ("Tue, Nov 17"), for a screen that shows several. */
+  dayLabel?: string;
 }
 
 function AddItemMenuSheetContentInner({
@@ -31,6 +37,8 @@ function AddItemMenuSheetContentInner({
   onChooseRecipe,
   onSimpleEntry,
   onImportRecipe,
+  onSuggest,
+  dayLabel,
 }: AddItemMenuSheetContentProps) {
   const haptics = useHaptics();
   // Guards against a near-simultaneous double-tap on two different rows: each
@@ -74,6 +82,13 @@ function AddItemMenuSheetContentInner({
     onImportRecipe();
   }, [haptics, onImportRecipe]);
 
+  const handleSuggest = useCallback(() => {
+    if (isActioning.current) return;
+    isActioning.current = true;
+    haptics.impact(ImpactFeedbackStyle.Light);
+    onSuggest?.();
+  }, [haptics, onSuggest]);
+
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
 
   // Pro only: import by link or photo is a premium feature.
@@ -92,7 +107,9 @@ function AddItemMenuSheetContentInner({
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
     <View style={styles.content} accessibilityViewIsModal>
       <SheetDragHandle />
-      <ThemedText style={styles.title}>Add to {label}</ThemedText>
+      <ThemedText style={styles.title}>
+        {dayLabel ? `Add to ${label} · ${dayLabel}` : `Add to ${label}`}
+      </ThemedText>
       <View style={styles.options}>
         <SheetOptionRow
           icon="book-open"
@@ -115,6 +132,15 @@ function AddItemMenuSheetContentInner({
           onPress={handleImportRecipe}
           accessibilityLabel="Import recipe"
         />
+        {onSuggest ? (
+          <SheetOptionRow
+            icon="zap"
+            title="Suggest a meal"
+            description="Ideas that fit your goals for this meal"
+            onPress={handleSuggest}
+            accessibilityLabel="Suggest a meal"
+          />
+        ) : null}
         <FeatureTip
           text="Paste a link or snap a cookbook page."
           visible={importTip.visible}

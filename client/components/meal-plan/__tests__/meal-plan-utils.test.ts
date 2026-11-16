@@ -4,6 +4,7 @@ import {
   computeItemMacros,
   computeMealSectionSummary,
   formatMacroLine,
+  suggestionToPlanItem,
 } from "../meal-plan-utils";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 import type { MealPlanRecipe, ScannedItem } from "@shared/schema";
@@ -284,5 +285,52 @@ describe("formatMacroLine", () => {
     expect(formatMacroLine({ calories: 0, protein: 0, carbs: 0, fat: 0 })).toBe(
       "0 cal \u00B7 0g P \u00B7 0g C \u00B7 0g F",
     );
+  });
+});
+
+describe("suggestionToPlanItem", () => {
+  const suggestion = {
+    title: "Lemon salmon",
+    description: "Bright and quick",
+    difficulty: "Easy" as const,
+    prepTimeMinutes: 20,
+    instructions: ["Roast", "Serve"],
+    dietTags: ["pescatarian"],
+    calories: 520,
+    protein: 38,
+    carbs: 12,
+    fat: 30,
+    ingredients: [{ name: "Salmon", quantity: "2", unit: "fillets" }],
+    reasoning: "High in protein",
+  };
+
+  it("builds one add request carrying the recipe inline, for the given slot", () => {
+    expect(suggestionToPlanItem(suggestion, "2026-11-17", "lunch")).toEqual({
+      recipe: {
+        title: "Lemon salmon",
+        description: "Bright and quick",
+        difficulty: "Easy",
+        prepTimeMinutes: 20,
+        instructions: ["Roast", "Serve"],
+        dietTags: ["pescatarian"],
+        sourceType: "ai_suggestion",
+        caloriesPerServing: 520,
+        proteinPerServing: 38,
+        carbsPerServing: 12,
+        fatPerServing: 30,
+        ingredients: [{ name: "Salmon", quantity: "2", unit: "fillets" }],
+      },
+      plannedDate: "2026-11-17",
+      mealType: "lunch",
+    });
+  });
+
+  it("carries an empty ingredient list through as empty", () => {
+    const item = suggestionToPlanItem(
+      { ...suggestion, ingredients: [] },
+      "2026-11-17",
+      "lunch",
+    );
+    expect(item.recipe.ingredients).toEqual([]);
   });
 });

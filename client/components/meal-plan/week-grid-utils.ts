@@ -232,3 +232,14 @@ export function getGridColumnWidth(windowWidth: number): number {
     GRID_COLUMN_GAP * GRID_VISIBLE_COLUMNS;
   return Math.floor(available / GRID_VISIBLE_COLUMNS);
 }
+
+/** "Tue, Nov 17" for a YYYY-MM-DD local day; empty for anything else. */
+export function formatSheetDayLabel(dateStr: string): string {
+  const date = parseLocalDateString(dateStr);
+  if (!date) return "";
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}

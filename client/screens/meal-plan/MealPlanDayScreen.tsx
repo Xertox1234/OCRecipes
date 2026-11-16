@@ -47,6 +47,7 @@ import {
   computeItemMacros,
   computeMealSectionSummary,
   getAutoExpandedMealType,
+  suggestionToPlanItem,
 } from "@/components/meal-plan/meal-plan-utils";
 import {
   useMealPlanItems,
@@ -438,28 +439,9 @@ export default function MealPlanDayScreen() {
       try {
         // One server call: the recipe and its plan item are created in a
         // single transaction, so a failure leaves nothing behind.
-        await addMealPlanItem({
-          recipe: {
-            title: suggestion.title,
-            description: suggestion.description,
-            difficulty: suggestion.difficulty,
-            prepTimeMinutes: suggestion.prepTimeMinutes,
-            instructions: suggestion.instructions,
-            dietTags: suggestion.dietTags,
-            sourceType: "ai_suggestion",
-            caloriesPerServing: suggestion.calories,
-            proteinPerServing: suggestion.protein,
-            carbsPerServing: suggestion.carbs,
-            fatPerServing: suggestion.fat,
-            ingredients: suggestion.ingredients?.map((ing) => ({
-              name: ing.name,
-              quantity: ing.quantity,
-              unit: ing.unit,
-            })),
-          },
-          plannedDate: selectedDateStr,
-          mealType: suggestMealType,
-        });
+        await addMealPlanItem(
+          suggestionToPlanItem(suggestion, selectedDateStr, suggestMealType),
+        );
 
         // The modal closes, so confirm with a toast (fires its own Success).
         toast.success(formatPlanAddSuccess(selectedDateStr, suggestMealType));

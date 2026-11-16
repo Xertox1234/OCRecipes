@@ -9,6 +9,7 @@ import {
   addDays,
   buildWeekGrid,
   countPlannedSlots,
+  formatSheetDayLabel,
   getCellAccessibilityLabel,
   getDayHeaderAccessibilityLabel,
   getInitialColumnIndex,
@@ -336,5 +337,15 @@ describe("parseLocalDateString", () => {
     expect(parseLocalDateString("19/11/2026")).toBeNull();
     expect(parseLocalDateString("2026-11-19T00:00:00Z")).toBeNull();
     expect(parseLocalDateString(20261119)).toBeNull();
+  });
+});
+
+describe("formatSheetDayLabel", () => {
+  it("names the local day a sheet is adding to", () => {
+    expect(formatSheetDayLabel("2026-11-17")).toBe("Tue, Nov 17");
+  });
+
+  it("returns nothing for a value that is not a real date", () => {
+    expect(formatSheetDayLabel("2026-02-30")).toBe("");
   });
 });

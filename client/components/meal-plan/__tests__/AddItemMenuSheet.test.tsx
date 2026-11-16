@@ -106,6 +106,48 @@ describe("AddItemMenuSheet", () => {
       screen.getByText("Add to Breakfast").closest('[aria-modal="true"]'),
     ).not.toBeNull();
   });
+
+  describe("Suggest a meal", () => {
+    it("is absent unless the screen offers it", () => {
+      renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+      expect(screen.queryByText("Suggest a meal")).toBeNull();
+    });
+
+    it("calls onSuggest once when pressed", () => {
+      const onSuggest = vi.fn();
+      renderComponent(
+        <AddItemMenuSheetContent {...defaultProps} onSuggest={onSuggest} />,
+      );
+      fireEvent.click(screen.getByLabelText("Suggest a meal"));
+      expect(onSuggest).toHaveBeenCalledTimes(1);
+      expect(defaultProps.onChooseRecipe).not.toHaveBeenCalled();
+    });
+
+    it("ignores a second row tapped before the sheet reopens", () => {
+      const onSuggest = vi.fn();
+      renderComponent(
+        <AddItemMenuSheetContent {...defaultProps} onSuggest={onSuggest} />,
+      );
+      fireEvent.click(screen.getByLabelText("Suggest a meal"));
+      fireEvent.click(screen.getByLabelText("Simple entry"));
+      expect(onSuggest).toHaveBeenCalledTimes(1);
+      expect(defaultProps.onSimpleEntry).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the day in the title", () => {
+    it("names the day when the screen passes one", () => {
+      renderComponent(
+        <AddItemMenuSheetContent {...defaultProps} dayLabel="Tue, Nov 17" />,
+      );
+      expect(screen.getByText("Add to Breakfast · Tue, Nov 17")).toBeDefined();
+    });
+
+    it("keeps the plain title otherwise", () => {
+      renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+      expect(screen.getByText("Add to Breakfast")).toBeDefined();
+    });
+  });
 });
 
 describe("AddItemMenuSheet — import tip", () => {

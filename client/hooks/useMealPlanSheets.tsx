@@ -38,9 +38,18 @@ export type ActiveSheet = { kind: SheetKind; mealType: MealType } | null;
 export function useMealPlanSheets({
   navigation,
   selectedDateStr,
+  onSuggest,
+  dayLabel,
 }: {
   navigation: MealPlanHomeScreenNavigationProp;
   selectedDateStr: string;
+  /**
+   * Adds a "Suggest a meal" row to the add menu. Called with the menu's meal
+   * type once the menu has closed. Omit it and the row is not shown.
+   */
+  onSuggest?: (mealType: MealType) => void;
+  /** The day being added to, shown in the add menu's title. */
+  dayLabel?: string;
 }) {
   const addItemMenuSheetRef = useRef<BottomSheetModal>(null);
   const importRecipeSheetRef = useRef<BottomSheetModal>(null);
@@ -127,6 +136,16 @@ export function useMealPlanSheets({
   const handleImportRecipeDismiss = useCallback(() => {
     closeSheet("importRecipe");
   }, [closeSheet]);
+
+  // Same two-step handoff as the rows above: close the menu, then hand the
+  // meal type to the screen once the close has started.
+  const handleSuggestFromMenu = useCallback(() => {
+    const mt = addItemMenuMealType;
+    closeSheet("addItemMenu");
+    runAfterTransition(() => {
+      if (mt !== null) onSuggest?.(mt);
+    });
+  }, [addItemMenuMealType, closeSheet, onSuggest]);
 
   // The ref the unified back-handler below should dismiss. Only ever
   // reassigned when a sheet OPENS (never cleared on close) — mirrors
@@ -291,6 +310,8 @@ export function useMealPlanSheets({
         onChooseRecipe={handleChooseRecipe}
         onSimpleEntry={handleSimpleEntry}
         onImportRecipe={handleImportRecipe}
+        onSuggest={onSuggest ? handleSuggestFromMenu : undefined}
+        dayLabel={dayLabel}
       />
     ),
     [
@@ -298,6 +319,9 @@ export function useMealPlanSheets({
       handleChooseRecipe,
       handleSimpleEntry,
       handleImportRecipe,
+      onSuggest,
+      handleSuggestFromMenu,
+      dayLabel,
     ],
   );
 
