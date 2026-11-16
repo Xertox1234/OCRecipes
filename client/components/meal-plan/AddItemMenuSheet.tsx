@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -120,63 +121,67 @@ function AddItemMenuSheetContentInner({
     // traps VoiceOver focus so the screen behind the sheet is unreachable while
     // it's presented. See docs/solutions/conventions/
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
-    <View style={styles.content} accessibilityViewIsModal>
-      <SheetDragHandle />
-      <ThemedText style={styles.title}>
-        {dayLabel ? `Add to ${label} · ${dayLabel}` : `Add to ${label}`}
-      </ThemedText>
-      {audience ? (
-        <View style={styles.audience}>
-          <ThemedText style={styles.audienceLabel}>
-            {"Who's it for?"}
-          </ThemedText>
-          <AudienceChoice
-            profiles={audience.profiles}
-            value={audience.value}
-            onChange={audience.onChange}
+    // The scroll view is for large text: the sheet's height is fixed, and with
+    // the "Who's it for?" row the last option otherwise falls below it.
+    <BottomSheetScrollView testID="add-item-menu-scroll" bounces={false}>
+      <View style={styles.content} accessibilityViewIsModal>
+        <SheetDragHandle />
+        <ThemedText style={styles.title}>
+          {dayLabel ? `Add to ${label} · ${dayLabel}` : `Add to ${label}`}
+        </ThemedText>
+        {audience ? (
+          <View style={styles.audience}>
+            <ThemedText style={styles.audienceLabel}>
+              {"Who's it for?"}
+            </ThemedText>
+            <AudienceChoice
+              profiles={audience.profiles}
+              value={audience.value}
+              onChange={audience.onChange}
+            />
+          </View>
+        ) : null}
+        <View style={styles.options}>
+          <SheetOptionRow
+            icon="book-open"
+            title="Choose Recipe"
+            description="Search your recipes or create new"
+            onPress={handleChooseRecipe}
+            accessibilityLabel="Choose recipe"
+          />
+          <SheetOptionRow
+            icon="edit-3"
+            title="Simple Entry"
+            description="Type a dish name, AI estimates nutrition"
+            onPress={handleSimpleEntry}
+            accessibilityLabel="Simple entry"
+          />
+          <SheetOptionRow
+            icon="download"
+            title="Import Recipe"
+            description="From URL, photo, or clipboard"
+            onPress={handleImportRecipe}
+            accessibilityLabel="Import recipe"
+          />
+          {onSuggest ? (
+            <SheetOptionRow
+              icon="zap"
+              title="Suggest a meal"
+              description="Ideas that fit your goals for this meal"
+              onPress={handleSuggest}
+              accessibilityLabel="Suggest a meal"
+            />
+          ) : null}
+          <FeatureTip
+            text="Paste a link or snap a cookbook page."
+            visible={importTip.visible}
+            onDismiss={importTip.dismiss}
+            pointer="up"
+            pointerAlign="start"
           />
         </View>
-      ) : null}
-      <View style={styles.options}>
-        <SheetOptionRow
-          icon="book-open"
-          title="Choose Recipe"
-          description="Search your recipes or create new"
-          onPress={handleChooseRecipe}
-          accessibilityLabel="Choose recipe"
-        />
-        <SheetOptionRow
-          icon="edit-3"
-          title="Simple Entry"
-          description="Type a dish name, AI estimates nutrition"
-          onPress={handleSimpleEntry}
-          accessibilityLabel="Simple entry"
-        />
-        <SheetOptionRow
-          icon="download"
-          title="Import Recipe"
-          description="From URL, photo, or clipboard"
-          onPress={handleImportRecipe}
-          accessibilityLabel="Import recipe"
-        />
-        {onSuggest ? (
-          <SheetOptionRow
-            icon="zap"
-            title="Suggest a meal"
-            description="Ideas that fit your goals for this meal"
-            onPress={handleSuggest}
-            accessibilityLabel="Suggest a meal"
-          />
-        ) : null}
-        <FeatureTip
-          text="Paste a link or snap a cookbook page."
-          visible={importTip.visible}
-          onDismiss={importTip.dismiss}
-          pointer="up"
-          pointerAlign="start"
-        />
       </View>
-    </View>
+    </BottomSheetScrollView>
   );
 }
 

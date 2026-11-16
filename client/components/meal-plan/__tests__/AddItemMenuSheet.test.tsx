@@ -218,3 +218,22 @@ describe("AddItemMenuSheet — Who's it for?", () => {
     });
   });
 });
+
+describe("AddItemMenuSheet — large text", () => {
+  // The sheet has a fixed height. With the "Who's it for?" row and a large
+  // text size the last option fell below the sheet and could not be reached.
+  it("keeps every option inside a scroll view", () => {
+    renderComponent(
+      <AddItemMenuSheetContent
+        mealType="dinner"
+        onChooseRecipe={vi.fn()}
+        onSimpleEntry={vi.fn()}
+        onImportRecipe={vi.fn()}
+        onSuggest={vi.fn()}
+      />,
+    );
+    const scroll = screen.getByTestId("add-item-menu-scroll");
+    expect(scroll.textContent).toContain("Choose Recipe");
+    expect(scroll.textContent).toContain("Suggest a meal");
+  });
+});
