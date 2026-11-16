@@ -19,8 +19,9 @@ describe("native sign-in config", () => {
   // 5.2.4, nitro-modules 0.37.2), so 5.1.0 builds must not receive OTAs built
   // against the newer native code.
   // 5.3.0: native patch bumps again (expo 58.0.25, expo-modules-core 58.1.0,
-  // expo-modules-jsi 58.0.23, expo-updates 58.0.22 and other expo-* modules),
-  // so 5.2.0 builds must not receive OTAs built against the newer native code.
+  // expo-modules-jsi 58.0.23, expo-updates 58.0.22 and other expo-* modules,
+  // plus expo-iap 6.5.0), so 5.2.0 builds must not receive OTAs built against
+  // the newer native code.
   it("bumps the runtime version to 5.3.0 (native module patch bumps)", () => {
     expect(appJson.expo.runtimeVersion).toBe("5.3.0");
   });
