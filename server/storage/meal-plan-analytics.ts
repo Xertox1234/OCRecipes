@@ -53,6 +53,8 @@ export async function getPlannedNutritionSummary(
   const conditions = [
     eq(mealPlanItems.userId, userId),
     eq(mealPlanItems.plannedDate, plannedDate),
+    // A family profile's own meal is never the user's own nutrition.
+    ne(mealPlanItems.audience, "profile"),
   ];
   if (confirmedIds.length > 0) {
     conditions.push(notInArray(mealPlanItems.id, confirmedIds));
@@ -204,6 +206,7 @@ export async function getFrequentRecipesForMealType(
       and(
         eq(mealPlanItems.userId, userId),
         eq(mealPlanItems.mealType, mealType),
+        ne(mealPlanItems.audience, "profile"),
         sql`${mealPlanItems.recipeId} IS NOT NULL`,
       ),
     )

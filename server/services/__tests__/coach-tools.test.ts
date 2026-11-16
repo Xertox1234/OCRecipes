@@ -9,6 +9,7 @@ import { actionCardSchema } from "@shared/schemas/coach-blocks";
 import { findCommunity } from "../recipe-finder/find-community";
 import { searchCatalogRecipes } from "../recipe-catalog";
 import {
+  createMockMealPlanItem,
   createMockMealPlanRecipe,
   createMockPantryItem,
 } from "../../__tests__/factories";
@@ -24,6 +25,7 @@ vi.mock("../../storage", () => ({
     getPantryItems: vi.fn().mockResolvedValue([]),
     getExpiringPantryItems: vi.fn().mockResolvedValue([]),
     getMealPlanItemSummaries: vi.fn().mockResolvedValue([]),
+    getMealPlanItems: vi.fn(),
     addMealPlanItem: vi.fn().mockResolvedValue({ id: 1 }),
     addGroceryListItems: vi.fn().mockResolvedValue([{ id: 1 }]),
     createGroceryListWithLimitCheck: vi
@@ -230,6 +232,48 @@ describe("Coach Tools Service", () => {
     );
 
     expect(JSON.stringify(result)).not.toMatch(/ignore (all )?previous/i);
+  });
+
+  it("reads the plan through the summary reader, never the full one", async () => {
+    await executeToolCall(
+      "get_meal_plan",
+      { startDate: "2026-04-29", endDate: "2026-04-29" },
+      "user-1",
+    );
+    expect(storage.getMealPlanItemSummaries).toHaveBeenCalledWith(
+      "user-1",
+      "2026-04-29",
+      "2026-04-29",
+    );
+    expect(storage.getMealPlanItems).not.toHaveBeenCalled();
+  });
+
+  it("hands the model no audience or family profile fields", async () => {
+    vi.mocked(storage.getMealPlanItemSummaries).mockResolvedValueOnce([
+      {
+        ...createMockMealPlanItem({
+          id: 7,
+          plannedDate: "2026-04-29",
+          mealType: "dinner",
+          audience: "shared",
+          familyProfileId: 99,
+        }),
+        recipe: createMockMealPlanRecipe({ title: "Soup" }),
+        scannedItem: null,
+      },
+    ] as unknown as Awaited<
+      ReturnType<typeof storage.getMealPlanItemSummaries>
+    >);
+    const result = await executeToolCall(
+      "get_meal_plan",
+      { startDate: "2026-04-29", endDate: "2026-04-29" },
+      "user-1",
+    );
+    const json = JSON.stringify(result);
+    expect(json).toContain("Soup");
+    expect(json).not.toContain("audience");
+    expect(json).not.toContain("familyProfileId");
+    expect(json).not.toContain("99");
   });
 
   it("returns compact get_meal_plan items", async () => {

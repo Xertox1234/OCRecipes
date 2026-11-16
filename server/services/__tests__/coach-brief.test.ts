@@ -15,6 +15,7 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     getDailySummary: vi.fn(),
     getMealPlanItemSummaries: vi.fn(),
+    getMealPlanItems: vi.fn(),
     getExpiringPantryItems: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
     getNotebookEntriesByIds: vi.fn(),
@@ -104,6 +105,36 @@ it("names tonight's planned dinner", async () => {
   ]);
   const brief = await buildCoachBrief("u1", FREE, "UTC", "full", NOW);
   expect(brief.pointer).toBe("Tonight's plan is Lentil stew.");
+});
+
+it("reads today's plan through the summary reader, never the full one", async () => {
+  await buildCoachBrief("u1", FREE, "UTC", "full", NOW);
+  expect(mockStorage.getMealPlanItemSummaries).toHaveBeenCalledWith(
+    "u1",
+    "2026-11-08",
+    "2026-11-08",
+  );
+  expect(mockStorage.getMealPlanItems).not.toHaveBeenCalled();
+});
+
+it("carries no audience or family profile field into the rendered brief", async () => {
+  mockStorage.getMealPlanItemSummaries.mockResolvedValue([
+    {
+      ...createMockMealPlanItem({
+        mealType: "dinner",
+        audience: "shared",
+        familyProfileId: 4242,
+      }),
+      recipe: createMockMealPlanRecipe({ title: "Lentil stew" }),
+      scannedItem: null,
+    },
+  ]);
+  const brief = await buildCoachBrief("u1", FREE, "UTC", "full", NOW);
+  const json = JSON.stringify(brief);
+  expect(json).toContain("Lentil stew");
+  expect(json).not.toContain("audience");
+  expect(json).not.toContain("familyProfileId");
+  expect(json).not.toContain("4242");
 });
 
 it("never reads the notebook or pantry for a free user", async () => {
