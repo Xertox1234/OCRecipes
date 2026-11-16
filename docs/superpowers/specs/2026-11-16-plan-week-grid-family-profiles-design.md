@@ -73,9 +73,17 @@ to see when a recipe clashes with a family member's allergy.
   log by `POST /api/meal-plan/items/:id/confirm`, and is also what grocery batches are computed
   from (`getMealPlanIngredientsForDateRange`: ceil(total planned servings / recipe yield)).
   It therefore cannot double as a headcount.
-- The plan itself has no premium range limit (90-day query cap for all). `extendedPlanRange` only
-  limits grocery-list date ranges (7 vs 90 days).
-- AI suggestions (`/api/meal-suggestions`, premium `aiMealSuggestions`) and pantry plan generation
+- **One existing exception:** pantry-generated plans. The generator tells the AI to set servings to
+  the onboarding `householdSize` (`server/services/pantry-meal-plan.ts`), and `save-generated`
+  writes that number as both the recipe yield and the item's `servings`
+  (`server/routes/meal-plan.ts`). A household of four already gets four portions on the ring and in
+  the log on confirm for those meals.
+- Confirming a meal as eaten is itself premium (`mealConfirmation`).
+- Plan range: the server allows any 90-day query, but the client stops free users 7 days ahead and
+  premium users 90 days ahead, showing the upgrade modal (`FREE_MAX_DAYS_FORWARD` in the home
+  screen). Separately, `extendedPlanRange` limits grocery-list date ranges (7 vs 90 days).
+- Weeks start on Sunday.
+- AI suggestions (`POST /api/meal-plan/suggest`, premium `aiMealSuggestions`) and pantry plan generation
   (`/api/meal-plan/generate-from-pantry`, reachable today only from receipt review) already send
   the user's own allergies to the AI provider behind the AI-sharing consent check.
 - User allergies: `user_profiles.allergies` as `{ name, severity }[]` (`allergySchema`). Recipes
@@ -115,7 +123,9 @@ kids-only dinner is entered once per child.
 
 - **Grid.** Meal-type labels stay fixed on the left; the seven day columns scroll sideways, about
   three visible at a time, opening on today. Today's column is marked with the existing accent.
-  Week arrows and the swipe-to-change-week behaviour stay.
+  Week arrows and the swipe-to-change-week behaviour stay. Weeks keep starting on Sunday, and the
+  free 7-days-ahead / premium 90-days-ahead limit stays exactly as it is today (my calls). The
+  slot counter covers the visible Sunday-to-Saturday week.
 - **Empty cell.** A "+" button that opens the existing add-item sheet for that date and meal type
   (it already offers suggestions where the plan allows them).
 - **Filled cell.** The first item's image, title and calories (the user's portion, as today). A
@@ -213,6 +223,17 @@ user's own allergies. For a shared or profile slot there are two options:
    after the fact.
 
 The design assumes option 2 until the owner rules.
+
+**Should pantry-generated meals stop putting the whole household's portions on the user's ring?**
+(The existing exception above.) What the design does without a ruling:
+
+- Stage 1 moves the entry point only and leaves this behaviour alone.
+- Stage 2, for a user with profiles: generated meals are saved as shared with the item's `servings`
+  set to 1 (the recipe keeps the AI's yield), and the generator's headcount is one plus the number
+  of profiles, replacing `householdSize`. Grocery portions then come from the shared rule, so
+  nothing is counted twice.
+- A user with no profiles and a household size above one keeps today's behaviour. Changing that is
+  a fix to an existing feature and is the owner's call.
 
 ## Left to the builder
 
