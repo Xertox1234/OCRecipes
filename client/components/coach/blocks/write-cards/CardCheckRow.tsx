@@ -10,12 +10,14 @@ import { Spacing } from "@/constants/theme";
 interface Props {
   label: string;
   detail?: string;
+  /** A short word before the label (the pantry card's action). */
+  tag?: string;
   checked: boolean;
   onToggle: () => void;
 }
 
 /** A tick row for a write card: the whole row is the 44pt+ checkbox. */
-export function CardCheckRow({ label, detail, checked, onToggle }: Props) {
+export function CardCheckRow({ label, detail, tag, checked, onToggle }: Props) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   return (
@@ -25,7 +27,7 @@ export function CardCheckRow({ label, detail, checked, onToggle }: Props) {
         onToggle();
       }}
       accessibilityRole="checkbox"
-      accessibilityLabel={detail ? `${label}, ${detail}` : label}
+      accessibilityLabel={[tag, label, detail].filter(Boolean).join(", ")}
       accessibilityState={{ checked }}
       style={styles.row}
     >
@@ -34,6 +36,14 @@ export function CardCheckRow({ label, detail, checked, onToggle }: Props) {
         size={20}
         color={checked ? theme.link : theme.textSecondary}
       />
+      {tag ? (
+        <ThemedText
+          type="caption"
+          style={[styles.tag, { color: theme.textSecondary }]}
+        >
+          {tag}
+        </ThemedText>
+      ) : null}
       <View style={styles.text}>
         <ThemedText
           type="body"
@@ -52,6 +62,8 @@ export function CardCheckRow({ label, detail, checked, onToggle }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // Wide enough for "Remove", so the names line up down the card.
+  tag: { minWidth: 56 },
   row: {
     flexDirection: "row",
     alignItems: "center",

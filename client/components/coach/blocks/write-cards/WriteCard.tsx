@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api-error";
 import {
   foodCounts,
   groceryKept,
+  pantryKept,
   planKept,
   writeCardButtonLabel,
 } from "@shared/lib/coach-write-card-math";
@@ -15,6 +16,8 @@ import type {
   FoodCardPayload,
   GroceryCardEdits,
   GroceryCardPayload,
+  PantryCardEdits,
+  PantryCardPayload,
   PlanCardEdits,
   PlanCardPayload,
   WriteCardBlock,
@@ -24,6 +27,7 @@ import type {
 import { WriteCardShell } from "./WriteCardShell";
 import { FoodWriteCard } from "./FoodWriteCard";
 import { GroceryWriteCard } from "./GroceryWriteCard";
+import { PantryWriteCard } from "./PantryWriteCard";
 import { PlanWriteCard } from "./PlanWriteCard";
 import {
   UNDO_VISIBLE_MS,
@@ -58,6 +62,11 @@ function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
         planKept(block.payload as PlanCardPayload, edits as PlanCardEdits)
           .length > 0
       );
+    case "pantry":
+      return (
+        pantryKept(block.payload as PantryCardPayload, edits as PantryCardEdits)
+          .length > 0
+      );
   }
 }
 
@@ -69,6 +78,10 @@ function lockedSummary(block: WriteCardBlock): string {
   if (block.kind === "grocery") {
     const n = (block.payload as GroceryCardPayload).items.length;
     return `${n} grocery item${n === 1 ? "" : "s"}`;
+  }
+  if (block.kind === "pantry") {
+    const n = (block.payload as PantryCardPayload).rows.length;
+    return `${n} pantry change${n === 1 ? "" : "s"}`;
   }
   const n = (block.payload as PlanCardPayload).rows.length;
   return `${n} planned meal${n === 1 ? "" : "s"}`;
@@ -181,6 +194,12 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
         <GroceryWriteCard
           payload={block.payload as GroceryCardPayload}
           edits={edits as GroceryCardEdits}
+          onEdit={onEdit}
+        />
+      ) : block.kind === "pantry" ? (
+        <PantryWriteCard
+          payload={block.payload as PantryCardPayload}
+          edits={edits as PantryCardEdits}
           onEdit={onEdit}
         />
       ) : (
