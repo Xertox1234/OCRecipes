@@ -234,6 +234,32 @@ describe("computeItemMacros", () => {
 });
 
 describe("computeMealSectionSummary", () => {
+  it("leaves a profile's meal out of the calories but keeps it in the count", () => {
+    const items = [
+      makeItem({
+        recipeId: 1,
+        recipe: makeRecipe({ caloriesPerServing: "300" }),
+      }),
+      makeItem({
+        id: 2,
+        audience: "profile",
+        familyProfileId: 7,
+        recipeId: 2,
+        recipe: makeRecipe({ id: 2, caloriesPerServing: "250" }),
+      }),
+      makeItem({
+        id: 3,
+        audience: "shared",
+        recipeId: 3,
+        recipe: makeRecipe({ id: 3, caloriesPerServing: "100" }),
+      }),
+    ];
+    expect(computeMealSectionSummary(items)).toEqual({
+      itemCount: 3,
+      totalCalories: 400,
+    });
+  });
+
   it("returns zero for empty items", () => {
     expect(computeMealSectionSummary([])).toEqual({
       itemCount: 0,

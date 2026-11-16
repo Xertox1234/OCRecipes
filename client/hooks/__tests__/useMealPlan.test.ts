@@ -6,7 +6,9 @@ import {
   useAddMealPlanItem,
   useRemoveMealPlanItem,
   useConfirmMealPlanItem,
+  useUpdateMealPlanItemAudience,
 } from "../useMealPlan";
+import { clearPendingAudience, setPendingAudience } from "@/lib/plan-audience";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({
@@ -16,6 +18,8 @@ const { mockApiRequest } = vi.hoisted(() => ({
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
+
+type AddInput = Parameters<ReturnType<typeof useAddMealPlanItem>["mutate"]>[0];
 
 describe("useMealPlan", () => {
   beforeEach(() => {
@@ -153,6 +157,118 @@ describe("useMealPlan", () => {
       });
 
       expect(result.current.error?.message).toBe("400: Bad Request");
+    });
+  });
+
+  describe("useAddMealPlanItem audience", () => {
+    const ivy = { audience: "profile" as const, familyProfileId: 7 };
+    const slot = { plannedDate: "2024-01-01", mealType: "lunch" };
+
+    beforeEach(() => {
+      clearPendingAudience();
+      mockApiRequest.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 1 }),
+      });
+    });
+
+    async function add(item: AddInput) {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useAddMealPlanItem(), { wrapper });
+      await act(async () => {
+        result.current.mutate(item);
+      });
+      await waitFor(() => {
+        expect(result.current.isSuccess || result.current.isError).toBe(true);
+      });
+      return result;
+    }
+
+    it("sends the pending choice for the same slot", async () => {
+      setPendingAudience(slot, ivy);
+      await add({ recipeId: 5, ...slot });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/items",
+        { recipeId: 5, ...slot, ...ivy },
+      );
+    });
+
+    it("sends nothing for an add to another slot", async () => {
+      setPendingAudience(slot, ivy);
+      await add({ recipeId: 5, plannedDate: "2024-01-02", mealType: "lunch" });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/items",
+        { recipeId: 5, plannedDate: "2024-01-02", mealType: "lunch" },
+      );
+    });
+
+    it("lets an explicit audience win and leaves the pending choice alone", async () => {
+      setPendingAudience(slot, ivy);
+      await add({
+        recipeId: 5,
+        ...slot,
+        audience: "shared",
+        familyProfileId: null,
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/items",
+        { recipeId: 5, ...slot, audience: "shared", familyProfileId: null },
+      );
+      mockApiRequest.mockClear();
+      await add({ recipeId: 6, ...slot });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/items",
+        { recipeId: 6, ...slot, ...ivy },
+      );
+    });
+
+    it("puts the choice back when the add fails, so a retry still carries it", async () => {
+      setPendingAudience(slot, ivy);
+      mockApiRequest.mockRejectedValueOnce(new Error("500: boom"));
+      await add({ recipeId: 5, ...slot });
+      mockApiRequest.mockClear();
+      await add({ recipeId: 5, ...slot });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/items",
+        { recipeId: 5, ...slot, ...ivy },
+      );
+    });
+  });
+
+  describe("useUpdateMealPlanItemAudience", () => {
+    it("PATCHes the item's audience and invalidates meal plan queries", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      mockApiRequest.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 9, audience: "profile" }),
+      });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useUpdateMealPlanItemAudience(), {
+        wrapper,
+      });
+
+      await act(async () => {
+        result.current.mutate({
+          id: 9,
+          audience: "profile",
+          familyProfileId: 7,
+        });
+      });
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "PATCH",
+        "/api/meal-plan/items/9",
+        { audience: "profile", familyProfileId: 7 },
+      );
+      expect(invalidateSpy).toHaveBeenCalled();
     });
   });
 

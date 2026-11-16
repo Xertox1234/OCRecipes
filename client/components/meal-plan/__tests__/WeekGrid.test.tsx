@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { screen, fireEvent, cleanup } from "@testing-library/react";
 
+import type { FamilyProfile } from "@shared/schema";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
 import { renderComponent } from "../../../../test/utils/render-component";
@@ -96,6 +97,114 @@ const items = [
   }),
 ];
 const days = buildWeekGrid(items, week, today);
+
+describe("WeekGrid family markers", () => {
+  const scrollTo = vi.fn();
+  beforeAll(() => {
+    Element.prototype.scrollTo = scrollTo as typeof Element.prototype.scrollTo;
+  });
+  afterEach(() => cleanup());
+
+  const ivy = {
+    id: 7,
+    name: "Ivy",
+    allergies: [{ name: "peanuts", severity: "severe" }],
+  } as unknown as FamilyProfile;
+  const recipeWith = (title: string, allergens: unknown[]) => ({
+    id: 1,
+    title,
+    caloriesPerServing: "300",
+    imageUrl: null,
+    allergens,
+  });
+  const familyItems = [
+    makeItem({
+      audience: "shared",
+      recipeId: 1,
+      recipe: recipeWith("Tacos", []),
+    }),
+    makeItem({
+      plannedDate: "2026-11-18",
+      mealType: "lunch",
+      audience: "profile",
+      familyProfileId: 7,
+      recipeId: 2,
+      recipe: recipeWith("Satay", [
+        { id: "peanuts", viaDerived: false, possible: false },
+      ]),
+    }),
+    makeItem({
+      plannedDate: "2026-11-19",
+      mealType: "lunch",
+      audience: "self",
+      recipeId: 3,
+      recipe: recipeWith("Soup", []),
+    }),
+  ];
+
+  function renderFamilyGrid(withFamily: boolean) {
+    const familyDays = buildWeekGrid(
+      familyItems,
+      week,
+      today,
+      withFamily ? { profiles: [ivy], userAllergies: [] } : undefined,
+    );
+    return renderComponent(
+      <WeekGrid days={familyDays} onAddPress={vi.fn()} onDayPress={vi.fn()} />,
+    );
+  }
+
+  it("shows a group badge for a shared meal and the initial for a profile's", () => {
+    renderFamilyGrid(true);
+    const badges = screen.getAllByTestId("cell-audience-badge");
+    expect(badges).toHaveLength(2);
+    expect(screen.getByText("I")).toBeDefined();
+  });
+
+  it("shows the warning mark only on the clashing cell", () => {
+    renderFamilyGrid(true);
+    expect(screen.getAllByTestId("cell-allergen-warning")).toHaveLength(1);
+  });
+
+  it("hides the badge and the warning from the accessibility tree", () => {
+    renderFamilyGrid(true);
+    for (const el of [
+      ...screen.getAllByTestId("cell-audience-badge"),
+      ...screen.getAllByTestId("cell-allergen-warning"),
+    ]) {
+      expect(el.getAttribute("aria-hidden")).toBe("true");
+    }
+  });
+
+  it("carries the audience and the warning in the cell's own label", () => {
+    renderFamilyGrid(true);
+    expect(
+      screen.getByLabelText(
+        "Tuesday dinner, Tacos, 300 calories, for everyone",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByLabelText(
+        "Wednesday lunch, Satay, 300 calories, for Ivy, allergen warning",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByLabelText("Thursday lunch, Soup, 300 calories"),
+    ).toBeDefined();
+  });
+
+  it("draws nothing extra without a family", () => {
+    renderFamilyGrid(false);
+    expect(screen.queryAllByTestId("cell-audience-badge")).toHaveLength(0);
+    expect(screen.queryAllByTestId("cell-allergen-warning")).toHaveLength(0);
+  });
+
+  it("leaves the cell's height and text allowance alone", () => {
+    expect(CELL_HEIGHT).toBe(100);
+    expect(GRID_MAX_FONT_SCALE).toBe(1.2);
+    expect(getCellContentHeight(1, false)).toBe(5 + (3 * 15 + 14) + 6);
+  });
+});
 
 describe("WeekGrid", () => {
   const onAddPress = vi.fn();

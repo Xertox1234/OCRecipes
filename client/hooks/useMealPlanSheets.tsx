@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 
 import { runAfterTransition } from "@/lib/run-after-transition";
+import { clearPendingAudience, setPendingAudience } from "@/lib/plan-audience";
+import type { FamilyProfile } from "@shared/schema";
+import {
+  type AudienceFilter,
+  defaultAudienceFor,
+} from "@/components/meal-plan/family-utils";
+import type { AudienceChoiceValue } from "@/components/meal-plan/AudienceChoice";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import type { MealType } from "@/components/meal-plan/meal-plan-utils";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
@@ -16,14 +23,17 @@ import {
   type SimpleEntrySheetContentHandle,
 } from "@/components/meal-plan/SimpleEntrySheet";
 
-// The 4 bottom sheets MealPlanHomeScreen and MealPlanDayScreen each host, collapsed into one union so at
-// most one can ever be "active" at a time (matches production reality — the
-// app never opens two of these simultaneously).
+// The bottom sheets MealPlanHomeScreen and MealPlanDayScreen host (the day
+// screen's "Who's it for?" sheet is the fifth; the grid never presents it),
+// collapsed into one union so at most one can ever be "active" at a time
+// (matches production reality — the app never opens two of these
+// simultaneously).
 export type SheetKind =
   | "addItemMenu"
   | "importRecipe"
   | "quickAdd"
-  | "simpleEntry";
+  | "simpleEntry"
+  | "audience";
 export type ActiveSheet = { kind: SheetKind; mealType: MealType } | null;
 
 /**
@@ -41,6 +51,7 @@ export function useMealPlanSheets({
   selectedDateStr,
   onSuggest,
   dayLabel,
+  family,
 }: {
   navigation: MealPlanHomeScreenNavigationProp;
   selectedDateStr: string;
@@ -51,8 +62,15 @@ export function useMealPlanSheets({
   onSuggest?: (mealType: MealType) => void;
   /** The day being added to, shown in the add menu's title. */
   dayLabel?: string;
+  /**
+   * Family planning's profiles and the grid's current filter, or null/absent
+   * when it is not active. With it, the add menu offers "Who's it for?",
+   * defaulted from the filter, and records the choice for its slot.
+   */
+  family?: { profiles: FamilyProfile[]; filter: AudienceFilter } | null;
 }) {
   const addItemMenuSheetRef = useRef<BottomSheetModal>(null);
+  const audienceSheetRef = useRef<BottomSheetModal>(null);
   const importRecipeSheetRef = useRef<BottomSheetModal>(null);
   const quickAddSheetRef = useRef<BottomSheetModal>(null);
   const quickAddSheetContentRef = useRef<QuickAddSheetContentHandle>(null);
@@ -74,6 +92,46 @@ export function useMealPlanSheets({
   const simpleEntryMealType =
     activeSheet?.kind === "simpleEntry" ? activeSheet.mealType : null;
 
+  // "Who's it for?" in the add menu. The choice is made per menu opening: it
+  // is remembered with the slot it was made for, so a stale choice never
+  // carries to another slot, and reset each time the menu opens. The pending
+  // choice (what an add for that slot sends) lives in `plan-audience`.
+  const [chosenAudience, setChosenAudience] = useState<{
+    slotKey: string;
+    value: AudienceChoiceValue;
+  } | null>(null);
+  const menuSlotKey = addItemMenuMealType
+    ? `${selectedDateStr}|${addItemMenuMealType}`
+    : null;
+  const menuAudience: AudienceChoiceValue | null =
+    family && menuSlotKey
+      ? chosenAudience?.slotKey === menuSlotKey
+        ? chosenAudience.value
+        : defaultAudienceFor(family.filter)
+      : null;
+  const menuAudienceKind = menuAudience?.audience;
+  const menuAudienceProfileId = menuAudience?.familyProfileId ?? null;
+  const familyActive = family != null;
+
+  useEffect(() => {
+    if (!addItemMenuMealType || menuAudienceKind === undefined) return;
+    setPendingAudience(
+      { plannedDate: selectedDateStr, mealType: addItemMenuMealType },
+      { audience: menuAudienceKind, familyProfileId: menuAudienceProfileId },
+    );
+  }, [
+    addItemMenuMealType,
+    selectedDateStr,
+    menuAudienceKind,
+    menuAudienceProfileId,
+  ]);
+
+  // Switch off or premium lapsed: a remembered choice names someone who is no
+  // longer planned for.
+  useEffect(() => {
+    if (!familyActive) clearPendingAudience();
+  }, [familyActive]);
+
   // Opens/closes a sheet by kind. `closeSheet` is guarded (only clears when
   // its OWN kind is still active) because gorhom's `onDismiss` fires on
   // close-ANIMATION-complete, which is not guaranteed to run strictly before
@@ -82,6 +140,8 @@ export function useMealPlanSheets({
   // `setActiveSheet(null)` from a late-firing onDismiss would clobber the
   // sheet that opened in the meantime.
   const openSheet = useCallback((kind: SheetKind, mealType: MealType) => {
+    // Every opening of the menu starts from its default audience.
+    if (kind === "addItemMenu") setChosenAudience(null);
     setActiveSheet({ kind, mealType });
   }, []);
   const closeSheet = useCallback((kind: SheetKind) => {
@@ -124,6 +184,10 @@ export function useMealPlanSheets({
 
   const handleSimpleEntryDismiss = useCallback(() => {
     closeSheet("simpleEntry");
+  }, [closeSheet]);
+
+  const handleAudienceDismiss = useCallback(() => {
+    closeSheet("audience");
   }, [closeSheet]);
 
   const handleImportRecipe = useCallback(() => {
@@ -173,6 +237,7 @@ export function useMealPlanSheets({
       importRecipe: importRecipeSheetRef,
       quickAdd: quickAddSheetRef,
       simpleEntry: simpleEntrySheetRef,
+      audience: audienceSheetRef,
     };
     const kind = activeSheet?.kind ?? null;
     const prevKind = prevSheetKindRef.current;
@@ -190,6 +255,7 @@ export function useMealPlanSheets({
     importRecipeSheetRef,
     quickAddSheetRef,
     simpleEntrySheetRef,
+    audienceSheetRef,
   ]);
 
   // Android hardware back dismisses whichever sheet is active, consuming the
@@ -313,6 +379,16 @@ export function useMealPlanSheets({
         onImportRecipe={handleImportRecipe}
         onSuggest={onSuggest ? handleSuggestFromMenu : undefined}
         dayLabel={dayLabel}
+        audience={
+          family && menuAudience && menuSlotKey
+            ? {
+                profiles: family.profiles,
+                value: menuAudience,
+                onChange: (value) =>
+                  setChosenAudience({ slotKey: menuSlotKey, value }),
+              }
+            : undefined
+        }
       />
     ),
     [
@@ -323,6 +399,9 @@ export function useMealPlanSheets({
       onSuggest,
       handleSuggestFromMenu,
       dayLabel,
+      family,
+      menuAudience,
+      menuSlotKey,
     ],
   );
 
@@ -388,6 +467,7 @@ export function useMealPlanSheets({
     quickAddSheetContentRef,
     simpleEntrySheetRef,
     simpleEntrySheetContentRef,
+    audienceSheetRef,
     addItemMenuMealType,
     importRecipeMealType,
     quickAddMealType,
@@ -398,6 +478,7 @@ export function useMealPlanSheets({
     onSheetChange,
     onSheetAnimate,
     handleAddItemMenuDismiss,
+    handleAudienceDismiss,
     handleChooseRecipe,
     handleSimpleEntry,
     handleImportRecipeDismiss,

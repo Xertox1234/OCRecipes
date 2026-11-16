@@ -3,7 +3,10 @@ import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { AccessibilityInfo, View, Text } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
-import { useConfirmationModal } from "../ConfirmationModal";
+import {
+  getConfirmationSheetMaxHeight,
+  useConfirmationModal,
+} from "../ConfirmationModal";
 import type { ConfirmOptions } from "../ConfirmationModal";
 
 // useSheetBackHandler calls useIsFocused (@react-navigation/native), which
@@ -330,5 +333,31 @@ describe("ConfirmationModal", () => {
       expect(screen.getByText("Yes, Sign Out")).toBeDefined();
       expect(screen.queryByText("Delete Entry")).toBeNull();
     });
+  });
+});
+
+describe("a long message (the health-consent prompt)", () => {
+  // The sheet was capped at 350pt. The health-consent wording needs about
+  // 400pt at the default text size, so its two buttons sat below the screen
+  // and could not be reached: nobody could give or refuse the consent.
+  it("lets the sheet grow with the screen instead of a fixed 350pt", () => {
+    expect(getConfirmationSheetMaxHeight(874)).toBe(743);
+    expect(getConfirmationSheetMaxHeight(667)).toBe(567);
+  });
+
+  it("puts the content in a scroll view, so text larger than the cap still reaches the buttons", () => {
+    renderComponent(
+      <TestHarness
+        options={{
+          title: "Use your health details?",
+          message: "Long text",
+          onConfirm: () => {},
+        }}
+      />,
+    );
+    triggerModal();
+    const scroll = screen.getByTestId("confirmation-modal-scroll");
+    expect(scroll.textContent).toContain("Use your health details?");
+    expect(scroll.textContent).toContain("Cancel");
   });
 });

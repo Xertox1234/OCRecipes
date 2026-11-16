@@ -1,4 +1,9 @@
-import { QUERY_KEYS, chatMessagesKey, recipeStatsKey } from "../query-keys";
+import {
+  QUERY_KEYS,
+  chatMessagesKey,
+  familyProfilesKey,
+  recipeStatsKey,
+} from "../query-keys";
 
 describe("QUERY_KEYS persistence membership", () => {
   // client/App.tsx persists exactly the first element of every QUERY_KEYS
@@ -38,5 +43,18 @@ describe("chatMessagesKey", () => {
       Object.values(QUERY_KEYS).map((k) => k[0]),
     );
     expect(persisted.has(chatMessagesKey(12)[0])).toBe(false);
+  });
+});
+
+describe("familyProfilesKey", () => {
+  it("keys the family profile list", () => {
+    expect(familyProfilesKey()).toEqual(["/api/family-profiles"]);
+  });
+
+  it("is not a QUERY_KEYS entry, so other people's health data never reaches the on-device cache", () => {
+    const persisted = new Set<unknown>(
+      Object.values(QUERY_KEYS).map((k) => k[0]),
+    );
+    expect(persisted.has(familyProfilesKey()[0])).toBe(false);
   });
 });

@@ -2,9 +2,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { getDeviceTimezone } from "@/lib/timezone";
+import { setPendingAudience, takePendingAudience } from "@/lib/plan-audience";
 import type { MealPlanItem } from "@shared/schema";
 import type { CreateMealPlanRecipeInput } from "@/hooks/useMealPlanRecipes";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
+import type { MealAudience } from "@shared/types/family";
 
 /** Invalidate only meal-plan item queries, not recipes/catalog queries.
  *  Item queries use key ["/api/meal-plan", startDate, endDate] while recipe
@@ -57,9 +59,25 @@ export function useAddMealPlanItem() {
       plannedDate: string;
       mealType: string;
       servings?: string | number;
+      /** Who the meal is for; left out, the add menu's choice for this slot applies. */
+      audience?: MealAudience;
+      familyProfileId?: number | null;
     }) => {
-      const res = await apiRequest("POST", "/api/meal-plan/items", item);
-      return res.json() as Promise<MealPlanItem>;
+      // The add menu's "Who's it for?" for this slot, unless the caller named
+      // an audience itself.
+      const slot = { plannedDate: item.plannedDate, mealType: item.mealType };
+      const pending =
+        item.audience === undefined ? takePendingAudience(slot) : null;
+      const res = await apiRequest(
+        "POST",
+        "/api/meal-plan/items",
+        pending ? { ...item, ...pending } : item,
+      ).catch((error: unknown) => {
+        // The sheet stays open for a retry, which must still be for them.
+        if (pending) setPendingAudience(slot, pending);
+        throw error;
+      });
+      return (await res.json()) as MealPlanItem;
     },
     onSuccess: (_created, variables) => {
       invalidateMealPlanItems(queryClient);
@@ -76,6 +94,34 @@ export function useAddMealPlanItem() {
     // Every call site (MealPlanHomeScreen, MealPlanDayScreen, RecipeBrowserScreen, WizardShell,
     // CoachChat, QuickAddSheet, SimpleEntrySheet) already toasts/alerts on
     // failure via a try/catch around mutateAsync.
+    meta: { silentError: true },
+  });
+}
+
+/** Changes who a planned meal is for (the day row's "Who's it for?"). */
+export function useUpdateMealPlanItemAudience() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      audience,
+      familyProfileId,
+    }: {
+      id: number;
+      audience: MealAudience;
+      familyProfileId: number | null;
+    }) => {
+      const res = await apiRequest("PATCH", `/api/meal-plan/items/${id}`, {
+        audience,
+        familyProfileId,
+      });
+      return (await res.json()) as MealPlanItem;
+    },
+    onSuccess: () => {
+      invalidateMealPlanItems(queryClient);
+    },
+    // Its one call site (MealPlanDayScreen) already toasts on failure.
     meta: { silentError: true },
   });
 }

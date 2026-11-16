@@ -13,6 +13,7 @@ import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { renderComponent } from "../../../../test/utils/render-component";
 import MealPlanHomeScreen from "../MealPlanHomeScreen";
 import { invalidateMealPlanItems } from "@/hooks/useMealPlan";
+import { clearPendingAudience, takePendingAudience } from "@/lib/plan-audience";
 
 type SheetContentProps = { mealType: string | null; plannedDate?: string };
 type AddItemMenuProps = SheetContentProps & {
@@ -48,7 +49,14 @@ const {
   suggestionsModalProps,
   addMealPlanItem,
   toast,
+  family,
 } = vi.hoisted(() => ({
+  family: {
+    value: null as null | {
+      profiles: { id: number; name: string; allergies: unknown[] }[];
+      userAllergies: unknown[];
+    },
+  },
   suggestionsModalProps: { current: null as null | SuggestionsModalProps },
   addMealPlanItem: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -104,6 +112,11 @@ vi.mock("@/hooks/usePantry", () => ({
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({ useHaptics: () => haptics }));
+
+// Family planning is off unless a test turns it on.
+vi.mock("@/hooks/useFamily", () => ({
+  usePlanFamily: () => family.value,
+}));
 
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => toast,
@@ -314,6 +327,8 @@ describe("MealPlanHomeScreen — the week grid", () => {
     queryState.isRefetchError = false;
     plan.isPremium = false;
     planCheck.planUnknown = false;
+    family.value = null;
+    clearPendingAudience();
     expiring.value = [];
     addItemMenuProps.current = null;
     simpleEntryProps.current = null;
@@ -697,6 +712,145 @@ describe("MealPlanHomeScreen — the week grid", () => {
       renderComponent(<MealPlanHomeScreen />);
       expect(screen.queryByLabelText("Open grocery lists")).toBeNull();
       expect(screen.queryByLabelText("Plan meals from your pantry")).toBeNull();
+    });
+  });
+
+  describe("family planning", () => {
+    const ivy = { id: 7, name: "Ivy", allergies: [] };
+    const sam = { id: 8, name: "Sam", allergies: [] };
+
+    beforeEach(() => {
+      family.value = { profiles: [ivy, sam], userAllergies: [] };
+      itemsData.value = [
+        makeItem({
+          recipeId: 1,
+          audience: "self",
+          familyProfileId: null,
+          recipe: {
+            id: 1,
+            title: "Tacos",
+            caloriesPerServing: "610",
+            allergens: [],
+          },
+        }),
+        makeItem({
+          plannedDate: "2026-11-18",
+          mealType: "lunch",
+          recipeId: 2,
+          audience: "shared",
+          familyProfileId: null,
+          recipe: {
+            id: 2,
+            title: "Soup",
+            caloriesPerServing: "200",
+            allergens: [],
+          },
+        }),
+        makeItem({
+          plannedDate: "2026-11-19",
+          mealType: "lunch",
+          recipeId: 3,
+          audience: "profile",
+          familyProfileId: 7,
+          recipe: {
+            id: 3,
+            title: "Nuggets",
+            caloriesPerServing: "300",
+            allergens: [],
+          },
+        }),
+        makeItem({
+          plannedDate: "2026-11-20",
+          mealType: "lunch",
+          recipeId: 4,
+          audience: "profile",
+          familyProfileId: 8,
+          recipe: {
+            id: 4,
+            title: "Pasta",
+            caloriesPerServing: "400",
+            allergens: [],
+          },
+        }),
+      ];
+    });
+
+    it("shows no chips when family planning is off or has no profiles", () => {
+      family.value = null;
+      renderComponent(<MealPlanHomeScreen />);
+      expect(screen.queryByRole("radiogroup")).toBeNull();
+      expect(screen.queryByLabelText("Add a family member")).toBeNull();
+    });
+
+    it("shows All, Me and each name above the grid", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual([
+        "All",
+        "Me",
+        "Ivy",
+        "Sam",
+      ]);
+      expect(screen.getByText("4 of 28 planned")).toBeDefined();
+    });
+
+    it("filters the grid to Ivy's and shared meals, and the counter follows", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByRole("radio", { name: "Ivy" }));
+      expect(screen.queryByLabelText(/Nuggets/)).not.toBeNull();
+      expect(screen.queryByLabelText(/Soup/)).not.toBeNull();
+      expect(screen.queryByLabelText(/Pasta/)).toBeNull();
+      expect(screen.queryByLabelText(/Tacos/)).toBeNull();
+      expect(screen.getByText("2 of 28 planned")).toBeDefined();
+    });
+
+    it("Me shows the user's own and shared meals", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByRole("radio", { name: "Me" }));
+      expect(screen.queryByLabelText(/Tacos/)).not.toBeNull();
+      expect(screen.queryByLabelText(/Soup/)).not.toBeNull();
+      expect(screen.queryByLabelText(/Nuggets/)).toBeNull();
+      expect(screen.getByText("2 of 28 planned")).toBeDefined();
+    });
+
+    it("falls back to everything when the filtered profile disappears", () => {
+      const { rerender } = renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByRole("radio", { name: "Ivy" }));
+      family.value = { profiles: [sam], userAllergies: [] };
+      rerender(<MealPlanHomeScreen />);
+      expect(screen.queryByLabelText(/Tacos/)).not.toBeNull();
+    });
+
+    it("opening the menu with Ivy filtered sets Ivy as the audience for that slot", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByRole("radio", { name: "Ivy" }));
+      fireEvent.click(
+        screen.getByLabelText("Tuesday breakfast, empty, add a meal"),
+      );
+      expect(
+        takePendingAudience({
+          plannedDate: "2026-11-17",
+          mealType: "breakfast",
+        }),
+      ).toEqual({ audience: "profile", familyProfileId: 7 });
+    });
+
+    it("opening the menu with All filtered defaults to everyone", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(
+        screen.getByLabelText("Tuesday breakfast, empty, add a meal"),
+      );
+      expect(
+        takePendingAudience({
+          plannedDate: "2026-11-17",
+          mealType: "breakfast",
+        }),
+      ).toEqual({ audience: "shared", familyProfileId: null });
+    });
+
+    it("the + goes to the family profiles", () => {
+      renderComponent(<MealPlanHomeScreen />);
+      fireEvent.click(screen.getByLabelText("Add a family member"));
+      expect(navigate).toHaveBeenLastCalledWith("FamilyProfiles");
     });
   });
 });

@@ -3,6 +3,12 @@ import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 // day the user tapped, so every key here comes from local getters.
 import { toLocalDateString } from "@shared/lib/date";
 
+import type { Allergy, FamilyProfile } from "@shared/schema";
+import {
+  type CellFamilyInfo,
+  countsTowardUser,
+  getCellFamilyInfo,
+} from "./family-utils";
 import { type MealType, computeItemMacros } from "./meal-plan-utils";
 
 /** Row order of the week grid. The day screen keeps its own order. */
@@ -27,8 +33,18 @@ export interface GridCell {
   imageUrl: string | null;
   /** How many items sit behind the first one. */
   extraCount: number;
-  /** The user's portion; items with no nutrition source count as 0. */
+  /** Every item's calories, a profile's meal included (what the cell shows). */
   calories: number;
+  /** The calories that count toward the user: profile meals left out. */
+  userCalories: number;
+  /** Who the slot is for and whether it clashes; only set when family planning is on. */
+  family?: CellFamilyInfo;
+}
+
+/** The family context the grid's markers are built from. */
+export interface GridFamily {
+  profiles: FamilyProfile[];
+  userAllergies: Allergy[];
 }
 
 export interface GridDay {
@@ -36,7 +52,7 @@ export interface GridDay {
   dateStr: string;
   isToday: boolean;
   cells: Record<MealType, GridCell>;
-  /** Sum of the day's four cells. */
+  /** Sum of the day's four cells, the user's own calories only. */
   calories: number;
 }
 
@@ -74,7 +90,14 @@ export function parseLocalDateString(value: unknown): Date | null {
 }
 
 function emptyCell(): GridCell {
-  return { items: [], title: null, imageUrl: null, extraCount: 0, calories: 0 };
+  return {
+    items: [],
+    title: null,
+    imageUrl: null,
+    extraCount: 0,
+    calories: 0,
+    userCalories: 0,
+  };
 }
 
 function isGridMealType(value: string): value is MealType {
@@ -86,19 +109,39 @@ function itemTitle(item: MealPlanItemWithRelations): string {
   return item.recipe?.title || item.scannedItem?.productName || "Unknown item";
 }
 
-function buildCell(items: MealPlanItemWithRelations[]): GridCell {
+function buildCell(
+  items: MealPlanItemWithRelations[],
+  family?: GridFamily,
+): GridCell {
   if (items.length === 0) return emptyCell();
   const sorted = [...items].sort(
     (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id,
   );
   const first = sorted[0];
+  const info = family
+    ? {
+        family: getCellFamilyInfo(
+          sorted,
+          { allergies: family.userAllergies },
+          family.profiles,
+        ),
+      }
+    : {};
   return {
+    ...info,
     items: sorted,
     title: itemTitle(first),
     imageUrl: first.recipe?.imageUrl ?? null,
     extraCount: sorted.length - 1,
     calories: sorted.reduce(
       (sum, item) => sum + (computeItemMacros(item)?.calories ?? 0),
+      0,
+    ),
+    userCalories: sorted.reduce(
+      (sum, item) =>
+        countsTowardUser(item)
+          ? sum + (computeItemMacros(item)?.calories ?? 0)
+          : sum,
       0,
     ),
   };
@@ -112,6 +155,7 @@ export function buildWeekGrid(
   items: MealPlanItemWithRelations[] | undefined,
   weekDates: Date[],
   today: Date,
+  family?: GridFamily,
 ): GridDay[] {
   const todayStr = toLocalDateString(today);
   const bySlot = new Map<string, MealPlanItemWithRelations[]>();
@@ -128,9 +172,12 @@ export function buildWeekGrid(
     const cells = {} as Record<MealType, GridCell>;
     let calories = 0;
     for (const mealType of GRID_MEAL_TYPES) {
-      const cell = buildCell(bySlot.get(`${dateStr}|${mealType}`) ?? []);
+      const cell = buildCell(
+        bySlot.get(`${dateStr}|${mealType}`) ?? [],
+        family,
+      );
       cells[mealType] = cell;
-      calories += cell.calories;
+      calories += cell.userCalories;
     }
     return { date, dateStr, isToday: dateStr === todayStr, cells, calories };
   });
@@ -187,7 +234,11 @@ export function getCellAccessibilityLabel(
     cell.extraCount > 0
       ? `${cell.title} and ${cell.extraCount} more`
       : cell.title;
-  return `${slot}, ${what}, ${formatCalories(cell.calories)} calories`;
+  const audience = cell.family?.audienceLabel
+    ? `, ${cell.family.audienceLabel}`
+    : "";
+  const warning = cell.family?.warning ? ", allergen warning" : "";
+  return `${slot}, ${what}, ${formatCalories(cell.calories)} calories${audience}${warning}`;
 }
 
 export function getDayHeaderAccessibilityLabel(day: GridDay): string {

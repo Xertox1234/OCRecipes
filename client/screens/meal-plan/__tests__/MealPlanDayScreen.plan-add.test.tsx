@@ -43,6 +43,9 @@ const {
   } satisfies MealSuggestion,
 }));
 
+// Family planning is off.
+vi.mock("@/hooks/useFamily", () => ({ usePlanFamily: () => null }));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useMealPlanItems: () => ({
     data: [],
@@ -57,6 +60,7 @@ vi.mock("@/hooks/useMealPlan", () => ({
   useRemoveMealPlanItem: () => ({ mutate: vi.fn(), isPending: false }),
   useConfirmMealPlanItem: () => ({ mutate: vi.fn(), isPending: false }),
   useReorderMealPlanItems: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateMealPlanItemAudience: () => ({ mutate: vi.fn(), isPending: false }),
   invalidateMealPlanItems: vi.fn(),
 }));
 

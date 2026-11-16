@@ -21,12 +21,15 @@ import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
 import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
+import FamilyProfilesScreen from "@/screens/FamilyProfilesScreen";
+import FamilyProfileEditScreen from "@/screens/FamilyProfileEditScreen";
 import WeeklyReportScreen from "@/screens/WeeklyReportScreen";
 import WeeklyReportsScreen from "@/screens/WeeklyReportsScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import {
   LIBRARY_SCREEN_OPTIONS,
   cookbookCreateOptions,
+  familyProfileEditOptions,
 } from "@/navigation/library-screen-options";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
@@ -47,6 +50,8 @@ type LibraryRoutes = Pick<
   | "CookbookDetail"
   | "CookbookCreate"
   | "RecipeBrowser"
+  | "FamilyProfiles"
+  | "FamilyProfileEdit"
 >;
 
 export type ProfileStackParamList = LibraryRoutes & {
@@ -243,6 +248,16 @@ export default function ProfileStackNavigator() {
             <HeaderTitle title="Browse Recipes" showIcon={false} />
           ),
         }}
+      />
+      <Stack.Screen
+        name="FamilyProfiles"
+        component={FamilyProfilesScreen}
+        options={LIBRARY_SCREEN_OPTIONS.FamilyProfiles}
+      />
+      <Stack.Screen
+        name="FamilyProfileEdit"
+        component={FamilyProfileEditScreen}
+        options={familyProfileEditOptions}
       />
     </Stack.Navigator>
   );

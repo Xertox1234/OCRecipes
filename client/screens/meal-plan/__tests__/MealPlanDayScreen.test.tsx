@@ -76,7 +76,18 @@ const {
   addItemMenuProps,
   interactionQueue,
   routeParams,
+  updateAudienceMock,
+  familyState,
+  toastMock,
 } = vi.hoisted(() => ({
+  updateAudienceMock: vi.fn(),
+  toastMock: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  familyState: {
+    value: null as null | {
+      profiles: { id: number; name: string; allergies: unknown[] }[];
+      userAllergies: unknown[];
+    },
+  },
   // The MealPlanDay route's params. Undefined (the default) means today.
   routeParams: { current: undefined as undefined | { date?: string } },
   mockApiRequest: vi.fn(),
@@ -176,7 +187,16 @@ vi.mock("@/hooks/useMealPlan", () => ({
   useRemoveMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConfirmMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReorderMealPlanItems: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateMealPlanItemAudience: () => ({
+    mutate: updateAudienceMock,
+    isPending: false,
+  }),
   invalidateMealPlanItems: vi.fn(),
+}));
+
+// Family planning is off unless a test turns it on.
+vi.mock("@/hooks/useFamily", () => ({
+  usePlanFamily: () => familyState.value,
 }));
 
 // The screen must NOT load /api/daily-budget: that endpoint totals the day's
@@ -208,7 +228,7 @@ vi.mock("@/hooks/usePantry", () => ({
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => toastMock,
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
@@ -882,6 +902,26 @@ describe("MealPlanDayScreen — Android TalkBack background trap", () => {
     ).toBeNull();
   });
 
+  it("leaves a profile's meal out of the calorie ring", () => {
+    const meal = (id: number, audience: string, calories: string) => ({
+      ...FAKE_BREAKFAST_ITEM,
+      id,
+      audience,
+      familyProfileId: audience === "profile" ? 7 : null,
+      recipeId: id,
+      recipe: { id, title: `Meal ${id}`, caloriesPerServing: calories },
+    });
+    mealPlanItemsData.value = [
+      meal(1, "self", "300"),
+      meal(2, "profile", "250"),
+    ];
+    renderComponent(<MealPlanDayScreen />);
+    expect(
+      screen.queryByLabelText(/^300 of 2000 calories consumed/),
+    ).not.toBeNull();
+    expect(screen.queryByLabelText(/^550 of 2000/)).toBeNull();
+  });
+
   it("hides the background content from the Android accessibility tree while the add-item-menu sheet is open", () => {
     renderComponent(<MealPlanDayScreen />);
     fireEvent.click(screen.getByRole("button", { name: /^Add \w+ item$/ }));
@@ -902,6 +942,153 @@ describe("MealPlanDayScreen — Android TalkBack background trap", () => {
     expect(
       screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
     ).toBeNull();
+  });
+});
+
+describe("MealPlanDayScreen — family planning", () => {
+  const originalTz = process.env.TZ;
+  const INSTANT = new Date("2026-09-01T22:30:00Z");
+  const ivy = {
+    id: 7,
+    name: "Ivy",
+    allergies: [{ name: "peanuts", severity: "severe" }],
+  };
+  const sam = { id: 8, name: "Sam", allergies: [] };
+  const base = {
+    userId: "test-user",
+    scannedItemId: null,
+    plannedDate: "2026-09-02",
+    mealType: "breakfast",
+    servings: "1",
+    sortOrder: 0,
+    createdAt: INSTANT,
+    scannedItem: null,
+  };
+  const satay = {
+    id: 1,
+    title: "Satay",
+    caloriesPerServing: "300",
+    allergens: [{ id: "peanuts", viaDerived: false, possible: false }],
+  };
+  const ivyMeal = {
+    ...base,
+    id: 11,
+    recipeId: 1,
+    audience: "profile",
+    familyProfileId: 7,
+    recipe: satay,
+  };
+  const ownMeal = {
+    ...base,
+    id: 12,
+    recipeId: 2,
+    audience: "self",
+    familyProfileId: null,
+    sortOrder: 1,
+    recipe: { id: 2, title: "Oats", caloriesPerServing: "250", allergens: [] },
+  };
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/Berlin";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(INSTANT);
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+  beforeEach(() => {
+    capturedSheets.clear();
+    capturedPressables.length = 0;
+    updateAudienceMock.mockReset();
+    toastMock.error.mockClear();
+    mealPlanItemsData.value = [ivyMeal, ownMeal];
+    familyState.value = { profiles: [ivy, sam], userAllergies: [] };
+  });
+  afterEach(() => {
+    mealPlanItemsData.value = [];
+    familyState.value = null;
+    cleanup();
+  });
+
+  it("shows no family UI when family planning is off", () => {
+    familyState.value = null;
+    renderComponent(<MealPlanDayScreen />);
+    expect(screen.queryByText("for Ivy")).toBeNull();
+    expect(
+      screen.queryAllByRole("button", { name: "Who's it for?" }),
+    ).toHaveLength(0);
+  });
+
+  it("labels the row's audience and names the allergen clash", () => {
+    renderComponent(<MealPlanDayScreen />);
+    expect(screen.getByText("for Ivy")).toBeDefined();
+    expect(screen.getByText("Contains peanuts \u2014 Ivy")).toBeDefined();
+  });
+
+  it("leaves the profile's meal out of the calorie ring", () => {
+    renderComponent(<MealPlanDayScreen />);
+    expect(
+      screen.queryByLabelText(/^250 of 2000 calories consumed/),
+    ).not.toBeNull();
+  });
+
+  it("gives a profile's row no confirm action but a Who's it for? action", () => {
+    renderComponent(<MealPlanDayScreen />);
+    const cards = capturedPressables.filter(
+      (p) => typeof p.onAccessibilityAction === "function",
+    );
+    const ivyCard = cards.find((p) =>
+      String(p.accessibilityLabel).startsWith("Satay"),
+    );
+    expect(
+      (ivyCard!.accessibilityActions as { name: string }[]).map((a) => a.name),
+    ).toEqual(["audience", "remove"]);
+  });
+
+  it("changing the audience sends the item, audience and profile id", () => {
+    renderComponent(<MealPlanDayScreen />);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Who's it for?" })[1],
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Sam" }));
+    expect(updateAudienceMock).toHaveBeenCalledTimes(1);
+    expect(updateAudienceMock.mock.calls[0][0]).toEqual({
+      id: 12,
+      audience: "profile",
+      familyProfileId: 8,
+    });
+  });
+
+  it("the audience action opens the same sheet", () => {
+    renderComponent(<MealPlanDayScreen />);
+    const card = capturedPressables.find((p) =>
+      String(p.accessibilityLabel).startsWith("Oats"),
+    )!;
+    act(() =>
+      (
+        card.onAccessibilityAction as (e: {
+          nativeEvent: { actionName: string };
+        }) => void
+      )({ nativeEvent: { actionName: "audience" } }),
+    );
+    expect(
+      screen.getByRole("radiogroup", { name: "Who's it for?" }),
+    ).toBeDefined();
+  });
+
+  it("shows a toast when the change fails", () => {
+    renderComponent(<MealPlanDayScreen />);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Who's it for?" })[1],
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Sam" }));
+    const callbacks = updateAudienceMock.mock.calls[0][1] as {
+      onError: (e: Error) => void;
+    };
+    act(() => callbacks.onError(new Error("500: boom")));
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -36,7 +36,14 @@ import { ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS } from "@/components/meal-plan/A
 import { IMPORT_RECIPE_SNAP_POINTS } from "@/components/meal-plan/ImportRecipeSheet";
 import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
 import { SIMPLE_ENTRY_SNAP_POINTS } from "@/components/meal-plan/SimpleEntrySheet";
+import { AudienceFilterChips } from "@/components/meal-plan/AudienceFilterChips";
 import { WeekGrid } from "@/components/meal-plan/WeekGrid";
+import {
+  type AudienceFilter,
+  FAMILY_ADD_MENU_WITH_SUGGEST_SNAP_POINTS,
+  filterItemsForAudience,
+  resolveAudienceFilter,
+} from "@/components/meal-plan/family-utils";
 import {
   CELL_HEIGHT,
   DAY_HEADER_HEIGHT,
@@ -72,6 +79,7 @@ import {
 } from "@/hooks/useMealPlan";
 import { useToast } from "@/context/ToastContext";
 import { useMealPlanSheets } from "@/hooks/useMealPlanSheets";
+import { usePlanFamily } from "@/hooks/useFamily";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
 import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
@@ -116,6 +124,16 @@ export default function MealPlanHomeScreen() {
   const queryClient = useQueryClient();
   const { features, isPremium } = usePremiumContext();
   const { planUnknown, recheckPlan } = usePlanCheck();
+  // Null unless family planning is on and there is a profile; with null, none
+  // of the family controls render.
+  const family = usePlanFamily();
+  const [chosenFilter, setChosenFilter] = useState<AudienceFilter>({
+    kind: "all",
+  });
+  const audienceFilter = resolveAudienceFilter(
+    chosenFilter,
+    family?.profiles ?? null,
+  );
 
   const sheetHostProps = useSheetHostProps({
     backgroundColor: theme.backgroundDefault,
@@ -194,6 +212,9 @@ export default function MealPlanHomeScreen() {
     // prompt behind it, as on the day screen's Suggest chip.
     onSuggest: planUnknown ? undefined : handleSuggest,
     dayLabel: formatSheetDayLabel(sheetDateStr),
+    family: family
+      ? { profiles: family.profiles, filter: audienceFilter }
+      : null,
   });
 
   const { data: expiringItems } = useExpiringPantryItems(
@@ -213,8 +234,16 @@ export default function MealPlanHomeScreen() {
   } = useMealPlanItems(startDate, endDate);
 
   const days = useMemo(
-    () => buildWeekGrid(mealPlanItems, weekDates, today),
-    [mealPlanItems, weekDates, today],
+    () =>
+      buildWeekGrid(
+        family
+          ? filterItemsForAudience(mealPlanItems ?? [], audienceFilter)
+          : mealPlanItems,
+        weekDates,
+        today,
+        family ?? undefined,
+      ),
+    [mealPlanItems, weekDates, today, family, audienceFilter],
   );
   const plannedSlots = countPlannedSlots(days);
 
@@ -282,6 +311,10 @@ export default function MealPlanHomeScreen() {
     },
     [haptics, navigation],
   );
+
+  const handleAddProfile = useCallback(() => {
+    navigation.navigate("FamilyProfiles");
+  }, [navigation]);
 
   const handleBrowseRecipes = useCallback(() => {
     haptics.selection();
@@ -488,6 +521,15 @@ export default function MealPlanHomeScreen() {
           </Pressable>
         </View>
 
+        {family ? (
+          <AudienceFilterChips
+            profiles={family.profiles}
+            filter={audienceFilter}
+            onChange={setChosenFilter}
+            onAddProfile={handleAddProfile}
+          />
+        ) : null}
+
         {isLoading ? (
           <SkeletonProvider>
             <SkeletonLoadingRegion
@@ -568,7 +610,11 @@ export default function MealPlanHomeScreen() {
       />
       <BottomSheetModal
         ref={addItemMenuSheetRef}
-        snapPoints={ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS}
+        snapPoints={
+          family
+            ? FAMILY_ADD_MENU_WITH_SUGGEST_SNAP_POINTS
+            : ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS
+        }
         enableDynamicSizing={false}
         onDismiss={handleAddItemMenuDismiss}
         onChange={onSheetChange}

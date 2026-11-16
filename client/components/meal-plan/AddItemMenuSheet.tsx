@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -10,6 +11,11 @@ import {
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { FeatureTip } from "@/components/FeatureTip";
+import {
+  AudienceChoice,
+  type AudienceChoiceValue,
+} from "@/components/meal-plan/AudienceChoice";
+import type { FamilyProfile } from "@shared/schema";
 import { useFeatureTip } from "@/hooks/useFeatureTip";
 import { Spacing, FontFamily } from "@/constants/theme";
 import {
@@ -30,6 +36,15 @@ interface AddItemMenuSheetContentProps {
   onSuggest?: () => void;
   /** The day being added to ("Tue, Nov 17"), for a screen that shows several. */
   dayLabel?: string;
+  /**
+   * "Who's it for?" for a plan with family profiles. Omit it and the row is
+   * not shown (family planning off, or no profiles).
+   */
+  audience?: {
+    profiles: FamilyProfile[];
+    value: AudienceChoiceValue;
+    onChange: (choice: AudienceChoiceValue) => void;
+  };
 }
 
 function AddItemMenuSheetContentInner({
@@ -39,6 +54,7 @@ function AddItemMenuSheetContentInner({
   onImportRecipe,
   onSuggest,
   dayLabel,
+  audience,
 }: AddItemMenuSheetContentProps) {
   const haptics = useHaptics();
   // Guards against a near-simultaneous double-tap on two different rows: each
@@ -99,57 +115,78 @@ function AddItemMenuSheetContentInner({
   });
 
   return (
-    // accessibilityViewIsModal must live on this inner View — BottomSheetModal
+    // accessibilityViewIsModal must live on the content's outermost element
+    // (the scroll view below) — BottomSheetModal
     // typechecks the prop but never forwards it (verified in @gorhom/bottom-sheet
     // source), so setting it on the modal is a silent no-op. iOS-only prop;
     // traps VoiceOver focus so the screen behind the sheet is unreachable while
     // it's presented. See docs/solutions/conventions/
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
-    <View style={styles.content} accessibilityViewIsModal>
-      <SheetDragHandle />
-      <ThemedText style={styles.title}>
-        {dayLabel ? `Add to ${label} · ${dayLabel}` : `Add to ${label}`}
-      </ThemedText>
-      <View style={styles.options}>
-        <SheetOptionRow
-          icon="book-open"
-          title="Choose Recipe"
-          description="Search your recipes or create new"
-          onPress={handleChooseRecipe}
-          accessibilityLabel="Choose recipe"
-        />
-        <SheetOptionRow
-          icon="edit-3"
-          title="Simple Entry"
-          description="Type a dish name, AI estimates nutrition"
-          onPress={handleSimpleEntry}
-          accessibilityLabel="Simple entry"
-        />
-        <SheetOptionRow
-          icon="download"
-          title="Import Recipe"
-          description="From URL, photo, or clipboard"
-          onPress={handleImportRecipe}
-          accessibilityLabel="Import recipe"
-        />
-        {onSuggest ? (
-          <SheetOptionRow
-            icon="zap"
-            title="Suggest a meal"
-            description="Ideas that fit your goals for this meal"
-            onPress={handleSuggest}
-            accessibilityLabel="Suggest a meal"
-          />
+    // The scroll view is for large text: the sheet's height is fixed, and with
+    // the "Who's it for?" row the last option otherwise falls below it.
+    <BottomSheetScrollView
+      testID="add-item-menu-scroll"
+      bounces={false}
+      accessibilityViewIsModal
+    >
+      <View style={styles.content}>
+        <SheetDragHandle />
+        <ThemedText style={styles.title}>
+          {dayLabel ? `Add to ${label} · ${dayLabel}` : `Add to ${label}`}
+        </ThemedText>
+        {audience ? (
+          <View style={styles.audience}>
+            <ThemedText style={styles.audienceLabel}>
+              {"Who's it for?"}
+            </ThemedText>
+            <AudienceChoice
+              profiles={audience.profiles}
+              value={audience.value}
+              onChange={audience.onChange}
+            />
+          </View>
         ) : null}
-        <FeatureTip
-          text="Paste a link or snap a cookbook page."
-          visible={importTip.visible}
-          onDismiss={importTip.dismiss}
-          pointer="up"
-          pointerAlign="start"
-        />
+        <View style={styles.options}>
+          <SheetOptionRow
+            icon="book-open"
+            title="Choose Recipe"
+            description="Search your recipes or create new"
+            onPress={handleChooseRecipe}
+            accessibilityLabel="Choose recipe"
+          />
+          <SheetOptionRow
+            icon="edit-3"
+            title="Simple Entry"
+            description="Type a dish name, AI estimates nutrition"
+            onPress={handleSimpleEntry}
+            accessibilityLabel="Simple entry"
+          />
+          <SheetOptionRow
+            icon="download"
+            title="Import Recipe"
+            description="From URL, photo, or clipboard"
+            onPress={handleImportRecipe}
+            accessibilityLabel="Import recipe"
+          />
+          {onSuggest ? (
+            <SheetOptionRow
+              icon="zap"
+              title="Suggest a meal"
+              description="Ideas that fit your goals for this meal"
+              onPress={handleSuggest}
+              accessibilityLabel="Suggest a meal"
+            />
+          ) : null}
+          <FeatureTip
+            text="Paste a link or snap a cookbook page."
+            visible={importTip.visible}
+            onDismiss={importTip.dismiss}
+            pointer="up"
+            pointerAlign="start"
+          />
+        </View>
       </View>
-    </View>
+    </BottomSheetScrollView>
   );
 }
 
@@ -167,6 +204,15 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.semiBold,
     alignSelf: "flex-start",
     marginBottom: Spacing.md,
+  },
+  audience: {
+    width: "100%",
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  audienceLabel: {
+    fontSize: 13,
+    fontFamily: FontFamily.medium,
   },
   options: {
     width: "100%",

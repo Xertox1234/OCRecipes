@@ -5,6 +5,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
+import { setPendingAudience, takePendingAudience } from "@/lib/plan-audience";
 import type { User } from "@shared/types/auth";
 
 import { useAuth, AUTH_ME_TIMEOUT_MS } from "../useAuth";
@@ -1209,6 +1210,26 @@ describe("useAuth", () => {
       expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBe(
         String(fakeUser.id),
       );
+    });
+
+    // The add menu's "Who's it for?" choice lives in a module variable, which
+    // queryClient.clear() does not reach. It holds a family profile id.
+    it("clearDurableLocalState forgets the pending Who's-it-for choice", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+      const slot = { plannedDate: "2026-11-17", mealType: "dinner" };
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      setPendingAudience(slot, { audience: "profile", familyProfileId: 7 });
+
+      await act(async () => {
+        await result.current.login("testuser", "password123");
+      });
+
+      expect(takePendingAudience(slot)).toBeNull();
     });
 
     // Privacy audit 2026-11-10, L4.
