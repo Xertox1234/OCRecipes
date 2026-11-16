@@ -692,35 +692,43 @@ describe("MealPlanDayScreen — planned_date is keyed to the local calendar day"
     expect(hookCalls.dailyBudget).toEqual([]);
   });
 
-  it("requests a 7-day window covering exactly the days the strip renders", () => {
-    const { container } = renderComponent(<MealPlanDayScreen />);
-    // Sep 2 2026 is a Wednesday, so the strip's week runs Sun Aug 30 → Sat Sep 5.
+  it("requests the 7-day window of the local week the day falls in", () => {
+    renderComponent(<MealPlanDayScreen />);
+    // Sep 2 2026 is a Wednesday, so its week runs Sun Aug 30 → Sat Sep 5.
     expect(hookCalls.mealPlanItems.at(-1)).toEqual([
       "2026-08-30",
       "2026-09-05",
     ]);
-    // Cross-surface pin: the window's bounds must be the SAME days the strip
-    // labels. The labels come from `toLocaleDateString` on local components and
-    // never touch the date helper, so they are basis-invariant — which is
-    // exactly what makes them a usable independent reference for the window.
-    // (Do not assert the ABSENCE of an "August 29" label here: no basis has
-    // ever produced one, so such an assertion can never fail.)
-    const labels = Array.from(
-      container.querySelectorAll("[aria-label]"),
-      (el) => el.getAttribute("aria-label") ?? "",
-    );
-    const stripDays = labels
-      .map((l) => /^\w+day, (\w+ \d+)/.exec(l)?.[1])
-      .filter((d): d is string => Boolean(d));
-    expect(stripDays).toEqual([
-      "August 30",
-      "August 31",
-      "September 1",
-      "September 2",
-      "September 3",
-      "September 4",
-      "September 5",
-    ]);
+  });
+
+  // The week arrows, the date strip and the shortcut chips moved to the week
+  // grid (MealPlanHomeScreen). Asserted on a day WITH meals: an empty day
+  // shows its own "Browse Recipes" button, which is not the chip.
+  it("carries no week controls or shortcut chips of its own", () => {
+    mealPlanItemsData.value = [
+      {
+        id: 1,
+        userId: "test-user",
+        recipeId: null,
+        scannedItemId: null,
+        plannedDate: "2026-09-02",
+        mealType: "breakfast",
+        servings: "1",
+        sortOrder: 0,
+        createdAt: INSTANT,
+        recipe: null,
+        scannedItem: null,
+      },
+    ];
+    renderComponent(<MealPlanDayScreen />);
+    // Positive control: the day's sections did render.
+    expect(
+      screen.getByRole("button", { name: /^Add \w+ item$/ }),
+    ).toBeDefined();
+    expect(screen.queryByLabelText("Next week")).toBeNull();
+    expect(screen.queryByLabelText("Previous week")).toBeNull();
+    expect(screen.queryByText("Grocery Lists")).toBeNull();
+    mealPlanItemsData.value = [];
   });
 
   describe("opened for a day named by its date param", () => {
@@ -730,7 +738,7 @@ describe("MealPlanDayScreen — planned_date is keyed to the local calendar day"
 
     it("loads that day's week, summary and selection instead of today's", () => {
       routeParams.current = { date: "2026-09-10" };
-      const { container } = renderComponent(<MealPlanDayScreen />);
+      renderComponent(<MealPlanDayScreen />);
       // Sep 10 2026 is a Thursday: its week runs Sun Sep 6 → Sat Sep 12.
       expect(hookCalls.mealPlanItems.at(-1)).toEqual([
         "2026-09-06",
@@ -742,11 +750,7 @@ describe("MealPlanDayScreen — planned_date is keyed to the local calendar day"
         undefined,
         expect.anything(),
       );
-      const selected = Array.from(
-        container.querySelectorAll('[aria-selected="true"]'),
-        (el) => el.getAttribute("aria-label") ?? "",
-      );
-      expect(selected).toEqual(["Thursday, September 10"]);
+      expect(screen.getByText("Thursday, Sep 10")).toBeDefined();
     });
 
     it("falls back to today when the param is not a real date", () => {
@@ -770,44 +774,6 @@ describe("MealPlanDayScreen — planned_date is keyed to the local calendar day"
       expect.objectContaining({
         headers: expect.objectContaining({ "X-Timezone": expect.any(String) }),
       }),
-    );
-  });
-
-  // NOTE: basis-invariant by construction — `dateStr` (:1364) and
-  // `selectedDateStr` (:576) both go through the SAME helper, so swapping the
-  // helper shifts both operands together and the same chip stays selected. It
-  // is kept because it does guard the narrower property named below: a
-  // single-site edit to either line breaks it. It is NOT a basis guard — the
-  // literal pins above are. (Confirmed by mutation: reverting the import to
-  // `toDateString` fails the window and daily-summary pins and leaves this
-  // one green. A third pin, on the daily-budget read, went with that read.) Selection is exposed via
-  // `accessibilityState`/`aria-selected`, not a label suffix (see the
-  // dedicated single-announce test below), so this guard now keys off
-  // `aria-selected` instead of a `", selected"` label substring.
-  it("keeps the per-chip key and the selected key on one shared helper", () => {
-    const { container } = renderComponent(<MealPlanDayScreen />);
-    const selected = Array.from(
-      container.querySelectorAll('[aria-selected="true"]'),
-      (el) => el.getAttribute("aria-label") ?? "",
-    );
-    expect(selected).toEqual(["Wednesday, September 2"]);
-  });
-
-  // P3-2026-09-23 (L12): the label used to append ", selected" ON TOP OF
-  // accessibilityState={{selected}}, so VoiceOver/TalkBack announced the
-  // selected state twice per chip. Selection must be state-only now.
-  it("announces the selected date strip chip's selection once, via state only", () => {
-    const { container } = renderComponent(<MealPlanDayScreen />);
-    const labelsWithSuffix = Array.from(
-      container.querySelectorAll("[aria-label]"),
-      (el) => el.getAttribute("aria-label") ?? "",
-    ).filter((l) => l.includes(", selected"));
-    expect(labelsWithSuffix).toEqual([]);
-
-    const selectedChips = container.querySelectorAll('[aria-selected="true"]');
-    expect(selectedChips).toHaveLength(1);
-    expect(selectedChips[0]?.getAttribute("aria-label")).toBe(
-      "Wednesday, September 2",
     );
   });
 });
@@ -1038,15 +1004,12 @@ describe("MealPlanDayScreen — meal-plan fetch error handling", () => {
   // week navigation, the top-action buttons and pull-to-refresh don't depend
   // on the failed query and must stay usable (a full-screen early return used
   // to discard all three).
-  it("keeps the week navigation, top actions and pull-to-refresh alive in the items-error state", () => {
+  it("keeps pull-to-refresh alive in the items-error state", () => {
     mealPlanQueryState.isLoadingError = true;
 
     renderComponent(<MealPlanDayScreen />);
 
     expect(screen.getByText("Couldn't load your meal plan")).toBeDefined();
-    expect(screen.getByLabelText("Previous week")).toBeDefined();
-    expect(screen.getByLabelText("Next week")).toBeDefined();
-    expect(screen.getByText("Grocery Lists")).toBeDefined();
     expect(refreshControlProps.current?.onRefresh).toBeInstanceOf(Function);
   });
 

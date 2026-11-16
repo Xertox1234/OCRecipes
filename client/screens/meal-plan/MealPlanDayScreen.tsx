@@ -10,17 +10,9 @@ import {
   Platform,
   StyleSheet,
   View,
-  Pressable,
   ScrollView,
   RefreshControl,
 } from "react-native";
-import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
-import { scheduleOnRN } from "react-native-worklets";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -31,11 +23,9 @@ import {
   useRoute,
 } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
-import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
-import { PressableScale } from "@/components/PressableScale";
 import { CalorieRing } from "@/components/CalorieRing";
 import { EmptyState } from "@/components/EmptyState";
 import {
@@ -49,18 +39,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
-import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePremiumContext } from "@/context/PremiumContext";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
-import {
-  dateStripSnapBackSpringConfig,
-  dateStripSwipeThreshold,
-} from "@/constants/animations";
+import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
   type MealType,
@@ -80,15 +60,12 @@ import { GOALS_QUERY_KEY, useCalorieGoal } from "@/hooks/useCalorieGoal";
 import { useDailySummary } from "@/hooks/useDailySummary";
 import { useMealPlanSheets } from "@/hooks/useMealPlanSheets";
 import {
-  addDays,
   getWeekDates,
   parseLocalDateString,
 } from "@/components/meal-plan/week-grid-utils";
-import { DateStripItem } from "@/components/meal-plan/DateStrip";
 import { MealSlotSection } from "@/components/meal-plan/MealSlotSection";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 import { QUERY_KEYS } from "@/lib/query-keys";
-import { useExpiringPantryItems } from "@/hooks/usePantry";
 import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
 import { ADD_ITEM_MENU_SNAP_POINTS } from "@/components/meal-plan/AddItemMenuSheet";
 import { IMPORT_RECIPE_SNAP_POINTS } from "@/components/meal-plan/ImportRecipeSheet";
@@ -107,15 +84,6 @@ import { toLocalDateString } from "@shared/lib/date";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
-
-interface TopAction {
-  id: string;
-  icon: keyof typeof Feather.glyphMap;
-  label: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-  badgeCount?: number;
-}
 
 function getDayLabel(date: Date): string {
   const today = new Date();
@@ -139,26 +107,21 @@ function getDayLabel(date: Date): string {
 
 // ── Main Screen ──────────────────────────────────────────────────────
 
-// Free: 7 days forward, Premium: 90 days forward
-const FREE_MAX_DAYS_FORWARD = 7;
-const PREMIUM_MAX_DAYS_FORWARD = 90;
-
+/**
+ * One day of the plan: the calorie ring and the day's meal sections, with
+ * confirm, reorder and remove. Opened from the week grid (MealPlanHomeScreen)
+ * for the day named by its `date` route param.
+ */
 export default function MealPlanDayScreen() {
   const navigation = useNavigation<MealPlanHomeScreenNavigationProp>();
-  const route =
-    useRoute<
-      RouteProp<MealPlanStackParamList, "MealPlanHome" | "MealPlanDay">
-    >();
+  const route = useRoute<RouteProp<MealPlanStackParamList, "MealPlanDay">>();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { features, isPremium } = usePremiumContext();
-  const { reducedMotion } = useAccessibility();
-
-  const dateStripTranslateX = useSharedValue(0);
+  const { features } = usePremiumContext();
 
   // Shared host prop bundle for all 4 sheets below (backdrop, themed
   // background, hidden handle, and the accessible={false} iOS a11y fix —
@@ -189,7 +152,7 @@ export default function MealPlanDayScreen() {
 
   // The day the route names (YYYY-MM-DD, local); today when it names none or
   // names something that is not a real date.
-  const [selectedDate, setSelectedDate] = useState(
+  const [selectedDate] = useState(
     () => parseLocalDateString(route.params?.date) ?? today,
   );
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -238,9 +201,6 @@ export default function MealPlanDayScreen() {
   // same pattern.
   const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
   const { mutate: confirmItem } = useConfirmMealPlanItem();
-  const { data: expiringItems } = useExpiringPantryItems(
-    features.pantryTracking,
-  );
 
   // Fetch daily summary for confirmed meal plan item IDs
   const { data: dailySummaryData } = useDailySummary(selectedDateStr);
@@ -249,10 +209,6 @@ export default function MealPlanDayScreen() {
     () => new Set(dailySummaryData?.confirmedMealPlanItemIds ?? []),
     [dailySummaryData?.confirmedMealPlanItemIds],
   );
-
-  const maxDaysForward = isPremium
-    ? PREMIUM_MAX_DAYS_FORWARD
-    : FREE_MAX_DAYS_FORWARD;
 
   // Generate 7-day date range centered on selected week
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
@@ -395,33 +351,6 @@ export default function MealPlanDayScreen() {
     return { calories, protein, carbs, fat };
   }, [selectedDayItems]);
 
-  const handleDatePress = useCallback(
-    (date: Date) => {
-      haptics.selection();
-      setSelectedDate(date);
-    },
-    [haptics],
-  );
-
-  const handlePrevWeek = useCallback(() => {
-    haptics.selection();
-    setSelectedDate((prev) => addDays(prev, -7));
-  }, [haptics]);
-
-  const handleNextWeek = useCallback(() => {
-    const nextWeek = addDays(selectedDate, 7);
-    const daysForward = Math.round(
-      (nextWeek.getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
-    );
-    if (daysForward > maxDaysForward) {
-      haptics.notification(Haptics.NotificationFeedbackType.Warning);
-      setShowUpgradeModal(true);
-      return;
-    }
-    haptics.selection();
-    setSelectedDate(nextWeek);
-  }, [haptics, selectedDate, today, maxDaysForward]);
-
   const handleItemPress = useCallback(
     (item: MealPlanItemWithRelations) => {
       if (item.recipeId) {
@@ -559,21 +488,6 @@ export default function MealPlanDayScreen() {
     navigation.navigate("RecipeBrowser", {});
   }, [haptics, navigation]);
 
-  const handleGroceryLists = useCallback(() => {
-    haptics.selection();
-    navigation.navigate("GroceryLists");
-  }, [haptics, navigation]);
-
-  const handlePantry = useCallback(() => {
-    haptics.selection();
-    navigation.navigate("Pantry");
-  }, [haptics, navigation]);
-
-  const handleCookbooks = useCallback(() => {
-    haptics.selection();
-    navigation.navigate("CookbookList");
-  }, [haptics, navigation]);
-
   const handleRefresh = useCallback(async () => {
     // invalidateMealPlanItems fires-and-forgets internally (its own callers
     // never await it either); the pull-to-refresh spinner is driven by
@@ -587,80 +501,6 @@ export default function MealPlanDayScreen() {
     ]);
     haptics.impact();
   }, [queryClient, haptics]);
-
-  // Date strip swipe gesture
-  const dateStripPanGesture = usePanGesture({
-    activeOffsetX: [-20, 20],
-    onUpdate: (e) => {
-      if (!reducedMotion) {
-        // Clamp visual feedback to +/-30px
-        dateStripTranslateX.value = Math.max(-30, Math.min(30, e.translationX));
-      }
-    },
-    onDeactivate: (e) => {
-      if (e.translationX < -dateStripSwipeThreshold) {
-        scheduleOnRN(handleNextWeek);
-      } else if (e.translationX > dateStripSwipeThreshold) {
-        scheduleOnRN(handlePrevWeek);
-      }
-      dateStripTranslateX.value = withSpring(0, dateStripSnapBackSpringConfig);
-    },
-  });
-
-  const dateStripAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: dateStripTranslateX.value }],
-  }));
-
-  // Month/year header
-  const monthYear = selectedDate.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-
-  // Config-driven top action row, replacing 4 near-identical Pressables
-  // (mirrors client/components/home/action-config.ts's data-driven pattern).
-  // Built in-component (not module-level like HOME_ACTIONS) because these
-  // actions close over per-render handlers/data (expiringItems' badge count).
-  const topActions: TopAction[] = useMemo(
-    () => [
-      {
-        id: "recipes",
-        icon: "book-open",
-        label: "Recipes",
-        accessibilityLabel: "Browse Recipes",
-        onPress: handleBrowseRecipes,
-      },
-      {
-        id: "pantry",
-        icon: "package",
-        label: "Pantry",
-        accessibilityLabel: `Pantry${expiringItems?.length ? `, ${expiringItems.length} expiring` : ""}`,
-        onPress: handlePantry,
-        badgeCount: expiringItems?.length,
-      },
-      {
-        id: "grocery",
-        icon: "shopping-cart",
-        label: "Grocery Lists",
-        accessibilityLabel: "Grocery Lists",
-        onPress: handleGroceryLists,
-      },
-      {
-        id: "cookbooks",
-        icon: "book",
-        label: "Cookbooks",
-        accessibilityLabel: "Cookbooks",
-        onPress: handleCookbooks,
-      },
-    ],
-    [
-      handleBrowseRecipes,
-      handlePantry,
-      handleGroceryLists,
-      handleCookbooks,
-      expiringItems,
-    ],
-  );
 
   if (isLoading) {
     return (
@@ -721,94 +561,6 @@ export default function MealPlanDayScreen() {
           isAnySheetOpen ? "no-hide-descendants" : "auto"
         }
       >
-        {/* Top action chips: one scrolling row, so a fourth chip never
-            wraps alone onto a second line (visual QA sweep #6). */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.topActionsScroll}
-          contentContainerStyle={styles.topActions}
-        >
-          {topActions.map((action) => (
-            <PressableScale
-              scaleTo={0.95}
-              key={action.id}
-              onPress={action.onPress}
-              style={[
-                styles.groceryButton,
-                { backgroundColor: withOpacity(theme.link, 0.1) },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={action.accessibilityLabel}
-            >
-              <Feather name={action.icon} size={16} color={theme.link} />
-              <ThemedText
-                style={[styles.groceryButtonText, { color: theme.link }]}
-              >
-                {action.label}
-              </ThemedText>
-              {!!action.badgeCount && (
-                <View
-                  style={[
-                    styles.expiringBadge,
-                    { backgroundColor: theme.calorieAccent },
-                  ]}
-                >
-                  <ThemedText
-                    style={[
-                      styles.expiringBadgeText,
-                      { color: theme.buttonText },
-                    ]}
-                  >
-                    {action.badgeCount}
-                  </ThemedText>
-                </View>
-              )}
-            </PressableScale>
-          ))}
-        </ScrollView>
-
-        {/* Month/Year Header with arrows */}
-        <View style={styles.monthHeader}>
-          <Pressable
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-            onPress={handlePrevWeek}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Previous week"
-          >
-            <Feather name="chevron-left" size={20} color={theme.text} />
-          </Pressable>
-          <ThemedText style={styles.monthTitle}>{monthYear}</ThemedText>
-          <Pressable
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-            onPress={handleNextWeek}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Next week"
-          >
-            <Feather name="chevron-right" size={20} color={theme.text} />
-          </Pressable>
-        </View>
-
-        {/* Date Strip — swipe left/right to change week */}
-        <GestureDetector gesture={dateStripPanGesture}>
-          <Animated.View style={[styles.dateStrip, dateStripAnimatedStyle]}>
-            {weekDates.map((date) => {
-              const dateStr = toLocalDateString(date);
-              return (
-                <DateStripItem
-                  key={dateStr}
-                  date={date}
-                  isSelected={dateStr === selectedDateStr}
-                  hasItems={!!dayItems[dateStr]?.length}
-                  onPress={handleDatePress}
-                />
-              );
-            })}
-          </Animated.View>
-        </GestureDetector>
-
         {/* Day Label */}
         <ThemedText style={styles.dayLabel}>
           {getDayLabel(selectedDate)}
@@ -979,64 +731,10 @@ const styles = StyleSheet.create({
   skeletonContainer: {
     padding: Spacing.lg,
   },
-  monthHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
-  monthTitle: {
-    fontSize: 17,
-    fontFamily: FontFamily.semiBold,
-  },
-  dateStrip: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    // Same gutter as the month header above and the chips (sweep #6).
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
   dayLabel: {
     fontSize: 20,
     fontFamily: FontFamily.bold,
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
-  },
-  topActionsScroll: {
-    flexGrow: 0,
-    marginBottom: Spacing.sm,
-  },
-  topActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.sm,
-  },
-  expiringBadge: {
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  expiringBadgeText: {
-    fontSize: 10,
-    fontFamily: FontFamily.bold,
-    // color set dynamically with theme.buttonText (white on colored badges)
-  },
-  groceryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    minHeight: 44,
-  },
-  groceryButtonText: {
-    fontSize: 13,
-    fontFamily: FontFamily.medium,
   },
 });
