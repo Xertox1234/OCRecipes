@@ -18,8 +18,11 @@ describe("native sign-in config", () => {
   // 5.2.0: native patch bumps (expo 58.0.23 + expo-* modules, vision-camera
   // 5.2.4, nitro-modules 0.37.2), so 5.1.0 builds must not receive OTAs built
   // against the newer native code.
-  it("bumps the runtime version to 5.2.0 (native module patch bumps)", () => {
-    expect(appJson.expo.runtimeVersion).toBe("5.2.0");
+  // 5.3.0: native patch bumps again (expo 58.0.25, expo-modules-core 58.1.0,
+  // expo-modules-jsi 58.0.23, expo-updates 58.0.22 and other expo-* modules),
+  // so 5.2.0 builds must not receive OTAs built against the newer native code.
+  it("bumps the runtime version to 5.3.0 (native module patch bumps)", () => {
+    expect(appJson.expo.runtimeVersion).toBe("5.3.0");
   });
 
   // The plugin writes the com.apple.developer.applesignin entitlement.
