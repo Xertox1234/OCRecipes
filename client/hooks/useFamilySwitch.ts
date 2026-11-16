@@ -48,21 +48,20 @@ export function useFamilySwitch({ onLocked }: { onLocked: () => void }) {
     if (mutation.isPending) return;
     haptics.selection();
     mutation.mutate(next, {
-      onSuccess: async () => {
+      onSuccess: () => {
         if (!next) return;
         // The list is only fetched while the switch is on, so ask once now:
         // someone turning this on for the first time has nobody to plan for.
-        try {
-          const list = await queryClient.fetchQuery({
-            ...familyProfilesQueryOptions,
-            staleTime: 0,
+        queryClient
+          .fetchQuery({ ...familyProfilesQueryOptions, staleTime: 0 })
+          .then((list) => {
+            if (list.profiles.length === 0) {
+              navigation.navigate("FamilyProfileEdit", {});
+            }
+          })
+          .catch(() => {
+            // The Family screen shows its own load error.
           });
-          if (list.profiles.length === 0) {
-            navigation.navigate("FamilyProfileEdit", {});
-          }
-        } catch {
-          // The Family screen shows its own load error.
-        }
       },
       onError: (err) => {
         // A stale plan: the server says no, so show the upgrade prompt.
