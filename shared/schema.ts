@@ -2209,7 +2209,13 @@ export type InsertRecipeIngredient = z.infer<
   typeof insertRecipeIngredientSchema
 >;
 export type MealPlanItem = typeof mealPlanItems.$inferSelect;
-export type InsertMealPlanItem = z.infer<typeof insertMealPlanItemSchema>;
+// Drizzle's native insert inference, like `InsertMealPlanRecipe` above:
+// `createInsertSchema` widens the `.$type<MealAudience>()` text column to
+// `string`, which the insert then refuses.
+export type InsertMealPlanItem = Omit<
+  typeof mealPlanItems.$inferInsert,
+  "id" | "createdAt"
+>;
 
 export const insertPantryItemSchema = createInsertSchema(pantryItems).omit({
   id: true,
