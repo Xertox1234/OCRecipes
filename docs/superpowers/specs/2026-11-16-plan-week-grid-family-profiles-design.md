@@ -202,10 +202,33 @@ Headcount is never stored on the meal. Adding or removing a profile changes the 
 not past ones. Deleting a profile deletes that person's own meals (the delete prompt says so) and
 leaves shared meals shared.
 
-Every reader of `meal_plan_items` must respect this. Known ones: `computeItemMacros` callers,
-`getPlannedNutritionSummary`, the confirm route, `getMealPlanIngredientsForDateRange`,
-`server/storage/weekly-reports.ts`, `server/storage/export.ts`, the coach context. The builder
-audits the full list.
+Every reader of `meal_plan_items` must respect this. Verified list (2026-11-16):
+
+- **Counts toward the user, so must skip profile meals:** `getPlannedNutritionSummary`, the confirm
+  route, `getFrequentRecipesForMealType`, and on the client `computeItemMacros` callers, the day
+  screen's ring and section totals, and the week grid's day totals.
+- **Sent to an AI provider, so must never include profile meals:** the coach's `get_meal_plan`
+  tool, the coach brief, and meal suggestions' "already planned today" list. All three read through
+  `getMealPlanItemSummaries`, which therefore never returns profile meals.
+- **Portions:** `getMealPlanIngredientsForDateRange` (grocery).
+- **Unaffected:** the data export (new columns flow through), weekly reports (only checks that a
+  plan exists), the coach context builder (reads no plan).
+
+Other mechanics the first draft left out:
+
+- There is no way to edit a planned meal today, so changing who a meal is for needs a new
+  `PATCH /api/meal-plan/items/:id`.
+- The meal's profile is tied to the same user by a composite foreign key, not by route checks
+  alone.
+- "Who's it for?" is remembered for the slot the add menu was opened on and applied to the add
+  for that slot. Adds that never pass through the menu (Recipe Browser opened from the chips, the
+  weekly report) create `self` meals; the audience can be changed from the day view.
+- The warning names who clashes using a new shared helper. A recipe whose allergens are not
+  worked out yet, and a scanned item, show no warning mark on the grid and "Allergens not checked"
+  in the day view.
+- A grid cell's audience marker describes its first item; the warning mark shows if any item in
+  the slot clashes.
+- Ships as two PRs: server and shared first (invisible to users), then the client.
 
 ### Screens
 
@@ -252,6 +275,12 @@ user's own allergies. For a shared or profile slot there are two options:
    after the fact.
 
 The design assumes option 2 until the owner rules.
+
+**Do family allergies fall under the existing health-data consent?** The design assumes yes:
+saving a profile's allergies or note needs the same consent the user's own allergies need, and
+withdrawing that consent clears every profile's allergies and note (names and meals stay). The
+alternative is to treat family profiles as outside that consent, which leaves allergy data about
+other people stored after the account holder has withdrawn consent for health data.
 
 **Should pantry-generated meals stop putting the whole household's portions on the user's ring?**
 (The existing exception above.) What the design does without a ruling:
