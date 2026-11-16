@@ -15,6 +15,7 @@ import {
   getPantryPlanStartDate,
   getWeekDates,
   isBeyondForwardLimit,
+  parseLocalDateString,
 } from "../week-grid-utils";
 
 let nextId = 1;
@@ -317,5 +318,23 @@ describe("getPantryPlanStartDate", () => {
 
   it("leaves a past week to the screen's own default", () => {
     expect(getPantryPlanStartDate(lastWeek, today)).toBeUndefined();
+  });
+});
+
+describe("parseLocalDateString", () => {
+  it("reads a YYYY-MM-DD string as that local day", () => {
+    const date = parseLocalDateString("2026-11-19");
+    expect(date && toLocalDateString(date)).toBe("2026-11-19");
+    expect(date?.getHours()).toBe(0);
+  });
+
+  it("refuses anything that is not a real calendar day in that shape", () => {
+    expect(parseLocalDateString(undefined)).toBeNull();
+    expect(parseLocalDateString("")).toBeNull();
+    expect(parseLocalDateString("2026-02-30")).toBeNull();
+    expect(parseLocalDateString("2026-13-01")).toBeNull();
+    expect(parseLocalDateString("19/11/2026")).toBeNull();
+    expect(parseLocalDateString("2026-11-19T00:00:00Z")).toBeNull();
+    expect(parseLocalDateString(20261119)).toBeNull();
   });
 });

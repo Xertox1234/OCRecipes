@@ -54,6 +54,25 @@ export function getWeekDates(anchor: Date): Date[] {
   return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 }
 
+const LOCAL_DATE_FORMAT = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Reads a YYYY-MM-DD string as that LOCAL calendar day (`new Date(string)`
+ * would read it as UTC). Returns null for anything else, including a
+ * well-formed string that is not a real day (2026-02-30).
+ */
+export function parseLocalDateString(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const match = LOCAL_DATE_FORMAT.exec(value);
+  if (!match) return null;
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  return toLocalDateString(date) === value ? date : null;
+}
+
 function emptyCell(): GridCell {
   return { items: [], title: null, imageUrl: null, extraCount: 0, calories: 0 };
 }

@@ -145,6 +145,7 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => navigation,
+  useRoute: () => ({ params: undefined }),
   useFocusEffect: () => {},
   useIsFocused: () => true,
 }));

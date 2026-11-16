@@ -75,7 +75,10 @@ const {
   capturedPressables,
   addItemMenuProps,
   interactionQueue,
+  routeParams,
 } = vi.hoisted(() => ({
+  // The MealPlanDay route's params. Undefined (the default) means today.
+  routeParams: { current: undefined as undefined | { date?: string } },
   mockApiRequest: vi.fn(),
   capturedSheets: new Map<string, CapturedSheet>(),
   // Captures AddItemMenuSheetContent's crossover props (onChooseRecipe/
@@ -224,6 +227,7 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
+  useRoute: () => ({ params: routeParams.current }),
   useFocusEffect: () => {},
   useIsFocused: () => true,
 }));
@@ -717,6 +721,42 @@ describe("MealPlanDayScreen — planned_date is keyed to the local calendar day"
       "September 4",
       "September 5",
     ]);
+  });
+
+  describe("opened for a day named by its date param", () => {
+    afterEach(() => {
+      routeParams.current = undefined;
+    });
+
+    it("loads that day's week, summary and selection instead of today's", () => {
+      routeParams.current = { date: "2026-09-10" };
+      const { container } = renderComponent(<MealPlanDayScreen />);
+      // Sep 10 2026 is a Thursday: its week runs Sun Sep 6 → Sat Sep 12.
+      expect(hookCalls.mealPlanItems.at(-1)).toEqual([
+        "2026-09-06",
+        "2026-09-12",
+      ]);
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "GET",
+        "/api/daily-summary?date=2026-09-10",
+        undefined,
+        expect.anything(),
+      );
+      const selected = Array.from(
+        container.querySelectorAll('[aria-selected="true"]'),
+        (el) => el.getAttribute("aria-label") ?? "",
+      );
+      expect(selected).toEqual(["Thursday, September 10"]);
+    });
+
+    it("falls back to today when the param is not a real date", () => {
+      routeParams.current = { date: "2026-02-30" };
+      renderComponent(<MealPlanDayScreen />);
+      expect(hookCalls.mealPlanItems.at(-1)).toEqual([
+        "2026-08-30",
+        "2026-09-05",
+      ]);
+    });
   });
 
   it("sends the same local date to /api/daily-summary that it keys everything else on", () => {

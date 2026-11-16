@@ -27,7 +27,9 @@ import type { ImportedRecipeData } from "@shared/types/recipe-import";
 import type { MealPlanDay } from "@shared/types/meal-plan";
 
 export type MealPlanStackParamList = {
-  MealPlanHome: undefined;
+  MealPlanHome: { date?: string } | undefined;
+  /** One day of the plan. `date` is YYYY-MM-DD in device-local time; absent means today. */
+  MealPlanDay: { date?: string } | undefined;
   RecipeBrowser: {
     mealType?: string;
     plannedDate?: string;
@@ -92,6 +94,13 @@ export default function MealPlanStackNavigator() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen
         name="MealPlanHome"
+        component={MealPlanDayScreen}
+        options={{
+          headerTitle: () => <HeaderTitle title="Plan" />,
+        }}
+      />
+      <Stack.Screen
+        name="MealPlanDay"
         component={MealPlanDayScreen}
         options={{
           headerTitle: () => <HeaderTitle title="Plan" />,

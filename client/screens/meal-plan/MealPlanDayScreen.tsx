@@ -24,7 +24,12 @@ import { scheduleOnRN } from "react-native-worklets";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import {
+  type RouteProp,
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -74,6 +79,11 @@ import {
 import { GOALS_QUERY_KEY, useCalorieGoal } from "@/hooks/useCalorieGoal";
 import { useDailySummary } from "@/hooks/useDailySummary";
 import { useMealPlanSheets } from "@/hooks/useMealPlanSheets";
+import {
+  addDays,
+  getWeekDates,
+  parseLocalDateString,
+} from "@/components/meal-plan/week-grid-utils";
 import { DateStripItem } from "@/components/meal-plan/DateStrip";
 import { MealSlotSection } from "@/components/meal-plan/MealSlotSection";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
@@ -83,7 +93,10 @@ import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
 import { ADD_ITEM_MENU_SNAP_POINTS } from "@/components/meal-plan/AddItemMenuSheet";
 import { IMPORT_RECIPE_SNAP_POINTS } from "@/components/meal-plan/ImportRecipeSheet";
 import { SIMPLE_ENTRY_SNAP_POINTS } from "@/components/meal-plan/SimpleEntrySheet";
-import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
+import type {
+  MealPlanHomeScreenNavigationProp,
+  MealPlanStackParamList,
+} from "@/types/navigation";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 // Device-LOCAL basis: `planned_date` must be the day the user tapped on the
@@ -102,12 +115,6 @@ interface TopAction {
   accessibilityLabel: string;
   onPress: () => void;
   badgeCount?: number;
-}
-
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
 }
 
 function getDayLabel(date: Date): string {
@@ -138,6 +145,10 @@ const PREMIUM_MAX_DAYS_FORWARD = 90;
 
 export default function MealPlanDayScreen() {
   const navigation = useNavigation<MealPlanHomeScreenNavigationProp>();
+  const route =
+    useRoute<
+      RouteProp<MealPlanStackParamList, "MealPlanHome" | "MealPlanDay">
+    >();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
@@ -176,7 +187,11 @@ export default function MealPlanDayScreen() {
     }, [today]),
   );
 
-  const [selectedDate, setSelectedDate] = useState(today);
+  // The day the route names (YYYY-MM-DD, local); today when it names none or
+  // names something that is not a real date.
+  const [selectedDate, setSelectedDate] = useState(
+    () => parseLocalDateString(route.params?.date) ?? today,
+  );
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
   const [suggestMealType, setSuggestMealType] = useState<MealType>("breakfast");
@@ -240,12 +255,7 @@ export default function MealPlanDayScreen() {
     : FREE_MAX_DAYS_FORWARD;
 
   // Generate 7-day date range centered on selected week
-  const weekDates = useMemo(() => {
-    // Start from the selected date's week start (Sunday)
-    const weekStart = new Date(selectedDate);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  }, [selectedDate]);
+  const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
 
   const startDate = toLocalDateString(weekDates[0]);
   const endDate = toLocalDateString(weekDates[6]);
