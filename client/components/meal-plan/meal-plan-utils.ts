@@ -1,4 +1,5 @@
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
+import { countsTowardUser } from "./family-utils";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
@@ -74,6 +75,8 @@ export function computeMealSectionSummary(items: MealPlanItemWithRelations[]): {
 } {
   let totalCalories = 0;
   for (const item of items) {
+    // A profile's own meal is not the user's nutrition.
+    if (!countsTowardUser(item)) continue;
     const macros = computeItemMacros(item);
     if (macros) {
       totalCalories += macros.calories;

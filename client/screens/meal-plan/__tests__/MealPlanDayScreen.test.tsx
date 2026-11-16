@@ -882,6 +882,26 @@ describe("MealPlanDayScreen — Android TalkBack background trap", () => {
     ).toBeNull();
   });
 
+  it("leaves a profile's meal out of the calorie ring", () => {
+    const meal = (id: number, audience: string, calories: string) => ({
+      ...FAKE_BREAKFAST_ITEM,
+      id,
+      audience,
+      familyProfileId: audience === "profile" ? 7 : null,
+      recipeId: id,
+      recipe: { id, title: `Meal ${id}`, caloriesPerServing: calories },
+    });
+    mealPlanItemsData.value = [
+      meal(1, "self", "300"),
+      meal(2, "profile", "250"),
+    ];
+    renderComponent(<MealPlanDayScreen />);
+    expect(
+      screen.queryByLabelText(/^300 of 2000 calories consumed/),
+    ).not.toBeNull();
+    expect(screen.queryByLabelText(/^550 of 2000/)).toBeNull();
+  });
+
   it("hides the background content from the Android accessibility tree while the add-item-menu sheet is open", () => {
     renderComponent(<MealPlanDayScreen />);
     fireEvent.click(screen.getByRole("button", { name: /^Add \w+ item$/ }));

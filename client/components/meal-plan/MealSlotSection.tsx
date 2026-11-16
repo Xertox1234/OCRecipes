@@ -15,6 +15,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { countsTowardUser } from "@/components/meal-plan/family-utils";
 import {
   MEAL_LABELS,
   computeItemMacros,
@@ -30,6 +31,24 @@ const MEAL_ICONS: Record<MealType, string> = {
   snack: "coffee",
 };
 
+/**
+ * The row's screen-reader actions. Confirm is left out once confirmed, and for
+ * a profile's meal, which can never be confirmed as eaten.
+ */
+export function getItemAccessibilityActions(
+  item: Pick<MealPlanItemWithRelations, "audience">,
+  canConfirm: boolean,
+  isConfirmed: boolean,
+  name: string,
+): { name: string; label: string }[] {
+  return [
+    ...(canConfirm && countsTowardUser(item) && !isConfirmed
+      ? [{ name: "confirm", label: `Confirm ${name} as eaten` }]
+      : []),
+    { name: "remove", label: `Remove ${name}` },
+  ];
+}
+
 // ── Meal Slot Card ───────────────────────────────────────────────────
 
 export const MealSlotItem = React.memo(function MealSlotItem({
@@ -38,7 +57,7 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   onPress,
   onRemove,
   onConfirm,
-  canConfirm,
+  canConfirm: canConfirmProp,
 }: {
   item: MealPlanItemWithRelations;
   isConfirmed: boolean;
@@ -48,6 +67,8 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   canConfirm: boolean;
 }) {
   const { theme } = useTheme();
+  // A profile's own meal can never be confirmed as eaten.
+  const canConfirm = canConfirmProp && countsTowardUser(item);
   const isOrphaned =
     !item.recipe && !item.scannedItem && !item.recipeId && !item.scannedItemId;
   const name = isOrphaned
@@ -85,13 +106,8 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   // gating the nested button's render + the `!isConfirmed &&` guard on its
   // onPress); Remove has no such gate, matching its unconditional render.
   const accessibilityActions = useMemo(
-    () => [
-      ...(canConfirm && !isConfirmed
-        ? [{ name: "confirm", label: `Confirm ${name} as eaten` }]
-        : []),
-      { name: "remove", label: `Remove ${name}` },
-    ],
-    [canConfirm, isConfirmed, name],
+    () => getItemAccessibilityActions(item, canConfirm, isConfirmed, name),
+    [item, canConfirm, isConfirmed, name],
   );
 
   const handleAccessibilityAction = useCallback(

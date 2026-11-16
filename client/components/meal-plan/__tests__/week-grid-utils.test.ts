@@ -213,6 +213,7 @@ describe("buildWeekGrid", () => {
       imageUrl: null,
       extraCount: 0,
       calories: 0,
+      userCalories: 0,
     });
   });
 
@@ -458,5 +459,45 @@ describe("cases the first pass left unpinned", () => {
 
   it("has no pantry start for an empty list of days", () => {
     expect(getPantryPlanStartDate([], today)).toBeUndefined();
+  });
+});
+
+describe("profile meals in the grid", () => {
+  const mixed = [
+    makeItem({
+      id: 101,
+      recipeId: 1,
+      recipe: recipe("Tacos", 600, null),
+    }),
+    makeItem({
+      id: 102,
+      audience: "profile",
+      familyProfileId: 7,
+      recipeId: 2,
+      recipe: recipe("Fish fingers", 300, null),
+    }),
+  ];
+  const profileOnly = [
+    makeItem({
+      id: 103,
+      plannedDate: "2026-11-18",
+      mealType: "lunch",
+      audience: "profile",
+      familyProfileId: 7,
+      recipeId: 3,
+      recipe: recipe("Pasta", 400, null),
+    }),
+  ];
+
+  it("keeps a profile meal out of the day's calories but in its cell", () => {
+    const grid = buildWeekGrid(mixed, getWeekDates(today), today);
+    expect(grid[2].cells.dinner.calories).toBe(900);
+    expect(grid[2].calories).toBe(600);
+  });
+
+  it("counts a slot holding only a profile meal as planned", () => {
+    const grid = buildWeekGrid(profileOnly, getWeekDates(today), today);
+    expect(grid[3].calories).toBe(0);
+    expect(countPlannedSlots(grid)).toBe(1);
   });
 });

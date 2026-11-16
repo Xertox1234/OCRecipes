@@ -38,6 +38,7 @@ import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
+import { countsTowardUser } from "@/components/meal-plan/family-utils";
 import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, FontFamily } from "@/constants/theme";
@@ -341,6 +342,8 @@ export default function MealPlanDayScreen() {
     let carbs = 0;
     let fat = 0;
     for (const item of selectedDayItems) {
+      // A profile's own meal is not the user's nutrition.
+      if (!countsTowardUser(item)) continue;
       const macros = computeItemMacros(item);
       if (macros) {
         calories += macros.calories;

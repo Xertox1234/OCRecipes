@@ -3,6 +3,7 @@ import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 // day the user tapped, so every key here comes from local getters.
 import { toLocalDateString } from "@shared/lib/date";
 
+import { countsTowardUser } from "./family-utils";
 import { type MealType, computeItemMacros } from "./meal-plan-utils";
 
 /** Row order of the week grid. The day screen keeps its own order. */
@@ -27,8 +28,10 @@ export interface GridCell {
   imageUrl: string | null;
   /** How many items sit behind the first one. */
   extraCount: number;
-  /** The user's portion; items with no nutrition source count as 0. */
+  /** Every item's calories, a profile's meal included (what the cell shows). */
   calories: number;
+  /** The calories that count toward the user: profile meals left out. */
+  userCalories: number;
 }
 
 export interface GridDay {
@@ -36,7 +39,7 @@ export interface GridDay {
   dateStr: string;
   isToday: boolean;
   cells: Record<MealType, GridCell>;
-  /** Sum of the day's four cells. */
+  /** Sum of the day's four cells, the user's own calories only. */
   calories: number;
 }
 
@@ -74,7 +77,14 @@ export function parseLocalDateString(value: unknown): Date | null {
 }
 
 function emptyCell(): GridCell {
-  return { items: [], title: null, imageUrl: null, extraCount: 0, calories: 0 };
+  return {
+    items: [],
+    title: null,
+    imageUrl: null,
+    extraCount: 0,
+    calories: 0,
+    userCalories: 0,
+  };
 }
 
 function isGridMealType(value: string): value is MealType {
@@ -99,6 +109,13 @@ function buildCell(items: MealPlanItemWithRelations[]): GridCell {
     extraCount: sorted.length - 1,
     calories: sorted.reduce(
       (sum, item) => sum + (computeItemMacros(item)?.calories ?? 0),
+      0,
+    ),
+    userCalories: sorted.reduce(
+      (sum, item) =>
+        countsTowardUser(item)
+          ? sum + (computeItemMacros(item)?.calories ?? 0)
+          : sum,
       0,
     ),
   };
@@ -130,7 +147,7 @@ export function buildWeekGrid(
     for (const mealType of GRID_MEAL_TYPES) {
       const cell = buildCell(bySlot.get(`${dateStr}|${mealType}`) ?? []);
       cells[mealType] = cell;
-      calories += cell.calories;
+      calories += cell.userCalories;
     }
     return { date, dateStr, isToday: dateStr === todayStr, cells, calories };
   });
