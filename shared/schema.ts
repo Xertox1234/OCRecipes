@@ -1524,7 +1524,9 @@ export const coachWriteCards = pgTable(
     conversationId: integer("conversation_id")
       .references(() => chatConversations.id, { onDelete: "cascade" })
       .notNull(),
-    kind: text("kind").notNull().$type<"food" | "grocery" | "plan">(),
+    kind: text("kind")
+      .notNull()
+      .$type<"food" | "grocery" | "plan" | "pantry">(),
     payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
     edits: jsonb("edits")
       .notNull()
