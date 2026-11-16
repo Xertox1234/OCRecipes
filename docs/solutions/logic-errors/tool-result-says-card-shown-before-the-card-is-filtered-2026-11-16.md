@@ -44,8 +44,8 @@ Work the card out inside the tool call and return what changed.
   still be shown, so never say "no card is on screen").
 - The card row is still created at end of turn: creating it locks the previous
   live card, which an abandoned turn must not do.
-- The tool file stays free of database imports: the callback's caller does the
-  read, the tool only words the outcome.
+- The card-result helpers in the tool file do no database reads: the
+  callback's caller does the read, the tool only words the outcome.
 
 ## Prevention
 
