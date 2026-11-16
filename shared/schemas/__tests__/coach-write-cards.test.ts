@@ -66,3 +66,55 @@ describe("writeCardBlockSchema", () => {
     expect(coachBlockSchema.safeParse(block).success).toBe(true);
   });
 });
+
+describe("pantry write card", () => {
+  const pantryBlock = {
+    ...block,
+    kind: "pantry",
+    payload: {
+      rows: [
+        {
+          action: "add",
+          name: "Eggs",
+          quantity: "12",
+          unit: null,
+          itemId: null,
+          held: null,
+          all: false,
+          expiresInDays: null,
+        },
+        {
+          action: "use",
+          name: "Milk",
+          quantity: "1",
+          unit: "L",
+          itemId: 7,
+          held: "2.00",
+          all: false,
+          expiresInDays: null,
+        },
+      ],
+    },
+  };
+
+  it("a pantry block passes the coach block schema, so the app does not drop it", () => {
+    expect(coachBlockSchema.safeParse(pantryBlock).success).toBe(true);
+    expect(writeCardBlockSchema.safeParse(pantryBlock).success).toBe(true);
+  });
+
+  it("a pantry payload under another kind is refused", () => {
+    expect(
+      writeCardBlockSchema.safeParse({ ...pantryBlock, kind: "plan" }).success,
+    ).toBe(false);
+  });
+
+  it("pantry edits are ticks only", async () => {
+    const { pantryEditsSchema } = await import("../coach-write-cards");
+    expect(pantryEditsSchema.safeParse({ ticked: [true, false] }).success).toBe(
+      true,
+    );
+    expect(
+      pantryEditsSchema.safeParse({ ticked: [true], quantity: "99" }).success,
+    ).toBe(false);
+  });
+});

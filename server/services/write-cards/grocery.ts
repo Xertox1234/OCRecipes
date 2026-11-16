@@ -52,7 +52,7 @@ const MAX_GROCERY_LISTS = 50;
  * "berry" share a key). A blanket `(es|s)$` strip turned "apples" into "appl",
  * which never matched "apple".
  */
-function matchKey(name: string): string {
+export function matchKey(name: string): string {
   const n = normalizeIngredientName(name);
   if (/ies$/.test(n)) return n.replace(/ies$/, "y");
   if (/(oes|ches|shes|xes|sses|zes)$/.test(n)) return n.replace(/es$/, "");
@@ -60,7 +60,7 @@ function matchKey(name: string): string {
   return n;
 }
 
-const unitKey = (unit: string | null | undefined) =>
+export const unitKey = (unit: string | null | undefined) =>
   unit?.toLowerCase().trim() ?? "";
 
 type PantryVerdict = "covered" | "unsure" | "buy";

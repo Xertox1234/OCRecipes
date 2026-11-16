@@ -59,6 +59,8 @@ export interface TurnInput {
     turnKey?: string;
     /** Coach write cards (spec 2026-11-09). */
     writeCards?: true;
+    /** Card kinds beyond the first three that this app can draw. */
+    cardKinds?: "pantry"[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
   userMessage: ChatMessage;
@@ -450,6 +452,9 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     screenContext: ctx.body.screenContext,
     warmUpId: ctx.body.warmUpId,
     writeCards: ctx.body.writeCards,
+    // The pantry card needs an app that can draw it and a plan with the pantry.
+    pantryCard:
+      !!ctx.body.cardKinds?.includes("pantry") && !!features.pantryTracking,
     liveCard: ctx.body.liveCard,
     turnKey: coachTurnKey,
     isCoachPro: !!features.coachPro,

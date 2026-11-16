@@ -24,6 +24,7 @@ const PLAIN_LABELS: Record<string, string> = {
   get_meal_plan: "Checking your meal plan…",
   add_to_meal_plan: "Planning your meals…",
   add_to_grocery_list: "Preparing grocery items…",
+  update_pantry: "Preparing pantry changes…",
   get_substitutions: "Finding substitutes…",
 };
 
@@ -152,6 +153,8 @@ function rawToolStep(
       return card
         ? { label: "Preparing a grocery card…", trail: "grocery card" }
         : { label: "Preparing grocery items…", trail: "grocery items" };
+    case "update_pantry":
+      return { label: "Preparing a pantry card…", trail: "pantry card" };
     default:
       return { label: FALLBACK_LABEL, trail: null };
   }

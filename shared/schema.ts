@@ -1543,7 +1543,7 @@ export const coachWriteCards = pgTable(
   (table) => [
     check(
       "coach_write_cards_kind_check",
-      sql`${table.kind} IN ('food', 'grocery', 'plan')`,
+      sql`${table.kind} IN ('food', 'grocery', 'plan', 'pantry')`,
     ),
     check(
       "coach_write_cards_status_check",
@@ -1568,6 +1568,34 @@ export interface CoachWriteCardSavedRefs {
   listId?: number;
   mealPlanItemIds?: number[];
   copiedRecipeIds?: number[];
+  /** Pantry card: the rows this save inserted (Undo deletes them). */
+  pantryAddedIds?: number[];
+  /** Pantry card: each row the save changed or deleted, as it was before. */
+  pantryRestore?: PantryRowCopy[];
+  /** Pantry card: what the save did, for the receipt. */
+  pantryCounts?: {
+    added: number;
+    used: number;
+    removed: number;
+    /** Rows that had changed since the card was built, or did not fit. */
+    skipped: number;
+  };
+}
+
+/**
+ * A pantry row as it was before a pantry card changed it. Stored as JSON, so
+ * the expiry date is ISO text. `after` is the quantity the save wrote (null when
+ * the save deleted the row): Undo restores only a row that still holds it.
+ */
+export interface PantryRowCopy {
+  id: number;
+  name: string;
+  quantity: string | null;
+  unit: string | null;
+  category: string | null;
+  expiresAt: string | null;
+  deleted: boolean;
+  after: string | null;
 }
 
 /**

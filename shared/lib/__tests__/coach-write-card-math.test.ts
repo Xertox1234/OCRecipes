@@ -5,12 +5,16 @@ import {
   planKept,
   writeCardButtonLabel,
   writeCardReceipt,
+  pantryKept,
+  pantryRowAmount,
+  PANTRY_ACTION_LABEL,
 } from "../coach-write-card-math";
 import type {
   FoodCardPayload,
   GroceryCardPayload,
   PlanCardPayload,
   PlanRecipeRef,
+  PantryCardPayload,
 } from "../../schemas/coach-write-cards";
 
 const per = (calories: number) => ({ calories, protein: 6, carbs: 0, fat: 5 });
@@ -201,5 +205,80 @@ describe("writeCardReceipt", () => {
 
   it("plan", () => {
     expect(writeCardReceipt("plan", plan, {})).toBe("✓ 3 dinners added");
+  });
+});
+
+describe("pantry card", () => {
+  const row = (over: Partial<PantryCardPayload["rows"][number]>) => ({
+    action: "add" as const,
+    name: "Eggs",
+    quantity: null,
+    unit: null,
+    itemId: null,
+    held: null,
+    all: false,
+    expiresInDays: null,
+    ...over,
+  });
+  const pantry: PantryCardPayload = {
+    rows: [
+      row({ quantity: "12" }),
+      row({
+        action: "use",
+        name: "Milk",
+        quantity: "1",
+        unit: "L",
+        itemId: 7,
+        held: "2.00",
+      }),
+      row({
+        action: "use",
+        name: "Rice",
+        itemId: 8,
+        held: "500.00",
+        unit: "g",
+        all: true,
+      }),
+      row({
+        action: "remove",
+        name: "Spinach",
+        itemId: 9,
+        held: "1.00",
+        unit: "bag",
+      }),
+      row({ action: "remove", name: "Salt", itemId: 10 }),
+      row({ name: "Greek yogurt", quantity: "500", unit: "g" }),
+    ],
+  };
+
+  it("every row starts ticked and edits untick", () => {
+    expect(pantryKept(pantry, {})).toHaveLength(6);
+    expect(
+      pantryKept(pantry, { ticked: [true, false, true, true, true, true] }).map(
+        (r) => r.name,
+      ),
+    ).toEqual(["Eggs", "Rice", "Spinach", "Salt", "Greek yogurt"]);
+  });
+
+  it("amounts read naturally and never show trailing zeros", () => {
+    expect(pantry.rows.map(pantryRowAmount)).toEqual([
+      "12",
+      "1 L of 2 L",
+      "all (500 g)",
+      "1 bag",
+      "",
+      "500 g",
+    ]);
+  });
+
+  it("each action has a word, not just a colour", () => {
+    expect(
+      pantry.rows.slice(0, 4).map((r) => PANTRY_ACTION_LABEL[r.action]),
+    ).toEqual(["Add", "Use", "Use", "Remove"]);
+  });
+
+  it("button and fallback receipt", () => {
+    expect(writeCardButtonLabel("pantry", pantry, {})).toBe("Update pantry");
+    expect(writeCardReceipt("pantry", pantry, {})).toBe("✓ Pantry updated");
   });
 });

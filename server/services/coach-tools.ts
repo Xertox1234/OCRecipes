@@ -31,6 +31,7 @@ import { isValidCalendarDate } from "../utils/date-validation";
 import type { UserProfile } from "@shared/schema";
 import {
   addGroceryCardArgsSchema,
+  updatePantryCardArgsSchema,
   addMealPlanCardArgsSchema,
   logFoodCardArgsSchema,
   type WriteCardOutcome,
@@ -305,8 +306,66 @@ function compactMealPlanItems(
  * card-building forms and adds the two recipe-id tools a plan card needs.
  * Without it the list is exactly today's, so an older app is unaffected.
  */
+const UPDATE_PANTRY_TOOL: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "update_pantry",
+    description:
+      "Show the user a card of changes to their pantry: items to add, amounts they used, and items to remove. Nothing changes until the user taps the card. Call this when the user says they bought, used up, finished or threw out food, or asks you to update their pantry. For a use or remove, call get_pantry_items first and pass that item's id.",
+    parameters: {
+      type: "object",
+      properties: {
+        changes: {
+          type: "array",
+          description: "The changes (1 to 20), one per pantry item.",
+          items: {
+            type: "object",
+            properties: {
+              action: {
+                type: "string",
+                enum: ["add", "use", "remove"],
+                description:
+                  "add: put an item in the pantry. use: take an amount out of an item. remove: take the whole item out.",
+              },
+              name: {
+                type: "string",
+                description: "For add: the item, e.g. 'eggs'.",
+              },
+              quantity: {
+                type: "string",
+                description:
+                  "For add: how much, e.g. '12'. For use: how much was used, in the unit the pantry item already has.",
+              },
+              unit: {
+                type: "string",
+                description: "For add only, e.g. 'g', 'cans'.",
+              },
+              expiresInDays: {
+                type: "number",
+                description:
+                  "For add only: days until it expires, if the user said.",
+              },
+              itemId: {
+                type: "number",
+                description:
+                  "For use and remove: the pantry item's id from get_pantry_items.",
+              },
+              all: {
+                type: "boolean",
+                description: "For use: true when the item is used up.",
+              },
+            },
+            required: ["action"],
+          },
+        },
+      },
+      required: ["changes"],
+    },
+  },
+};
+
 export function getToolDefinitions(
-  opts: { writeCards?: boolean } = {},
+  opts: { writeCards?: boolean; pantryCard?: boolean } = {},
 ): ChatCompletionTool[] {
   const tools = baseToolDefinitions();
   if (!opts.writeCards) return tools;
@@ -318,6 +377,9 @@ export function getToolDefinitions(
     ),
     GET_MY_RECIPES_TOOL,
     FIND_PLAN_RECIPES_TOOL,
+    // Only for an app that can draw the pantry card (it lists the kind) and a
+    // plan that includes the pantry.
+    ...(opts.pantryCard ? [UPDATE_PANTRY_TOOL] : []),
   ];
 }
 
@@ -812,7 +874,9 @@ const CARD_SHOWN_MESSAGE =
  * lists an item the card does not show or points at a card that is not there.
  */
 function groceryCardResult(outcome: void | WriteCardOutcome) {
-  if (!outcome) return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+  if (!outcome || outcome.kind !== "grocery") {
+    return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+  }
   const names = (list: string[]) => list.join(", ");
   if (!outcome.shown) {
     return {
@@ -834,9 +898,40 @@ function groceryCardResult(outcome: void | WriteCardOutcome) {
   };
 }
 
+/**
+ * The pantry card's result. The row lines carry pantry item names, which the
+ * user typed, so each passes the prompt sanitizer before the model sees it.
+ */
+function pantryCardResult(outcome: void | WriteCardOutcome) {
+  if (!outcome || outcome.kind !== "pantry") {
+    return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+  }
+  const left =
+    outcome.dropped === 0
+      ? ""
+      : ` ${outcome.dropped} ${outcome.dropped === 1 ? "change was" : "changes were"} left off because the pantry item was not found; call get_pantry_items for the current ids.`;
+  if (!outcome.shown) {
+    return {
+      card_shown: false,
+      message: `No pantry card was made for this request, and nothing has changed.${left} Do not tell the user to tap a card for these changes.`,
+    };
+  }
+  const rows = outcome.rows.map((line) => sanitizeUserInput(line)).join("; ");
+  return {
+    card_shown: true,
+    message: `${CARD_SHOWN_MESSAGE} The card shows: ${rows}.${left}`,
+  };
+}
+
 export interface ExecuteToolOptions {
   /** The app can show write cards (it sent `writeCards: true`). */
   writeCards?: boolean;
+  /**
+   * The pantry card is on for this turn: the app listed the kind and the
+   * user's plan includes the pantry. update_pantry is refused without it,
+   * because a model can call a tool name it was never offered.
+   */
+  pantryCard?: boolean;
   /** Receives each validated write-tool call in write-card mode. */
   onWriteCardProposal?: (
     p: WriteCardProposal,
@@ -1104,6 +1199,19 @@ export async function executeToolCall(
         message:
           "This meal has not been added. Tell the user they can add it from the Plan tab.",
       };
+    }
+
+    case "update_pantry": {
+      if (!opts.writeCards || !opts.pantryCard) {
+        throw new Error(`Unknown tool: ${toolName}`);
+      }
+      const card = updatePantryCardArgsSchema.safeParse(args);
+      if (!card.success) {
+        return invalidArgs("update_pantry", card.error.message);
+      }
+      return pantryCardResult(
+        await opts.onWriteCardProposal?.({ kind: "pantry", args: card.data }),
+      );
     }
 
     case "add_to_grocery_list": {

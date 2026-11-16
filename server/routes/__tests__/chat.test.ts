@@ -712,6 +712,42 @@ describe("Chat Routes", () => {
       ).toMatchObject({ writeCards: true });
     });
 
+    it("turns the pantry card on only for an app that declares it", async () => {
+      mockStreamingSetup();
+      async function* fakeStream() {
+        yield { type: "content" as const, content: "Ok." };
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      const send = (body: Record<string, unknown>) =>
+        request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send({ content: "I finished the milk", writeCards: true, ...body });
+      expect((await send({})).status).toBe(200);
+      expect(
+        vi.mocked(generateCoachProResponse).mock.calls[0][7],
+      ).not.toHaveProperty("pantryCard");
+
+      vi.mocked(generateCoachProResponse).mockClear();
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect((await send({ cardKinds: ["pantry"] })).status).toBe(200);
+      expect(
+        vi.mocked(generateCoachProResponse).mock.calls[0][7],
+      ).toMatchObject({ pantryCard: true });
+    });
+
+    it("rejects a card kind it does not know (400)", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Hello", writeCards: true, cardKinds: ["wallet"] });
+      expect(res.status).toBe(400);
+    });
+
     it("rejects a liveCard whose id is not a uuid (400)", async () => {
       vi.mocked(storage.getChatConversation).mockResolvedValue(
         createMockChatConversation(),
