@@ -8,6 +8,7 @@ tags: [security, privacy, sentry, drizzle, error-reporting, pii, health-data]
 symptoms: ["Sentry event exception value contains 'params:' followed by query values", "a failed password-hash write would send both hashes off the server"]
 applies_to: [server/lib/error-reporter.ts, server/lib/fire-and-forget.ts]
 created: '2026-10-29'
+last_updated: 2026-11-16
 ---
 
 # DrizzleQueryError messages carry bound parameters
@@ -28,6 +29,12 @@ Scrubbers are usually written for the request (where PII is expected) and forget
 
 In `scrubEvent`, cut every `event.exception.values[].value` at `"\nparams:"` — this keeps the query text and covers linked causes (LinkedErrors adds the cause as another entry). Verified through a real `Sentry.init` + `beforeSend` probe with a control (unscrubbed: secret present; scrubbed: absent). `ExtraErrorData` is not a default integration, so the error's own `params` property is not serialized; console breadcrumbs would carry it, but the server logs through pino (stdout), not `console`.
 
+## Not covered: the server log
+
+`scrubEvent` protects what reaches Sentry. The pino log line is separate: `handleRouteError` logs `err: toError(error)` unchanged, so a failed statement's bound values still land in the server log next to the user id. Found by the security review of the family profile routes (2026-11-16), where those values are another person's name, allergies and note.
+
+Until the logger redacts them for every route (`todos/P2-2026-11-16-server-log-drizzle-params-carry-health-data.md`), a route that writes health data wraps the error before `handleRouteError`: `withoutBoundValues` in `server/routes/family.ts` cuts the message at `"\nparams:"` and drops the `cause`, and leaves a `ZodError` untouched so validation still answers 400. `server/routes/__tests__/family.log-redaction.test.ts` pins it, with a control that its detector sees the values in an unredacted error.
+
 ## Prevention
 
 - Before widening what reaches an error reporter, construct the worst error that path can carry and run it through the real pipeline.
@@ -37,6 +44,7 @@ In `scrubEvent`, cut every `event.exception.values[].value` at `"\nparams:"` —
 
 - `server/lib/error-reporter.ts` — `scrubEvent`
 - `server/lib/__tests__/error-reporter.test.ts`
+- `server/routes/family.ts` — `withoutBoundValues`; `server/routes/__tests__/family.log-redaction.test.ts`
 
 ## See Also
 
