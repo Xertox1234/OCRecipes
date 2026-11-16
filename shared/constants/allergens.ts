@@ -1138,21 +1138,84 @@ export function isRecipeSafeForAllergies(
   if (recipeAllergens.length === 0) return true;
 
   for (const allergy of userAllergies) {
-    const allergenId = normalizeAllergenId(allergy.name);
-    if (!allergenId) continue;
-
-    const entry = recipeAllergens.find((a) => a.id === allergenId);
-    if (!entry) continue;
-
-    const includeDerived =
-      allergy.severity === "moderate" || allergy.severity === "severe";
-
-    // Direct-tier hits are always unsafe. Derived-tier hits are unsafe only
-    // for moderate/severe severity.
-    if (!entry.viaDerived || includeDerived) return false;
+    if (recipeAllergyClash(recipeAllergens, allergy)?.level === "contains") {
+      return false;
+    }
   }
 
   return true;
+}
+
+/** One allergen of a recipe that clashes with a person's allergies. */
+export interface RecipeAllergyClash {
+  allergenId: AllergenId;
+  level: "contains" | "possible";
+}
+
+/**
+ * The single per-allergy tier decision, shared by `isRecipeSafeForAllergies`
+ * and `getRecipeAllergyClashes` so the two can never disagree.
+ *
+ * - `"contains"`: the recipe is unsafe for this allergy — a direct-tier entry
+ *   at any severity, or a derived or possible entry (both stored with
+ *   `viaDerived: true`) at moderate/severe.
+ * - `"possible"`: not unsafe, but the recipe MAY carry the allergen (a
+ *   possible-tier entry at mild severity).
+ * - `null`: no clash (unknown allergy name, allergen absent, or a derived-only
+ *   entry at mild severity).
+ */
+function recipeAllergyClash(
+  recipeAllergens: readonly DerivedRecipeAllergen[],
+  allergy: { name: string; severity: AllergySeverity },
+): RecipeAllergyClash | null {
+  const allergenId = normalizeAllergenId(allergy.name);
+  if (!allergenId) return null;
+
+  const entry = recipeAllergens.find((a) => a.id === allergenId);
+  if (!entry) return null;
+
+  const includeDerived =
+    allergy.severity === "moderate" || allergy.severity === "severe";
+
+  // Direct-tier hits are always unsafe. Derived-tier hits are unsafe only
+  // for moderate/severe severity.
+  if (!entry.viaDerived || includeDerived) {
+    return { allergenId, level: "contains" };
+  }
+  return entry.possible ? { allergenId, level: "possible" } : null;
+}
+
+/**
+ * Which of a recipe's allergens clash with a person's allergies, and how
+ * strongly, for wording like "Contains tree nuts" / "May contain tree nuts".
+ *
+ * Shares `recipeAllergyClash` with `isRecipeSafeForAllergies`, so a `contains`
+ * clash exists exactly when that function returns `false` because of the
+ * allergen. One clash per allergen; `contains` wins over `possible`.
+ *
+ * - no allergies → `[]` (nothing to clash with, even for a `null` cache)
+ * - `null` cache with at least one allergy → `"unknown"` (not yet derived)
+ */
+export function getRecipeAllergyClashes(
+  recipeAllergens: readonly DerivedRecipeAllergen[] | null,
+  allergies: readonly { name: string; severity: AllergySeverity }[],
+): RecipeAllergyClash[] | "unknown" {
+  if (allergies.length === 0) return [];
+  if (recipeAllergens === null) return "unknown";
+
+  const byAllergen = new Map<AllergenId, RecipeAllergyClash>();
+  for (const allergy of allergies) {
+    const clash = recipeAllergyClash(recipeAllergens, allergy);
+    if (!clash) continue;
+    const existing = byAllergen.get(clash.allergenId);
+    if (
+      !existing ||
+      (existing.level === "possible" && clash.level === "contains")
+    ) {
+      byAllergen.set(clash.allergenId, clash);
+    }
+  }
+  return [...byAllergen.values()];
 }
 
 // ============================================================================

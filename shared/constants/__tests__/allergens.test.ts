@@ -6,6 +6,8 @@ import {
   detectAllergens,
   deriveRecipeAllergens,
   isRecipeSafeForAllergies,
+  getRecipeAllergyClashes,
+  type DerivedRecipeAllergen,
   _testInternals,
   type AllergySeverity,
 } from "../allergens";
@@ -1085,4 +1087,134 @@ describe("shellfish named as a group", () => {
       });
     },
   );
+});
+
+// ============================================================================
+// getRecipeAllergyClashes — which allergens clash, and at what level
+// ============================================================================
+
+describe("getRecipeAllergyClashes", () => {
+  it("returns [] when there are no allergies, even for a null cache", () => {
+    expect(getRecipeAllergyClashes(null, [])).toEqual([]);
+    expect(
+      getRecipeAllergyClashes([{ id: "peanuts", viaDerived: false }], []),
+    ).toEqual([]);
+  });
+
+  it('returns "unknown" for a null cache with at least one allergy', () => {
+    expect(
+      getRecipeAllergyClashes(null, [{ name: "peanuts", severity: "mild" }]),
+    ).toBe("unknown");
+  });
+
+  it("reports a direct entry as contains at every severity", () => {
+    for (const severity of ["mild", "moderate", "severe"] as const) {
+      expect(
+        getRecipeAllergyClashes(
+          [{ id: "peanuts", viaDerived: false }],
+          [{ name: "peanuts", severity }],
+        ),
+      ).toEqual([{ allergenId: "peanuts", level: "contains" }]);
+    }
+  });
+
+  it("reports a derived entry as contains for moderate and severe only", () => {
+    const cache: DerivedRecipeAllergen[] = [{ id: "milk", viaDerived: true }];
+    expect(
+      getRecipeAllergyClashes(cache, [{ name: "milk", severity: "mild" }]),
+    ).toEqual([]);
+    for (const severity of ["moderate", "severe"] as const) {
+      expect(
+        getRecipeAllergyClashes(cache, [{ name: "milk", severity }]),
+      ).toEqual([{ allergenId: "milk", level: "contains" }]);
+    }
+  });
+
+  it("reports a possible entry as possible for mild, contains for moderate/severe (as isRecipeSafeForAllergies does)", () => {
+    const cache: DerivedRecipeAllergen[] = [
+      { id: "tree_nuts", viaDerived: true, possible: true },
+    ];
+    expect(
+      getRecipeAllergyClashes(cache, [{ name: "tree nuts", severity: "mild" }]),
+    ).toEqual([{ allergenId: "tree_nuts", level: "possible" }]);
+    for (const severity of ["moderate", "severe"] as const) {
+      expect(
+        getRecipeAllergyClashes(cache, [{ name: "tree nuts", severity }]),
+      ).toEqual([{ allergenId: "tree_nuts", level: "contains" }]);
+    }
+  });
+
+  it("returns one clash per allergen, contains winning over possible", () => {
+    const cache: DerivedRecipeAllergen[] = [
+      { id: "soy", viaDerived: true, possible: true },
+    ];
+    expect(
+      getRecipeAllergyClashes(cache, [
+        { name: "soy", severity: "mild" },
+        { name: "Soybean", severity: "severe" },
+        { name: "soy", severity: "mild" },
+      ]),
+    ).toEqual([{ allergenId: "soy", level: "contains" }]);
+  });
+
+  it("ignores allergies that do not normalise to a known allergen", () => {
+    expect(
+      getRecipeAllergyClashes(
+        [{ id: "peanuts", viaDerived: false }],
+        [{ name: "pollen", severity: "severe" }],
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports several allergens in allergy order", () => {
+    expect(
+      getRecipeAllergyClashes(
+        [
+          { id: "eggs", viaDerived: false },
+          { id: "fish", viaDerived: false },
+        ],
+        [
+          { name: "fish", severity: "mild" },
+          { name: "eggs", severity: "mild" },
+        ],
+      ),
+    ).toEqual([
+      { allergenId: "fish", level: "contains" },
+      { allergenId: "eggs", level: "contains" },
+    ]);
+  });
+
+  it("never disagrees with isRecipeSafeForAllergies (generated grid)", () => {
+    const severities = ["mild", "moderate", "severe"] as const;
+    const entryKinds: Record<string, DerivedRecipeAllergen | null> = {
+      direct: null,
+      derived: null,
+      possible: null,
+      absent: null,
+    };
+    let cases = 0;
+    for (const id of allergenIds) {
+      entryKinds.direct = { id, viaDerived: false };
+      entryKinds.derived = { id, viaDerived: true };
+      entryKinds.possible = { id, viaDerived: true, possible: true };
+      entryKinds.absent = null;
+      for (const severity of severities) {
+        for (const [kind, entry] of Object.entries(entryKinds)) {
+          const cache: DerivedRecipeAllergen[] = entry ? [entry] : [];
+          const allergies = [{ name: id, severity }];
+          const clashes = getRecipeAllergyClashes(cache, allergies);
+          const hasContains =
+            clashes !== "unknown" &&
+            clashes.some((c) => c.level === "contains");
+          expect(hasContains, `${id} / ${severity} / ${kind}`).toBe(
+            !isRecipeSafeForAllergies(cache, allergies),
+          );
+          cases++;
+        }
+      }
+    }
+    expect(cases).toBe(allergenIds.length * 3 * 4);
+    expect(cases).toBeGreaterThan(0);
+    console.log(`getRecipeAllergyClashes property cases: ${cases}`);
+  });
 });
