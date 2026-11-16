@@ -213,3 +213,22 @@ export function getPantryPlanStartDate(
   const firstStr = toLocalDateString(first);
   return firstStr > toLocalDateString(today) ? firstStr : undefined;
 }
+
+/** Width of the fixed meal-label column, including the screen's left gutter. */
+export const GRID_LABEL_COLUMN_WIDTH = 76;
+/** Space between day columns. */
+export const GRID_COLUMN_GAP = 6;
+/** How much of the fourth column shows, so the grid reads as scrollable. */
+export const GRID_COLUMN_PEEK = 20;
+/** Day columns visible at once. */
+export const GRID_VISIBLE_COLUMNS = 3;
+
+/** Width of one day column: three fit beside the labels, plus a peek of the next. */
+export function getGridColumnWidth(windowWidth: number): number {
+  const available =
+    windowWidth -
+    GRID_LABEL_COLUMN_WIDTH -
+    GRID_COLUMN_PEEK -
+    GRID_COLUMN_GAP * GRID_VISIBLE_COLUMNS;
+  return Math.floor(available / GRID_VISIBLE_COLUMNS);
+}
