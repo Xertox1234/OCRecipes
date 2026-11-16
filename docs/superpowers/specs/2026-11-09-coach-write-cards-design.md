@@ -57,8 +57,14 @@ The user types "I had two eggs and toast for breakfast".
 The user types "What do I need for the lentil stew this week?"
 
 - Checklist rows with quantity and unit. Every row starts ticked except items
-  Coach thinks the user already has. Pantry items (from `get_pantry_items`)
-  are left off entirely.
+  Coach thinks the user already has. A pantry item is left off only when it
+  clearly covers the row: the row asks for no amount, or the pantry holds
+  enough in the same unit. A pantry item in an unknown amount or another unit
+  keeps the row, unticked; an expired or used-up one is ignored. The tool
+  result tells Coach which rows were left off or unticked, and when the pantry
+  covers every row no card is shown (amended 2026-11-16).
+- Saving skips a row that is already waiting, unbought, on the chosen list
+  with the same unit and amount; the receipt says how many were already there.
 - "Add to" chips: the user's existing lists plus "New list".
 - Primary button: "Add 4 items". The count follows the ticks.
 - Saving uses `addGroceryListItems`, or `createGroceryListWithLimitCheck` for

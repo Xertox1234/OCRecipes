@@ -892,6 +892,53 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(storage.addGroceryListItems).not.toHaveBeenCalled();
   });
 
+  it("the grocery tool tells the coach what the pantry changed on the card", async () => {
+    const result = await executeToolCall(
+      "add_to_grocery_list",
+      groceryArgs,
+      "user-1",
+      null,
+      "UTC",
+      {
+        writeCards: true,
+        onWriteCardProposal: async () => ({
+          shown: true as const,
+          leftOff: ["Onions"],
+          unticked: ["Ginger"],
+        }),
+      },
+    );
+    expect(result).toMatchObject({ card_shown: true });
+    const text = JSON.stringify(result);
+    expect(text).toMatch(/Left off[^.]*Onions/);
+    expect(text).toMatch(/unticked[^.]*Ginger/i);
+  });
+
+  it("the grocery tool says no card is shown when the pantry covers everything", async () => {
+    const result = await executeToolCall(
+      "add_to_grocery_list",
+      groceryArgs,
+      "user-1",
+      null,
+      "UTC",
+      {
+        writeCards: true,
+        onWriteCardProposal: async () => ({
+          shown: false as const,
+          leftOff: ["Spinach"],
+        }),
+      },
+    );
+    expect(result).toMatchObject({ card_shown: false });
+    const text = JSON.stringify(result);
+    // Scoped to this request: an earlier card from the same turn may still
+    // be on screen, so the message must not say there is no card at all.
+    expect(text).toMatch(/No grocery card was made for this request/);
+    expect(text).not.toMatch(/No card is on screen|do not mention a card/i);
+    expect(text).toMatch(/Spinach/);
+    expect(text).not.toMatch(/tap the card/i);
+  });
+
   it("invalid write-card args return invalidArgs and no proposal", async () => {
     const onWriteCardProposal = vi.fn();
     const result = await executeToolCall(

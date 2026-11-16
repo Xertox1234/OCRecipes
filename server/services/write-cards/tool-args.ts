@@ -93,3 +93,13 @@ export type WriteCardProposal =
       /** Community ids find_plan_recipes returned this turn, for Swap. */
       pool?: number[];
     };
+
+/**
+ * What became of a proposal, when the caller already knows. Only the grocery
+ * card reports one: its pantry check runs during the tool call, so the model
+ * hears what was left off before it writes the reply. The names are the
+ * model's own item names, never pantry text.
+ */
+export type WriteCardOutcome =
+  | { shown: true; leftOff: string[]; unticked: string[] }
+  | { shown: false; leftOff: string[] };
