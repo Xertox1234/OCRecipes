@@ -44,6 +44,7 @@ describe("Premium Types", () => {
       expect(freeFeatures.maxFavouriteRecipes).toBe(20);
       expect(freeFeatures.textFoodParsing).toBe(false);
       expect(freeFeatures.itemSuggestions).toBe(false);
+      expect(freeFeatures.familyProfiles).toBe(false);
     });
 
     it("should have features for premium tier", () => {
@@ -58,6 +59,7 @@ describe("Premium Types", () => {
       expect(premiumFeatures.maxFavouriteRecipes).toBe(UNLIMITED_SCANS);
       expect(premiumFeatures.textFoodParsing).toBe(true);
       expect(premiumFeatures.itemSuggestions).toBe(true);
+      expect(premiumFeatures.familyProfiles).toBe(true);
     });
 
     it("should have all tiers covered", () => {

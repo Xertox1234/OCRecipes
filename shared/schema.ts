@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   unique,
   check,
+  foreignKey,
   date,
   uuid,
   type AnyPgColumn,
@@ -23,6 +24,7 @@ import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { DietConflictId } from "./constants/diet-conflicts";
+import type { MealAudience } from "./types/family";
 import type { ChatMessageReportReason } from "./constants/chat-message-report";
 import type { SpiceLevel } from "./schemas/recipe-finder";
 import type { MealSuggestion } from "./types/meal-suggestions";
@@ -460,6 +462,10 @@ export const userProfiles = pgTable("user_profiles", {
   healthDataConsentHistory: jsonb("health_data_consent_history")
     .$type<HealthConsentEvent[]>()
     .default(sql`'[]'::jsonb`)
+    .notNull(),
+  /** The user's own switch for planning meals for family profiles (needs the `familyProfiles` premium flag too). */
+  familyPlanningEnabled: boolean("family_planning_enabled")
+    .default(false)
     .notNull(),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
@@ -1283,6 +1289,44 @@ export const recipeIngredients = pgTable(
   ],
 );
 
+/**
+ * Other people the user plans meals for (health data, some of them children).
+ * Never sent to an AI provider. `unique (id, user_id)` backs the composite
+ * foreign key from `meal_plan_items`, which ties a meal's profile to the same
+ * user in the database.
+ */
+export const familyProfiles = pgTable(
+  "family_profiles",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    allergies: jsonb("allergies").$type<Allergy[]>().default([]).notNull(),
+    note: text("note"),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "family_profiles_name_check",
+      sql`char_length(btrim(${table.name})) BETWEEN 1 AND 50`,
+    ),
+    check(
+      "family_profiles_note_check",
+      sql`${table.note} IS NULL OR char_length(${table.note}) <= 200`,
+    ),
+    unique("family_profiles_id_user_id_unique").on(table.id, table.userId),
+    index("family_profiles_user_sort_idx").on(table.userId, table.sortOrder),
+  ],
+);
+
+export type FamilyProfile = typeof familyProfiles.$inferSelect;
+export type InsertFamilyProfile = typeof familyProfiles.$inferInsert;
+
 export const mealPlanItems = pgTable(
   "meal_plan_items",
   {
@@ -1301,6 +1345,9 @@ export const mealPlanItems = pgTable(
     mealType: text("meal_type").notNull(),
     servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
     sortOrder: integer("sort_order").default(0),
+    /** Who the meal is for: 'self', 'shared' (the household) or 'profile' (one family profile). */
+    audience: text("audience").$type<MealAudience>().default("self").notNull(),
+    familyProfileId: integer("family_profile_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -1317,6 +1364,22 @@ export const mealPlanItems = pgTable(
       sql`num_nonnulls(recipe_id, scanned_item_id) = 1`,
     ),
     check("meal_plan_items_servings_gt0", sql`${table.servings} > 0`),
+    check(
+      "meal_plan_items_audience_check",
+      sql`${table.audience} IN ('self', 'shared', 'profile')`,
+    ),
+    // A profile id exactly when the audience is a profile
+    check(
+      "meal_plan_items_audience_profile_check",
+      sql`(${table.audience} = 'profile') = (${table.familyProfileId} IS NOT NULL)`,
+    ),
+    // The profile must belong to the same user as the meal
+    foreignKey({
+      name: "meal_plan_items_family_profile_user_fk",
+      columns: [table.familyProfileId, table.userId],
+      foreignColumns: [familyProfiles.id, familyProfiles.userId],
+    }).onDelete("cascade"),
+    index("meal_plan_items_family_profile_idx").on(table.familyProfileId),
   ],
 );
 
