@@ -128,12 +128,22 @@ export function useSetFamilyPlanning() {
       const res = await apiRequest("PUT", "/api/family-planning", { enabled });
       return res.json();
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
+    onSuccess: (_data, enabled) => {
+      if (enabled) {
+        void queryClient.invalidateQueries({ queryKey: familyProfilesKey() });
+      } else {
+        // Switched off: drop the list. Invalidating it would refetch it once
+        // more through any screen still mounted, since the profile that holds
+        // the switch has not been refetched yet.
+        queryClient.removeQueries({ queryKey: familyProfilesKey() });
+      }
+      void queryClient.invalidateQueries({ predicate: isMealPlanItemsQuery });
+      // Returned, so the mutation stays pending until the profile (which holds
+      // the switch's value) has been refetched. Otherwise the switch drops
+      // back to its old position for a moment after the server says yes.
+      return queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.dietaryProfile,
       });
-      void queryClient.invalidateQueries({ queryKey: familyProfilesKey() });
-      void queryClient.invalidateQueries({ predicate: isMealPlanItemsQuery });
     },
   });
 }

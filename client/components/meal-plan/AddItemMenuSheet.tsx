@@ -115,7 +115,8 @@ function AddItemMenuSheetContentInner({
   });
 
   return (
-    // accessibilityViewIsModal must live on this inner View — BottomSheetModal
+    // accessibilityViewIsModal must live on the content's outermost element
+    // (the scroll view below) — BottomSheetModal
     // typechecks the prop but never forwards it (verified in @gorhom/bottom-sheet
     // source), so setting it on the modal is a silent no-op. iOS-only prop;
     // traps VoiceOver focus so the screen behind the sheet is unreachable while
@@ -123,8 +124,12 @@ function AddItemMenuSheetContentInner({
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
     // The scroll view is for large text: the sheet's height is fixed, and with
     // the "Who's it for?" row the last option otherwise falls below it.
-    <BottomSheetScrollView testID="add-item-menu-scroll" bounces={false}>
-      <View style={styles.content} accessibilityViewIsModal>
+    <BottomSheetScrollView
+      testID="add-item-menu-scroll"
+      bounces={false}
+      accessibilityViewIsModal
+    >
+      <View style={styles.content}>
         <SheetDragHandle />
         <ThemedText style={styles.title}>
           {dayLabel ? `Add to ${label} · ${dayLabel}` : `Add to ${label}`}

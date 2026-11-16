@@ -34,7 +34,7 @@ export function AudienceFilterChips({
       contentContainerStyle={styles.row}
     >
       <View
-        style={styles.row}
+        style={styles.group}
         accessibilityRole="radiogroup"
         accessibilityLabel="Show meals for"
       >
@@ -89,5 +89,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
+  },
+  // The radiogroup inside the row: same layout, no second side padding.
+  group: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
 });

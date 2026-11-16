@@ -156,7 +156,12 @@ export const WeekGridCell = React.memo(function WeekGridCell({
       ) : null}
       <View style={styles.body}>
         <ThemedText
-          style={[styles.title, { color: theme.text }]}
+          style={[
+            styles.title,
+            { color: theme.text },
+            // With no image the badge sits over the title's corner.
+            cell.family?.badge && !imageUri ? styles.titleBesideBadge : null,
+          ]}
           numberOfLines={
             imageUri ? TITLE_LINES_WITH_IMAGE : TITLE_LINES_WITHOUT_IMAGE
           }
@@ -220,6 +225,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingTop: BODY_PADDING_TOP,
     paddingBottom: BODY_PADDING_BOTTOM,
+  },
+  titleBesideBadge: {
+    paddingRight: BADGE_SIZE + CORNER_INSET,
   },
   title: {
     fontSize: TITLE_FONT_SIZE,

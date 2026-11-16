@@ -179,6 +179,60 @@ describe("mutations", () => {
     expect(calls).toContainEqual({ queryKey: QUERY_KEYS.dietaryProfile });
     expect(calls).toContainEqual({ queryKey: familyProfilesKey() });
   });
+
+  // Invalidating the list on switch-off refetched it once more through any
+  // screen still mounted, after the user had just turned family planning off.
+  it("switching off drops the profile list instead of refetching it", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: async () => ({ enabled: false }),
+    });
+    const { wrapper, queryClient } = createQueryWrapper();
+    queryClient.setQueryData(familyProfilesKey(), {
+      enabled: true,
+      profiles: [ivy],
+    });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useSetFamilyPlanning(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync(false);
+    });
+    expect(queryClient.getQueryData(familyProfilesKey())).toBeUndefined();
+    expect(invalidate.mock.calls.map((c) => c[0])).not.toContainEqual({
+      queryKey: familyProfilesKey(),
+    });
+  });
+
+  // The switch shows the pending value only while the mutation is pending. If
+  // it settled before the profile was refetched, the switch would drop back to
+  // its old position for a moment after the server said yes.
+  it("the switch stays pending until the dietary profile has been refetched", async () => {
+    mockApiRequest.mockResolvedValue({ json: async () => ({ enabled: true }) });
+    const { wrapper, queryClient } = createQueryWrapper();
+    let finishRefetch: () => void = () => {};
+    vi.spyOn(queryClient, "invalidateQueries").mockImplementation((filters) =>
+      filters &&
+      "queryKey" in filters &&
+      filters.queryKey === QUERY_KEYS.dietaryProfile
+        ? new Promise<void>((resolve) => {
+            finishRefetch = resolve;
+          })
+        : Promise.resolve(),
+    );
+    const { result } = renderHook(() => useSetFamilyPlanning(), { wrapper });
+    act(() => {
+      result.current.mutate(true);
+    });
+    await waitFor(() => expect(mockApiRequest).toHaveBeenCalled());
+    // The PUT has answered; the refetch has not.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.isPending).toBe(true);
+    await act(async () => {
+      finishRefetch();
+    });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+  });
 });
 
 describe("useFamilyProfilesList (management screens)", () => {
