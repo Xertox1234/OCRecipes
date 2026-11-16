@@ -24,6 +24,8 @@ to see when a recipe clashes with a family member's allergy.
 6. **A planned meal is either shared or for one person** (approach B below). It is never for an
    arbitrary subset.
 7. **No fasting feature.** Hearth's fasting screen is not brought over.
+8. **A "Plan for my family" switch in the user's profile, off by default.** People using the app
+   just for themselves see no family items anywhere.
 
 ## My calls (not confirmed by the owner — correct any of these)
 
@@ -163,6 +165,27 @@ written first; split the home screen rather than growing it.
   set exactly when `audience = 'profile'`. Every existing row is `'self'`, so nothing changes for
   current data.
 - New premium flag `familyProfiles` (free false, premium true).
+- `user_profiles` gains `familyPlanningEnabled` (boolean, not null, default false). Stored on the
+  account, not the device, because the server reads it when building grocery lists.
+
+### The family switch
+
+"Plan for my family" in the Profile tab. Premium only; free users see the row and get the existing
+upgrade modal. Off by default (owner decision 8).
+
+- **On:** the Family row (profile management), the filter chips, the "Who's it for?" question, the
+  audience markers and the per-person allergen warnings appear. Turning it on with no profiles
+  leads straight to adding the first one.
+- **Off:** none of those are shown and the planner is a one-person planner. Nothing is deleted;
+  profiles and their meals come back when it is switched on again. While off (my calls):
+  - shared meals show as ordinary meals and count the user's portion only, as they always do;
+  - meals for one family member are hidden from the grid and the day view;
+  - grocery lists cover the user's own portions only: no "one per profile" for shared meals and
+    no profile meals;
+  - new meals are created as `self`;
+  - the pantry generator's headcount goes back to its pre-family behaviour.
+- The server treats the switch as off for any user without the premium flag when computing
+  grocery lists, whatever the stored value.
 
 ### What each kind of meal means
 
@@ -183,7 +206,9 @@ audits the full list.
 
 ### Screens
 
-- **Filter chips** above the grid, premium users with at least one profile only:
+Everything in this section appears only while the family switch is on.
+
+- **Filter chips** above the grid, shown once there is at least one profile:
   `All · Me · Ivy · Leo · +`. All shows everything. Me shows self and shared. A person's chip shows
   that person's meals and shared. "+" opens profile management.
 - **Adding a meal** asks one single-choice question, "Who's it for?": Everyone / Just me / each
@@ -204,9 +229,10 @@ audits the full list.
 - Server enforces the premium flag on creating or editing a profile and on writing any audience
   other than `self`. A `familyProfileId` must belong to the signed-in user, otherwise 404.
 - While the plan is unknown, no lock or upsell is shown (existing `usePlanCheck` ruling).
-- Free users: no chips; the Family row opens the existing upgrade modal.
-- Lapsed premium: profiles and existing shared/profile meals stay visible and deletable; creating
-  profiles and assigning new meals to them is blocked.
+- Free users: no chips; the "Plan for my family" row opens the existing upgrade modal.
+- Lapsed premium: treated as the switch being off (same hiding and grocery rules), with the stored
+  value and all data kept, so resubscribing restores everything. A lapsed user can still open
+  profile management to delete profiles.
 - Profiles are included in the data export and removed with the account.
 - The privacy page and the Law 25 assessment gain a section on family profile data before this
   ships. This is health data about other people, some of them children: never passed to the kimi
