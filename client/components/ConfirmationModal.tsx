@@ -10,12 +10,13 @@ import {
   StyleSheet,
   View,
   Pressable,
+  useWindowDimensions,
   type ViewProps,
 } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
-  BottomSheetView,
+  BottomSheetScrollView,
 } from "@gorhom/bottom-sheet";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
@@ -181,7 +182,14 @@ interface ConfirmationModalInnerProps {
   onClosed: () => void;
 }
 
-const MAX_DYNAMIC_HEIGHT = 350;
+/**
+ * How tall the sheet may grow: most of the screen, not a fixed height. A fixed
+ * 350pt cut the health-consent prompt's buttons off below the screen (the
+ * wording needs about 400pt at the default text size).
+ */
+export function getConfirmationSheetMaxHeight(windowHeight: number): number {
+  return Math.round(windowHeight * 0.85);
+}
 
 function ConfirmationModalInner({
   sheetRef,
@@ -205,6 +213,7 @@ function ConfirmationModalInner({
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const isActioning = useRef(false);
 
   const destructive = options?.destructive ?? false;
@@ -269,7 +278,7 @@ function ConfirmationModalInner({
     <BottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
-      maxDynamicContentSize={MAX_DYNAMIC_HEIGHT}
+      maxDynamicContentSize={getConfirmationSheetMaxHeight(windowHeight)}
       backdropComponent={renderBackdrop}
       onDismiss={handleDismiss}
       onChange={onSheetChange}
@@ -294,7 +303,9 @@ function ConfirmationModalInner({
       backgroundStyle={{ backgroundColor: theme.backgroundDefault }}
       animationConfigs={animationConfigs}
     >
-      <BottomSheetView>
+      {/* A scroll view, so text taller than the cap (largest text sizes) still
+          reaches the buttons. */}
+      <BottomSheetScrollView testID="confirmation-modal-scroll" bounces={false}>
         <View
           style={[
             styles.content,
@@ -374,7 +385,7 @@ function ConfirmationModalInner({
             </Pressable>
           </View>
         </View>
-      </BottomSheetView>
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 }

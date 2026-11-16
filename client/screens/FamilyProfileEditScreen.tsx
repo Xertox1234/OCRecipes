@@ -213,6 +213,9 @@ function FamilyProfileForm({ profileId, initial }: FormProps) {
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <KeyboardAwareScrollViewCompat
         {...behindContentA11yProps}
+        // Without this the first tap on an allergy after typing the name only
+        // dismisses the keyboard.
+        keyboardShouldPersistTaps="handled"
         style={styles.container}
         contentContainerStyle={{
           paddingTop: headerInset,
