@@ -909,7 +909,7 @@ function pantryCardResult(outcome: void | WriteCardOutcome) {
   const left =
     outcome.dropped === 0
       ? ""
-      : ` ${outcome.dropped} ${outcome.dropped === 1 ? "change was" : "changes were"} left off because the pantry item was not found; call get_pantry_items for the current ids.`;
+      : ` ${outcome.dropped} ${outcome.dropped === 1 ? "change was" : "changes were"} left off because the pantry item was not found or the amount could not be read; call get_pantry_items for the current ids, and give amounts as numbers.`;
   if (!outcome.shown) {
     return {
       card_shown: false,

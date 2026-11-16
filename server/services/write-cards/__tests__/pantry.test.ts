@@ -461,6 +461,53 @@ describe("pantry write card", () => {
       expect(back.userId).toBe(user.id);
     });
 
+    it("a card saved, undone and saved again still applies every row", async () => {
+      const milk = await stock("Milk", { quantity: "2", unit: "L" });
+      const spinach = await stock("Spinach", { quantity: "1", unit: "bag" });
+      const rice = await stock("Rice", { quantity: "500", unit: "g" });
+      const payload = await buildPantryPayload(
+        args([
+          { action: "use", itemId: milk.id, quantity: "0.5" },
+          { action: "remove", itemId: spinach.id },
+          { action: "use", itemId: rice.id, all: true },
+        ]),
+        user.id,
+      );
+      const first = await performPantrySave(tx, card(payload), {}, ctx());
+      await revertPantrySave(
+        tx,
+        card(payload, JSON.parse(JSON.stringify(first))),
+      );
+      // Undo puts the removed rows back as the same rows the card names.
+      expect((await pantryOf()).map((r) => r.id).sort()).toEqual(
+        [milk.id, spinach.id, rice.id].sort(),
+      );
+      const second = await performPantrySave(tx, card(payload), {}, ctx());
+      expect(second.pantryCounts).toEqual({
+        added: 0,
+        used: 2,
+        removed: 1,
+        skipped: 0,
+      });
+      expect((await pantryOf()).map((r) => [r.name, r.quantity])).toEqual([
+        ["Milk", "1.50"],
+      ]);
+    });
+
+    it("a use amount that cannot be read is dropped, never turned into use all", async () => {
+      const milk = await stock("Milk", { quantity: "2", unit: "L" });
+      const oil = await stock("Oil", { quantity: "1" });
+      const plan = await planPantryCard(
+        args([
+          { action: "use", itemId: milk.id, quantity: "half" },
+          { action: "use", itemId: oil.id, quantity: "-1" },
+        ]),
+        user.id,
+      );
+      expect(plan).toEqual({ payload: null, dropped: 2 });
+      expect(await names()).toEqual(["Milk", "Oil"]);
+    });
+
     it("leaves a row the user changed after the save", async () => {
       const milk = await stock("Milk", { quantity: "2" });
       const payload = await buildPantryPayload(

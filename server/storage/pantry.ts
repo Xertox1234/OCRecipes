@@ -59,6 +59,31 @@ export async function insertPantryItemsUnderCap(
   return { created, skipped: items.length - created.length };
 }
 
+/**
+ * Put back rows a Coach pantry card deleted, under their ORIGINAL ids, so the
+ * card (which names rows by id) still matches them if it is saved again. Goes
+ * through the same lock and cap as any insert. An id is never reused by the
+ * sequence, so the only way one is taken is that the row is already back;
+ * that row is left as it is.
+ */
+export async function restorePantryItemsUnderCap(
+  tx: PantryTx,
+  userId: string,
+  items: (InsertPantryItem & { id: number })[],
+): Promise<{ created: PantryItem[]; skipped: number }> {
+  const room = await lockPantryAndGetRoom(tx, userId);
+  const fitting = items.slice(0, room);
+  const created =
+    fitting.length > 0
+      ? await tx
+          .insert(pantryItems)
+          .values(fitting.map((item) => ({ ...item, userId })))
+          .onConflictDoNothing({ target: pantryItems.id })
+          .returning()
+      : [];
+  return { created, skipped: items.length - created.length };
+}
+
 /** Insert pantry items under the cap in a fresh transaction. */
 export async function createPantryItemsUnderCap(
   userId: string,
