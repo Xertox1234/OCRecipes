@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Wiring-integrity test for MealPlanHomeScreen's 5-BottomSheetModal /
+// Wiring-integrity test for MealPlanDayScreen's 5-BottomSheetModal /
 // one-`activeSheet`-union / ONE `useSheetBackHandler` assembly
 // (todos/archive/P3-2026-07-09-mealplan-sheet-wiring-test-coverage.md;
 // consolidated from 4 state atoms + 4 back-handler calls by
@@ -38,7 +38,7 @@ import { act, cleanup, screen, fireEvent } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import * as RN from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
-import MealPlanHomeScreen from "../MealPlanHomeScreen";
+import MealPlanDayScreen from "../MealPlanDayScreen";
 import {
   MealSlotItem,
   MealSlotSection,
@@ -216,7 +216,7 @@ vi.mock("@/context/PremiumContext", () => ({
 }));
 
 // Only `apiRequest` is used directly by the screen (the inline daily-summary
-// useQuery at MealPlanHomeScreen.tsx's fetch for /api/daily-summary); every
+// useQuery at MealPlanDayScreen.tsx's fetch for /api/daily-summary); every
 // other named hook that would otherwise reach it is mocked above.
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
@@ -295,7 +295,7 @@ vi.mock("react-native", async (importOriginal) => {
     refreshControlProps.current = props;
     return null;
   };
-  // No `ref` is threaded through — MealPlanHomeScreen's own <ScrollView>
+  // No `ref` is threaded through — MealPlanDayScreen's own <ScrollView>
   // doesn't pass one — so a plain function component (not forwardRef) avoids
   // fighting the real react-native type declarations `actual.ScrollView`
   // carries (tsc resolves `typeof import("react-native")` against the real
@@ -407,7 +407,7 @@ const SHEETS = [
   { label: "simpleEntry", key: "simple-entry" },
 ] as const;
 
-describe("MealPlanHomeScreen — unified activeSheet back-handler wiring", () => {
+describe("MealPlanDayScreen — unified activeSheet back-handler wiring", () => {
   const originalPlatformOS = RN.Platform.OS;
   const originalTz = process.env.TZ;
   // Same pinned instant/local-day used by the date-basis and TalkBack-trap
@@ -469,7 +469,7 @@ describe("MealPlanHomeScreen — unified activeSheet back-handler wiring", () =>
   function renderScreenAndroid() {
     RN.Platform.OS = "android";
     const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     return addEventListenerSpy;
   }
 
@@ -652,7 +652,7 @@ describe("MealPlanHomeScreen — unified activeSheet back-handler wiring", () =>
 // CI runs UTC — the unique zone where the two bases agree — so the timezone is
 // pinned explicitly here. `Europe/Berlin` does not transition DST at 00:00
 // local, so `setHours(0,0,0,0)` always lands on a real midnight.
-describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day", () => {
+describe("MealPlanDayScreen — planned_date is keyed to the local calendar day", () => {
   const originalTz = process.env.TZ;
   // 00:30 on Sep 2 in Berlin is still Sep 1 in UTC — the discriminating window.
   const INSTANT = new Date("2026-09-01T22:30:00Z");
@@ -684,12 +684,12 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   });
 
   it("takes the calorie goal from the goals read, never the daily-budget endpoint", () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     expect(hookCalls.dailyBudget).toEqual([]);
   });
 
   it("requests a 7-day window covering exactly the days the strip renders", () => {
-    const { container } = renderComponent(<MealPlanHomeScreen />);
+    const { container } = renderComponent(<MealPlanDayScreen />);
     // Sep 2 2026 is a Wednesday, so the strip's week runs Sun Aug 30 → Sat Sep 5.
     expect(hookCalls.mealPlanItems.at(-1)).toEqual([
       "2026-08-30",
@@ -720,7 +720,7 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   });
 
   it("sends the same local date to /api/daily-summary that it keys everything else on", () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     // The one other date-carrying call; it goes through apiRequest rather than a
     // hook, so it needs its own pin or it can drift off the shared basis.
     expect(mockApiRequest).toHaveBeenCalledWith(
@@ -745,7 +745,7 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   // dedicated single-announce test below), so this guard now keys off
   // `aria-selected` instead of a `", selected"` label substring.
   it("keeps the per-chip key and the selected key on one shared helper", () => {
-    const { container } = renderComponent(<MealPlanHomeScreen />);
+    const { container } = renderComponent(<MealPlanDayScreen />);
     const selected = Array.from(
       container.querySelectorAll('[aria-selected="true"]'),
       (el) => el.getAttribute("aria-label") ?? "",
@@ -757,7 +757,7 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   // accessibilityState={{selected}}, so VoiceOver/TalkBack announced the
   // selected state twice per chip. Selection must be state-only now.
   it("announces the selected date strip chip's selection once, via state only", () => {
-    const { container } = renderComponent(<MealPlanHomeScreen />);
+    const { container } = renderComponent(<MealPlanDayScreen />);
     const labelsWithSuffix = Array.from(
       container.querySelectorAll("[aria-label]"),
       (el) => el.getAttribute("aria-label") ?? "",
@@ -772,7 +772,7 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   });
 });
 
-describe("MealPlanHomeScreen — iOS a11y-leaf fix (4 sheets)", () => {
+describe("MealPlanDayScreen — iOS a11y-leaf fix (4 sheets)", () => {
   beforeEach(() => {
     capturedSheets.clear();
     mockApiRequest.mockReset();
@@ -790,7 +790,7 @@ describe("MealPlanHomeScreen — iOS a11y-leaf fix (4 sheets)", () => {
       // the native leaf-collapse — this only pins that the prop is passed).
       // See docs/solutions/logic-errors/
       // gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
-      renderComponent(<MealPlanHomeScreen />);
+      renderComponent(<MealPlanDayScreen />);
       const target = capturedSheets.get(key);
       expect(target, `no BottomSheetModal captured for ${label}`).toBeDefined();
       expect(target!.accessible).toBe(false);
@@ -818,7 +818,7 @@ describe("MealPlanHomeScreen — iOS a11y-leaf fix (4 sheets)", () => {
 // from callbacks passed into AddItemMenuSheetContent, itself mocked to
 // `() => null`. Exercising add-item-menu's boolean is still a real,
 // mutation-sensitive proof of the union expression (all 4 booleans compose
-// identically via `!== null` — see MealPlanHomeScreen.tsx's isAnySheetOpen).
+// identically via `!== null` — see MealPlanDayScreen.tsx's isAnySheetOpen).
 //
 // The "Add item" button only renders once its meal-type section is
 // expanded AND selectedDayItems is non-empty (otherwise the screen shows
@@ -828,7 +828,7 @@ describe("MealPlanHomeScreen — iOS a11y-leaf fix (4 sheets)", () => {
 // (00:30 Europe/Berlin -> local calendar day 2026-09-02, hour 0 ->
 // getAutoExpandedMealType() auto-expands "breakfast") and seeds one fake
 // breakfast item for that exact date via mealPlanItemsData.
-describe("MealPlanHomeScreen — Android TalkBack background trap", () => {
+describe("MealPlanDayScreen — Android TalkBack background trap", () => {
   const originalTz = process.env.TZ;
   const INSTANT = new Date("2026-09-01T22:30:00Z");
   const FAKE_BREAKFAST_ITEM = {
@@ -870,14 +870,14 @@ describe("MealPlanHomeScreen — Android TalkBack background trap", () => {
   });
 
   it("does not hide the background content before any sheet opens", () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     expect(
       screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
     ).toBeNull();
   });
 
   it("hides the background content from the Android accessibility tree while the add-item-menu sheet is open", () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     fireEvent.click(screen.getByRole("button", { name: /^Add \w+ item$/ }));
     expect(
       screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
@@ -885,7 +885,7 @@ describe("MealPlanHomeScreen — Android TalkBack background trap", () => {
   });
 
   it("releases the background trap once the add-item-menu sheet is dismissed — a trap that never releases makes the screen unusable to TalkBack", () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     fireEvent.click(screen.getByRole("button", { name: /^Add \w+ item$/ }));
     expect(
       screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
@@ -904,7 +904,7 @@ describe("MealPlanHomeScreen — Android TalkBack background trap", () => {
 // shared `invalidateMealPlanItems` helper, and never refreshed the calorie
 // goal or daily-summary at all — so pull-to-refresh on this screen never
 // updated the calorie ring or the confirmed-checkmarks.
-describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, the calorie goal, and daily-summary", () => {
+describe("MealPlanDayScreen — pull-to-refresh refreshes meal-plan, the calorie goal, and daily-summary", () => {
   beforeEach(() => {
     capturedSheets.clear();
     mockApiRequest.mockReset();
@@ -919,7 +919,7 @@ describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, the calori
   it("calls invalidateMealPlanItems and invalidates the goals + daily-summary on refresh", async () => {
     const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
 
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     expect(refreshControlProps.current?.onRefresh).toBeInstanceOf(Function);
 
@@ -946,7 +946,7 @@ describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, the calori
 // blank the screen — it should keep showing the stale week, the same "only
 // error when there's no cached data" rule HistoryScreen's isError already
 // follows (client/hooks/useHistoryData.ts).
-describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
+describe("MealPlanDayScreen — meal-plan fetch error handling", () => {
   // Same clock pin as the "Android TalkBack background trap" block above:
   // 00:30 Europe/Berlin on the local calendar day 2026-09-02 -> hour 0 ->
   // getAutoExpandedMealType() auto-expands "breakfast", so a breakfast item
@@ -1001,7 +1001,7 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
   it("keeps the week navigation, top actions and pull-to-refresh alive in the items-error state", () => {
     mealPlanQueryState.isLoadingError = true;
 
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     expect(screen.getByText("Couldn't load your meal plan")).toBeDefined();
     expect(screen.getByLabelText("Previous week")).toBeDefined();
@@ -1014,7 +1014,7 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
     mealPlanQueryState.isLoadingError = true;
     vi.mocked(invalidateMealPlanItems).mockClear();
 
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     await act(async () => {
       await refreshControlProps.current?.onRefresh?.();
     });
@@ -1025,7 +1025,7 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
   it("shows an inline error state with retry on isLoadingError, instead of the empty-week state", () => {
     mealPlanQueryState.isLoadingError = true;
 
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     expect(screen.getByText("Couldn't load your meal plan")).toBeDefined();
     expect(screen.getByText("Try Again")).toBeDefined();
@@ -1035,7 +1035,7 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
   it("calls the meal-plan query's refetch when Try Again is pressed", () => {
     mealPlanQueryState.isLoadingError = true;
 
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     fireEvent.click(screen.getByText("Try Again"));
 
     expect(mealPlanQueryState.refetch).toHaveBeenCalledOnce();
@@ -1045,7 +1045,7 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
     mealPlanItemsData.value = [FAKE_BREAKFAST_ITEM];
     mealPlanQueryState.isRefetchError = true;
 
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     expect(screen.getByText("Stale Pancakes")).toBeDefined();
     expect(screen.queryByText("Couldn't load your meal plan")).toBeNull();
@@ -1057,7 +1057,7 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
 // skip a screen that MOUNTS already errored (announcing on top of initial
 // focus), so every test here starts in the loading skeleton and rerenders
 // into the error — the transition a real failed fetch produces.
-describe("MealPlanHomeScreen — fetch errors are announced for screen readers", () => {
+describe("MealPlanDayScreen — fetch errors are announced for screen readers", () => {
   const ITEMS_COPY = "Couldn't load your meal plan. Try again.";
   const BUDGET_COPY = "Couldn't load your calorie budget. Try again.";
   // iOS drops the second of two same-commit announcements, so both errors
@@ -1094,22 +1094,22 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
   });
 
   it("announces the meal-plan error exactly once on the isLoadingError transition", () => {
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
 
     mealPlanQueryState.isLoading = false;
     mealPlanQueryState.isLoadingError = true;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
     // An unrelated re-render with the error still showing must not repeat it.
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
 
     expect(announceSpy).toHaveBeenCalledExactlyOnceWith(ITEMS_COPY);
   });
 
   it("does not announce on the happy path", () => {
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
 
     mealPlanQueryState.isLoading = false;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
 
     expect(announceSpy).not.toHaveBeenCalled();
   });
@@ -1117,12 +1117,12 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
   it("announces the budget error once when both queries fail, and not again when the items query is retried", () => {
     dailyBudgetQueryState.data = undefined;
     dailyBudgetQueryState.isError = true;
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
 
     // Items fetch fails too — both EmptyStates are now on screen.
     mealPlanQueryState.isLoading = false;
     mealPlanQueryState.isLoadingError = true;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
     expect(screen.getByText("Couldn't load your calorie budget")).toBeDefined();
     expect(announceSpy).toHaveBeenCalledExactlyOnceWith(BOTH_COPY);
 
@@ -1131,10 +1131,10 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
     // error never cleared, so it must not be re-announced.
     mealPlanQueryState.isLoading = true;
     mealPlanQueryState.isLoadingError = false;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
     mealPlanQueryState.isLoading = false;
     mealPlanQueryState.isLoadingError = true;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
 
     expect(callsWith(BUDGET_COPY)).toBe(0);
     expect(callsWith(BOTH_COPY)).toBe(1);
@@ -1144,14 +1144,14 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
   });
 
   it("speaks one combined announcement when both errors appear in the same commit", () => {
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
 
     // A shared outage: both queries fail in the same render.
     dailyBudgetQueryState.data = undefined;
     dailyBudgetQueryState.isError = true;
     mealPlanQueryState.isLoading = false;
     mealPlanQueryState.isLoadingError = true;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
 
     expect(announceSpy).toHaveBeenCalledExactlyOnceWith(BOTH_COPY);
   });
@@ -1159,8 +1159,8 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
   it("does not announce when the screen mounts with the items error already showing", () => {
     mealPlanQueryState.isLoading = false;
     mealPlanQueryState.isLoadingError = true;
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
-    rerender(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
+    rerender(<MealPlanDayScreen />);
 
     expect(announceSpy).not.toHaveBeenCalled();
   });
@@ -1169,39 +1169,39 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
     mealPlanQueryState.isLoading = false;
     dailyBudgetQueryState.data = undefined;
     dailyBudgetQueryState.isError = true;
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
-    rerender(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
+    rerender(<MealPlanDayScreen />);
 
     expect(announceSpy).not.toHaveBeenCalled();
   });
 
   it("does not announce the budget error while the skeleton hides it, then announces once it is visible", () => {
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
 
     // Budget fails while the items query is still loading (skeleton up).
     dailyBudgetQueryState.data = undefined;
     dailyBudgetQueryState.isError = true;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
     expect(callsWith(BUDGET_COPY)).toBe(0);
 
     mealPlanQueryState.isLoading = false;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
     expect(callsWith(BUDGET_COPY)).toBe(1);
   });
 
   it("re-announces the budget error after it clears and fails again", () => {
     mealPlanQueryState.isLoading = false;
-    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    const { rerender } = renderComponent(<MealPlanDayScreen />);
 
     dailyBudgetQueryState.data = undefined;
     dailyBudgetQueryState.isError = true;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
     // Budget Try Again: the data-less query resets to pending (error cleared)…
     dailyBudgetQueryState.isError = false;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
     // …and fails again.
     dailyBudgetQueryState.isError = true;
-    rerender(<MealPlanHomeScreen />);
+    rerender(<MealPlanDayScreen />);
 
     expect(callsWith(BUDGET_COPY)).toBe(2);
   });
@@ -1654,7 +1654,7 @@ describe("MealSlotItem touch targets (P2-2026-09-23, M13)", () => {
     expect(removeProps, "remove Pressable not captured").toBeDefined();
 
     // Feather "circle" (confirm) is rendered at size={20}; Feather "x"
-    // (remove) at size={16} — both from MealPlanHomeScreen.tsx's MealSlotItem.
+    // (remove) at size={16} — both from MealPlanDayScreen.tsx's MealSlotItem.
     const confirm = effectiveTouchSize(confirmProps, 20);
     const remove = effectiveTouchSize(removeProps, 16);
     expect(confirm.width).toBeGreaterThanOrEqual(44);
@@ -1669,7 +1669,7 @@ describe("MealSlotItem touch targets (P2-2026-09-23, M13)", () => {
 // accessibilityLabel is hidden along with the decorative boxes. Fake timers
 // scoped to this describe only, mirroring NutritionDetailScreen.test.tsx's
 // loading-branch characterisation.
-describe("MealPlanHomeScreen — loading skeleton screen-reader signal", () => {
+describe("MealPlanDayScreen — loading skeleton screen-reader signal", () => {
   beforeEach(() => {
     mealPlanQueryState.isLoading = true;
     mealPlanQueryState.isLoadingError = false;
@@ -1684,7 +1684,7 @@ describe("MealPlanHomeScreen — loading skeleton screen-reader signal", () => {
   });
 
   it("hides the skeleton region from screen readers as one unit", () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     const region = screen.getByTestId("meal-plan-loading-skeleton");
     expect(region.getAttribute("aria-hidden")).toBe("true");
   });
@@ -1693,7 +1693,7 @@ describe("MealPlanHomeScreen — loading skeleton screen-reader signal", () => {
   // "Loading..."` alongside `accessibilityElementsHidden`, which hides the
   // label along with the decorative boxes on iOS.
   it("does not carry its own hidden Loading label", () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
     expect(screen.queryByLabelText("Loading...")).toBeNull();
   });
 
@@ -1703,7 +1703,7 @@ describe("MealPlanHomeScreen — loading skeleton screen-reader signal", () => {
       "announceForAccessibility",
     );
     try {
-      renderComponent(<MealPlanHomeScreen />);
+      renderComponent(<MealPlanDayScreen />);
 
       expect(announceSpy).not.toHaveBeenCalledWith("Loading");
 
@@ -1721,10 +1721,10 @@ describe("MealPlanHomeScreen — loading skeleton screen-reader signal", () => {
       "announceForAccessibility",
     );
     try {
-      const { rerender } = renderComponent(<MealPlanHomeScreen />);
+      const { rerender } = renderComponent(<MealPlanDayScreen />);
       vi.advanceTimersByTime(200);
       mealPlanQueryState.isLoading = false;
-      rerender(<MealPlanHomeScreen />);
+      rerender(<MealPlanDayScreen />);
       vi.advanceTimersByTime(500);
 
       expect(announceSpy).not.toHaveBeenCalledWith("Loading");
@@ -1739,7 +1739,7 @@ describe("MealPlanHomeScreen — loading skeleton screen-reader signal", () => {
       "announceForAccessibility",
     );
     try {
-      const { unmount } = renderComponent(<MealPlanHomeScreen />);
+      const { unmount } = renderComponent(<MealPlanDayScreen />);
       unmount();
       vi.advanceTimersByTime(500);
 

@@ -136,7 +136,7 @@ function getDayLabel(date: Date): string {
 const FREE_MAX_DAYS_FORWARD = 7;
 const PREMIUM_MAX_DAYS_FORWARD = 90;
 
-export default function MealPlanHomeScreen() {
+export default function MealPlanDayScreen() {
   const navigation = useNavigation<MealPlanHomeScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();

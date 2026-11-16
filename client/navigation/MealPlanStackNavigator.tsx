@@ -1,7 +1,7 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
-import MealPlanHomeScreen from "@/screens/meal-plan/MealPlanHomeScreen";
+import MealPlanDayScreen from "@/screens/meal-plan/MealPlanDayScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
 import RecipeCreateScreen from "@/screens/meal-plan/RecipeCreateScreen";
 import RecipeImportScreen from "@/screens/meal-plan/RecipeImportScreen";
@@ -92,7 +92,7 @@ export default function MealPlanStackNavigator() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen
         name="MealPlanHome"
-        component={MealPlanHomeScreen}
+        component={MealPlanDayScreen}
         options={{
           headerTitle: () => <HeaderTitle title="Plan" />,
         }}

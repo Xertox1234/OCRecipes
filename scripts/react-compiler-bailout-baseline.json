@@ -50,7 +50,7 @@
   "client/screens/SettingsScreen.tsx",
   "client/screens/VerifyEmailScreen.tsx",
   "client/screens/meal-plan/CookbookCreateScreen.tsx",
-  "client/screens/meal-plan/MealPlanHomeScreen.tsx",
+  "client/screens/meal-plan/MealPlanDayScreen.tsx",
   "client/screens/meal-plan/RecipeBrowserScreen.tsx",
   "client/screens/onboarding/TastePicksScreen.tsx"
 ]
