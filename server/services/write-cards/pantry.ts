@@ -23,6 +23,7 @@ import {
   getPantryItems,
   insertPantryItemsUnderCap,
   lockPantryAndGetRoom,
+  restorePantryItemsUnderCap,
   setPantryItemQuantityInTx,
 } from "../../storage/pantry";
 import { getEffectiveTierForUser } from "../../storage/subscription-status";
@@ -72,7 +73,10 @@ function sameAmount(a: string | null, b: string | null): boolean {
 export interface PantryCardPlan {
   /** Null when no change survives: there is no card to show. */
   payload: PantryCardPayload | null;
-  /** Changes left off: a row that is not the user's, or one named twice. */
+  /**
+   * Changes left off: a row that is not the user's, one named twice, or a use
+   * whose amount could not be read.
+   */
   dropped: number;
 }
 
@@ -138,7 +142,16 @@ export async function planPantryCard(
       continue;
     }
     const held = parseQuantityForSum(row.quantity);
-    const amount = amountOf(change.quantity);
+    // Read with no storage cap: a use amount is never stored, only compared.
+    const amount = parseQuantityForSum(change.quantity);
+    // An amount that cannot be read ("half", "-1") is dropped, never guessed
+    // as "use all": emptying a row the user did not ask to empty is the
+    // costly mistake.
+    if (change.all !== true && amount === null) {
+      touched.delete(row.id);
+      dropped += 1;
+      continue;
+    }
     // Using more than the row holds, or from a row with no amount, uses it up.
     const all =
       change.all === true || held === null || amount === null || amount >= held;
@@ -295,10 +308,13 @@ export async function revertPantrySave(
     for (const id of refs.pantryAddedIds ?? []) {
       await deletePantryItemInTx(inner, id, userId);
     }
-    const reinserts: InsertPantryItem[] = [];
+    const reinserts: (InsertPantryItem & { id: number })[] = [];
     for (const copy of refs.pantryRestore ?? []) {
       if (copy.deleted) {
         reinserts.push({
+          // The original id: the card names rows by id, and Undo makes it
+          // live again, so a second save must still find them.
+          id: copy.id,
           userId,
           name: copy.name,
           quantity: copy.quantity,
@@ -319,7 +335,7 @@ export async function revertPantrySave(
     // The user may have added items since the save: what no longer fits
     // under the cap is left out.
     if (reinserts.length > 0) {
-      await insertPantryItemsUnderCap(inner, userId, reinserts);
+      await restorePantryItemsUnderCap(inner, userId, reinserts);
     }
   });
 }

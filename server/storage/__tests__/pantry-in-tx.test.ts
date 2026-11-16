@@ -29,6 +29,7 @@ const {
   getPantryItemForUpdate,
   setPantryItemQuantityInTx,
   deletePantryItemInTx,
+  restorePantryItemsUnderCap,
   MAX_PANTRY_ITEMS,
 } = await import("../pantry");
 
@@ -84,6 +85,27 @@ describe("pantry storage inside a caller's transaction", () => {
       expect(await deletePantryItemInTx(inner, milk.id, user.id)).toBe(true);
     });
     expect(await rowsOf(user.id)).toHaveLength(0);
+  });
+
+  it("restores a deleted row under its original id, and leaves a taken id alone", async () => {
+    const milk = await add(user.id, "Milk", "2");
+    const theirs = await add(other.id, "Their milk", "9");
+    await tx.transaction(async (inner) => {
+      await deletePantryItemInTx(inner, milk.id, user.id);
+      const result = await restorePantryItemsUnderCap(inner, user.id, [
+        { id: milk.id, userId: user.id, name: "Milk", quantity: "2" },
+        // An id that is in use (here another user's) is never overwritten.
+        { id: theirs.id, userId: user.id, name: "Hijack", quantity: "1" },
+      ]);
+      expect(result.created.map((r) => r.id)).toEqual([milk.id]);
+      expect(result.skipped).toBe(1);
+    });
+    expect((await rowsOf(user.id)).map((r) => [r.id, r.name])).toEqual([
+      [milk.id, "Milk"],
+    ]);
+    expect((await rowsOf(other.id)).map((r) => [r.name, r.quantity])).toEqual([
+      ["Their milk", "9.00"],
+    ]);
   });
 
   it("never reads, updates or deletes another user's row", async () => {

@@ -177,7 +177,8 @@ the result can tell Coach what happened:
 - A `use` or `remove` whose `itemId` is not the user's is dropped and named in
   the result. Ids are always read with the user's id in the query.
 - A `use` of more than the row holds, or of a row with no quantity, becomes
-  "use all" (the row is removed on save).
+  "use all" (the row is removed on save). A `use` whose amount cannot be read
+  as a number is dropped and counted in the result, never guessed as "all".
 - An `add` that matches an existing row (same name key and unit, both with
   quantities) is shown as a top-up of that row; otherwise it is a new row.
 - If no change survives, no card is shown and the result says so.
@@ -219,7 +220,9 @@ card is built, and a top-up whose sum would pass that limit becomes a new row.
 ### Undo
 
 Deletes the added rows, restores updated rows to their copied quantity, and
-re-inserts deleted rows from the copy (they get new ids). The user may have
+re-inserts deleted rows from the copy under their original ids. Undo makes
+the card live again and the card names rows by id, so a second save must
+still find them (an id is never reused by the sequence). The user may have
 added items between the save and Undo, so the re-insert goes through the same
 cap check; a row that no longer fits is left out. A row the user changed after
 the save is left as the user has it: the copy records the quantity the save
