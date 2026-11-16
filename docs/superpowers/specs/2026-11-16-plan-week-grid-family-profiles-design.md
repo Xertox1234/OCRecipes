@@ -226,6 +226,10 @@ Other mechanics the first draft left out:
 - "Who's it for?" is remembered for the slot the add menu was opened on and applied to the add
   for that slot. Adds that never pass through the menu (Recipe Browser opened from the chips, the
   weekly report) create `self` meals; the audience can be changed from the day view.
+- A clash carries two separate facts: its wording level ("contains" or "may contain"; a possible
+  food is never worded as "contains", owner ruling 2026-11-15) and whether it blocks, meaning the
+  recipe is unsafe for that person at their severity. The grid's warning mark follows "blocks";
+  the day view's line follows the wording level.
 - The warning names who clashes using a new shared helper. A recipe whose allergens are not
   worked out yet, and a scanned item, show no warning mark on the grid and "Allergens not checked"
   in the day view.
