@@ -203,6 +203,8 @@ export const storage = {
   addMealPlanItem: mealPlans.addMealPlanItem,
   removeMealPlanItem: mealPlans.removeMealPlanItem,
   reorderMealPlanItems: mealPlans.reorderMealPlanItems,
+  updateMealPlanItemAudience: mealPlans.updateMealPlanItemAudience,
+  isMealPlanItemConfirmed: mealPlans.isMealPlanItemConfirmed,
   // Grocery lists
   createGroceryList: groceryLists.createGroceryList,
   getGroceryListCount: groceryLists.getGroceryListCount,
