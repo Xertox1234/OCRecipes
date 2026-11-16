@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import type { FamilyProfile } from "@shared/schema";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 import { toLocalDateString } from "@shared/lib/date";
 
@@ -499,5 +500,77 @@ describe("profile meals in the grid", () => {
     const grid = buildWeekGrid(profileOnly, getWeekDates(today), today);
     expect(grid[3].calories).toBe(0);
     expect(countPlannedSlots(grid)).toBe(1);
+  });
+});
+
+describe("family markers in the grid", () => {
+  const ivy = {
+    id: 7,
+    name: "Ivy",
+    allergies: [{ name: "peanuts", severity: "severe" }],
+  } as unknown as FamilyProfile;
+  const family = { profiles: [ivy], userAllergies: [] };
+  const peanut = recipe("Satay", 300, null);
+  const withPeanuts = {
+    ...peanut,
+    allergens: [{ id: "peanuts", viaDerived: false, possible: false }],
+  };
+  const grid = (list: MealPlanItemWithRelations[], withFamily = true) =>
+    buildWeekGrid(
+      list,
+      getWeekDates(today),
+      today,
+      withFamily ? family : undefined,
+    );
+
+  it("adds no family info without a family", () => {
+    const shared = makeItem({
+      audience: "shared",
+      recipeId: 1,
+      recipe: { ...recipe("Tacos", 600, null), allergens: [] },
+    });
+    expect(grid([shared], false)[2].cells.dinner.family).toBeUndefined();
+  });
+
+  it("labels a shared meal's cell for everyone", () => {
+    const shared = makeItem({
+      audience: "shared",
+      recipeId: 1,
+      recipe: { ...recipe("Tacos", 600, null), allergens: [] },
+    });
+    const days = grid([shared]);
+    expect(days[2].cells.dinner.family?.badge).toEqual({ kind: "shared" });
+    expect(getCellAccessibilityLabel(days[2], "dinner")).toBe(
+      "Tuesday dinner, Tacos, 600 calories, for everyone",
+    );
+  });
+
+  it("labels a profile meal's cell with the name and warns on a clash", () => {
+    const meal = makeItem({
+      audience: "profile",
+      familyProfileId: 7,
+      recipeId: 1,
+      recipe: withPeanuts,
+    });
+    const days = grid([meal]);
+    expect(days[2].cells.dinner.family).toEqual({
+      badge: { kind: "profile", initial: "I" },
+      audienceLabel: "for Ivy",
+      warning: true,
+    });
+    expect(getCellAccessibilityLabel(days[2], "dinner")).toBe(
+      "Tuesday dinner, Satay, 300 calories, for Ivy, allergen warning",
+    );
+  });
+
+  it("leaves a self meal's label as it was", () => {
+    const own = makeItem({
+      audience: "self",
+      recipeId: 1,
+      recipe: { ...recipe("Tacos", 600, null), allergens: [] },
+    });
+    expect(getCellAccessibilityLabel(grid([own])[2], "dinner")).toBe(
+      "Tuesday dinner, Tacos, 600 calories",
+    );
   });
 });

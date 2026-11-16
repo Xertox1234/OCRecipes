@@ -2,6 +2,7 @@
 import { renderHook, waitFor, act } from "@testing-library/react";
 import {
   useFamilyContext,
+  usePlanFamily,
   useFamilyProfilesList,
   useDeleteFamilyProfile,
   useSetFamilyPlanning,
@@ -78,6 +79,52 @@ describe("useFamilyContext", () => {
     const { result } = renderHook(() => useFamilyContext(), { wrapper });
     await waitFor(() => expect(mockApiRequest).toHaveBeenCalled());
     expect(result.current).toMatchObject({ active: false, profiles: [] });
+  });
+});
+
+describe("usePlanFamily", () => {
+  beforeEach(() => {
+    mockApiRequest.mockReset();
+    mockState.flag = true;
+    mockState.planUnknown = false;
+  });
+
+  it("is the profiles and the user's own allergies when planning is on", async () => {
+    const allergies = [{ name: "milk", severity: "mild" }];
+    mockApiRequest.mockImplementation(async (_m: string, url: string) => ({
+      json: async () =>
+        url === "/api/user/dietary-profile"
+          ? { familyPlanningEnabled: true, allergies }
+          : { enabled: true, profiles: [ivy] },
+    }));
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => usePlanFamily(), { wrapper });
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(result.current).toEqual({
+      profiles: [ivy],
+      userAllergies: allergies,
+    });
+  });
+
+  it("is null when planning is on but there are no profiles yet", async () => {
+    mockApiRequest.mockImplementation(async (_m: string, url: string) => ({
+      json: async () =>
+        url === "/api/user/dietary-profile"
+          ? { familyPlanningEnabled: true }
+          : { enabled: true, profiles: [] },
+    }));
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => usePlanFamily(), { wrapper });
+    await waitFor(() => expect(mockApiRequest).toHaveBeenCalledTimes(2));
+    expect(result.current).toBeNull();
+  });
+
+  it("is null when the switch is off", async () => {
+    route(false);
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => usePlanFamily(), { wrapper });
+    await waitFor(() => expect(mockApiRequest).toHaveBeenCalled());
+    expect(result.current).toBeNull();
   });
 });
 

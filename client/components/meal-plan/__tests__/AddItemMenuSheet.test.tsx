@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
+import type { FamilyProfile } from "@shared/schema";
 import { AddItemMenuSheetContent } from "../AddItemMenuSheet";
 
 const plan = vi.hoisted(() => ({ urlImport: false }));
@@ -174,5 +175,46 @@ describe("AddItemMenuSheet — import tip", () => {
     expect(
       screen.queryByText("Paste a link or snap a cookbook page."),
     ).toBeNull();
+  });
+});
+
+describe("AddItemMenuSheet — Who's it for?", () => {
+  const defaultProps = {
+    mealType: "breakfast" as const,
+    onChooseRecipe: vi.fn(),
+    onSimpleEntry: vi.fn(),
+    onImportRecipe: vi.fn(),
+  };
+
+  const ivy = {
+    id: 7,
+    name: "Ivy",
+    allergies: [],
+  } as unknown as FamilyProfile;
+
+  it("is absent without an audience (family planning off)", () => {
+    renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+    expect(screen.queryByText("Who's it for?")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("shows the choice under the title and reports a change", () => {
+    const onChange = vi.fn();
+    renderComponent(
+      <AddItemMenuSheetContent
+        {...defaultProps}
+        audience={{
+          profiles: [ivy],
+          value: { audience: "shared", familyProfileId: null },
+          onChange,
+        }}
+      />,
+    );
+    expect(screen.getByText("Who's it for?")).toBeDefined();
+    fireEvent.click(screen.getByRole("radio", { name: "Ivy" }));
+    expect(onChange).toHaveBeenCalledWith({
+      audience: "profile",
+      familyProfileId: 7,
+    });
   });
 });

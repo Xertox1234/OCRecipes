@@ -47,6 +47,11 @@ export function getCellContentHeight(
   );
 }
 
+/** Size of the audience badge and the warning mark; both sit in a corner. */
+const BADGE_SIZE = 16;
+const WARNING_SIZE = 12;
+const CORNER_INSET = 4;
+
 /** "610", or "1,150 · +1" when more items share the slot. */
 function formatBottomLine(calories: number, extraCount: number): string {
   const kcal = calories.toLocaleString("en-US");
@@ -111,6 +116,44 @@ export const WeekGridCell = React.memo(function WeekGridCell({
           accessible={false}
         />
       ) : null}
+      {/* Both marks are drawn over the cell (absolute), so they never change
+          its height or where its text sits. The cell's own label already
+          says "for Ivy" and "allergen warning", so they are decorative. */}
+      {cell.family?.badge ? (
+        <View
+          testID="cell-audience-badge"
+          style={[styles.badge, { backgroundColor: theme.accentSolid }]}
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {cell.family.badge.kind === "shared" ? (
+            <Feather name="users" size={10} color={theme.buttonText} />
+          ) : (
+            <ThemedText
+              maxScale={GRID_MAX_FONT_SCALE}
+              style={[styles.badgeInitial, { color: theme.buttonText }]}
+            >
+              {cell.family.badge.initial}
+            </ThemedText>
+          )}
+        </View>
+      ) : null}
+      {cell.family?.warning ? (
+        <View
+          testID="cell-allergen-warning"
+          style={styles.warning}
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <Feather
+            name="alert-triangle"
+            size={WARNING_SIZE}
+            color={theme.error}
+          />
+        </View>
+      ) : null}
       <View style={styles.body}>
         <ThemedText
           style={[styles.title, { color: theme.text }]}
@@ -144,6 +187,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderStyle: "dashed",
+  },
+  badge: {
+    position: "absolute",
+    top: CORNER_INSET,
+    right: CORNER_INSET,
+    width: BADGE_SIZE,
+    height: BADGE_SIZE,
+    borderRadius: BADGE_SIZE / 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeInitial: {
+    fontSize: 10,
+    lineHeight: 12,
+    fontFamily: FontFamily.bold,
+  },
+  warning: {
+    position: "absolute",
+    bottom: CORNER_INSET,
+    right: CORNER_INSET,
+    width: WARNING_SIZE,
+    height: WARNING_SIZE,
   },
   image: {
     width: "100%",

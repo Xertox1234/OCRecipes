@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { FamilyProfile } from "@shared/schema";
+import type { Allergy, FamilyProfile } from "@shared/schema";
 import {
   isFamilyPlanningActive,
   type FamilyProfileInput,
@@ -54,7 +54,15 @@ export function useFamilyContext(): {
 
   const active =
     !planUnknown &&
-    isFamilyPlanningActive({ familyProfiles: flag }, dietaryProfile);
+    isFamilyPlanningActive(
+      { familyProfiles: flag },
+      dietaryProfile
+        ? {
+            familyPlanningEnabled:
+              dietaryProfile.familyPlanningEnabled === true,
+          }
+        : null,
+    );
 
   const list = useQuery({ ...familyProfilesQueryOptions, enabled: active });
 
@@ -62,6 +70,29 @@ export function useFamilyContext(): {
     active,
     profiles: active ? (list.data?.profiles ?? NO_PROFILES) : NO_PROFILES,
     isLoading: active && list.isLoading,
+  };
+}
+
+const NO_ALLERGIES: Allergy[] = [];
+
+/** What the meal plan needs to show family markers. */
+export interface PlanFamily {
+  profiles: FamilyProfile[];
+  userAllergies: Allergy[];
+}
+
+/**
+ * The meal plan's single gate for every family control: the profiles and the
+ * user's own allergies (for clash checks), or null unless family planning is
+ * active AND there is at least one profile. With null, no family UI renders.
+ */
+export function usePlanFamily(): PlanFamily | null {
+  const { active, profiles } = useFamilyContext();
+  const { data: dietaryProfile } = useQuery(dietaryProfileQueryOptions);
+  if (!active || profiles.length === 0) return null;
+  return {
+    profiles,
+    userAllergies: dietaryProfile?.allergies ?? NO_ALLERGIES,
   };
 }
 

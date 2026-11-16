@@ -5,12 +5,17 @@ import type {
 } from "@shared/schema";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 import {
+  type MealClash,
   countsTowardUser,
   defaultAudienceFor,
   filterItemsForAudience,
+  describeClash,
   getAudienceLabel,
+  getCellFamilyInfo,
   getEaters,
+  getItemFamilyInfo,
   getMealClashes,
+  resolveAudienceFilter,
 } from "../family-utils";
 
 function makeItem(
@@ -113,7 +118,7 @@ describe("getMealClashes", () => {
     const item = makeItem({
       id: 6,
       recipe: peanutRecipe([
-        { id: "peanuts", viaDerived: false, possible: false },
+        { id: "peanuts", viaDerived: false },
       ] as MealPlanRecipe["allergens"]),
     });
     expect(getMealClashes(item, eaters)).toEqual([
@@ -173,5 +178,185 @@ describe("defaultAudienceFor", () => {
       audience: "shared",
       familyProfileId: null,
     });
+  });
+});
+
+describe("describeClash", () => {
+  it("words a contains clash from its level", () => {
+    expect(
+      describeClash({
+        name: "Ivy",
+        allergenId: "tree_nuts",
+        level: "contains",
+        blocking: true,
+      }),
+    ).toBe("Contains tree nuts \u2014 Ivy");
+  });
+  it("words a possible clash as may contain", () => {
+    expect(
+      describeClash({
+        name: "Ivy",
+        allergenId: "tree_nuts",
+        level: "possible",
+        blocking: false,
+      }),
+    ).toBe("May contain tree nuts \u2014 Ivy");
+  });
+  it("falls back to the raw id for an allergen it has no label for", () => {
+    expect(
+      describeClash({
+        name: "Ivy",
+        allergenId: "unheard_of" as unknown as MealClash["allergenId"],
+        level: "contains",
+        blocking: true,
+      }),
+    ).toBe("Contains unheard_of \u2014 Ivy");
+  });
+});
+
+describe("getItemFamilyInfo", () => {
+  const user = { allergies: [] };
+  const nutRecipe = (possible: boolean) =>
+    peanutRecipe([
+      { id: "peanuts", viaDerived: false, possible },
+    ] as MealPlanRecipe["allergens"]);
+
+  it("labels the audience and lists one line per clash", () => {
+    const meal = makeItem({
+      id: 20,
+      audience: "profile",
+      familyProfileId: 1,
+      recipe: nutRecipe(false),
+    });
+    expect(getItemFamilyInfo(meal, user, profiles)).toEqual({
+      audienceLabel: "for Ivy",
+      clashLines: ["Contains peanuts \u2014 Ivy"],
+    });
+  });
+  it("words a possible clash as may contain", () => {
+    const meal = makeItem({
+      id: 21,
+      audience: "profile",
+      familyProfileId: 1,
+      recipe: nutRecipe(true),
+    });
+    expect(getItemFamilyInfo(meal, user, profiles).clashLines).toEqual([
+      "May contain peanuts \u2014 Ivy",
+    ]);
+  });
+  it("says allergens are not checked when they are unknown", () => {
+    const meal = makeItem({
+      id: 22,
+      audience: "profile",
+      familyProfileId: 1,
+      recipe: peanutRecipe(null),
+    });
+    expect(getItemFamilyInfo(meal, user, profiles).clashLines).toEqual([
+      "Allergens not checked",
+    ]);
+  });
+  it("has no label and no lines for the user's own clean meal", () => {
+    expect(getItemFamilyInfo(selfMeal, user, profiles)).toEqual({
+      audienceLabel: null,
+      clashLines: [],
+    });
+  });
+});
+
+describe("getCellFamilyInfo", () => {
+  const user = { allergies: [] };
+  const peanuts = peanutRecipe([
+    { id: "peanuts", viaDerived: false },
+  ] as MealPlanRecipe["allergens"]);
+
+  it("is a shared badge, label and no warning for a shared meal", () => {
+    expect(getCellFamilyInfo([sharedMeal], user, profiles)).toEqual({
+      badge: { kind: "shared" },
+      audienceLabel: "for everyone",
+      warning: false,
+    });
+  });
+  it("is the profile's initial for a profile meal", () => {
+    expect(getCellFamilyInfo([ivyMeal], user, profiles)).toEqual({
+      badge: { kind: "profile", initial: "I" },
+      audienceLabel: "for Ivy",
+      warning: false,
+    });
+  });
+  it("has no badge for the user's own meal", () => {
+    expect(getCellFamilyInfo([selfMeal], user, profiles)).toEqual({
+      badge: null,
+      audienceLabel: null,
+      warning: false,
+    });
+  });
+  it("describes the first item but warns for a clash in any item", () => {
+    const clashing = makeItem({
+      id: 30,
+      audience: "profile",
+      familyProfileId: 1,
+      recipe: peanuts,
+    });
+    expect(getCellFamilyInfo([selfMeal, clashing], user, profiles)).toEqual({
+      badge: null,
+      audienceLabel: null,
+      warning: true,
+    });
+  });
+  it("does not warn for a non-blocking possible clash", () => {
+    const mia = {
+      id: 3,
+      name: "Mia",
+      allergies: [{ name: "peanuts", severity: "mild" }],
+    } as FamilyProfile;
+    const maybe = makeItem({
+      id: 31,
+      audience: "profile",
+      familyProfileId: 3,
+      recipe: peanutRecipe([
+        { id: "peanuts", viaDerived: true, possible: true },
+      ] as MealPlanRecipe["allergens"]),
+    });
+    expect(getMealClashes(maybe, getEaters(maybe, user, [mia]))).toEqual([
+      {
+        name: "Mia",
+        allergenId: "peanuts",
+        level: "possible",
+        blocking: false,
+      },
+    ]);
+    expect(getCellFamilyInfo([maybe], user, [mia]).warning).toBe(false);
+  });
+  it("does not warn when the allergens are unknown", () => {
+    const unknown = makeItem({
+      id: 32,
+      audience: "profile",
+      familyProfileId: 1,
+      recipe: peanutRecipe(null),
+    });
+    expect(getCellFamilyInfo([unknown], user, profiles).warning).toBe(false);
+  });
+});
+
+describe("resolveAudienceFilter", () => {
+  it("keeps a filter whose profile still exists", () => {
+    const f = { kind: "profile", profileId: 1 } as const;
+    expect(resolveAudienceFilter(f, profiles)).toBe(f);
+    expect(resolveAudienceFilter({ kind: "me" }, profiles)).toEqual({
+      kind: "me",
+    });
+  });
+  it("falls back to all when the profile is gone", () => {
+    expect(
+      resolveAudienceFilter({ kind: "profile", profileId: 99 }, profiles),
+    ).toEqual({ kind: "all" });
+  });
+  it("is all when family planning is not active", () => {
+    expect(resolveAudienceFilter({ kind: "me" }, null)).toEqual({
+      kind: "all",
+    });
+    expect(
+      resolveAudienceFilter({ kind: "profile", profileId: 1 }, null),
+    ).toEqual({ kind: "all" });
   });
 });

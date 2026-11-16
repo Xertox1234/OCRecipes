@@ -10,6 +10,11 @@ import {
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { FeatureTip } from "@/components/FeatureTip";
+import {
+  AudienceChoice,
+  type AudienceChoiceValue,
+} from "@/components/meal-plan/AudienceChoice";
+import type { FamilyProfile } from "@shared/schema";
 import { useFeatureTip } from "@/hooks/useFeatureTip";
 import { Spacing, FontFamily } from "@/constants/theme";
 import {
@@ -30,6 +35,15 @@ interface AddItemMenuSheetContentProps {
   onSuggest?: () => void;
   /** The day being added to ("Tue, Nov 17"), for a screen that shows several. */
   dayLabel?: string;
+  /**
+   * "Who's it for?" for a plan with family profiles. Omit it and the row is
+   * not shown (family planning off, or no profiles).
+   */
+  audience?: {
+    profiles: FamilyProfile[];
+    value: AudienceChoiceValue;
+    onChange: (choice: AudienceChoiceValue) => void;
+  };
 }
 
 function AddItemMenuSheetContentInner({
@@ -39,6 +53,7 @@ function AddItemMenuSheetContentInner({
   onImportRecipe,
   onSuggest,
   dayLabel,
+  audience,
 }: AddItemMenuSheetContentProps) {
   const haptics = useHaptics();
   // Guards against a near-simultaneous double-tap on two different rows: each
@@ -110,6 +125,18 @@ function AddItemMenuSheetContentInner({
       <ThemedText style={styles.title}>
         {dayLabel ? `Add to ${label} · ${dayLabel}` : `Add to ${label}`}
       </ThemedText>
+      {audience ? (
+        <View style={styles.audience}>
+          <ThemedText style={styles.audienceLabel}>
+            {"Who's it for?"}
+          </ThemedText>
+          <AudienceChoice
+            profiles={audience.profiles}
+            value={audience.value}
+            onChange={audience.onChange}
+          />
+        </View>
+      ) : null}
       <View style={styles.options}>
         <SheetOptionRow
           icon="book-open"
@@ -167,6 +194,15 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.semiBold,
     alignSelf: "flex-start",
     marginBottom: Spacing.md,
+  },
+  audience: {
+    width: "100%",
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  audienceLabel: {
+    fontSize: 13,
+    fontFamily: FontFamily.medium,
   },
   options: {
     width: "100%",

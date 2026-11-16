@@ -3,7 +3,12 @@ import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 // day the user tapped, so every key here comes from local getters.
 import { toLocalDateString } from "@shared/lib/date";
 
-import { countsTowardUser } from "./family-utils";
+import type { Allergy, FamilyProfile } from "@shared/schema";
+import {
+  type CellFamilyInfo,
+  countsTowardUser,
+  getCellFamilyInfo,
+} from "./family-utils";
 import { type MealType, computeItemMacros } from "./meal-plan-utils";
 
 /** Row order of the week grid. The day screen keeps its own order. */
@@ -32,6 +37,14 @@ export interface GridCell {
   calories: number;
   /** The calories that count toward the user: profile meals left out. */
   userCalories: number;
+  /** Who the slot is for and whether it clashes; only set when family planning is on. */
+  family?: CellFamilyInfo;
+}
+
+/** The family context the grid's markers are built from. */
+export interface GridFamily {
+  profiles: FamilyProfile[];
+  userAllergies: Allergy[];
 }
 
 export interface GridDay {
@@ -96,13 +109,26 @@ function itemTitle(item: MealPlanItemWithRelations): string {
   return item.recipe?.title || item.scannedItem?.productName || "Unknown item";
 }
 
-function buildCell(items: MealPlanItemWithRelations[]): GridCell {
+function buildCell(
+  items: MealPlanItemWithRelations[],
+  family?: GridFamily,
+): GridCell {
   if (items.length === 0) return emptyCell();
   const sorted = [...items].sort(
     (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id,
   );
   const first = sorted[0];
+  const info = family
+    ? {
+        family: getCellFamilyInfo(
+          sorted,
+          { allergies: family.userAllergies },
+          family.profiles,
+        ),
+      }
+    : {};
   return {
+    ...info,
     items: sorted,
     title: itemTitle(first),
     imageUrl: first.recipe?.imageUrl ?? null,
@@ -129,6 +155,7 @@ export function buildWeekGrid(
   items: MealPlanItemWithRelations[] | undefined,
   weekDates: Date[],
   today: Date,
+  family?: GridFamily,
 ): GridDay[] {
   const todayStr = toLocalDateString(today);
   const bySlot = new Map<string, MealPlanItemWithRelations[]>();
@@ -145,7 +172,10 @@ export function buildWeekGrid(
     const cells = {} as Record<MealType, GridCell>;
     let calories = 0;
     for (const mealType of GRID_MEAL_TYPES) {
-      const cell = buildCell(bySlot.get(`${dateStr}|${mealType}`) ?? []);
+      const cell = buildCell(
+        bySlot.get(`${dateStr}|${mealType}`) ?? [],
+        family,
+      );
       cells[mealType] = cell;
       calories += cell.userCalories;
     }
@@ -204,7 +234,11 @@ export function getCellAccessibilityLabel(
     cell.extraCount > 0
       ? `${cell.title} and ${cell.extraCount} more`
       : cell.title;
-  return `${slot}, ${what}, ${formatCalories(cell.calories)} calories`;
+  const audience = cell.family?.audienceLabel
+    ? `, ${cell.family.audienceLabel}`
+    : "";
+  const warning = cell.family?.warning ? ", allergen warning" : "";
+  return `${slot}, ${what}, ${formatCalories(cell.calories)} calories${audience}${warning}`;
 }
 
 export function getDayHeaderAccessibilityLabel(day: GridDay): string {

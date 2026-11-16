@@ -38,7 +38,19 @@ import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { countsTowardUser } from "@/components/meal-plan/family-utils";
+import {
+  FAMILY_ADD_MENU_SNAP_POINTS,
+  type ItemFamilyInfo,
+  countsTowardUser,
+  getItemFamilyInfo,
+} from "@/components/meal-plan/family-utils";
+import {
+  AUDIENCE_SHEET_SNAP_POINTS,
+  AudienceSheetContent,
+  type AudienceChoiceValue,
+} from "@/components/meal-plan/AudienceChoice";
+import { usePlanFamily } from "@/hooks/useFamily";
+import { ApiError } from "@/lib/api-error";
 import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, FontFamily } from "@/constants/theme";
@@ -54,6 +66,7 @@ import {
   useMealPlanItems,
   useRemoveMealPlanItem,
   useReorderMealPlanItems,
+  useUpdateMealPlanItemAudience,
   invalidateMealPlanItems,
   useAddMealPlanItem,
   useConfirmMealPlanItem,
@@ -124,6 +137,9 @@ export default function MealPlanDayScreen() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { features } = usePremiumContext();
+  // Null unless family planning is on and there is a profile; with null, none
+  // of the family controls render.
+  const family = usePlanFamily();
 
   // Shared host prop bundle for all 4 sheets below (backdrop, themed
   // background, hidden handle, and the accessible={false} iOS a11y fix —
@@ -179,8 +195,11 @@ export default function MealPlanDayScreen() {
     importRecipeSheetRef,
     quickAddSheetRef,
     simpleEntrySheetRef,
+    audienceSheetRef,
     isAnySheetOpen,
     openSheet,
+    closeSheet,
+    handleAudienceDismiss,
     onSheetChange,
     onSheetAnimate,
     handleAddItemMenuDismiss,
@@ -193,7 +212,14 @@ export default function MealPlanDayScreen() {
     importRecipeSheetChildren,
     quickAddSheetChildren,
     simpleEntrySheetChildren,
-  } = useMealPlanSheets({ navigation, selectedDateStr });
+  } = useMealPlanSheets({
+    navigation,
+    selectedDateStr,
+    // The day view has no filter: a new meal defaults to everyone.
+    family: family
+      ? { profiles: family.profiles, filter: { kind: "all" } }
+      : null,
+  });
 
   // Destructure rather than depend on the mutation objects themselves —
   // useMutation returns a new object identity every render, which would
@@ -227,6 +253,8 @@ export default function MealPlanDayScreen() {
   } = useMealPlanItems(startDate, endDate);
 
   const { mutate: removeItem } = useRemoveMealPlanItem();
+  const { mutate: updateAudience, isPending: isUpdatingAudience } =
+    useUpdateMealPlanItemAudience();
   const { mutate: reorderItems } = useReorderMealPlanItems();
 
   // Group items by date and meal type
@@ -376,6 +404,65 @@ export default function MealPlanDayScreen() {
       });
     },
     [removeItem, haptics, toast],
+  );
+
+  // Who each row is for, and its allergen clashes. Absent when family planning
+  // is off, so no row shows any of it.
+  const familyById = useMemo(() => {
+    if (!family) return undefined;
+    const user = { allergies: family.userAllergies };
+    const byId: Record<number, ItemFamilyInfo> = {};
+    for (const item of selectedDayItems) {
+      byId[item.id] = getItemFamilyInfo(item, user, family.profiles);
+    }
+    return byId;
+  }, [family, selectedDayItems]);
+
+  // The row whose "Who's it for?" sheet is open.
+  const [audienceItemId, setAudienceItemId] = useState<number | null>(null);
+  const audienceItem =
+    audienceItemId === null
+      ? null
+      : (selectedDayItems.find((i) => i.id === audienceItemId) ?? null);
+
+  const handleOpenAudience = useCallback(
+    (item: MealPlanItemWithRelations) => {
+      haptics.selection();
+      setAudienceItemId(item.id);
+      openSheet("audience", item.mealType as MealType);
+    },
+    [haptics, openSheet],
+  );
+
+  const handleChooseAudience = useCallback(
+    (choice: AudienceChoiceValue) => {
+      if (!audienceItem || isUpdatingAudience) return;
+      if (
+        choice.audience === audienceItem.audience &&
+        choice.familyProfileId === audienceItem.familyProfileId
+      ) {
+        closeSheet("audience");
+        return;
+      }
+      updateAudience(
+        { id: audienceItem.id, ...choice },
+        {
+          onSuccess: () => {
+            closeSheet("audience");
+            AccessibilityInfo.announceForAccessibility(
+              "Changed who the meal is for",
+            );
+          },
+          onError: (error) =>
+            toast.error(
+              error instanceof ApiError && error.code === "ALREADY_CONFIRMED"
+                ? "That meal is already logged as eaten, so it can't move to someone else."
+                : "Couldn't change who it's for. Please try again.",
+            ),
+        },
+      );
+    },
+    [audienceItem, isUpdatingAudience, updateAudience, closeSheet, toast],
   );
 
   const handleReorder = useCallback(
@@ -623,6 +710,8 @@ export default function MealPlanDayScreen() {
                 isExpanded={expandedSections.has(mealType)}
                 onToggle={handleToggleSection}
                 sectionSummary={sectionSummaries[mealType]}
+                familyById={familyById}
+                onChangeAudience={family ? handleOpenAudience : undefined}
               />
             );
           })
@@ -659,7 +748,9 @@ export default function MealPlanDayScreen() {
           callers only, not this screen. */}
       <BottomSheetModal
         ref={addItemMenuSheetRef}
-        snapPoints={ADD_ITEM_MENU_SNAP_POINTS}
+        snapPoints={
+          family ? FAMILY_ADD_MENU_SNAP_POINTS : ADD_ITEM_MENU_SNAP_POINTS
+        }
         enableDynamicSizing={false}
         onDismiss={handleAddItemMenuDismiss}
         onChange={onSheetChange}
@@ -704,6 +795,26 @@ export default function MealPlanDayScreen() {
         {...sheetHostProps}
       >
         {simpleEntrySheetChildren}
+      </BottomSheetModal>
+      <BottomSheetModal
+        ref={audienceSheetRef}
+        snapPoints={AUDIENCE_SHEET_SNAP_POINTS}
+        enableDynamicSizing={false}
+        onDismiss={handleAudienceDismiss}
+        onChange={onSheetChange}
+        onAnimate={onSheetAnimate}
+        {...sheetHostProps}
+      >
+        {family && audienceItem ? (
+          <AudienceSheetContent
+            profiles={family.profiles}
+            value={{
+              audience: audienceItem.audience,
+              familyProfileId: audienceItem.familyProfileId,
+            }}
+            onChange={handleChooseAudience}
+          />
+        ) : null}
       </BottomSheetModal>
     </View>
   );

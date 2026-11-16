@@ -1,6 +1,9 @@
 import type { Allergy, FamilyProfile, MealPlanItem } from "@shared/schema";
 import type { AllergenId } from "@shared/constants/allergens";
-import { getRecipeAllergyClashes } from "@shared/constants/allergens";
+import {
+  ALLERGEN_INGREDIENT_MAP,
+  getRecipeAllergyClashes,
+} from "@shared/constants/allergens";
 import type { MealAudience } from "@shared/types/family";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
@@ -112,3 +115,105 @@ export function defaultAudienceFor(filter: AudienceFilter): {
   }
   return { audience: "shared", familyProfileId: null };
 }
+
+/** "Contains tree nuts \u2014 Ivy" or "May contain tree nuts \u2014 Ivy". */
+export function describeClash(clash: MealClash): string {
+  // Same guard as the recipe allergen label: a stale id degrades to its raw
+  // text instead of throwing in render.
+  const label = Object.hasOwn(ALLERGEN_INGREDIENT_MAP, clash.allergenId)
+    ? ALLERGEN_INGREDIENT_MAP[clash.allergenId].label.toLowerCase()
+    : clash.allergenId;
+  const lead = clash.level === "contains" ? "Contains" : "May contain";
+  return `${lead} ${label} \u2014 ${clash.name}`;
+}
+
+export const ALLERGENS_NOT_CHECKED = "Allergens not checked";
+
+/** What a day-view row shows about who a meal is for. */
+export interface ItemFamilyInfo {
+  /** "for everyone" | "for Ivy" | null. */
+  audienceLabel: string | null;
+  /** One line per clash; "Allergens not checked" when they are not known. */
+  clashLines: string[];
+}
+
+export function getItemFamilyInfo(
+  item: Pick<
+    MealPlanItemWithRelations,
+    "audience" | "familyProfileId" | "recipe" | "scannedItem"
+  >,
+  user: { allergies: Allergy[] },
+  profiles: FamilyProfile[],
+): ItemFamilyInfo {
+  const clashes = getMealClashes(item, getEaters(item, user, profiles));
+  return {
+    audienceLabel: getAudienceLabel(item, profiles),
+    clashLines:
+      clashes === "unknown"
+        ? [ALLERGENS_NOT_CHECKED]
+        : clashes.map(describeClash),
+  };
+}
+
+/** What a week-grid cell shows about its meals. */
+export interface CellFamilyInfo {
+  /** The first item's marker; nothing for the user's own meal. */
+  badge: { kind: "shared" } | { kind: "profile"; initial: string } | null;
+  audienceLabel: string | null;
+  /** Any item in the slot has a blocking clash. Unknown allergens never warn. */
+  warning: boolean;
+}
+
+/**
+ * The marker describes the slot's first item; the warning covers every item
+ * (decision 6). `items` is the cell's sorted list.
+ */
+export function getCellFamilyInfo(
+  items: MealPlanItemWithRelations[],
+  user: { allergies: Allergy[] },
+  profiles: FamilyProfile[],
+): CellFamilyInfo {
+  const first = items[0];
+  const audienceLabel = first ? getAudienceLabel(first, profiles) : null;
+  let badge: CellFamilyInfo["badge"] = null;
+  if (first && audienceLabel !== null) {
+    if (first.audience === "shared") badge = { kind: "shared" };
+    else {
+      const name =
+        profiles.find((p) => p.id === first.familyProfileId)?.name ?? "";
+      const initial = Array.from(name.trim())[0]?.toUpperCase();
+      if (initial) badge = { kind: "profile", initial };
+    }
+  }
+  const warning = items.some((item) => {
+    const clashes = getMealClashes(item, getEaters(item, user, profiles));
+    return clashes !== "unknown" && clashes.some((c) => c.blocking);
+  });
+  return { badge, audienceLabel, warning };
+}
+
+/**
+ * The filter in force: the chosen one while its profile still exists and
+ * family planning is on, otherwise "all". A stale "Ivy" must never hide the
+ * user's own meals after the profile is deleted or the switch goes off.
+ */
+export function resolveAudienceFilter(
+  filter: AudienceFilter,
+  profiles: FamilyProfile[] | null,
+): AudienceFilter {
+  if (profiles === null) return { kind: "all" };
+  if (
+    filter.kind === "profile" &&
+    !profiles.some((p) => p.id === filter.profileId)
+  ) {
+    return { kind: "all" };
+  }
+  return filter;
+}
+
+/**
+ * Snap points of the add menu with its "Who's it for?" row: the day screen's
+ * menu, and the grid's menu that also carries "Suggest a meal".
+ */
+export const FAMILY_ADD_MENU_SNAP_POINTS = ["56%"];
+export const FAMILY_ADD_MENU_WITH_SUGGEST_SNAP_POINTS = ["70%"];
