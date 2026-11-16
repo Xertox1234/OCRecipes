@@ -209,6 +209,7 @@ export const storage = {
   createGroceryList: groceryLists.createGroceryList,
   getGroceryListCount: groceryLists.getGroceryListCount,
   getGroceryLists: groceryLists.getGroceryLists,
+  getGroceryListsWithOpenItems: groceryLists.getGroceryListsWithOpenItems,
   getGroceryListWithItems: groceryLists.getGroceryListWithItems,
   verifyGroceryListOwnership: groceryLists.verifyGroceryListOwnership,
   deleteGroceryList: groceryLists.deleteGroceryList,
