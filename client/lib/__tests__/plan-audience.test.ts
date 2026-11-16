@@ -1,4 +1,5 @@
 import {
+  PENDING_AUDIENCE_TTL_MS,
   clearPendingAudience,
   setPendingAudience,
   takePendingAudience,
@@ -47,5 +48,29 @@ describe("plan-audience", () => {
     setPendingAudience(slot, ivy);
     clearPendingAudience();
     expect(takePendingAudience(slot)).toBeNull();
+  });
+  // The menu closes when it hands off to Quick Add or Import, so a choice
+  // cannot be cleared on dismiss. Left forever, an abandoned "for Ivy" would
+  // be applied to a meal added to that slot much later by another route.
+  it("forgets a choice that was never used after ten minutes", () => {
+    vi.useFakeTimers();
+    try {
+      setPendingAudience(slot, ivy);
+      vi.advanceTimersByTime(PENDING_AUDIENCE_TTL_MS + 1);
+      expect(takePendingAudience(slot)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still applies a choice used within ten minutes", () => {
+    vi.useFakeTimers();
+    try {
+      setPendingAudience(slot, ivy);
+      vi.advanceTimersByTime(PENDING_AUDIENCE_TTL_MS - 1);
+      expect(takePendingAudience(slot)).toEqual(ivy);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
