@@ -1,5 +1,5 @@
 ---
-title: CodeQL's missing-rate-limiting alert points at requireAuth when the limiter runs after it — inlining the limiter does not clear it; dismiss as a false positive
+title: CodeQL missing-rate-limiting flags requireAuth before the limiter — a false positive
 track: knowledge
 category: conventions
 tags: [security, api, codeql, rate-limiting, ci]
