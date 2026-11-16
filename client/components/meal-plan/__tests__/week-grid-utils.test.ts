@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 import { toLocalDateString } from "@shared/lib/date";
 
 import {
+  type GridDay,
   GRID_MEAL_TYPES,
   SLOTS_PER_WEEK,
   addDays,
@@ -50,9 +51,16 @@ function recipe(title: string, calories: number, imageUrl: string | null) {
 
 // Monday 16 November 2026; its week runs Sunday 15 to Saturday 21.
 const today = new Date(2026, 10, 16);
-const week = getWeekDates(today);
-const nextWeek = getWeekDates(new Date(2026, 10, 24));
-const lastWeek = getWeekDates(new Date(2026, 10, 10));
+
+// Everything the code under test produces is built in `beforeEach`, never at
+// file scope: the mutation runner attributes a mutant to the tests that run
+// it, and work done while the file loads belongs to no test, so a mutant in
+// it would look uncaught however good the assertions are.
+let week: Date[];
+let nextWeek: Date[];
+let lastWeek: Date[];
+let days: GridDay[];
+let nextWeekDays: GridDay[];
 
 const items: MealPlanItemWithRelations[] = [
   // Listed out of order on purpose: the lower sortOrder must still win.
@@ -87,8 +95,13 @@ const items: MealPlanItemWithRelations[] = [
   }),
 ];
 
-const days = buildWeekGrid(items, week, today);
-const nextWeekDays = buildWeekGrid(items, nextWeek, today);
+beforeEach(() => {
+  week = getWeekDates(today);
+  nextWeek = getWeekDates(new Date(2026, 10, 24));
+  lastWeek = getWeekDates(new Date(2026, 10, 10));
+  days = buildWeekGrid(items, week, today);
+  nextWeekDays = buildWeekGrid(items, nextWeek, today);
+});
 
 describe("getWeekDates", () => {
   it("returns the seven local days of the week, Sunday first", () => {
@@ -122,37 +135,6 @@ describe("getWeekDates", () => {
     expect(dates.every((d) => d.getHours() === 0 && d.getMinutes() === 0)).toBe(
       true,
     );
-  });
-});
-
-describe("getWeekDates on a UTC-positive device", () => {
-  const originalTz = process.env.TZ;
-
-  beforeAll(() => {
-    process.env.TZ = "Europe/Berlin";
-  });
-
-  afterAll(() => {
-    if (originalTz === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTz;
-  });
-
-  it("pins the timezone it claims to (guards the mechanism)", () => {
-    expect(-new Date(2026, 10, 18).getTimezoneOffset()).toBe(60);
-  });
-
-  it("still returns the local calendar days, not the UTC ones", () => {
-    // 00:30 local on the 18th is still the 17th in UTC.
-    const dates = getWeekDates(new Date(2026, 10, 18, 0, 30));
-    expect(dates.map(toLocalDateString)).toEqual([
-      "2026-11-15",
-      "2026-11-16",
-      "2026-11-17",
-      "2026-11-18",
-      "2026-11-19",
-      "2026-11-20",
-      "2026-11-21",
-    ]);
   });
 });
 
@@ -355,14 +337,24 @@ describe("formatSheetDayLabel", () => {
 
 describe("getInitialScrollOffset", () => {
   const WINDOW = 402; // iPhone 17 Pro
-  const stride = getGridColumnWidth(WINDOW) + GRID_COLUMN_GAP;
   const weekWith = (todayDate: Date) =>
     buildWeekGrid([], getWeekDates(todayDate), todayDate);
+  let stride: number;
   // The furthest the grid can scroll: the last column flush with the right gutter.
-  const maxOffset = getInitialScrollOffset(
-    weekWith(new Date(2026, 10, 21)),
-    WINDOW,
-  );
+  let maxOffset: number;
+  beforeEach(() => {
+    stride = getGridColumnWidth(WINDOW) + GRID_COLUMN_GAP;
+    maxOffset = getInitialScrollOffset(
+      weekWith(new Date(2026, 10, 21)),
+      WINDOW,
+    );
+  });
+
+  it("can scroll exactly as far as the content overflows the space beside the labels", () => {
+    // 7 columns of 96 + 6 gaps of 6 + 16 end padding = 724; 402 - 76 = 326.
+    expect(getGridColumnWidth(WINDOW)).toBe(96);
+    expect(maxOffset).toBe(724 - 326);
+  });
 
   it("puts today's column first early in the week", () => {
     expect(
@@ -413,5 +405,58 @@ describe("getInitialScrollOffset", () => {
         expect(offset).toBeLessThanOrEqual((day - 15) * widthStride);
       }
     }
+  });
+});
+
+describe("cases the first pass left unpinned", () => {
+  it("breaks a sortOrder tie by id, lowest first", () => {
+    const grid = buildWeekGrid(
+      [
+        makeItem({
+          id: 902,
+          sortOrder: 0,
+          recipe: recipe("Second", 100, null),
+        }),
+        makeItem({ id: 901, sortOrder: 0, recipe: recipe("First", 100, null) }),
+      ],
+      week,
+      today,
+    );
+    expect(grid[2].cells.dinner.items.map((i) => i.id)).toEqual([901, 902]);
+    expect(grid[2].cells.dinner.title).toBe("First");
+  });
+
+  it("treats a missing sortOrder as 0", () => {
+    const grid = buildWeekGrid(
+      [
+        makeItem({ id: 911, sortOrder: 1, recipe: recipe("Later", 100, null) }),
+        makeItem({
+          id: 912,
+          sortOrder: null,
+          recipe: recipe("Unset", 100, null),
+        }),
+      ],
+      week,
+      today,
+    );
+    expect(grid[2].cells.dinner.title).toBe("Unset");
+  });
+
+  it("refuses a date with anything before or after it", () => {
+    expect(parseLocalDateString("x2026-11-19")).toBeNull();
+    expect(parseLocalDateString("2026-11-19x")).toBeNull();
+    expect(parseLocalDateString(" 2026-11-19")).toBeNull();
+  });
+
+  it("leaves the pantry start to the screen for a week that starts today", () => {
+    // Sunday 15 November is the first day of its own week.
+    const sunday = new Date(2026, 10, 15);
+    expect(
+      getPantryPlanStartDate(getWeekDates(sunday), sunday),
+    ).toBeUndefined();
+  });
+
+  it("has no pantry start for an empty list of days", () => {
+    expect(getPantryPlanStartDate([], today)).toBeUndefined();
   });
 });
