@@ -16,7 +16,7 @@ import {
   type SimpleEntrySheetContentHandle,
 } from "@/components/meal-plan/SimpleEntrySheet";
 
-// The 4 bottom sheets MealPlanHomeScreen hosts, collapsed into one union so at
+// The 4 bottom sheets MealPlanHomeScreen and MealPlanDayScreen each host, collapsed into one union so at
 // most one can ever be "active" at a time (matches production reality — the
 // app never opens two of these simultaneously).
 export type SheetKind =
@@ -27,7 +27,8 @@ export type SheetKind =
 export type ActiveSheet = { kind: SheetKind; mealType: MealType } | null;
 
 /**
- * Owns MealPlanHomeScreen's sheet state machine: the `activeSheet` union, the
+ * Owns the Plan screens' sheet state machine (MealPlanHomeScreen's grid and
+ * MealPlanDayScreen each call it): the `activeSheet` union, the
  * sheet refs, the present/dismiss effect, the unified Android back handler and
  * the dismiss/handoff handlers. The `<BottomSheetModal>` JSX itself stays in
  * the screen — BottomSheetModal must be declared directly in the screen

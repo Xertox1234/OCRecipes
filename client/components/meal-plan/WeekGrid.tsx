@@ -26,12 +26,13 @@ import {
 } from "./WeekGridCell";
 import {
   GRID_COLUMN_GAP,
+  GRID_END_PADDING,
   GRID_LABEL_COLUMN_WIDTH,
   GRID_MEAL_TYPES,
   type GridDay,
   getDayHeaderAccessibilityLabel,
   getGridColumnWidth,
-  getInitialColumnIndex,
+  getInitialScrollOffset,
 } from "./week-grid-utils";
 
 const KCAL_ROW_HEIGHT = 28;
@@ -111,7 +112,7 @@ export function WeekGrid({
   // the column width, so a meal added to the same week never yanks the grid
   // back while the user is looking at Friday.
   const firstDateStr = days[0]?.dateStr;
-  const initialOffset = getInitialColumnIndex(days) * columnStride;
+  const initialOffset = getInitialScrollOffset(days, windowWidth);
   useEffect(() => {
     scrollRef.current?.scrollTo({ x: initialOffset, animated: false });
   }, [firstDateStr, initialOffset]);
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
   },
   columns: {
     gap: GRID_COLUMN_GAP,
-    paddingRight: Spacing.lg,
+    paddingRight: GRID_END_PADDING,
   },
   dayHeader: {
     height: DAY_HEADER_HEIGHT,

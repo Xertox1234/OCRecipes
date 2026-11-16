@@ -13,6 +13,9 @@ import {
   getCellAccessibilityLabel,
   getDayHeaderAccessibilityLabel,
   getInitialColumnIndex,
+  getInitialScrollOffset,
+  getGridColumnWidth,
+  GRID_COLUMN_GAP,
   getPantryPlanStartDate,
   getWeekDates,
   isBeyondForwardLimit,
@@ -347,5 +350,68 @@ describe("formatSheetDayLabel", () => {
 
   it("returns nothing for a value that is not a real date", () => {
     expect(formatSheetDayLabel("2026-02-30")).toBe("");
+  });
+});
+
+describe("getInitialScrollOffset", () => {
+  const WINDOW = 402; // iPhone 17 Pro
+  const stride = getGridColumnWidth(WINDOW) + GRID_COLUMN_GAP;
+  const weekWith = (todayDate: Date) =>
+    buildWeekGrid([], getWeekDates(todayDate), todayDate);
+  // The furthest the grid can scroll: the last column flush with the right gutter.
+  const maxOffset = getInitialScrollOffset(
+    weekWith(new Date(2026, 10, 21)),
+    WINDOW,
+  );
+
+  it("puts today's column first early in the week", () => {
+    expect(
+      getInitialScrollOffset(weekWith(new Date(2026, 10, 15)), WINDOW),
+    ).toBe(0);
+    expect(
+      getInitialScrollOffset(weekWith(new Date(2026, 10, 16)), WINDOW),
+    ).toBe(stride);
+    expect(
+      getInitialScrollOffset(weekWith(new Date(2026, 10, 17)), WINDOW),
+    ).toBe(2 * stride);
+  });
+
+  it("never asks to scroll past the end, Thursday to Saturday", () => {
+    // Unclamped these would be 4, 5 and 6 strides: further than the content.
+    expect(maxOffset).toBeLessThan(4 * stride);
+    expect(maxOffset).toBeGreaterThan(3 * stride);
+    for (const day of [19, 20, 21]) {
+      expect(
+        getInitialScrollOffset(weekWith(new Date(2026, 10, day)), WINDOW),
+      ).toBe(maxOffset);
+    }
+  });
+
+  it("opens at the start for a week that does not contain today", () => {
+    const otherWeek = buildWeekGrid(
+      [],
+      getWeekDates(new Date(2026, 10, 24)),
+      today,
+    );
+    expect(getInitialScrollOffset(otherWeek, WINDOW)).toBe(0);
+  });
+
+  it("stays between the start and the end on every screen width and weekday", () => {
+    for (const width of [320, 375, 402, 430, 768]) {
+      const widthStride = getGridColumnWidth(width) + GRID_COLUMN_GAP;
+      const widthMax = getInitialScrollOffset(
+        weekWith(new Date(2026, 10, 21)),
+        width,
+      );
+      for (let day = 15; day <= 21; day++) {
+        const offset = getInitialScrollOffset(
+          weekWith(new Date(2026, 10, day)),
+          width,
+        );
+        expect(offset).toBeGreaterThanOrEqual(0);
+        expect(offset).toBeLessThanOrEqual(widthMax);
+        expect(offset).toBeLessThanOrEqual((day - 15) * widthStride);
+      }
+    }
   });
 });

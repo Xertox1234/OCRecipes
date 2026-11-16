@@ -233,6 +233,31 @@ export function getGridColumnWidth(windowWidth: number): number {
   return Math.floor(available / GRID_VISIBLE_COLUMNS);
 }
 
+/** Space after the last day column, matching the screen's right gutter. */
+export const GRID_END_PADDING = 16;
+
+/**
+ * Where the grid's sideways scroll opens: today's column first, but never
+ * further than the content can scroll. Late in the week the last column sits
+ * flush with the right gutter instead, with today still on screen. A raw
+ * `column × stride` would ask for an offset past the end of the content for
+ * Thursday to Saturday.
+ */
+export function getInitialScrollOffset(
+  days: GridDay[],
+  windowWidth: number,
+): number {
+  const columnWidth = getGridColumnWidth(windowWidth);
+  const stride = columnWidth + GRID_COLUMN_GAP;
+  const contentWidth =
+    days.length * columnWidth +
+    Math.max(0, days.length - 1) * GRID_COLUMN_GAP +
+    GRID_END_PADDING;
+  const viewportWidth = windowWidth - GRID_LABEL_COLUMN_WIDTH;
+  const maxOffset = Math.max(0, contentWidth - viewportWidth);
+  return Math.min(getInitialColumnIndex(days) * stride, maxOffset);
+}
+
 /** "Tue, Nov 17" for a YYYY-MM-DD local day; empty for anything else. */
 export function formatSheetDayLabel(dateStr: string): string {
   const date = parseLocalDateString(dateStr);
