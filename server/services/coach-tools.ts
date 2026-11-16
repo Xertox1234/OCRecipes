@@ -761,7 +761,9 @@ function groceryCardResult(outcome: void | WriteCardOutcome) {
   if (!outcome.shown) {
     return {
       card_shown: false,
-      message: `No card is on screen: the user's pantry already has everything asked for (${names(outcome.leftOff)}). Nothing has been saved. Tell them they already have these; do not mention a card.`,
+      // Worded for this request only: an earlier card from the same turn
+      // stays on screen, so this must not say there is no card at all.
+      message: `No grocery card was made for this request: the user's pantry already has everything asked for (${names(outcome.leftOff)}). Nothing has been saved. Tell them they already have these, and do not tell them to tap a card for these items.`,
     };
   }
   const notes = [

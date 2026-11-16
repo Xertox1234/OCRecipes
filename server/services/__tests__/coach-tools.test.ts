@@ -931,7 +931,10 @@ describe("write-card mode (spec 2026-11-09)", () => {
     );
     expect(result).toMatchObject({ card_shown: false });
     const text = JSON.stringify(result);
-    expect(text).toMatch(/No card/);
+    // Scoped to this request: an earlier card from the same turn may still
+    // be on screen, so the message must not say there is no card at all.
+    expect(text).toMatch(/No grocery card was made for this request/);
+    expect(text).not.toMatch(/No card is on screen|do not mention a card/i);
     expect(text).toMatch(/Spinach/);
     expect(text).not.toMatch(/tap the card/i);
   });
