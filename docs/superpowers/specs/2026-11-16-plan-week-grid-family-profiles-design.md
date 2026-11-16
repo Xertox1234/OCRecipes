@@ -26,6 +26,9 @@ to see when a recipe clashes with a family member's allergy.
 7. **No fasting feature.** Hearth's fasting screen is not brought over.
 8. **A "Plan for my family" switch in the user's profile, off by default.** People using the app
    just for themselves see no family items anywhere.
+9. **Family allergies fall under the existing health-data consent** (2026-11-16). Saving a
+   profile's allergies or note needs the same consent the user's own allergies need. Withdrawing
+   that consent clears every profile's allergies and note; names and meals stay.
 
 ## My calls (not confirmed by the owner — correct any of these)
 
@@ -275,12 +278,6 @@ user's own allergies. For a shared or profile slot there are two options:
    after the fact.
 
 The design assumes option 2 until the owner rules.
-
-**Do family allergies fall under the existing health-data consent?** The design assumes yes:
-saving a profile's allergies or note needs the same consent the user's own allergies need, and
-withdrawing that consent clears every profile's allergies and note (names and meals stay). The
-alternative is to treat family profiles as outside that consent, which leaves allergy data about
-other people stored after the account holder has withdrawn consent for health data.
 
 **Should pantry-generated meals stop putting the whole household's portions on the user's ring?**
 (The existing exception above.) What the design does without a ruling:
