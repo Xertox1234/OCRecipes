@@ -2,13 +2,13 @@
 //
 // Feedback for adding an AI meal suggestion to the plan. The suggestion modal
 // closes on add, so the confirmation is a toast (it fires its own Success
-// haptic — no second buzz). Mock set trimmed from MealPlanHomeScreen.test.tsx;
+// haptic — no second buzz). Mock set trimmed from MealPlanDayScreen.test.tsx;
 // the suggestion modal is a stub button that hands the screen a fixture.
 import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
-import MealPlanHomeScreen from "../MealPlanHomeScreen";
+import MealPlanDayScreen from "../MealPlanDayScreen";
 import { TIER_FEATURES } from "@shared/types/premium";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
@@ -105,6 +105,7 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
+  useRoute: () => ({ params: undefined }),
   useFocusEffect: () => {},
   useIsFocused: () => true,
 }));
@@ -165,10 +166,10 @@ beforeEach(() => {
   mockCreateRecipe.mockResolvedValue({ id: 31 });
 });
 
-describe("MealPlanHomeScreen — adding a meal suggestion", () => {
+describe("MealPlanDayScreen — adding a meal suggestion", () => {
   it("toasts the day and meal once, with no extra Success haptic", async () => {
     mockAddItem.mockResolvedValue({ id: 1 });
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     fireEvent.click(screen.getByLabelText("Pick suggestion"));
 
@@ -184,7 +185,7 @@ describe("MealPlanHomeScreen — adding a meal suggestion", () => {
 
   it("a failed add shows the error toast and no success toast", async () => {
     mockAddItem.mockRejectedValue(new Error("500"));
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     fireEvent.click(screen.getByLabelText("Pick suggestion"));
 
@@ -198,7 +199,7 @@ describe("MealPlanHomeScreen — adding a meal suggestion", () => {
   // failed add leaves no recipe behind and a retry just sends the same call.
   it("adds via ONE call carrying the inline recipe — no separate recipe create", async () => {
     mockAddItem.mockResolvedValue({ id: 1 });
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     fireEvent.click(screen.getByLabelText("Pick suggestion"));
 
@@ -223,7 +224,7 @@ describe("MealPlanHomeScreen — adding a meal suggestion", () => {
     mockAddItem
       .mockRejectedValueOnce(new Error("500"))
       .mockResolvedValueOnce({ id: 1 });
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     fireEvent.click(screen.getByLabelText("Pick suggestion"));
     await waitFor(() => {

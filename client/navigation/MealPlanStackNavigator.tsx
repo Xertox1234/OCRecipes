@@ -2,6 +2,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import MealPlanHomeScreen from "@/screens/meal-plan/MealPlanHomeScreen";
+import MealPlanDayScreen from "@/screens/meal-plan/MealPlanDayScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
 import RecipeCreateScreen from "@/screens/meal-plan/RecipeCreateScreen";
 import RecipeImportScreen from "@/screens/meal-plan/RecipeImportScreen";
@@ -28,6 +29,8 @@ import type { MealPlanDay } from "@shared/types/meal-plan";
 
 export type MealPlanStackParamList = {
   MealPlanHome: undefined;
+  /** One day of the plan. `date` is YYYY-MM-DD in device-local time. */
+  MealPlanDay: { date: string };
   RecipeBrowser: {
     mealType?: string;
     plannedDate?: string;
@@ -93,6 +96,13 @@ export default function MealPlanStackNavigator() {
       <Stack.Screen
         name="MealPlanHome"
         component={MealPlanHomeScreen}
+        options={{
+          headerTitle: () => <HeaderTitle title="Plan" />,
+        }}
+      />
+      <Stack.Screen
+        name="MealPlanDay"
+        component={MealPlanDayScreen}
         options={{
           headerTitle: () => <HeaderTitle title="Plan" />,
         }}

@@ -16,7 +16,7 @@ import {
   type SimpleEntrySheetContentHandle,
 } from "@/components/meal-plan/SimpleEntrySheet";
 
-// The 4 bottom sheets MealPlanHomeScreen hosts, collapsed into one union so at
+// The 4 bottom sheets MealPlanHomeScreen and MealPlanDayScreen each host, collapsed into one union so at
 // most one can ever be "active" at a time (matches production reality — the
 // app never opens two of these simultaneously).
 export type SheetKind =
@@ -27,7 +27,8 @@ export type SheetKind =
 export type ActiveSheet = { kind: SheetKind; mealType: MealType } | null;
 
 /**
- * Owns MealPlanHomeScreen's sheet state machine: the `activeSheet` union, the
+ * Owns the Plan screens' sheet state machine (MealPlanHomeScreen's grid and
+ * MealPlanDayScreen each call it): the `activeSheet` union, the
  * sheet refs, the present/dismiss effect, the unified Android back handler and
  * the dismiss/handoff handlers. The `<BottomSheetModal>` JSX itself stays in
  * the screen — BottomSheetModal must be declared directly in the screen
@@ -38,9 +39,18 @@ export type ActiveSheet = { kind: SheetKind; mealType: MealType } | null;
 export function useMealPlanSheets({
   navigation,
   selectedDateStr,
+  onSuggest,
+  dayLabel,
 }: {
   navigation: MealPlanHomeScreenNavigationProp;
   selectedDateStr: string;
+  /**
+   * Adds a "Suggest a meal" row to the add menu. Called with the menu's meal
+   * type once the menu has closed. Omit it and the row is not shown.
+   */
+  onSuggest?: (mealType: MealType) => void;
+  /** The day being added to, shown in the add menu's title. */
+  dayLabel?: string;
 }) {
   const addItemMenuSheetRef = useRef<BottomSheetModal>(null);
   const importRecipeSheetRef = useRef<BottomSheetModal>(null);
@@ -127,6 +137,16 @@ export function useMealPlanSheets({
   const handleImportRecipeDismiss = useCallback(() => {
     closeSheet("importRecipe");
   }, [closeSheet]);
+
+  // Same two-step handoff as the rows above: close the menu, then hand the
+  // meal type to the screen once the close has started.
+  const handleSuggestFromMenu = useCallback(() => {
+    const mt = addItemMenuMealType;
+    closeSheet("addItemMenu");
+    runAfterTransition(() => {
+      if (mt !== null) onSuggest?.(mt);
+    });
+  }, [addItemMenuMealType, closeSheet, onSuggest]);
 
   // The ref the unified back-handler below should dismiss. Only ever
   // reassigned when a sheet OPENS (never cleared on close) — mirrors
@@ -291,6 +311,8 @@ export function useMealPlanSheets({
         onChooseRecipe={handleChooseRecipe}
         onSimpleEntry={handleSimpleEntry}
         onImportRecipe={handleImportRecipe}
+        onSuggest={onSuggest ? handleSuggestFromMenu : undefined}
+        dayLabel={dayLabel}
       />
     ),
     [
@@ -298,6 +320,9 @@ export function useMealPlanSheets({
       handleChooseRecipe,
       handleSimpleEntry,
       handleImportRecipe,
+      onSuggest,
+      handleSuggestFromMenu,
+      dayLabel,
     ],
   );
 

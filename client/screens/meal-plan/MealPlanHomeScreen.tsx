@@ -7,93 +7,79 @@ import React, {
 } from "react";
 import {
   AccessibilityInfo,
-  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   View,
-  Pressable,
-  ScrollView,
-  RefreshControl,
 } from "react-native";
-import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
-import { scheduleOnRN } from "react-native-worklets";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
-import { ThemedText } from "@/components/ThemedText";
-import { PressableScale } from "@/components/PressableScale";
-import { CalorieRing } from "@/components/CalorieRing";
 import { EmptyState } from "@/components/EmptyState";
+import { PressableScale } from "@/components/PressableScale";
 import {
   SkeletonBox,
   SkeletonLoadingRegion,
   SkeletonProvider,
 } from "@/components/SkeletonLoader";
+import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { Button } from "@/components/Button";
 import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
-import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
-import { useToast } from "@/context/ToastContext";
 import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
-import { useAccessibility } from "@/hooks/useAccessibility";
-import { usePremiumContext } from "@/context/PremiumContext";
+import { ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS } from "@/components/meal-plan/AddItemMenuSheet";
+import { IMPORT_RECIPE_SNAP_POINTS } from "@/components/meal-plan/ImportRecipeSheet";
+import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
+import { SIMPLE_ENTRY_SNAP_POINTS } from "@/components/meal-plan/SimpleEntrySheet";
+import { WeekGrid } from "@/components/meal-plan/WeekGrid";
 import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+  CELL_HEIGHT,
+  DAY_HEADER_HEIGHT,
+} from "@/components/meal-plan/WeekGridCell";
 import {
-  dateStripSnapBackSpringConfig,
-  dateStripSwipeThreshold,
-} from "@/constants/animations";
-import {
-  MEAL_LABELS,
   type MealType,
-  computeItemMacros,
-  computeMealSectionSummary,
-  getAutoExpandedMealType,
+  suggestionToPlanItem,
 } from "@/components/meal-plan/meal-plan-utils";
 import {
-  useMealPlanItems,
-  useRemoveMealPlanItem,
-  useReorderMealPlanItems,
+  SLOTS_PER_WEEK,
+  addDays,
+  buildWeekGrid,
+  countPlannedSlots,
+  formatSheetDayLabel,
+  getPantryPlanStartDate,
+  getWeekDates,
+  isBeyondForwardLimit,
+} from "@/components/meal-plan/week-grid-utils";
+import {
+  BorderRadius,
+  FontFamily,
+  Spacing,
+  withOpacity,
+} from "@/constants/theme";
+import { usePremiumContext } from "@/context/PremiumContext";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
+import { useHaptics } from "@/hooks/useHaptics";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
+import {
   invalidateMealPlanItems,
   useAddMealPlanItem,
-  useConfirmMealPlanItem,
+  useMealPlanItems,
 } from "@/hooks/useMealPlan";
-import { GOALS_QUERY_KEY, useCalorieGoal } from "@/hooks/useCalorieGoal";
-import { useDailySummary } from "@/hooks/useDailySummary";
+import { useToast } from "@/context/ToastContext";
 import { useMealPlanSheets } from "@/hooks/useMealPlanSheets";
-import { DateStripItem } from "@/components/meal-plan/DateStrip";
-import { MealSlotSection } from "@/components/meal-plan/MealSlotSection";
-import { useSheetHostProps } from "@/hooks/useSheetHostProps";
-import { QUERY_KEYS } from "@/lib/query-keys";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
-import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
-import { ADD_ITEM_MENU_SNAP_POINTS } from "@/components/meal-plan/AddItemMenuSheet";
-import { IMPORT_RECIPE_SNAP_POINTS } from "@/components/meal-plan/ImportRecipeSheet";
-import { SIMPLE_ENTRY_SNAP_POINTS } from "@/components/meal-plan/SimpleEntrySheet";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
+import { useSheetHostProps } from "@/hooks/useSheetHostProps";
+import { useTheme } from "@/hooks/useTheme";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
-import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
-import type { MealSuggestion } from "@shared/types/meal-suggestions";
-// Device-LOCAL basis: `planned_date` must be the day the user tapped on the
-// date strip, which is derived from local component getters below
-// (`setHours(0,0,0,0)`, `getDate()`). `toDateString` (UTC) would key a
-// UTC-positive device one calendar day earlier than its own chip label.
+// Device-LOCAL basis: `planned_date` is the day of the cell the user tapped.
 import { toLocalDateString } from "@shared/lib/date";
-import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
-
-const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
+import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 interface TopAction {
   id: string;
@@ -104,96 +90,83 @@ interface TopAction {
   badgeCount?: number;
 }
 
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-}
-
-function getDayLabel(date: Date): string {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(date);
-  target.setHours(0, 0, 0, 0);
-  const diff = Math.round(
-    (target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
-  );
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  if (diff === -1) return "Yesterday";
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-// ── CalorieRing replaces DailyTotals + Empty State ──────────────────
-
-// ── Main Screen ──────────────────────────────────────────────────────
-
 // Free: 7 days forward, Premium: 90 days forward
 const FREE_MAX_DAYS_FORWARD = 7;
 const PREMIUM_MAX_DAYS_FORWARD = 90;
 
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * The Plan tab's home: the week as a grid, days across and meals down. An
+ * empty cell adds a meal to that slot; a filled cell or a day header opens
+ * that day (MealPlanDayScreen), which is where the calorie ring, confirm,
+ * reorder and remove live.
+ */
 export default function MealPlanHomeScreen() {
   const navigation = useNavigation<MealPlanHomeScreenNavigationProp>();
-  const headerHeight = useHeaderHeight();
+  const contentInset = useHeaderContentInset(Spacing.sm);
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { features, isPremium } = usePremiumContext();
-  const { reducedMotion } = useAccessibility();
+  const { planUnknown, recheckPlan } = usePlanCheck();
 
-  const dateStripTranslateX = useSharedValue(0);
-
-  // Shared host prop bundle for all 4 sheets below (backdrop, themed
-  // background, hidden handle, and the accessible={false} iOS a11y fix —
-  // see useSheetHostProps' own JSDoc). BottomSheetModal's own background
-  // defaults to white regardless of theme, so it must be themed explicitly.
   const sheetHostProps = useSheetHostProps({
     backgroundColor: theme.backgroundDefault,
     backdropOpacity: 0.35,
     backdropPressBehavior: "close",
   });
 
-  const [today, setToday] = useState(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
+  const [today, setToday] = useState(startOfToday);
 
-  // Update 'today' when screen comes into focus (handles midnight crossing)
+  // Update 'today' when the screen comes into focus (handles midnight crossing)
   useFocusEffect(
     useCallback(() => {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
+      const d = startOfToday();
       if (d.getTime() !== today.getTime()) {
         setToday(d);
       }
     }, [today]),
   );
 
-  const [selectedDate, setSelectedDate] = useState(today);
+  // Any day in the visible week.
+  const [weekAnchor, setWeekAnchor] = useState(today);
+  // The day of the cell whose "+" was tapped last; the four sheets plan onto it.
+  const [sheetDateStr, setSheetDateStr] = useState(() =>
+    toLocalDateString(today),
+  );
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
-  const [suggestMealType, setSuggestMealType] = useState<MealType>("breakfast");
-  const [expandedSections, setExpandedSections] = useState<Set<MealType>>(
-    () => new Set([getAutoExpandedMealType()]),
+  const [suggestMealType, setSuggestMealType] = useState<MealType>("dinner");
+
+  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
+
+  // The add menu's "Suggest a meal" row. Runs after the menu has closed, for
+  // the meal of the cell that opened it; the day is `sheetDateStr`.
+  const handleSuggest = useCallback(
+    (mealType: MealType) => {
+      if (!features.aiMealSuggestions) {
+        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+        setShowUpgradeModal(true);
+        return;
+      }
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      setSuggestMealType(mealType);
+      setSuggestModalVisible(true);
+    },
+    [features.aiMealSuggestions, haptics],
   );
-  const selectedDateStr = toLocalDateString(selectedDate);
 
   // BottomSheetModal must be declared directly in this screen component —
-  // declaring it inside an imported child component silently breaks
-  // .present() (no error, no onChange/onAnimate, no visual change). See
-  // docs/solutions for the root-cause writeup. Each child below only owns
-  // its content; this screen owns the modal JSX, and useMealPlanSheets owns
-  // the sheet state, refs and present/dismiss effect it wires onto them.
-  // The Android back handler (useSheetBackHandler) is also called inside
-  // that hook; onSheetChange/onSheetAnimate below are its
-  // outputs, wired onto every <BottomSheetModal>.
+  // declaring it inside an imported child silently breaks .present(). The
+  // same four sheets are declared in MealPlanDayScreen for the same reason;
+  // useMealPlanSheets owns the state, refs and the Android back handler.
   const {
     addItemMenuSheetRef,
     importRecipeSheetRef,
@@ -213,40 +186,21 @@ export default function MealPlanHomeScreen() {
     importRecipeSheetChildren,
     quickAddSheetChildren,
     simpleEntrySheetChildren,
-  } = useMealPlanSheets({ navigation, selectedDateStr });
+  } = useMealPlanSheets({
+    navigation,
+    selectedDateStr: sheetDateStr,
+    // Owner ruling 2026-11-02: no premium-gated control while the plan is
+    // unknown. Once it is known, a free user gets the row and the upgrade
+    // prompt behind it, as on the day screen's Suggest chip.
+    onSuggest: planUnknown ? undefined : handleSuggest,
+    dayLabel: formatSheetDayLabel(sheetDateStr),
+  });
 
-  // Destructure rather than depend on the mutation objects themselves —
-  // useMutation returns a new object identity every render, which would
-  // make every useCallback below that depends on it re-create every render
-  // (and, since those callbacks feed the memoized MealSlotSection/
-  // MealSlotItem rows, defeat their React.memo). See CoachChat.tsx for the
-  // same pattern.
-  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
-  const { mutate: confirmItem } = useConfirmMealPlanItem();
   const { data: expiringItems } = useExpiringPantryItems(
     features.pantryTracking,
   );
 
-  // Fetch daily summary for confirmed meal plan item IDs
-  const { data: dailySummaryData } = useDailySummary(selectedDateStr);
-
-  const confirmedIds = useMemo(
-    () => new Set(dailySummaryData?.confirmedMealPlanItemIds ?? []),
-    [dailySummaryData?.confirmedMealPlanItemIds],
-  );
-
-  const maxDaysForward = isPremium
-    ? PREMIUM_MAX_DAYS_FORWARD
-    : FREE_MAX_DAYS_FORWARD;
-
-  // Generate 7-day date range centered on selected week
-  const weekDates = useMemo(() => {
-    // Start from the selected date's week start (Sunday)
-    const weekStart = new Date(selectedDate);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  }, [selectedDate]);
-
+  const weekDates = useMemo(() => getWeekDates(weekAnchor), [weekAnchor]);
   const startDate = toLocalDateString(weekDates[0]);
   const endDate = toLocalDateString(weekDates[6]);
 
@@ -258,290 +212,75 @@ export default function MealPlanHomeScreen() {
     refetch: refetchMealPlanItems,
   } = useMealPlanItems(startDate, endDate);
 
-  const { mutate: removeItem } = useRemoveMealPlanItem();
-  const { mutate: reorderItems } = useReorderMealPlanItems();
-
-  // Group items by date and meal type
-  const dayItems = useMemo(() => {
-    if (!mealPlanItems) return {};
-    const grouped: Record<string, MealPlanItemWithRelations[]> = {};
-    for (const item of mealPlanItems) {
-      const key = item.plannedDate;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(item);
-    }
-    return grouped;
-  }, [mealPlanItems]);
-
-  const selectedDayItems = useMemo(
-    () => dayItems[selectedDateStr] || [],
-    [dayItems, selectedDateStr],
+  const days = useMemo(
+    () => buildWeekGrid(mealPlanItems, weekDates, today),
+    [mealPlanItems, weekDates, today],
   );
+  const plannedSlots = countPlannedSlots(days);
 
-  const itemsByMealType = useMemo(() => {
-    const grouped: Record<string, MealPlanItemWithRelations[]> = {};
-    for (const mealType of MEAL_TYPES) {
-      grouped[mealType] = selectedDayItems.filter(
-        (i) => i.mealType === mealType,
-      );
-    }
-    return grouped;
-  }, [selectedDayItems]);
-
-  const sectionSummaries = useMemo(() => {
-    const result: Record<string, { itemCount: number; totalCalories: number }> =
-      {};
-    for (const mealType of MEAL_TYPES) {
-      result[mealType] = computeMealSectionSummary(
-        itemsByMealType[mealType] || [],
-      );
-    }
-    return result;
-  }, [itemsByMealType]);
-
-  // Calorie ring data. Only the goal is needed here, so it comes from the
-  // goals read rather than /api/daily-budget, which would total the day's log
-  // a second time (the daily-summary read above already does).
-  const {
-    data: budgetData,
-    isError: budgetError,
-    refetch: refetchBudget,
-  } = useCalorieGoal();
-  const calorieGoal = budgetData?.calorieGoal ?? 2000;
-
-  // Suppress the 2000 default against a failed budget fetch, so we don't show a
-  // confident-wrong goal. This is the same condition that renders the error
-  // EmptyState below (not `budgetError` alone) — with stale cached data we keep
-  // showing the ring, so the announce must track the no-data error only.
-  const budgetErrorNoData = budgetError && !budgetData;
-
-  // Announce each error EmptyState for screen readers — neither has a live
-  // region, so a cross-platform announce carries both VoiceOver and TalkBack
-  // with no double-announce. Both are EDGE-triggered on the error itself
-  // (announce on the rise, re-arm only when the error clears), never a
-  // re-test of state on every deps change: TanStack resets a data-less query
-  // to pending/error:null on refetch, so a state re-test re-announced on
-  // unrelated transitions (e.g. the budget copy on every items Try Again).
-  // The refs start at their mount value, so a screen that opens already
-  // errored does not announce on top of initial focus.
-  //
-  // Budget: its EmptyState is hidden while the full-screen items skeleton is
-  // up (`isLoading`), so the announce is deferred until it is actually on
-  // screen. The skeleton covering it is not "clearing" — only
-  // budgetErrorNoData falling re-arms it. Items: rendered in the scroll
-  // content on isLoadingError (see below); isLoading and isLoadingError are
-  // mutually exclusive, so it needs no skeleton gate.
-  //
-  // ONE effect for both: they can rise in the same commit (a shared outage,
-  // or items failing while a skeleton-deferred budget error waits), and iOS
-  // drops the second of two same-commit announcements — so a joint rise is
-  // spoken as one combined utterance.
-  const budgetErrorAnnouncedRef = useRef(budgetErrorNoData && !isLoading);
-  const mealPlanErrorAnnouncedRef = useRef(isLoadingError);
+  // Announce the load error for screen readers: the EmptyState has no live
+  // region, so one cross-platform announce carries VoiceOver and TalkBack.
+  // Edge-triggered (announce on the rise, re-arm when it clears) and silent
+  // when the screen opens already errored — same rule as MealPlanDayScreen.
+  const errorAnnouncedRef = useRef(isLoadingError);
   useEffect(() => {
-    if (!budgetErrorNoData) budgetErrorAnnouncedRef.current = false;
-    if (!isLoadingError) mealPlanErrorAnnouncedRef.current = false;
-    const budgetRose =
-      budgetErrorNoData && !isLoading && !budgetErrorAnnouncedRef.current;
-    const itemsRose = isLoadingError && !mealPlanErrorAnnouncedRef.current;
-    if (budgetRose) budgetErrorAnnouncedRef.current = true;
-    if (itemsRose) mealPlanErrorAnnouncedRef.current = true;
-    if (budgetRose && itemsRose) {
-      AccessibilityInfo.announceForAccessibility(
-        "Couldn't load your meal plan or calorie budget. Try again.",
-      );
-    } else if (budgetRose) {
-      AccessibilityInfo.announceForAccessibility(
-        "Couldn't load your calorie budget. Try again.",
-      );
-    } else if (itemsRose) {
-      AccessibilityInfo.announceForAccessibility(
-        "Couldn't load your meal plan. Try again.",
-      );
+    if (!isLoadingError) {
+      errorAnnouncedRef.current = false;
+      return;
     }
-  }, [budgetErrorNoData, isLoading, isLoadingError]);
+    if (errorAnnouncedRef.current) return;
+    errorAnnouncedRef.current = true;
+    AccessibilityInfo.announceForAccessibility(
+      "Couldn't load your meal plan. Try again.",
+    );
+  }, [isLoadingError]);
 
-  // Tell screen-reader users the screen is loading. Delayed 500ms to match
-  // the modal-safe pattern (docs/solutions/conventions/on-open-announce-
-  // must-delay-past-modal-present-focus-shift-2026-06-25.md) even though
-  // this route isn't a modal — harmless here, and keeps the announce shape
-  // identical across every skeleton screen fixed alongside this one.
   useDelayedLoadingAnnouncement(isLoading);
 
-  const dailyTotals = useMemo(() => {
-    let calories = 0;
-    let protein = 0;
-    let carbs = 0;
-    let fat = 0;
-    for (const item of selectedDayItems) {
-      const macros = computeItemMacros(item);
-      if (macros) {
-        calories += macros.calories;
-        protein += macros.protein;
-        carbs += macros.carbs;
-        fat += macros.fat;
-      }
-    }
-    return { calories, protein, carbs, fat };
-  }, [selectedDayItems]);
-
-  const handleDatePress = useCallback(
-    (date: Date) => {
-      haptics.selection();
-      setSelectedDate(date);
-    },
-    [haptics],
-  );
+  const maxDaysForward = isPremium
+    ? PREMIUM_MAX_DAYS_FORWARD
+    : FREE_MAX_DAYS_FORWARD;
 
   const handlePrevWeek = useCallback(() => {
     haptics.selection();
-    setSelectedDate((prev) => addDays(prev, -7));
+    setWeekAnchor((prev) => addDays(prev, -7));
   }, [haptics]);
 
   const handleNextWeek = useCallback(() => {
-    const nextWeek = addDays(selectedDate, 7);
-    const daysForward = Math.round(
-      (nextWeek.getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
-    );
-    if (daysForward > maxDaysForward) {
+    const nextAnchor = addDays(weekAnchor, 7);
+    if (isBeyondForwardLimit(nextAnchor, today, maxDaysForward)) {
+      // Owner ruling 2026-11-02: an unknown plan is neutral. While the
+      // subscription is still loading the limit above is the free one, so
+      // recheck instead of upselling someone who may already be paying.
+      if (planUnknown) {
+        recheckPlan();
+        return;
+      }
       haptics.notification(Haptics.NotificationFeedbackType.Warning);
       setShowUpgradeModal(true);
       return;
     }
     haptics.selection();
-    setSelectedDate(nextWeek);
-  }, [haptics, selectedDate, today, maxDaysForward]);
+    setWeekAnchor(nextAnchor);
+  }, [haptics, weekAnchor, today, maxDaysForward, planUnknown, recheckPlan]);
 
-  const handleItemPress = useCallback(
-    (item: MealPlanItemWithRelations) => {
-      if (item.recipeId) {
-        navigation.navigate("FeaturedRecipeDetail", {
-          recipeId: item.recipeId,
-          recipeType: "mealPlan",
-        });
-      }
-    },
-    [navigation],
-  );
-
-  const handleRemoveItem = useCallback(
-    (id: number) => {
+  const handleAddPress = useCallback(
+    (dateStr: string, mealType: MealType) => {
       haptics.selection();
-      removeItem(id, {
-        onError: () =>
-          toast.error("Couldn't remove the item. Please try again."),
-      });
-    },
-    [removeItem, haptics, toast],
-  );
-
-  const handleReorder = useCallback(
-    (reorderedItems: MealPlanItemWithRelations[]) => {
-      const updates = reorderedItems.map((item, idx) => ({
-        id: item.id,
-        sortOrder: idx,
-      }));
-      reorderItems(updates, {
-        onError: () =>
-          toast.error("Couldn't save the new order. Please try again."),
-      });
-    },
-    [reorderItems, toast],
-  );
-
-  const handleToggleSection = useCallback(
-    (mealType: MealType) => {
-      haptics.selection();
-      setExpandedSections((prev) => {
-        const next = new Set(prev);
-        const nowExpanded = !next.has(mealType);
-        if (nowExpanded) {
-          next.add(mealType);
-        } else {
-          next.delete(mealType);
-        }
-        if (Platform.OS === "ios") {
-          const label = MEAL_LABELS[mealType];
-          AccessibilityInfo.announceForAccessibility(
-            `${label} ${nowExpanded ? "expanded" : "collapsed"}`,
-          );
-        }
-        return next;
-      });
-    },
-    [haptics],
-  );
-
-  const handleAddItem = useCallback(
-    (mealType: MealType) => {
-      haptics.selection();
+      // Both updates land in one render, so the sheet's contents are built
+      // with this cell's day, never the one a previous sheet was opened for.
+      setSheetDateStr(dateStr);
       openSheet("addItemMenu", mealType);
     },
     [haptics, openSheet],
   );
 
-  const handleSuggest = useCallback(
-    (mealType: MealType) => {
-      if (!features.aiMealSuggestions) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
-        setShowUpgradeModal(true);
-        return;
-      }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      setSuggestMealType(mealType);
-      setSuggestModalVisible(true);
+  const handleDayPress = useCallback(
+    (dateStr: string) => {
+      haptics.selection();
+      navigation.navigate("MealPlanDay", { date: dateStr });
     },
-    [features.aiMealSuggestions, haptics],
-  );
-
-  const handleSelectSuggestion = useCallback(
-    async (suggestion: MealSuggestion) => {
-      try {
-        // One server call: the recipe and its plan item are created in a
-        // single transaction, so a failure leaves nothing behind.
-        await addMealPlanItem({
-          recipe: {
-            title: suggestion.title,
-            description: suggestion.description,
-            difficulty: suggestion.difficulty,
-            prepTimeMinutes: suggestion.prepTimeMinutes,
-            instructions: suggestion.instructions,
-            dietTags: suggestion.dietTags,
-            sourceType: "ai_suggestion",
-            caloriesPerServing: suggestion.calories,
-            proteinPerServing: suggestion.protein,
-            carbsPerServing: suggestion.carbs,
-            fatPerServing: suggestion.fat,
-            ingredients: suggestion.ingredients?.map((ing) => ({
-              name: ing.name,
-              quantity: ing.quantity,
-              unit: ing.unit,
-            })),
-          },
-          plannedDate: selectedDateStr,
-          mealType: suggestMealType,
-        });
-
-        // The modal closes, so confirm with a toast (fires its own Success).
-        toast.success(formatPlanAddSuccess(selectedDateStr, suggestMealType));
-        setSuggestModalVisible(false);
-      } catch {
-        toast.error(
-          "Couldn't add the suggestion to your plan. Please try again.",
-        );
-      }
-    },
-    [addMealPlanItem, selectedDateStr, suggestMealType, toast],
-  );
-
-  const handleConfirmItem = useCallback(
-    (id: number) => {
-      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      confirmItem(id, {
-        onError: () => toast.error("Couldn't log the meal. Please try again."),
-      });
-    },
-    [confirmItem, haptics, toast],
+    [haptics, navigation],
   );
 
   const handleBrowseRecipes = useCallback(() => {
@@ -564,53 +303,46 @@ export default function MealPlanHomeScreen() {
     navigation.navigate("CookbookList");
   }, [haptics, navigation]);
 
-  const handleRefresh = useCallback(async () => {
-    // invalidateMealPlanItems fires-and-forgets internally (its own callers
-    // never await it either); the pull-to-refresh spinner is driven by
-    // useMealPlanItems' own `isRefetching`, not by this callback's await, so
-    // that's still coordinated. The calorie goal and daily-summary (L6,
-    // 2026-09-23 audit) were previously never refreshed here at all.
+  const handleSelectSuggestion = useCallback(
+    async (suggestion: MealSuggestion) => {
+      try {
+        await addMealPlanItem(
+          suggestionToPlanItem(suggestion, sheetDateStr, suggestMealType),
+        );
+        // The modal closes, so confirm with a toast (fires its own Success).
+        toast.success(formatPlanAddSuccess(sheetDateStr, suggestMealType));
+        setSuggestModalVisible(false);
+      } catch {
+        toast.error(
+          "Couldn't add the suggestion to your plan. Please try again.",
+        );
+      }
+    },
+    [addMealPlanItem, sheetDateStr, suggestMealType, toast],
+  );
+
+  const handlePlanFromPantry = useCallback(() => {
+    haptics.selection();
+    navigation.navigate("ReceiptMealPlan", {
+      startDate: getPantryPlanStartDate(weekDates, today),
+    });
+  }, [haptics, navigation, weekDates, today]);
+
+  // Premium, and hidden (not locked) while the plan is still unknown.
+  const canPlanFromPantry = features.aiMealSuggestions && !planUnknown;
+
+  const handleRefresh = useCallback(() => {
+    // Fire-and-forget: the spinner is driven by the query's own
+    // `isRefetching`, not by this callback.
     invalidateMealPlanItems(queryClient);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: GOALS_QUERY_KEY }),
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary }),
-    ]);
     haptics.impact();
   }, [queryClient, haptics]);
 
-  // Date strip swipe gesture
-  const dateStripPanGesture = usePanGesture({
-    activeOffsetX: [-20, 20],
-    onUpdate: (e) => {
-      if (!reducedMotion) {
-        // Clamp visual feedback to +/-30px
-        dateStripTranslateX.value = Math.max(-30, Math.min(30, e.translationX));
-      }
-    },
-    onDeactivate: (e) => {
-      if (e.translationX < -dateStripSwipeThreshold) {
-        scheduleOnRN(handleNextWeek);
-      } else if (e.translationX > dateStripSwipeThreshold) {
-        scheduleOnRN(handlePrevWeek);
-      }
-      dateStripTranslateX.value = withSpring(0, dateStripSnapBackSpringConfig);
-    },
-  });
-
-  const dateStripAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: dateStripTranslateX.value }],
-  }));
-
-  // Month/year header
-  const monthYear = selectedDate.toLocaleDateString("en-US", {
+  const monthYear = weekDates[0].toLocaleDateString("en-US", {
     month: "long",
     year: "numeric",
   });
 
-  // Config-driven top action row, replacing 4 near-identical Pressables
-  // (mirrors client/components/home/action-config.ts's data-driven pattern).
-  // Built in-component (not module-level like HOME_ACTIONS) because these
-  // actions close over per-render handlers/data (expiringItems' badge count).
   const topActions: TopAction[] = useMemo(
     () => [
       {
@@ -652,67 +384,31 @@ export default function MealPlanHomeScreen() {
     ],
   );
 
-  if (isLoading) {
-    return (
-      <View
-        style={[
-          styles.container,
-          {
-            paddingTop: headerHeight,
-            paddingBottom: tabBarHeight + Spacing.xl,
-            backgroundColor: theme.backgroundRoot,
-          },
-        ]}
-      >
-        <SkeletonProvider>
-          <SkeletonLoadingRegion
-            style={styles.skeletonContainer}
-            testID="meal-plan-loading-skeleton"
-          >
-            <SkeletonBox width="60%" height={24} borderRadius={8} />
-            <View style={{ height: Spacing.lg }} />
-            <SkeletonBox width="100%" height={56} borderRadius={12} />
-            <View style={{ height: Spacing.xl }} />
-            {[1, 2, 3, 4].map((i) => (
-              <View key={i} style={{ marginBottom: Spacing.lg }}>
-                <SkeletonBox width="30%" height={16} borderRadius={4} />
-                <View style={{ height: Spacing.sm }} />
-                <SkeletonBox width="100%" height={48} borderRadius={8} />
-              </View>
-            ))}
-          </SkeletonLoadingRegion>
-        </SkeletonProvider>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <ScrollView
         testID="meal-plan-home-scroll"
         contentContainerStyle={{
-          paddingTop: headerHeight + Spacing.sm,
+          paddingTop: contentInset,
           paddingBottom: tabBarHeight + Spacing.xl,
         }}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
             onRefresh={handleRefresh}
-            progressViewOffset={headerHeight}
+            progressViewOffset={contentInset}
           />
         }
         showsVerticalScrollIndicator={false}
         // Android TalkBack background focus trap while any of the 4 sheets
-        // is open — see docs/solutions/conventions/
-        // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. iOS is
-        // already trapped separately via accessibilityViewIsModal on each
-        // sheet's own content root, so no accessibilityElementsHidden here.
+        // is open. iOS is trapped by accessibilityViewIsModal on each sheet's
+        // own content root.
         importantForAccessibility={
           isAnySheetOpen ? "no-hide-descendants" : "auto"
         }
       >
-        {/* Top action chips: one scrolling row, so a fourth chip never
-            wraps alone onto a second line (visual QA sweep #6). */}
+        {/* Top action chips: one scrolling row, so a fourth chip never wraps
+            alone onto a second line. */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -725,16 +421,14 @@ export default function MealPlanHomeScreen() {
               key={action.id}
               onPress={action.onPress}
               style={[
-                styles.groceryButton,
+                styles.chip,
                 { backgroundColor: withOpacity(theme.link, 0.1) },
               ]}
               accessibilityRole="button"
               accessibilityLabel={action.accessibilityLabel}
             >
               <Feather name={action.icon} size={16} color={theme.link} />
-              <ThemedText
-                style={[styles.groceryButtonText, { color: theme.link }]}
-              >
+              <ThemedText style={[styles.chipText, { color: theme.link }]}>
                 {action.label}
               </ThemedText>
               {!!action.badgeCount && (
@@ -758,22 +452,35 @@ export default function MealPlanHomeScreen() {
           ))}
         </ScrollView>
 
-        {/* Month/Year Header with arrows */}
-        <View style={styles.monthHeader}>
+        {/* Week header: arrows either side of the month and the slot count */}
+        <View style={styles.weekHeader}>
           <Pressable
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.weekArrow,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={handlePrevWeek}
-            hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Previous week"
           >
             <Feather name="chevron-left" size={20} color={theme.text} />
           </Pressable>
-          <ThemedText style={styles.monthTitle}>{monthYear}</ThemedText>
+          <View style={styles.weekTitle}>
+            <ThemedText style={styles.monthTitle}>{monthYear}</ThemedText>
+            {!isLoading && !isLoadingError && (
+              <ThemedText
+                style={[styles.slotCount, { color: theme.textSecondary }]}
+              >
+                {`${plannedSlots} of ${SLOTS_PER_WEEK} planned`}
+              </ThemedText>
+            )}
+          </View>
           <Pressable
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.weekArrow,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={handleNextWeek}
-            hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Next week"
           >
@@ -781,62 +488,32 @@ export default function MealPlanHomeScreen() {
           </Pressable>
         </View>
 
-        {/* Date Strip — swipe left/right to change week */}
-        <GestureDetector gesture={dateStripPanGesture}>
-          <Animated.View style={[styles.dateStrip, dateStripAnimatedStyle]}>
-            {weekDates.map((date) => {
-              const dateStr = toLocalDateString(date);
-              return (
-                <DateStripItem
-                  key={dateStr}
-                  date={date}
-                  isSelected={dateStr === selectedDateStr}
-                  hasItems={!!dayItems[dateStr]?.length}
-                  onPress={handleDatePress}
-                />
-              );
-            })}
-          </Animated.View>
-        </GestureDetector>
-
-        {/* Day Label */}
-        <ThemedText style={styles.dayLabel}>
-          {getDayLabel(selectedDate)}
-        </ThemedText>
-
-        {/* Calorie Ring — suppress against the 2000 default when the budget
-            fetch failed, so the user isn't shown a confident-wrong goal. */}
-        {budgetErrorNoData ? (
-          <EmptyState
-            variant="temporary"
-            icon="alert-circle"
-            title="Couldn't load your calorie budget"
-            description="We couldn't load your goal for this day. Pull down to refresh or tap below to try again."
-            actionLabel="Try Again"
-            onAction={() => {
-              void refetchBudget();
-            }}
-          />
-        ) : (
-          <CalorieRing
-            consumed={dailyTotals.calories}
-            goal={calorieGoal}
-            protein={dailyTotals.protein}
-            carbs={dailyTotals.carbs}
-            fat={dailyTotals.fat}
-          />
-        )}
-
-        {/* A failed items fetch with no cached data (isLoadingError) renders
-            HERE, where the list would go — distinct from `isRefetching`
-            (pull-to-refresh keeps the loaded week) and from isRefetchError
-            (a background failure with cached data, which keeps showing the
-            stale week). Without this branch a failed initial fetch looked
-            like a legitimately empty week (2026-09-23 audit, M18). Rendered
-            in-scroll, not as an early return, so the week navigation, top
-            actions and pull-to-refresh — none of which depend on this query
-            — stay usable. */}
-        {isLoadingError ? (
+        {isLoading ? (
+          <SkeletonProvider>
+            <SkeletonLoadingRegion
+              style={styles.skeleton}
+              testID="meal-plan-loading-skeleton"
+            >
+              {[0, 1, 2, 3, 4].map((row) => (
+                <View key={row} style={styles.skeletonRow}>
+                  {[0, 1, 2].map((col) => (
+                    <View key={col} style={styles.skeletonCell}>
+                      <SkeletonBox
+                        width="100%"
+                        height={row === 0 ? DAY_HEADER_HEIGHT : CELL_HEIGHT}
+                        borderRadius={BorderRadius.sm}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </SkeletonLoadingRegion>
+          </SkeletonProvider>
+        ) : isLoadingError ? (
+          // A failed first load renders HERE, where the grid would go, so
+          // the chips, the week arrows and pull-to-refresh — none of which
+          // depend on this query — stay usable. A failed background refetch
+          // keeps the stale grid instead.
           <EmptyState
             variant="temporary"
             icon="alert-circle"
@@ -847,47 +524,40 @@ export default function MealPlanHomeScreen() {
               void refetchMealPlanItems();
             }}
           />
-        ) : selectedDayItems.length === 0 ? (
-          <EmptyState
-            variant="firstTime"
-            icon="calendar"
-            title="No meals planned yet"
-            description="Plan your week's meals to hit your nutrition goals and auto-generate your grocery list."
-            actionLabel="Browse Recipes"
-            onAction={handleBrowseRecipes}
-          />
         ) : (
-          MEAL_TYPES.map((mealType) => {
-            const sectionItems = itemsByMealType[mealType] || [];
-            return (
-              <MealSlotSection
-                key={mealType}
-                mealType={mealType}
-                items={sectionItems}
-                confirmedIds={confirmedIds}
-                onItemPress={handleItemPress}
-                onRemoveItem={handleRemoveItem}
-                onAddItem={handleAddItem}
-                onSuggest={handleSuggest}
-                onConfirmItem={handleConfirmItem}
-                onReorder={handleReorder}
-                canSuggest={features.aiMealSuggestions}
-                canConfirm={features.mealConfirmation}
-                isExpanded={expandedSections.has(mealType)}
-                onToggle={handleToggleSection}
-                sectionSummary={sectionSummaries[mealType]}
-              />
-            );
-          })
+          <>
+            <WeekGrid
+              days={days}
+              onAddPress={handleAddPress}
+              onDayPress={handleDayPress}
+            />
+            <View style={styles.actions}>
+              {canPlanFromPantry && (
+                <Button
+                  variant="secondary"
+                  style={styles.action}
+                  onPress={handlePlanFromPantry}
+                  accessibilityLabel="Plan meals from your pantry"
+                >
+                  Plan from pantry
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                style={styles.action}
+                onPress={handleGroceryLists}
+                accessibilityLabel="Open grocery lists"
+              >
+                Grocery lists
+              </Button>
+            </View>
+          </>
         )}
-
-        {/* Spacer for FAB clearance */}
       </ScrollView>
 
-      {/* Modals */}
       <MealSuggestionsModal
         visible={suggestModalVisible}
-        date={selectedDateStr}
+        date={sheetDateStr}
         mealType={suggestMealType}
         onClose={() => setSuggestModalVisible(false)}
         onSelectSuggestion={handleSelectSuggestion}
@@ -896,23 +566,9 @@ export default function MealPlanHomeScreen() {
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
       />
-      {/* NOTE: `accessibilityViewIsModal` was previously set on each sheet
-          below too, but @gorhom/bottom-sheet's BottomSheet has no
-          rest-spread, so it was silently dropped — a no-op / false
-          focus-trap assurance (same dead prop ConfirmationModal.tsx's own
-          fix removed). The real fix lives on each sheet's own inner content
-          View, not here: AddItemMenuSheetContent, ImportRecipeSheetContent
-          (shared — already had it), QuickAddSheetContent, and
-          SimpleEntrySheetContent all set accessibilityViewIsModal on their
-          own root View. See docs/solutions/conventions/
-          a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
-          The other focus-trap todo
-          (P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md)
-          is scoped to ConfirmationModal.tsx and its useConfirmationModal()
-          callers only, not this screen. */}
       <BottomSheetModal
         ref={addItemMenuSheetRef}
-        snapPoints={ADD_ITEM_MENU_SNAP_POINTS}
+        snapPoints={ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS}
         enableDynamicSizing={false}
         onDismiss={handleAddItemMenuDismiss}
         onChange={onSheetChange}
@@ -966,33 +622,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  skeletonContainer: {
-    padding: Spacing.lg,
-  },
-  monthHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
-  monthTitle: {
-    fontSize: 17,
-    fontFamily: FontFamily.semiBold,
-  },
-  dateStrip: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    // Same gutter as the month header above and the chips (sweep #6).
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  dayLabel: {
-    fontSize: 20,
-    fontFamily: FontFamily.bold,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
   topActionsScroll: {
     flexGrow: 0,
     marginBottom: Spacing.sm,
@@ -1002,6 +631,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    minHeight: 44,
+  },
+  chipText: {
+    fontSize: 13,
+    fontFamily: FontFamily.medium,
   },
   expiringBadge: {
     minWidth: 16,
@@ -1014,19 +656,50 @@ const styles = StyleSheet.create({
   expiringBadgeText: {
     fontSize: 10,
     fontFamily: FontFamily.bold,
-    // color set dynamically with theme.buttonText (white on colored badges)
   },
-  groceryButton: {
+  weekHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    minHeight: 44,
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.sm,
+    marginBottom: Spacing.md,
   },
-  groceryButtonText: {
-    fontSize: 13,
+  weekArrow: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  weekTitle: {
+    alignItems: "center",
+    gap: 2,
+  },
+  monthTitle: {
+    fontSize: 17,
+    fontFamily: FontFamily.semiBold,
+  },
+  slotCount: {
+    fontSize: 12,
     fontFamily: FontFamily.medium,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
+  },
+  action: {
+    flex: 1,
+  },
+  skeleton: {
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  skeletonRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  skeletonCell: {
+    flex: 1,
   },
 });
