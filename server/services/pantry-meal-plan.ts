@@ -5,7 +5,9 @@ import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { createServiceLogger, toError } from "../lib/logger";
+import type { PremiumFeatures } from "@shared/types/premium";
 import { storage } from "../storage";
+import { getFamilyContext } from "./family-context";
 
 const log = createServiceLogger("pantry-meal-plan");
 
@@ -290,6 +292,7 @@ Each meal needs: mealType, title, description, servings, prepTimeMinutes, cookTi
 export async function buildPantryMealPlanForUser(
   userId: string,
   days: number,
+  features: PremiumFeatures,
 ): Promise<GeneratedMealPlan> {
   const pantryItems = await storage.getPantryItems(userId);
   if (pantryItems.length === 0) {
@@ -308,7 +311,14 @@ export async function buildPantryMealPlanForUser(
     fat: user?.dailyFatGoal ?? DEFAULT_DAILY_TARGETS.fat,
   };
 
-  const householdSize = userProfile?.householdSize ?? DEFAULT_HOUSEHOLD_SIZE;
+  // With family planning on and at least one profile, the headcount is the
+  // user plus their profiles. Only this number reaches the prompt — never a
+  // profile's name, note or allergies.
+  const family = await getFamilyContext(userId, features);
+  const householdSize =
+    family.active && family.profiles.length > 0
+      ? 1 + family.profiles.length
+      : (userProfile?.householdSize ?? DEFAULT_HOUSEHOLD_SIZE);
 
   return generateMealPlanFromPantry({
     pantryItems,

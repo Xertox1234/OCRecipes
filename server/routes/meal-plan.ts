@@ -737,6 +737,7 @@ export function register(app: Express): void {
         const plan = await buildPantryMealPlanForUser(
           req.userId,
           parsed.data.days,
+          features,
         );
 
         res.json(plan);
@@ -826,6 +827,13 @@ export function register(app: Express): void {
           }
         }
 
+        // With family planning on and at least one profile, a generated plan
+        // is cooked for everyone: each item is a shared meal at the user's own
+        // portion of 1. The recipe keeps the AI's yield.
+        const features = await getPremiumFeatures(req);
+        const family = await getFamilyContext(req.userId, features);
+        const forFamily = family.active && family.profiles.length > 0;
+
         // Create all recipes and plan items atomically
         const meals = parsed.data.meals.map((meal) => {
           const mealTypes = inferMealTypes(
@@ -861,7 +869,8 @@ export function register(app: Express): void {
               userId: req.userId,
               plannedDate: meal.plannedDate,
               mealType: meal.mealType,
-              servings: String(meal.servings),
+              servings: forFamily ? "1" : String(meal.servings),
+              ...(forFamily ? { audience: "shared" as const } : {}),
             },
           };
         });

@@ -11,6 +11,8 @@ import type { PantryMealPlanInput } from "../pantry-meal-plan";
 
 import { aiChat } from "../../lib/ai-client";
 import { storage } from "../../storage";
+import { getFamilyContext } from "../family-context";
+import { TIER_FEATURES } from "@shared/types/premium";
 import {
   createMockPantryItem,
   createMockUser,
@@ -22,6 +24,8 @@ vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
 }));
+
+vi.mock("../family-context", () => ({ getFamilyContext: vi.fn() }));
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -370,11 +374,74 @@ describe("pantry-meal-plan", () => {
   });
 
   describe("buildPantryMealPlanForUser", () => {
+    const features = TIER_FEATURES.premium;
+
+    beforeEach(() => {
+      vi.mocked(getFamilyContext).mockResolvedValue({
+        active: false,
+        profiles: [],
+      });
+    });
+
+    async function promptFor(
+      family: { active: boolean; profiles: unknown[] },
+      householdSize: number,
+    ): Promise<string> {
+      vi.mocked(storage.getPantryItems).mockResolvedValue(
+        BASE_INPUT.pantryItems,
+      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({ userId: "user1", householdSize }),
+      );
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
+      vi.mocked(getFamilyContext).mockResolvedValue(
+        family as Awaited<ReturnType<typeof getFamilyContext>>,
+      );
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
+      );
+      await buildPantryMealPlanForUser("user1", 3, features);
+      return (
+        vi.mocked(aiChat).mock.calls[0][1] as {
+          messages: { content: string }[];
+        }
+      ).messages[1].content;
+    }
+
+    it("counts the user plus every profile when family planning is active", async () => {
+      const msg = await promptFor(
+        {
+          active: true,
+          profiles: [
+            { name: "Ivy", note: "secret note", allergies: ["peanuts"] },
+            { name: "Max" },
+            { name: "Zed" },
+          ],
+        },
+        2,
+      );
+      expect(msg).toContain("HOUSEHOLD SIZE: 4 people");
+      expect(msg).toContain("household size (4)");
+      for (const leaked of ["Ivy", "Max", "Zed", "secret note"]) {
+        expect(msg).not.toContain(leaked);
+      }
+    });
+
+    it("keeps householdSize when family planning is inactive", async () => {
+      const msg = await promptFor({ active: false, profiles: [] }, 2);
+      expect(msg).toContain("HOUSEHOLD SIZE: 2 people");
+    });
+
+    it("keeps householdSize when active with no profiles", async () => {
+      const msg = await promptFor({ active: true, profiles: [] }, 2);
+      expect(msg).toContain("HOUSEHOLD SIZE: 2 people");
+    });
+
     it("should throw EmptyPantryError when the user has no pantry items", async () => {
       vi.mocked(storage.getPantryItems).mockResolvedValue([]);
 
       await expect(
-        buildPantryMealPlanForUser("user1", 3),
+        buildPantryMealPlanForUser("user1", 3, TIER_FEATURES.free),
       ).rejects.toBeInstanceOf(EmptyPantryError);
 
       expect(storage.getUserProfile).not.toHaveBeenCalled();
@@ -401,7 +468,11 @@ describe("pantry-meal-plan", () => {
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
-      const result = await buildPantryMealPlanForUser("user1", 3);
+      const result = await buildPantryMealPlanForUser(
+        "user1",
+        3,
+        TIER_FEATURES.free,
+      );
 
       expect(result.days).toHaveLength(1);
       const userMessage = (
@@ -424,7 +495,7 @@ describe("pantry-meal-plan", () => {
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
-      await buildPantryMealPlanForUser("user1", 3);
+      await buildPantryMealPlanForUser("user1", 3, TIER_FEATURES.free);
 
       const userMessage = (
         vi.mocked(aiChat).mock.calls[0][1] as {

@@ -1357,6 +1357,7 @@ describe("Meal Plan Routes", () => {
       expect(buildPantryMealPlanForUser).toHaveBeenCalledWith(
         expect.any(String),
         3,
+        expect.objectContaining({ aiMealSuggestions: true }),
       );
     });
 
@@ -1460,6 +1461,52 @@ describe("Meal Plan Routes", () => {
             }),
           }),
         ]),
+      );
+    });
+
+    describe("family headcount", () => {
+      const clientMeal = { ...validMeal, servings: 4 };
+
+      async function save() {
+        vi.mocked(storage.createMealPlanFromSuggestions).mockResolvedValue([
+          { recipeId: 10, mealPlanItemId: 20 },
+        ]);
+        const res = await request(app)
+          .post("/api/meal-plan/save-generated")
+          .set("Authorization", "Bearer token")
+          .send({ meals: [clientMeal] });
+        expect(res.status).toBe(201);
+        return vi.mocked(storage.createMealPlanFromSuggestions).mock
+          .calls[0][0][0];
+      }
+
+      it("saves shared meals with servings 1 when active with profiles", async () => {
+        mockFamily();
+        vi.mocked(storage.getFamilyProfiles).mockResolvedValue([
+          { id: 1 },
+        ] as Awaited<ReturnType<typeof storage.getFamilyProfiles>>);
+        const saved = await save();
+        expect(saved.planItem).toEqual(
+          expect.objectContaining({ audience: "shared", servings: "1" }),
+        );
+        expect(saved.recipe.servings).toBe(4);
+      });
+
+      it.each([
+        ["inactive (switch off)", { switchOn: false }, [{ id: 1 }]],
+        ["not premium", { premium: false }, [{ id: 1 }]],
+        ["active with no profiles", {}, []],
+      ])(
+        "keeps self and the client servings when %s",
+        async (_l, opts, profiles) => {
+          mockFamily(opts);
+          vi.mocked(storage.getFamilyProfiles).mockResolvedValue(
+            profiles as Awaited<ReturnType<typeof storage.getFamilyProfiles>>,
+          );
+          const saved = await save();
+          expect(saved.planItem.servings).toBe("4");
+          expect(saved.planItem.audience ?? "self").toBe("self");
+        },
       );
     });
 

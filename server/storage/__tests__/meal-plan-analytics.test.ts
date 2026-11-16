@@ -389,6 +389,65 @@ describe("meal-plan-analytics storage", () => {
     });
   });
 
+  describe("getMealPlanIngredientsForDateRange family portions", () => {
+    const range = ["2026-05-15", "2026-05-22"] as const;
+
+    async function planAudience(
+      audience: "self" | "shared" | "profile",
+      recipeYield = 4,
+    ) {
+      const recipe = await createRecipe(testUser.id, {
+        servings: recipeYield,
+      });
+      await tx
+        .insert(recipeIngredients)
+        .values({ recipeId: recipe.id, name: "rice", displayOrder: 0 });
+      const profile =
+        audience === "profile" ? await createProfile(testUser.id) : null;
+      await tx.insert(mealPlanItems).values({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-16",
+        mealType: "dinner",
+        servings: "1",
+        audience,
+        familyProfileId: profile?.id ?? null,
+      });
+    }
+
+    const count = async (family?: { active: boolean; profileCount: number }) =>
+      (await getMealPlanIngredientsForDateRange(testUser.id, ...range, family))
+        .length;
+
+    it("shared meal, inactive: one batch", async () => {
+      await planAudience("shared");
+      expect(await count({ active: false, profileCount: 4 })).toBe(1);
+      expect(await count()).toBe(1);
+    });
+
+    it("shared meal, active with 3 profiles: 4 portions, one batch", async () => {
+      await planAudience("shared");
+      expect(await count({ active: true, profileCount: 3 })).toBe(1);
+    });
+
+    it("shared meal, active with 4 profiles: 5 portions, two batches", async () => {
+      await planAudience("shared");
+      expect(await count({ active: true, profileCount: 4 })).toBe(2);
+    });
+
+    it("self meal is unchanged whatever family says", async () => {
+      await planAudience("self");
+      expect(await count({ active: true, profileCount: 7 })).toBe(1);
+    });
+
+    it("profile meal is included when active and absent when inactive", async () => {
+      await planAudience("profile");
+      expect(await count({ active: true, profileCount: 1 })).toBe(1);
+      expect(await count({ active: false, profileCount: 1 })).toBe(0);
+      expect(await count()).toBe(0);
+    });
+  });
+
   describe("getFrequentRecipesForMealType", () => {
     it("returns empty when no items match", async () => {
       const recipes = await getFrequentRecipesForMealType(

@@ -127,12 +127,16 @@ export async function getMealPlanIngredientsForDateRange(
   userId: string,
   startDate: string,
   endDate: string,
+  family?: { active: boolean; profileCount: number },
 ): Promise<RecipeIngredient[]> {
+  const familyActive = family?.active === true;
+  const extraPortions = familyActive ? Math.max(0, family.profileCount) : 0;
   // Planned items in range, with each recipe's yield
   const items = await db
     .select({
       recipeId: mealPlanItems.recipeId,
       servings: mealPlanItems.servings,
+      audience: mealPlanItems.audience,
       recipeYield: mealPlanRecipes.servings,
     })
     .from(mealPlanItems)
@@ -150,12 +154,16 @@ export async function getMealPlanIngredientsForDateRange(
   const plannedServings = new Map<number, { total: number; yield: number }>();
   for (const item of items) {
     if (item.recipeId == null) continue;
+    // A profile's meal is only part of the shopping when family planning is on.
+    if (item.audience === "profile" && !familyActive) continue;
     const entry = plannedServings.get(item.recipeId) ?? {
       total: 0,
       yield: item.recipeYield && item.recipeYield > 0 ? item.recipeYield : 1,
     };
     const servings = Number(item.servings ?? 1);
-    entry.total += Number.isFinite(servings) && servings > 0 ? servings : 1;
+    const own = Number.isFinite(servings) && servings > 0 ? servings : 1;
+    // `servings` is the user's own portion; a shared meal adds one per person.
+    entry.total += item.audience === "shared" ? own + extraPortions : own;
     plannedServings.set(item.recipeId, entry);
   }
 
