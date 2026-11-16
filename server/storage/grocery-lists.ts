@@ -104,6 +104,30 @@ export async function addGroceryListItems(
   return executor.insert(groceryListItems).values(items).returning();
 }
 
+/** The lines still to buy on one of the user's lists (none for another's). */
+export async function getUncheckedGroceryListItems(
+  groceryListId: number,
+  userId: string,
+  executor: Executor = db,
+): Promise<GroceryListItem[]> {
+  const rows = await executor
+    .select({ item: groceryListItems })
+    .from(groceryListItems)
+    .innerJoin(
+      groceryLists,
+      eq(groceryLists.id, groceryListItems.groceryListId),
+    )
+    .where(
+      and(
+        eq(groceryListItems.groceryListId, groceryListId),
+        eq(groceryLists.userId, userId),
+        // is_checked is nullable: NULL counts as not yet bought.
+        sql`${groceryListItems.isChecked} IS NOT TRUE`,
+      ),
+    );
+  return rows.map((r) => r.item);
+}
+
 /**
  * Check the list count limit, create the list and insert its items in one
  * transaction. A per-user advisory lock (taken first, released at commit)

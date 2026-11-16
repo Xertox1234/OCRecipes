@@ -23,7 +23,7 @@ import type { AfterCommit } from "../../storage/meal-plan-recipes-crud";
 import { buildFoodPayload, performFoodSave, revertFoodSave } from "./food";
 import {
   buildGroceryPayload,
-  groceryReceiptListTitle,
+  groceryReceipt,
   performGrocerySave,
   revertGrocerySave,
 } from "./grocery";
@@ -38,7 +38,8 @@ import type { WriteCardProposal } from "./tool-args";
 
 export { WriteCardEditError };
 
-export type { WriteCardProposal } from "./tool-args";
+export type { WriteCardOutcome, WriteCardProposal } from "./tool-args";
+export { planGroceryCard, type GroceryCardPlan } from "./grocery";
 
 export async function buildWriteCardPayload(
   p: WriteCardProposal,
@@ -111,12 +112,11 @@ export async function afterWriteCardSave(card: CoachWriteCard): Promise<void> {
 }
 
 export function writeCardReceiptFor(card: CoachWriteCard): string {
-  return writeCardReceipt(
-    card.kind,
-    card.payload as WriteCardPayload,
-    storedEdits(card),
-    card.kind === "grocery" ? groceryReceiptListTitle(card) : undefined,
-  );
+  const edits = storedEdits(card);
+  if (card.kind === "grocery") {
+    return groceryReceipt(card, edits as GroceryCardEdits);
+  }
+  return writeCardReceipt(card.kind, card.payload as WriteCardPayload, edits);
 }
 
 const TOOL_FOR_KIND: Record<WriteCardKind, string> = {

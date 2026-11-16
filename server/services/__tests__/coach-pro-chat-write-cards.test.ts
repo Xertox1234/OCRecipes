@@ -9,7 +9,7 @@ import { storage } from "../../storage";
 import { generateCoachProResponse } from "../nutrition-coach";
 import type { CoachContext, CoachProChunk } from "../nutrition-coach";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "../coach-blocks";
-import { buildWriteCardPayload } from "../write-cards";
+import { buildWriteCardPayload, planGroceryCard } from "../write-cards";
 import { extractNotebookEntries } from "../notebook-extraction";
 import type { WriteCardProposal } from "../write-cards";
 import {
@@ -59,6 +59,7 @@ vi.mock("../coach-blocks", () => ({
 vi.mock("../write-cards", async (orig) => ({
   ...(await orig<typeof import("../write-cards")>()),
   buildWriteCardPayload: vi.fn(),
+  planGroceryCard: vi.fn(),
 }));
 
 vi.mock("../notebook-extraction", () => ({
@@ -103,6 +104,12 @@ const foodArgs = {
   ],
 };
 const groceryArgs = { items: [{ name: "Spinach" }] };
+const groceryPayload = {
+  items: [{ name: "Spinach", quantity: null, unit: null, ticked: true }],
+  lists: [],
+  defaultListId: null,
+  newListName: "Coach list",
+};
 
 function makeParams(overrides: Partial<CoachChatParams> = {}): CoachChatParams {
   return {
@@ -137,7 +144,7 @@ function proposing(
   return async function* (
     ...args: Parameters<typeof generateCoachProResponse>
   ): AsyncGenerator<CoachProChunk> {
-    for (const p of proposals) args[7]?.onWriteCardProposal?.(p);
+    for (const p of proposals) await args[7]?.onWriteCardProposal?.(p);
     const chunk: CoachProChunk = {
       type: "content",
       content: "Here's what I've got.",
@@ -175,6 +182,11 @@ beforeEach(() => {
     blocks: [],
   }));
   vi.mocked(buildWriteCardPayload).mockResolvedValue(foodPayload);
+  vi.mocked(planGroceryCard).mockResolvedValue({
+    payload: groceryPayload,
+    leftOff: [],
+    unticked: [],
+  });
   vi.mocked(storage.createWriteCard).mockResolvedValue({
     card: createMockCoachWriteCard({
       id: CARD_ID,
@@ -249,11 +261,75 @@ describe("handleCoachChat with write cards", () => {
       ),
     );
     await collect(handleCoachChat(makeParams({ writeCards: true })));
-    expect(buildWriteCardPayload).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(buildWriteCardPayload).mock.calls[0][0].kind).toBe(
-      "grocery",
-    );
+    expect(buildWriteCardPayload).not.toHaveBeenCalled();
     expect(storage.createWriteCard).toHaveBeenCalledTimes(1);
+    expect(storage.createWriteCard).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "grocery", payload: groceryPayload }),
+    );
+  });
+
+  it("a grocery card is worked out during the tool call, and the tool hears what the pantry changed", async () => {
+    vi.mocked(planGroceryCard).mockResolvedValue({
+      payload: groceryPayload,
+      leftOff: ["Onions"],
+      unticked: ["Ginger"],
+    });
+    let outcome: unknown;
+    vi.mocked(generateCoachProResponse).mockImplementation(async function* (
+      ...args: Parameters<typeof generateCoachProResponse>
+    ): AsyncGenerator<CoachProChunk> {
+      outcome = await args[7]?.onWriteCardProposal?.({
+        kind: "grocery",
+        args: groceryArgs,
+      });
+      const chunk: CoachProChunk = { type: "content", content: "Here." };
+      yield chunk;
+    });
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+    expect(planGroceryCard).toHaveBeenCalledWith(groceryArgs, "user-42");
+    expect(outcome).toEqual({
+      shown: true,
+      leftOff: ["Onions"],
+      unticked: ["Ginger"],
+    });
+    expect(storage.createWriteCard).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "grocery", payload: groceryPayload }),
+    );
+  });
+
+  it("a grocery list the pantry fully covers shows no card and keeps an earlier one", async () => {
+    vi.mocked(planGroceryCard).mockResolvedValue({
+      payload: null,
+      leftOff: ["Spinach"],
+      unticked: [],
+    });
+    let outcome: unknown;
+    vi.mocked(generateCoachProResponse).mockImplementation(async function* (
+      ...args: Parameters<typeof generateCoachProResponse>
+    ): AsyncGenerator<CoachProChunk> {
+      await args[7]?.onWriteCardProposal?.({ kind: "food", args: foodArgs });
+      outcome = await args[7]?.onWriteCardProposal?.({
+        kind: "grocery",
+        args: groceryArgs,
+      });
+      const chunk: CoachProChunk = { type: "content", content: "Here." };
+      yield chunk;
+    });
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+    expect(outcome).toEqual({ shown: false, leftOff: ["Spinach"] });
+    expect(storage.createWriteCard).toHaveBeenCalledTimes(1);
+    expect(storage.createWriteCard).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "food" }),
+    );
+  });
+
+  it("a pantry read that fails during the tool call falls back to building the card at the end", async () => {
+    vi.mocked(planGroceryCard).mockRejectedValue(new Error("db down"));
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposing({ kind: "grocery", args: groceryArgs }),
+    );
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+    expect(buildWriteCardPayload).toHaveBeenCalledTimes(1);
   });
 
   it("names the card it replaced", async () => {
