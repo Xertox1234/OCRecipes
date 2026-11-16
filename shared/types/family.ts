@@ -22,6 +22,8 @@ export const familyProfileInputSchema = z.object({
   }, z.string().max(FAMILY_NOTE_MAX).nullable()),
 });
 
+export type FamilyProfileInput = z.output<typeof familyProfileInputSchema>;
+
 /** A meal's audience: a `profile` audience needs a profile id; the others must not carry one. */
 export const mealAudienceInputSchema = z
   .object({

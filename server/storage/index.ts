@@ -20,6 +20,7 @@ import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
 import * as groceryLists from "./grocery-lists";
 import * as pantry from "./pantry";
+import * as familyProfiles from "./family-profiles";
 import * as chat from "./chat";
 import * as chatQuota from "./chat-quota";
 import * as cache from "./cache";
@@ -214,6 +215,15 @@ export const storage = {
   updateGroceryListItemChecked: groceryLists.updateGroceryListItemChecked,
   deleteGroceryListItem: groceryLists.deleteGroceryListItem,
   updateGroceryListItemPantryFlag: groceryLists.updateGroceryListItemPantryFlag,
+
+  // Family profiles
+  getFamilyProfiles: familyProfiles.getFamilyProfiles,
+  getFamilyProfile: familyProfiles.getFamilyProfile,
+  countFamilyProfiles: familyProfiles.countFamilyProfiles,
+  createFamilyProfile: familyProfiles.createFamilyProfile,
+  updateFamilyProfile: familyProfiles.updateFamilyProfile,
+  deleteFamilyProfile: familyProfiles.deleteFamilyProfile,
+  clearFamilyHealthData: familyProfiles.clearFamilyHealthData,
 
   // Pantry
   getPantryItems: pantry.getPantryItems,

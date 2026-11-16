@@ -27,6 +27,8 @@ import {
   cookbooks,
   cookbookRecipes,
   pantryItems,
+  familyProfiles,
+  type FamilyProfile,
   savedItems,
   favouriteScannedItems,
   favouriteRecipes,
@@ -122,6 +124,7 @@ export const EXPORTED_USER_TABLES: readonly string[] = [
   "grocery_lists",
   "cookbooks",
   "pantry_items",
+  "family_profiles",
   "saved_items",
   "favourite_scanned_items",
   "favourite_recipes",
@@ -193,6 +196,7 @@ export interface UserDataExport {
     recipes: Record<string, unknown>[];
   };
   pantryItems: Record<string, unknown>[];
+  familyProfiles: FamilyProfile[];
   savedItems: Record<string, unknown>[];
   favourites: {
     scannedItems: Record<string, unknown>[];
@@ -274,6 +278,7 @@ export async function getUserDataExport(
     cookbookRows,
     cookbookRecipeRows,
     pantryRows,
+    familyProfileRows,
     savedItemRows,
     favouriteScannedRows,
     favouriteRecipeRows,
@@ -373,6 +378,11 @@ export async function getUserDataExport(
       .innerJoin(cookbooks, eq(cookbookRecipes.cookbookId, cookbooks.id))
       .where(eq(cookbooks.userId, userId)),
     db.select().from(pantryItems).where(eq(pantryItems.userId, userId)),
+    db
+      .select()
+      .from(familyProfiles)
+      .where(eq(familyProfiles.userId, userId))
+      .orderBy(familyProfiles.sortOrder, familyProfiles.id),
     db.select().from(savedItems).where(eq(savedItems.userId, userId)),
     db
       .select()
@@ -577,6 +587,7 @@ export async function getUserDataExport(
       recipes: cookbookRecipeRows.map((r) => r.recipe),
     },
     pantryItems: pantryRows,
+    familyProfiles: familyProfileRows,
     savedItems: savedItemRows,
     favourites: {
       scannedItems: favouriteScannedRows,
