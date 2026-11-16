@@ -7,6 +7,7 @@ import {
   numericStringField,
 } from "./_schemas";
 import { NUTRITION_CAPS } from "@shared/constants/nutrition";
+import { MEAL_AUDIENCES } from "@shared/types/family";
 import { isOurRecipeImageUrl } from "../services/recipe-image-rehost";
 
 // Zod schemas for meal plan endpoints
@@ -64,17 +65,30 @@ export const createMealPlanRecipeSchema = z.object({
   sourceCommunityRecipeId: z.number().int().positive().optional().nullable(),
 });
 
-export const addMealPlanItemSchema = z.object({
-  recipeId: z.number().int().positive().optional().nullable(),
-  scannedItemId: z.number().int().positive().optional().nullable(),
-  // Inline recipe: created together with the plan item in one transaction.
-  recipe: createMealPlanRecipeSchema
-    .omit({ sourceCommunityRecipeId: true })
-    .optional(),
-  plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
-  servings: boundedNumericStringField(NUTRITION_CAPS.servings),
-});
+export const addMealPlanItemSchema = z
+  .object({
+    recipeId: z.number().int().positive().optional().nullable(),
+    scannedItemId: z.number().int().positive().optional().nullable(),
+    // Inline recipe: created together with the plan item in one transaction.
+    recipe: createMealPlanRecipeSchema
+      .omit({ sourceCommunityRecipeId: true })
+      .optional(),
+    plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+    servings: boundedNumericStringField(NUTRITION_CAPS.servings),
+    audience: z.enum(MEAL_AUDIENCES).default("self"),
+    familyProfileId: z.number().int().positive().nullable().default(null),
+  })
+  .refine(
+    // Same rule as `mealAudienceInputSchema`: a profile id exactly for `profile`.
+    (value) =>
+      (value.audience === "profile") === (value.familyProfileId !== null),
+    {
+      message:
+        "familyProfileId is required for a profile audience and not allowed otherwise",
+      path: ["familyProfileId"],
+    },
+  );
 
 /** YYYY-MM-DD format guard for meal-plan date-range query params. */
 const MEAL_PLAN_DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;

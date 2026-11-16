@@ -12,6 +12,7 @@ import {
   generateGroceryItems,
   flagAllergenicGroceryItems,
 } from "../services/grocery-generation";
+import { getFamilyContext } from "../services/family-context";
 import { deductPantryFromGrocery } from "../services/pantry-deduction";
 import { parseUserAllergies } from "@shared/constants/allergens";
 import { markDynamicKeyFields } from "../lib/dynamic-key-fields";
@@ -128,11 +129,14 @@ export function register(app: Express): void {
           return;
         }
 
-        // Fetch ingredients from planned meals
+        // Fetch ingredients from planned meals; shared meals cover everyone
+        // eating when family planning is active.
+        const family = await getFamilyContext(req.userId, features);
         const ingredients = await storage.getMealPlanIngredientsForDateRange(
           req.userId,
           parsed.data.startDate,
           parsed.data.endDate,
+          { active: family.active, profileCount: family.profiles.length },
         );
 
         // Aggregate

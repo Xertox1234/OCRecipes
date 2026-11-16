@@ -29,3 +29,12 @@ export function recipeStatsKey(recipeId: number) {
 export function chatMessagesKey(conversationId: number | null) {
   return [`/api/chat/conversations/${conversationId}/messages`] as const;
 }
+
+/**
+ * The family profile list (other people's names, allergies and notes). One
+ * builder for every reader and writer. Not a QUERY_KEYS entry: App.tsx persists
+ * every QUERY_KEYS key, and this health data stays out of the on-device cache.
+ */
+export function familyProfilesKey() {
+  return ["/api/family-profiles"] as const;
+}

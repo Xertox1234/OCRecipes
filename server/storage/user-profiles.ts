@@ -7,6 +7,7 @@ import {
 import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
 import { eq, sql } from "drizzle-orm";
+import { clearFamilyHealthData } from "./family-profiles";
 import { coachResponseCache, mealSuggestionCache } from "@shared/schema";
 import {
   HEALTH_CONSENT_VERSION,
@@ -88,11 +89,18 @@ export async function updateUserProfile(
   // at compile time, defensively destructure it out of the spread so a
   // caller that bypasses TS (`as any`, JS scripts, malformed objects)
   // cannot smuggle a `Date` into the SET clause.
-  const { healthDataConsentAt: _strip, ...safeUpdates } =
-    updates as Partial<UpdatableProfileFields> & {
-      healthDataConsentAt?: Date | null;
-    };
+  // `familyPlanningEnabled` is stripped too: only setFamilyPlanningEnabled
+  // (behind the premium gate) may change it.
+  const {
+    healthDataConsentAt: _strip,
+    familyPlanningEnabled: _stripFamily,
+    ...safeUpdates
+  } = updates as Partial<UpdatableProfileFields> & {
+    healthDataConsentAt?: Date | null;
+    familyPlanningEnabled?: boolean;
+  };
   void _strip;
+  void _stripFamily;
   const setClause: Record<string, unknown> = {
     ...safeUpdates,
     updatedAt: new Date(),
@@ -183,6 +191,10 @@ export async function withdrawHealthConsent(
       .delete(mealSuggestionCache)
       .where(eq(mealSuggestionCache.userId, userId));
 
+    // Family profiles' allergies and notes are health data under the same
+    // consent; names stay.
+    await clearFamilyHealthData(userId, tx);
+
     return profile;
   });
 }
@@ -209,6 +221,26 @@ export async function saveReminderMutes(
     })
     .returning({ reminderMutes: userProfiles.reminderMutes });
   return row.reminderMutes;
+}
+
+/**
+ * Turns the user's family-planning switch on or off, creating a bare profile
+ * row (every other column defaults) when none exists yet. Touches only this
+ * user's row.
+ */
+export async function setFamilyPlanningEnabled(
+  userId: string,
+  enabled: boolean,
+): Promise<boolean> {
+  const [row] = await db
+    .insert(userProfiles)
+    .values({ userId, familyPlanningEnabled: enabled })
+    .onConflictDoUpdate({
+      target: userProfiles.userId,
+      set: { familyPlanningEnabled: enabled, updatedAt: new Date() },
+    })
+    .returning({ familyPlanningEnabled: userProfiles.familyPlanningEnabled });
+  return row.familyPlanningEnabled;
 }
 
 /**

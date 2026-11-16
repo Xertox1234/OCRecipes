@@ -1,0 +1,102 @@
+appId: com.ocrecipes.app
+name: "Plan - Family planning switch, a profile, and Who's it for?"
+tags:
+  - regression
+  - plan
+  - family
+env:
+  # The premium account seeded by e2e-regression.yml (seed-e2e-user.sh with PREMIUM=1), the same
+  # one receipt-upload.yaml uses: family profiles are a premium feature, and the shared USERNAME
+  # account must stay free.
+  PREMIUM_USERNAME: e2epremium
+  PASSWORD: ${PASSWORD}
+# Sign the premium account out however the flow ended, so later flows sign in as the free account.
+onFlowComplete:
+  - runFlow: ../../helpers/launch-app.yaml
+  - runFlow: ../../helpers/ensure-logged-out.yaml
+---
+# Family profiles (spec 2026-11-16, stage 2): turn "Plan for my family" on, add one person, and
+# check the Plan grid then offers who a new meal is for. The profile is saved with a name only
+# (no allergy, no note), so the health-data consent sheet is never involved.
+#
+# Safe to retry: the profile and the switch stay on the account, and each step below is skipped
+# when an earlier attempt already did it.
+- runFlow: ../../helpers/launch-app.yaml
+# An earlier flow may have left the shared account signed in.
+- runFlow: ../../helpers/ensure-logged-out.yaml
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${PREMIUM_USERNAME}
+      PASSWORD: ${PASSWORD}
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-profile"
+
+# The switch sits in the settings card, below the library tiles. Scroll to the row's text, but
+# tap the switch by its testID (InlineSettings.tsx): the row's text and the switch share one
+# label, and a tap on the text does not toggle it (measured on the iOS simulator).
+- scrollUntilVisible:
+    element: "Plan for my family"
+    direction: DOWN
+    timeout: 20000
+
+# Turn the switch on unless it already is: the "Family" row only exists while it is on.
+- runFlow:
+    when:
+      notVisible: "Family"
+    commands:
+      - tapOn:
+          id: "family-planning-switch"
+
+# With nobody saved yet, turning it on opens the add form. On a retry the person exists and the
+# app stays on the Profile tab, so this block is skipped.
+- extendedWaitUntil:
+    visible: "Add a person"
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible: "Add a person"
+    commands:
+      - tapOn: "Name"
+      - inputText: "E2E Kid"
+      - hideKeyboard
+      - tapOn: "Save"
+      # Back on the Profile tab, with the Family row now present.
+      - extendedWaitUntil:
+          visible: "Family"
+          timeout: 15000
+
+# The Plan grid now shows the filter chips, with one for the new person.
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
+- extendedWaitUntil:
+    visible: '\d+ of 28 planned'
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "E2E Kid"
+    timeout: 10000
+- assertVisible: "All"
+- assertVisible: "Me"
+
+# The add menu asks who the meal is for. Reached through today's day view: the grid's own
+# cells are matched by weekday, and the ones before today sit off-screen to the left, so a
+# regex tap on "an empty cell" can land on one that is not visible (measured).
+- tapOn: 'Today, .*'
+- scrollUntilVisible:
+    element: 'Add .* item'
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    text: 'Add .* item'
+    index: 0
+- extendedWaitUntil:
+    visible: "Who's it for\\?"
+    timeout: 10000
+- assertVisible: "Everyone"
+- assertVisible: "Just me"

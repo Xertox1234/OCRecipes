@@ -7,7 +7,7 @@
  * `confirmMutation`) in their own useCallback deps. TanStack Query's
  * useMutation() returns a brand-new wrapper object every render even though
  * `mutate` itself is useCallback-stable underneath — so these callbacks got a
- * new identity on every MealPlanHomeScreen re-render, defeating `MealSlotSection`'s
+ * new identity on every MealPlanDayScreen re-render, defeating `MealSlotSection`'s
  * (and `DraggableList`'s) React.memo.
  *
  * `useHaptics` is intentionally left REAL/unmocked here (not stubbed to a
@@ -32,7 +32,7 @@
 import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
-import MealPlanHomeScreen from "../MealPlanHomeScreen";
+import MealPlanDayScreen from "../MealPlanDayScreen";
 import { TIER_FEATURES } from "@shared/types/premium";
 
 const {
@@ -95,6 +95,9 @@ const {
   };
 });
 
+// Family planning is off.
+vi.mock("@/hooks/useFamily", () => ({ usePlanFamily: () => null }));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useMealPlanItems: () => ({
     data: mealPlanItemsData.value,
@@ -108,6 +111,7 @@ vi.mock("@/hooks/useMealPlan", () => ({
   useRemoveMealPlanItem: () => ({ mutate: removeMutate, isPending: false }),
   useConfirmMealPlanItem: () => ({ mutate: confirmMutate, isPending: false }),
   useReorderMealPlanItems: () => ({ mutate: reorderMutate, isPending: false }),
+  useUpdateMealPlanItemAudience: () => ({ mutate: vi.fn(), isPending: false }),
   invalidateMealPlanItems: vi.fn(),
 }));
 
@@ -145,6 +149,7 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => navigation,
+  useRoute: () => ({ params: undefined }),
   useFocusEffect: () => {},
   useIsFocused: () => true,
 }));
@@ -199,7 +204,7 @@ vi.mock("@/components/DraggableList", () => ({
   },
 }));
 
-describe("MealPlanHomeScreen — memoized row callback identity stability across an unrelated re-render (M2)", () => {
+describe("MealPlanDayScreen — memoized row callback identity stability across an unrelated re-render (M2)", () => {
   const originalTz = process.env.TZ;
 
   beforeAll(() => {
@@ -226,7 +231,7 @@ describe("MealPlanHomeScreen — memoized row callback identity stability across
   });
 
   it("keeps DraggableList's onReorder, and MealSlotItem's onRemove/onConfirm (via renderItem), referentially stable across an unrelated re-render", async () => {
-    renderComponent(<MealPlanHomeScreen />);
+    renderComponent(<MealPlanDayScreen />);
 
     await waitFor(() => {
       expect(capturedDraggableListProps.value).toBeDefined();
@@ -255,7 +260,7 @@ describe("MealPlanHomeScreen — memoized row callback identity stability across
     expect(typeof firstOnConfirm).toBe("function");
 
     // Denominator: expand a DIFFERENT section (lunch) — this re-renders
-    // MealPlanHomeScreen (and therefore re-evaluates the JSX for the
+    // MealPlanDayScreen (and therefore re-evaluates the JSX for the
     // breakfast MealSlotSection too) without touching anything breakfast's
     // props actually depend on.
     fireEvent.click(screen.getByRole("button", { name: /lunch, collapsed/i }));

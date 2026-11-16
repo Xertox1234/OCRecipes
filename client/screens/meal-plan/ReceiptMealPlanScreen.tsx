@@ -32,6 +32,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { toLocalDateString } from "@shared/lib/date";
 import { formatIngredientLine } from "@/lib/format";
+import { ApiError } from "@/lib/api-error";
 
 const DAY_OPTIONS = [3, 5, 7] as const;
 
@@ -79,6 +80,33 @@ export function getTomorrowDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
   return toLocalDateString(d);
+}
+
+const GENERATE_ERROR_FALLBACK =
+  "Failed to generate meal plan. Please try again.";
+
+/**
+ * What to tell the user when generating a plan fails. A 400 is the server
+ * refusing the request for a reason the user can act on (an empty pantry),
+ * so its own sentence is shown; anything else stays generic.
+ */
+export function getGenerateErrorMessage(error: unknown): string {
+  if (!(error instanceof ApiError) || error.status !== 400) {
+    return GENERATE_ERROR_FALLBACK;
+  }
+  // ApiError messages are `${status}: ${body}`; the body is `{ error, code? }`.
+  const body = error.message.slice(error.message.indexOf(":") + 1).trim();
+  try {
+    const parsed: unknown = JSON.parse(body);
+    const reason =
+      parsed !== null && typeof parsed === "object"
+        ? (parsed as { error?: unknown }).error
+        : undefined;
+    if (typeof reason === "string" && reason.trim().length > 0) return reason;
+  } catch {
+    // Not JSON: nothing readable to show.
+  }
+  return GENERATE_ERROR_FALLBACK;
 }
 
 export default function ReceiptMealPlanScreen() {
@@ -260,7 +288,7 @@ export default function ReceiptMealPlanScreen() {
             >
               <Feather name="alert-circle" size={16} color={theme.error} />
               <ThemedText style={[styles.errorText, { color: theme.error }]}>
-                Failed to generate meal plan. Please try again.
+                {getGenerateErrorMessage(generateMutation.error)}
               </ThemedText>
             </View>
           )}

@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
+import type { FamilyProfile } from "@shared/schema";
 import { AddItemMenuSheetContent } from "../AddItemMenuSheet";
 
 const plan = vi.hoisted(() => ({ urlImport: false }));
@@ -106,6 +107,48 @@ describe("AddItemMenuSheet", () => {
       screen.getByText("Add to Breakfast").closest('[aria-modal="true"]'),
     ).not.toBeNull();
   });
+
+  describe("Suggest a meal", () => {
+    it("is absent unless the screen offers it", () => {
+      renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+      expect(screen.queryByText("Suggest a meal")).toBeNull();
+    });
+
+    it("calls onSuggest once when pressed", () => {
+      const onSuggest = vi.fn();
+      renderComponent(
+        <AddItemMenuSheetContent {...defaultProps} onSuggest={onSuggest} />,
+      );
+      fireEvent.click(screen.getByLabelText("Suggest a meal"));
+      expect(onSuggest).toHaveBeenCalledTimes(1);
+      expect(defaultProps.onChooseRecipe).not.toHaveBeenCalled();
+    });
+
+    it("ignores a second row tapped before the sheet reopens", () => {
+      const onSuggest = vi.fn();
+      renderComponent(
+        <AddItemMenuSheetContent {...defaultProps} onSuggest={onSuggest} />,
+      );
+      fireEvent.click(screen.getByLabelText("Suggest a meal"));
+      fireEvent.click(screen.getByLabelText("Simple entry"));
+      expect(onSuggest).toHaveBeenCalledTimes(1);
+      expect(defaultProps.onSimpleEntry).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the day in the title", () => {
+    it("names the day when the screen passes one", () => {
+      renderComponent(
+        <AddItemMenuSheetContent {...defaultProps} dayLabel="Tue, Nov 17" />,
+      );
+      expect(screen.getByText("Add to Breakfast · Tue, Nov 17")).toBeDefined();
+    });
+
+    it("keeps the plain title otherwise", () => {
+      renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+      expect(screen.getByText("Add to Breakfast")).toBeDefined();
+    });
+  });
 });
 
 describe("AddItemMenuSheet — import tip", () => {
@@ -132,5 +175,65 @@ describe("AddItemMenuSheet — import tip", () => {
     expect(
       screen.queryByText("Paste a link or snap a cookbook page."),
     ).toBeNull();
+  });
+});
+
+describe("AddItemMenuSheet — Who's it for?", () => {
+  const defaultProps = {
+    mealType: "breakfast" as const,
+    onChooseRecipe: vi.fn(),
+    onSimpleEntry: vi.fn(),
+    onImportRecipe: vi.fn(),
+  };
+
+  const ivy = {
+    id: 7,
+    name: "Ivy",
+    allergies: [],
+  } as unknown as FamilyProfile;
+
+  it("is absent without an audience (family planning off)", () => {
+    renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+    expect(screen.queryByText("Who's it for?")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("shows the choice under the title and reports a change", () => {
+    const onChange = vi.fn();
+    renderComponent(
+      <AddItemMenuSheetContent
+        {...defaultProps}
+        audience={{
+          profiles: [ivy],
+          value: { audience: "shared", familyProfileId: null },
+          onChange,
+        }}
+      />,
+    );
+    expect(screen.getByText("Who's it for?")).toBeDefined();
+    fireEvent.click(screen.getByRole("radio", { name: "Ivy" }));
+    expect(onChange).toHaveBeenCalledWith({
+      audience: "profile",
+      familyProfileId: 7,
+    });
+  });
+});
+
+describe("AddItemMenuSheet — large text", () => {
+  // The sheet has a fixed height. With the "Who's it for?" row and a large
+  // text size the last option fell below the sheet and could not be reached.
+  it("keeps every option inside a scroll view", () => {
+    renderComponent(
+      <AddItemMenuSheetContent
+        mealType="dinner"
+        onChooseRecipe={vi.fn()}
+        onSimpleEntry={vi.fn()}
+        onImportRecipe={vi.fn()}
+        onSuggest={vi.fn()}
+      />,
+    );
+    const scroll = screen.getByTestId("add-item-menu-scroll");
+    expect(scroll.textContent).toContain("Choose Recipe");
+    expect(scroll.textContent).toContain("Suggest a meal");
   });
 });

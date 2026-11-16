@@ -44,10 +44,15 @@ import {
 } from "../lib/ai-safety";
 import {
   buildWriteCardPayload,
+  planGroceryCard,
   describeLiveCard,
+  type WriteCardOutcome,
   type WriteCardProposal,
 } from "./write-cards";
-import { WRITE_CARD_EDITS_SCHEMAS } from "@shared/schemas/coach-write-cards";
+import {
+  WRITE_CARD_EDITS_SCHEMAS,
+  type WriteCardPayload,
+} from "@shared/schemas/coach-write-cards";
 import { extractNotebookEntries } from "./notebook-extraction";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -460,13 +465,17 @@ async function applyWriteCardContext(
 async function createWriteCardBlock(
   proposal: WriteCardProposal,
   a: { conversationId: number; userId: string; tz: string },
+  /** A payload the tool call already worked out (grocery). */
+  prepared?: WriteCardPayload | null,
 ): Promise<CoachBlock | null> {
   try {
-    const payload = await buildWriteCardPayload(proposal, {
-      userId: a.userId,
-      tz: a.tz,
-      now: new Date(),
-    });
+    const payload =
+      prepared ??
+      (await buildWriteCardPayload(proposal, {
+        userId: a.userId,
+        tz: a.tz,
+        now: new Date(),
+      }));
     const { card, previous } = await storage.createWriteCard({
       userId: a.userId,
       conversationId: a.conversationId,
@@ -705,6 +714,9 @@ export async function* handleCoachChat(
   let fullResponse = "";
   let offerToolArgs: string | null = null;
   let writeCardProposal: WriteCardProposal | null = null;
+  // The grocery card's payload, worked out during its tool call so the card
+  // shows exactly what the model was told about.
+  let writeCardPrepared: WriteCardPayload | null = null;
   // Show-the-work: what this turn looked up, for the "Checked:" trail.
   const trailEntries: (string | null)[] = [];
   let safetyOverridden = false;
@@ -742,8 +754,32 @@ export async function* handleCoachChat(
         ...(writeCards && {
           writeCards: true,
           // A turn shows at most one card: the last write tool call wins.
-          onWriteCardProposal: (p: WriteCardProposal) => {
-            writeCardProposal = p;
+          onWriteCardProposal: async (
+            p: WriteCardProposal,
+          ): Promise<void | WriteCardOutcome> => {
+            if (p.kind !== "grocery") {
+              writeCardProposal = p;
+              writeCardPrepared = null;
+              return;
+            }
+            try {
+              const plan = await planGroceryCard(p.args, userId);
+              // The pantry covers it all: no card, and an earlier proposal
+              // from this turn stays.
+              if (!plan.payload) return { shown: false, leftOff: plan.leftOff };
+              writeCardProposal = p;
+              writeCardPrepared = plan.payload;
+              return {
+                shown: true,
+                leftOff: plan.leftOff,
+                unticked: plan.unticked,
+              };
+            } catch (err) {
+              // Build it at the end of the turn instead, as before.
+              log.warn({ err: toError(err) }, "grocery card not planned");
+              writeCardProposal = p;
+              writeCardPrepared = null;
+            }
           },
           planRecipePool: [],
         }),
@@ -861,11 +897,11 @@ export async function* handleCoachChat(
   // not do.
   let wroteCard = false;
   if (writeCardProposal && fullResponse && !isAborted()) {
-    const card = await createWriteCardBlock(writeCardProposal, {
-      conversationId,
-      userId,
-      tz,
-    });
+    const card = await createWriteCardBlock(
+      writeCardProposal,
+      { conversationId, userId, tz },
+      writeCardPrepared,
+    );
     if (card) {
       blocks = [...blocks, card];
       wroteCard = true;

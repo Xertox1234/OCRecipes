@@ -24,9 +24,11 @@
 // docs/solutions/logic-errors/each-tables-evaluate-before-hooks-so-pinned-env-misses-fixtures-2026-08-31.md).
 import {
   formatDate,
+  getGenerateErrorMessage,
   getPlannedDate,
   getTomorrowDate,
 } from "../ReceiptMealPlanScreen";
+import { ApiError } from "@/lib/api-error";
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ popToTop: () => {} }),
@@ -145,5 +147,47 @@ describe("formatDate/getPlannedDate — basis-invariant at ordinary offsets", ()
   it("derives plannedDate for each day offset", () => {
     expect(getPlannedDate("2026-09-01", 0)).toBe("2026-09-01");
     expect(getPlannedDate("2026-09-01", 6)).toBe("2026-09-07");
+  });
+});
+
+describe("getGenerateErrorMessage", () => {
+  const GENERIC = "Failed to generate meal plan. Please try again.";
+
+  it("shows the server's reason when it refuses the request, e.g. an empty pantry", () => {
+    const error = new ApiError(
+      '400: {"error":"No pantry items available. Add items to your pantry first.","code":"VALIDATION_ERROR"}',
+      "VALIDATION_ERROR",
+      400,
+    );
+    expect(getGenerateErrorMessage(error)).toBe(
+      "No pantry items available. Add items to your pantry first.",
+    );
+  });
+
+  it("stays generic for a server failure, whatever its body says", () => {
+    const error = new ApiError(
+      '500: {"error":"aiResponseSchema parse failed at meals[2]"}',
+      undefined,
+      500,
+    );
+    expect(getGenerateErrorMessage(error)).toBe(GENERIC);
+  });
+
+  it("stays generic when a 400 carries no readable reason", () => {
+    expect(
+      getGenerateErrorMessage(new ApiError("400: Bad Request", undefined, 400)),
+    ).toBe(GENERIC);
+    expect(
+      getGenerateErrorMessage(
+        new ApiError('400: {"error":""}', undefined, 400),
+      ),
+    ).toBe(GENERIC);
+  });
+
+  it("stays generic for a network error or nothing at all", () => {
+    expect(getGenerateErrorMessage(new Error("Network request failed"))).toBe(
+      GENERIC,
+    );
+    expect(getGenerateErrorMessage(null)).toBe(GENERIC);
   });
 });

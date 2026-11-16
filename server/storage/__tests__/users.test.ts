@@ -38,6 +38,7 @@ import {
   mealPlanRecipes,
   coachResponseCache,
   mealSuggestionCache,
+  familyProfiles,
 } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -72,6 +73,7 @@ const {
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,
+  setFamilyPlanningEnabled,
   withdrawHealthConsent,
   getSubscriptionStatus,
   getEffectiveTierForUser,
@@ -924,6 +926,68 @@ describe("users storage", () => {
       const mealRows = await tx.select().from(mealSuggestionCache);
       expect(coachRows.map((r) => r.userId)).toEqual([other.id]);
       expect(mealRows.map((r) => r.userId)).toEqual([other.id]);
+    });
+  });
+
+  describe("setFamilyPlanningEnabled", () => {
+    it("creates the profile row when none exists", async () => {
+      expect(await setFamilyPlanningEnabled(testUser.id, true)).toBe(true);
+      const profile = await getUserProfile(testUser.id);
+      expect(profile!.familyPlanningEnabled).toBe(true);
+    });
+
+    it("flips the switch on an existing row and leaves other fields alone", async () => {
+      await createTestUserProfile(tx, testUser.id, { dietType: "keto" });
+      await setFamilyPlanningEnabled(testUser.id, true);
+      expect(await setFamilyPlanningEnabled(testUser.id, false)).toBe(false);
+      const profile = await getUserProfile(testUser.id);
+      expect(profile!.familyPlanningEnabled).toBe(false);
+      expect(profile!.dietType).toBe("keto");
+    });
+
+    it("only touches the given user's row (IDOR protection)", async () => {
+      const otherUser = await createTestUser(tx, {
+        username: "other_fam_user",
+      });
+      await createTestUserProfile(tx, testUser.id, {});
+      await setFamilyPlanningEnabled(otherUser.id, true);
+      const mine = await getUserProfile(testUser.id);
+      expect(mine!.familyPlanningEnabled).toBe(false);
+    });
+  });
+
+  describe("withdrawHealthConsent and family profiles", () => {
+    it("clears every profile's allergies and note, keeps names, spares other users", async () => {
+      const otherUser = await createTestUser(tx, { username: "other_wd_user" });
+      await createTestUserProfile(tx, testUser.id, {});
+      const mk = (userId: string, name: string) =>
+        tx
+          .insert(familyProfiles)
+          .values({
+            userId,
+            name,
+            allergies: [{ name: "peanut", severity: "severe" }],
+            note: "careful",
+          })
+          .returning();
+      await mk(testUser.id, "Kid");
+      await mk(otherUser.id, "Other kid");
+
+      await withdrawHealthConsent(testUser.id);
+
+      const mine = await tx
+        .select()
+        .from(familyProfiles)
+        .where(eq(familyProfiles.userId, testUser.id));
+      expect(mine.map((p) => p.name)).toEqual(["Kid"]);
+      expect(mine[0].allergies).toEqual([]);
+      expect(mine[0].note).toBeNull();
+      const theirs = await tx
+        .select()
+        .from(familyProfiles)
+        .where(eq(familyProfiles.userId, otherUser.id));
+      expect(theirs[0].allergies).toHaveLength(1);
+      expect(theirs[0].note).toBe("careful");
     });
   });
 

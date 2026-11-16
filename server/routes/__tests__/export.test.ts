@@ -29,6 +29,7 @@ function buildExport() {
     groceryLists: { lists: [], items: [] },
     cookbooks: { cookbooks: [], recipes: [] },
     pantryItems: [],
+    familyProfiles: [],
     savedItems: [],
     favourites: { scannedItems: [], recipes: [] },
     tastePicks: [],

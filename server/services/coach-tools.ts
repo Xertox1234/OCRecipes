@@ -14,6 +14,7 @@
  *   7. add_to_meal_plan      — schedule a recipe/food on the meal plan
  *   8. add_to_grocery_list   — create a new grocery list with items
  *   9. get_substitutions     — suggest ingredient swaps
+ *  10. get_grocery_lists     — recent grocery lists with the items still to buy
  */
 
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -32,6 +33,7 @@ import {
   addGroceryCardArgsSchema,
   addMealPlanCardArgsSchema,
   logFoodCardArgsSchema,
+  type WriteCardOutcome,
   type WriteCardProposal,
 } from "./write-cards/tool-args";
 
@@ -102,6 +104,14 @@ const logFoodItemSchema = z.object({
 const getPantryItemsSchema = z.object({
   expiringWithinDays: z.number().optional(),
 });
+
+const getGroceryListsSchema = z.object({
+  listName: z.string().trim().max(100).optional(),
+});
+
+/** How much of the user's lists one call hands the model. */
+const GROCERY_LISTS_RETURNED = 4;
+const GROCERY_ITEMS_PER_LIST = 60;
 
 const getMealPlanSchema = z.object({
   startDate: isoDateSchema.optional(),
@@ -220,6 +230,34 @@ function sanitizePantryItems(
     unit: item.unit === null ? null : sanitizeUserInput(item.unit),
     category: item.category === null ? null : sanitizeUserInput(item.category),
   }));
+}
+
+/**
+ * A list as the model sees it: titles and item text are the user's own words,
+ * so each passes the prompt sanitizer; row ids and flags are left out.
+ */
+function compactGroceryList(
+  list: Awaited<
+    ReturnType<typeof storage.getGroceryListsWithOpenItems>
+  >[number],
+) {
+  const shown = list.items.slice(0, GROCERY_ITEMS_PER_LIST);
+  const moreItems = list.items.length - shown.length;
+  return {
+    id: list.id,
+    title: sanitizeUserInput(list.title),
+    dateRangeStart: list.dateRangeStart,
+    dateRangeEnd: list.dateRangeEnd,
+    boughtCount: list.boughtCount,
+    items: shown.map((item) => ({
+      name: sanitizeUserInput(item.name),
+      quantity: item.quantity,
+      unit: item.unit === null ? null : sanitizeUserInput(item.unit),
+      category:
+        item.category === null ? null : sanitizeUserInput(item.category),
+    })),
+    ...(moreItems > 0 && { moreItems }),
+  };
 }
 
 function compactMealPlanItems(
@@ -404,6 +442,25 @@ function baseToolDefinitions(): ChatCompletionTool[] {
               type: "number",
               description:
                 "If provided, only return items expiring within this many days.",
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_grocery_lists",
+        description:
+          "Read the user's most recent grocery lists: each list's title and the items still to buy, plus how many are already bought. Call this when the user asks what is on a list or what they still need to buy, and before add_to_grocery_list when they want to add to a list they already have, so you do not propose items it already holds.",
+        parameters: {
+          type: "object",
+          properties: {
+            listName: {
+              type: "string",
+              description:
+                "Part of a list's title, to read only matching lists. Omit for the most recent lists.",
             },
           },
           required: [],
@@ -616,7 +673,7 @@ const WRITE_CARD_TOOL_DEFINITIONS: Record<string, ChatCompletionTool> = {
     function: {
       name: "add_to_grocery_list",
       description:
-        "Show the user a card of grocery items to add to one of their lists. Nothing is saved until the user taps the card. Items already in their pantry are left off automatically.",
+        "Show the user a card of grocery items to add to one of their lists. Nothing is saved until the user taps the card. Items their pantry clearly covers are left off, and ones it may cover start unticked; the result says which.",
       parameters: {
         type: "object",
         properties: {
@@ -750,11 +807,40 @@ const getMyRecipesSchema = z.object({
 const CARD_SHOWN_MESSAGE =
   "A card with these details is on screen for the user to check and save. Nothing has been saved. Do not say it was logged or added; tell them to tap the card when it looks right.";
 
+/**
+ * The grocery card's result: what the pantry check changed, so the reply never
+ * lists an item the card does not show or points at a card that is not there.
+ */
+function groceryCardResult(outcome: void | WriteCardOutcome) {
+  if (!outcome) return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+  const names = (list: string[]) => list.join(", ");
+  if (!outcome.shown) {
+    return {
+      card_shown: false,
+      // Worded for this request only: an earlier card from the same turn
+      // stays on screen, so this must not say there is no card at all.
+      message: `No grocery card was made for this request: the user's pantry already has everything asked for (${names(outcome.leftOff)}). Nothing has been saved. Tell them they already have these, and do not tell them to tap a card for these items.`,
+    };
+  }
+  const notes = [
+    outcome.leftOff.length > 0 &&
+      `Left off the card because the pantry already has enough: ${names(outcome.leftOff)}. Do not list these as items to buy.`,
+    outcome.unticked.length > 0 &&
+      `Shown unticked because the pantry has some, in an amount that could not be compared: ${names(outcome.unticked)}. Tell the user to tick them if they need more.`,
+  ].filter(Boolean);
+  return {
+    card_shown: true,
+    message: [CARD_SHOWN_MESSAGE, ...notes].join(" "),
+  };
+}
+
 export interface ExecuteToolOptions {
   /** The app can show write cards (it sent `writeCards: true`). */
   writeCards?: boolean;
   /** Receives each validated write-tool call in write-card mode. */
-  onWriteCardProposal?: (p: WriteCardProposal) => void;
+  onWriteCardProposal?: (
+    p: WriteCardProposal,
+  ) => void | WriteCardOutcome | Promise<void | WriteCardOutcome>;
   /**
    * One array per turn: find_plan_recipes adds the ids it returns, and the
    * plan card offers them as Swap choices when the model gives too few.
@@ -884,7 +970,7 @@ export async function executeToolCall(
         if (!card.success) {
           return invalidArgs("log_food_item", card.error.message);
         }
-        opts.onWriteCardProposal?.({ kind: "food", args: card.data });
+        await opts.onWriteCardProposal?.({ kind: "food", args: card.data });
         return { card_shown: true, message: CARD_SHOWN_MESSAGE };
       }
       const parsed = logFoodItemSchema.safeParse(args);
@@ -932,6 +1018,18 @@ export async function executeToolCall(
       return { items: sanitizePantryItems(items) };
     }
 
+    case "get_grocery_lists": {
+      const parsed = getGroceryListsSchema.safeParse(args);
+      if (!parsed.success) {
+        return invalidArgs("get_grocery_lists", parsed.error.message);
+      }
+      const lists = await storage.getGroceryListsWithOpenItems(userId, {
+        titleContains: parsed.data.listName || undefined,
+        limit: GROCERY_LISTS_RETURNED,
+      });
+      return { lists: lists.map(compactGroceryList) };
+    }
+
     case "get_meal_plan": {
       const parsed = getMealPlanSchema.safeParse(args);
       if (!parsed.success) {
@@ -974,7 +1072,7 @@ export async function executeToolCall(
         if (!card.success) {
           return invalidArgs("add_to_meal_plan", card.error.message);
         }
-        opts.onWriteCardProposal?.({
+        await opts.onWriteCardProposal?.({
           kind: "plan",
           args: card.data,
           pool: [...(opts.planRecipePool ?? [])],
@@ -1014,8 +1112,12 @@ export async function executeToolCall(
         if (!card.success) {
           return invalidArgs("add_to_grocery_list", card.error.message);
         }
-        opts.onWriteCardProposal?.({ kind: "grocery", args: card.data });
-        return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+        return groceryCardResult(
+          await opts.onWriteCardProposal?.({
+            kind: "grocery",
+            args: card.data,
+          }),
+        );
       }
       const parsed = addToGroceryListSchema.safeParse(args);
       if (!parsed.success) {

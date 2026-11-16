@@ -34,27 +34,14 @@ env:
 - assertVisible: 'Pantry(, \d+ expiring)?'
 - assertVisible: "Grocery Lists"
 
-# Verify meal slot sections (at least one should be visible)
+# The Plan home is the week grid. Its planned-slot counter is the one piece
+# of text that proves the grid (not the error state or the skeleton) rendered.
+# The grid's row labels ("Breakfast", ...) are hidden from accessibility on
+# purpose (every cell's own label names its meal), so do not assert on them.
 - extendedWaitUntil:
-    visible:
-      text: "Breakfast"
-    timeout: 3000
-    optional: true
-- assertVisible:
-    text: "Lunch"
-    optional: true
-- assertVisible:
-    text: "Dinner"
-    optional: true
-- assertVisible:
-    text: "Snack"
-    optional: true
-
-# Check daily total section
-- scrollUntilVisible:
-    element: "Daily Total"
-    direction: DOWN
-    optional: true
+    visible: '\d+ of 28 planned'
+    timeout: 10000
+- assertVisible: "Next week"
 
 # Navigate to Pantry (same expiring-suffix tolerance as the assert above)
 - scrollUntilVisible:

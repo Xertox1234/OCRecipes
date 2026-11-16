@@ -50,6 +50,8 @@ export const ErrorCode = {
    */
   IMAGE_GENERATION_FAILED: "IMAGE_GENERATION_FAILED",
   ALREADY_CONFIRMED: "ALREADY_CONFIRMED",
+  /** A non-self meal audience was requested while the user's family planning switch is off. */
+  FAMILY_PLANNING_OFF: "FAMILY_PLANNING_OFF",
   NUTRITION_LOOKUP_FAILED: "NUTRITION_LOOKUP_FAILED",
   /** A nutrition label scan whose calories line could not be read — rescan rather than log 0 kcal. */
   CALORIES_UNREADABLE: "CALORIES_UNREADABLE",

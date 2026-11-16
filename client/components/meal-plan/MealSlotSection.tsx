@@ -16,6 +16,10 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import {
+  type ItemFamilyInfo,
+  countsTowardUser,
+} from "@/components/meal-plan/family-utils";
+import {
   MEAL_LABELS,
   computeItemMacros,
   formatMacroLine,
@@ -30,6 +34,29 @@ const MEAL_ICONS: Record<MealType, string> = {
   snack: "coffee",
 };
 
+/**
+ * The row's screen-reader actions. Confirm is left out once confirmed, and for
+ * a profile's meal, which can never be confirmed as eaten. "Who's it for?"
+ * only when family planning is on.
+ */
+export function getItemAccessibilityActions(
+  item: Pick<MealPlanItemWithRelations, "audience">,
+  canConfirm: boolean,
+  isConfirmed: boolean,
+  name: string,
+  canChangeAudience = false,
+): { name: string; label: string }[] {
+  return [
+    ...(canConfirm && countsTowardUser(item) && !isConfirmed
+      ? [{ name: "confirm", label: `Confirm ${name} as eaten` }]
+      : []),
+    ...(canChangeAudience
+      ? [{ name: "audience", label: "Who's it for?" }]
+      : []),
+    { name: "remove", label: `Remove ${name}` },
+  ];
+}
+
 // ── Meal Slot Card ───────────────────────────────────────────────────
 
 export const MealSlotItem = React.memo(function MealSlotItem({
@@ -38,7 +65,9 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   onPress,
   onRemove,
   onConfirm,
-  canConfirm,
+  canConfirm: canConfirmProp,
+  family,
+  onChangeAudience,
 }: {
   item: MealPlanItemWithRelations;
   isConfirmed: boolean;
@@ -46,8 +75,14 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   onRemove: (id: number) => void;
   onConfirm: (id: number) => void;
   canConfirm: boolean;
+  /** Who the meal is for and its clashes; absent when family planning is off. */
+  family?: ItemFamilyInfo;
+  /** Opens "Who's it for?" for this row. */
+  onChangeAudience?: (item: MealPlanItemWithRelations) => void;
 }) {
   const { theme } = useTheme();
+  // A profile's own meal can never be confirmed as eaten.
+  const canConfirm = canConfirmProp && countsTowardUser(item);
   const isOrphaned =
     !item.recipe && !item.scannedItem && !item.recipeId && !item.scannedItemId;
   const name = isOrphaned
@@ -67,9 +102,16 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   // on the nested label's own container.
   const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.recipe?.allergens);
 
+  const canChangeAudience = family !== undefined && !!onChangeAudience;
+  // The row is one screen-reader stop, so the audience and the clashes ride in
+  // its own label.
+  const familyA11ySuffix = family
+    ? `${family.audienceLabel ? `, ${family.audienceLabel}` : ""}${family.clashLines.map((line) => `. ${line}`).join("")}`
+    : "";
+
   const accessLabel = macros
-    ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`
-    : `${name}${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`;
+    ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}${familyA11ySuffix}${allergenA11ySuffix}`
+    : `${name}${isConfirmed ? ", confirmed" : ""}${familyA11ySuffix}${allergenA11ySuffix}`;
 
   // The card Pressable above is accessible by default, which collapses its
   // whole subtree into a single iOS VoiceOver focus stop (same device-verified
@@ -85,24 +127,28 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   // gating the nested button's render + the `!isConfirmed &&` guard on its
   // onPress); Remove has no such gate, matching its unconditional render.
   const accessibilityActions = useMemo(
-    () => [
-      ...(canConfirm && !isConfirmed
-        ? [{ name: "confirm", label: `Confirm ${name} as eaten` }]
-        : []),
-      { name: "remove", label: `Remove ${name}` },
-    ],
-    [canConfirm, isConfirmed, name],
+    () =>
+      getItemAccessibilityActions(
+        item,
+        canConfirm,
+        isConfirmed,
+        name,
+        canChangeAudience,
+      ),
+    [item, canConfirm, isConfirmed, name, canChangeAudience],
   );
 
   const handleAccessibilityAction = useCallback(
     (event: { nativeEvent: { actionName: string } }) => {
       if (event.nativeEvent.actionName === "confirm") {
-        if (!isConfirmed) onConfirm(item.id);
+        if (canConfirm && !isConfirmed) onConfirm(item.id);
+      } else if (event.nativeEvent.actionName === "audience") {
+        onChangeAudience?.(item);
       } else if (event.nativeEvent.actionName === "remove") {
         onRemove(item.id);
       }
     },
-    [isConfirmed, onConfirm, onRemove, item.id],
+    [canConfirm, isConfirmed, onConfirm, onRemove, onChangeAudience, item],
   );
 
   return (
@@ -151,16 +197,43 @@ export const MealSlotItem = React.memo(function MealSlotItem({
         </Pressable>
       )}
       <View style={styles.mealSlotContent}>
-        <ThemedText
-          style={[
-            styles.mealSlotName,
-            isOrphaned && { color: theme.textSecondary, fontStyle: "italic" },
-          ]}
-          numberOfLines={1}
-        >
-          {name}
-        </ThemedText>
+        <View style={styles.mealSlotTitleRow}>
+          <ThemedText
+            style={[
+              styles.mealSlotName,
+              styles.mealSlotNameShrink,
+              isOrphaned && { color: theme.textSecondary, fontStyle: "italic" },
+            ]}
+            numberOfLines={1}
+          >
+            {name}
+          </ThemedText>
+          {family?.audienceLabel ? (
+            <ThemedText
+              style={[styles.audienceLabel, { color: theme.textSecondary }]}
+              numberOfLines={1}
+            >
+              {family.audienceLabel}
+            </ThemedText>
+          ) : null}
+        </View>
         <RecipeAllergenLabel allergens={item.recipe?.allergens} />
+        {family?.clashLines.map((line) => (
+          <ThemedText
+            key={line}
+            style={[
+              styles.clashLine,
+              {
+                color:
+                  line.startsWith("Contains") || line.startsWith("May contain")
+                    ? theme.error
+                    : theme.textSecondary,
+              },
+            ]}
+          >
+            {line}
+          </ThemedText>
+        ))}
         {macroLine !== null && (
           <ThemedText
             style={[styles.mealSlotCalories, { color: theme.textSecondary }]}
@@ -168,6 +241,24 @@ export const MealSlotItem = React.memo(function MealSlotItem({
             {macroLine}
           </ThemedText>
         )}
+        {canChangeAudience ? (
+          <Pressable
+            onPress={() => onChangeAudience?.(item)}
+            style={({ pressed }) => [
+              styles.audienceButton,
+              pressed && { opacity: 0.7 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Who's it for?"
+          >
+            <Feather name="users" size={14} color={theme.link} />
+            <ThemedText
+              style={[styles.audienceButtonText, { color: theme.link }]}
+            >
+              {"Who's it for?"}
+            </ThemedText>
+          </Pressable>
+        ) : null}
       </View>
       <Pressable
         onPress={() => onRemove(item.id)}
@@ -206,6 +297,8 @@ export const MealSlotSection = React.memo(function MealSlotSection({
   isExpanded,
   onToggle,
   sectionSummary,
+  familyById,
+  onChangeAudience,
 }: {
   mealType: MealType;
   items: MealPlanItemWithRelations[];
@@ -221,6 +314,9 @@ export const MealSlotSection = React.memo(function MealSlotSection({
   isExpanded: boolean;
   onToggle: (mealType: MealType) => void;
   sectionSummary: { itemCount: number; totalCalories: number };
+  /** Family info per item id; absent when family planning is off. */
+  familyById?: Record<number, ItemFamilyInfo>;
+  onChangeAudience?: (item: MealPlanItemWithRelations) => void;
 }) {
   const { theme } = useTheme();
   const iconName = MEAL_ICONS[mealType] || "circle";
@@ -365,6 +461,8 @@ export const MealSlotSection = React.memo(function MealSlotSection({
                     onRemove={onRemoveItem}
                     onConfirm={onConfirmItem}
                     canConfirm={canConfirm}
+                    family={familyById?.[item.id]}
+                    onChangeAudience={onChangeAudience}
                   />
                 </SwipeableRow>
               )}
@@ -388,6 +486,8 @@ export const MealSlotSection = React.memo(function MealSlotSection({
                   onRemove={onRemoveItem}
                   onConfirm={onConfirmItem}
                   canConfirm={canConfirm}
+                  family={familyById?.[item.id]}
+                  onChangeAudience={onChangeAudience}
                 />
               </SwipeableRow>
             ))
@@ -446,6 +546,34 @@ const styles = StyleSheet.create({
   mealSlotName: {
     fontSize: 15,
     fontFamily: FontFamily.semiBold,
+  },
+  mealSlotTitleRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: Spacing.sm,
+  },
+  mealSlotNameShrink: {
+    flexShrink: 1,
+  },
+  audienceLabel: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+  },
+  clashLine: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+    marginTop: 2,
+  },
+  audienceButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    minHeight: 44,
+    alignSelf: "flex-start",
+  },
+  audienceButtonText: {
+    fontSize: 13,
+    fontFamily: FontFamily.medium,
   },
   mealSlotCalories: {
     fontSize: 13,

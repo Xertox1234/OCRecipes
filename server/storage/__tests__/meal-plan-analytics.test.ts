@@ -22,6 +22,7 @@ import {
   mealPlanItems,
   recipeIngredients,
   scannedItems,
+  familyProfiles,
 } from "@shared/schema";
 
 vi.mock("../../db", () => ({
@@ -54,6 +55,14 @@ async function createRecipe(
     })
     .returning();
   return r;
+}
+
+async function createProfile(userId: string): Promise<schema.FamilyProfile> {
+  const [p] = await tx
+    .insert(familyProfiles)
+    .values({ userId, name: "Ivy" })
+    .returning();
+  return p;
 }
 
 describe("meal-plan-analytics storage", () => {
@@ -106,6 +115,50 @@ describe("meal-plan-analytics storage", () => {
       expect(Number(summary.plannedCalories)).toBe(800);
       expect(Number(summary.plannedProtein)).toBe(60);
       expect(Number(summary.plannedItemCount)).toBe(1);
+    });
+
+    it("leaves a family profile's own meal out of the user's planned nutrition", async () => {
+      const self = await createRecipe(testUser.id, {
+        caloriesPerServing: "500",
+      });
+      const shared = await createRecipe(testUser.id, {
+        caloriesPerServing: "600",
+      });
+      const kids = await createRecipe(testUser.id, {
+        caloriesPerServing: "400",
+      });
+      const profile = await createProfile(testUser.id);
+      await tx.insert(mealPlanItems).values([
+        {
+          userId: testUser.id,
+          recipeId: self.id,
+          plannedDate: "2026-05-15",
+          mealType: "lunch",
+        },
+        {
+          userId: testUser.id,
+          recipeId: shared.id,
+          plannedDate: "2026-05-15",
+          mealType: "dinner",
+          servings: "1",
+          audience: "shared",
+        },
+        {
+          userId: testUser.id,
+          recipeId: kids.id,
+          plannedDate: "2026-05-15",
+          mealType: "dinner",
+          audience: "profile",
+          familyProfileId: profile.id,
+        },
+      ]);
+      const summary = await getPlannedNutritionSummary(
+        testUser.id,
+        "2026-05-15",
+        [],
+      );
+      expect(Number(summary.plannedCalories)).toBe(1100);
+      expect(Number(summary.plannedItemCount)).toBe(2);
     });
 
     it("does not count a plan item whose recipe was soft-deleted", async () => {
@@ -336,6 +389,65 @@ describe("meal-plan-analytics storage", () => {
     });
   });
 
+  describe("getMealPlanIngredientsForDateRange family portions", () => {
+    const range = ["2026-05-15", "2026-05-22"] as const;
+
+    async function planAudience(
+      audience: "self" | "shared" | "profile",
+      recipeYield = 4,
+    ) {
+      const recipe = await createRecipe(testUser.id, {
+        servings: recipeYield,
+      });
+      await tx
+        .insert(recipeIngredients)
+        .values({ recipeId: recipe.id, name: "rice", displayOrder: 0 });
+      const profile =
+        audience === "profile" ? await createProfile(testUser.id) : null;
+      await tx.insert(mealPlanItems).values({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-16",
+        mealType: "dinner",
+        servings: "1",
+        audience,
+        familyProfileId: profile?.id ?? null,
+      });
+    }
+
+    const count = async (family?: { active: boolean; profileCount: number }) =>
+      (await getMealPlanIngredientsForDateRange(testUser.id, ...range, family))
+        .length;
+
+    it("shared meal, inactive: one batch", async () => {
+      await planAudience("shared");
+      expect(await count({ active: false, profileCount: 4 })).toBe(1);
+      expect(await count()).toBe(1);
+    });
+
+    it("shared meal, active with 3 profiles: 4 portions, one batch", async () => {
+      await planAudience("shared");
+      expect(await count({ active: true, profileCount: 3 })).toBe(1);
+    });
+
+    it("shared meal, active with 4 profiles: 5 portions, two batches", async () => {
+      await planAudience("shared");
+      expect(await count({ active: true, profileCount: 4 })).toBe(2);
+    });
+
+    it("self meal is unchanged whatever family says", async () => {
+      await planAudience("self");
+      expect(await count({ active: true, profileCount: 7 })).toBe(1);
+    });
+
+    it("profile meal is included when active and absent when inactive", async () => {
+      await planAudience("profile");
+      expect(await count({ active: true, profileCount: 1 })).toBe(1);
+      expect(await count({ active: false, profileCount: 1 })).toBe(0);
+      expect(await count()).toBe(0);
+    });
+  });
+
   describe("getFrequentRecipesForMealType", () => {
     it("returns empty when no items match", async () => {
       const recipes = await getFrequentRecipesForMealType(
@@ -374,6 +486,35 @@ describe("meal-plan-analytics storage", () => {
         "breakfast",
       );
       expect(result.map((r) => r.id)).toEqual([recipeA.id, recipeB.id]);
+    });
+  });
+
+  describe("getFrequentRecipesForMealType (family)", () => {
+    it("ignores a family profile's own meals", async () => {
+      const mine = await createRecipe(testUser.id, { title: "Eggs" });
+      const kids = await createRecipe(testUser.id, { title: "Nuggets" });
+      const profile = await createProfile(testUser.id);
+      await tx.insert(mealPlanItems).values([
+        {
+          userId: testUser.id,
+          recipeId: mine.id,
+          plannedDate: "2026-05-15",
+          mealType: "breakfast",
+        },
+        ...["2026-05-16", "2026-05-17", "2026-05-18"].map((d) => ({
+          userId: testUser.id,
+          recipeId: kids.id,
+          plannedDate: d,
+          mealType: "breakfast",
+          audience: "profile" as const,
+          familyProfileId: profile.id,
+        })),
+      ]);
+      const result = await getFrequentRecipesForMealType(
+        testUser.id,
+        "breakfast",
+      );
+      expect(result.map((r) => r.id)).toEqual([mine.id]);
     });
   });
 

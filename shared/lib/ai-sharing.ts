@@ -13,7 +13,8 @@
  */
 // 2026-11-10.2: adds the Coach Pro weekly report (a week of food totals and
 // recipe titles); "what you ate today" became "what you've eaten recently".
-export const AI_SHARING_VERSION = "2026-11-10.2";
+// 2026-11-16: adds the pantry items and grocery lists Coach can look at.
+export const AI_SHARING_VERSION = "2026-11-16";
 
 /**
  * Who receives an AI request. This mirrors the routing in
@@ -56,6 +57,7 @@ export const AI_SHARED_DATA = [
   "Photos you scan (meals, labels, menus, receipts)",
   "Messages you send to Coach and the recipe chat, and foods you type or dictate",
   "The profile details a feature needs, such as your first name, goals, allergies, diet, weight, activity level, what you've eaten recently and the notes Coach has saved about you",
+  "Your pantry items and grocery lists, when Coach looks at them",
   "For the Coach Pro weekly report: your week's daily food totals and the titles of recipes you added that week",
   "Recipe titles and ingredients, to create recipe pictures",
 ] as const;

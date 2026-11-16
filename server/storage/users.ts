@@ -347,6 +347,7 @@ export {
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,
+  setFamilyPlanningEnabled,
   upsertProfileWithOnboarding,
   withdrawHealthConsent,
 } from "./user-profiles";

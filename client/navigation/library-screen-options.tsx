@@ -21,6 +21,8 @@ export const LIBRARY_SCREEN_OPTIONS = {
   Pantry: titleOnly("Pantry"),
   CookbookList: titleOnly("Cookbooks"),
   CookbookDetail: titleOnly("Cookbook"),
+  // A static `title` too, so iOS never shows the route name in the back button.
+  FamilyProfiles: { title: "Family", ...titleOnly("Family") },
 } satisfies Record<string, NativeStackNavigationOptions>;
 
 /** CookbookCreate doubles as the edit screen: the title follows the mode. */
@@ -30,4 +32,14 @@ export function cookbookCreateOptions({
   route: { params?: { cookbookId?: number } };
 }): NativeStackNavigationOptions {
   return titleOnly(route.params?.cookbookId ? "Edit Cookbook" : "New Cookbook");
+}
+
+/** FamilyProfileEdit doubles as the add screen: the title follows the mode. */
+export function familyProfileEditOptions({
+  route,
+}: {
+  route: { params?: { profileId?: number } };
+}): NativeStackNavigationOptions {
+  const title = route.params?.profileId ? "Edit person" : "Add a person";
+  return { title, ...titleOnly(title) };
 }

@@ -40,6 +40,10 @@ const NON_RESPONSE_SCHEMAS: ReadonlySet<string> = new Set<string>([
   // Request-body rule: the import browser checks its page URL against
   // .shape.url before sending it to parse-page; not a response.
   "importUrlSchema",
+  // Request-body rule: the family profile form checks its draft against the
+  // same schema the server parses the request with, before sending; not a
+  // response.
+  "familyProfileInputSchema",
 ]);
 
 const EXCLUDED_DIRS = new Set([

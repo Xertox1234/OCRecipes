@@ -27,6 +27,7 @@ import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 import { clearImportBrowserData } from "../../modules/webview-site-data";
 import { clearDeviceImageLeftovers } from "@/lib/device-leftovers";
+import { clearPendingAudience } from "@/lib/plan-audience";
 
 export interface AuthState {
   user: User | null;
@@ -169,6 +170,10 @@ export async function dropPendingRevokeFor(
  */
 export async function clearDurableLocalState(): Promise<boolean> {
   let ok = true;
+  // The add menu's pending "Who's it for?" choice: a module variable holding a
+  // family profile id, which queryClient.clear() below does not reach.
+  // Synchronous and cannot throw.
+  clearPendingAudience();
   try {
     if (!(await clearOfflineQueue())) ok = false;
     // Clear this device's per-user home-action history (recent-actions list +

@@ -73,6 +73,8 @@ const mealPlanItemDefaults: MealPlanItem = {
   mealType: "lunch",
   servings: "1",
   sortOrder: 0,
+  audience: "self",
+  familyProfileId: null,
   createdAt: new Date("2024-01-01"),
 };
 

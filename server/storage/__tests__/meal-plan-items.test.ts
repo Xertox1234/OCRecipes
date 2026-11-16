@@ -21,6 +21,7 @@ import {
   mealPlanItems,
   scannedItems,
   dailyLogs,
+  familyProfiles,
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
@@ -38,6 +39,8 @@ const {
   removeMealPlanItem,
   reorderMealPlanItems,
   getConfirmedMealPlanItemIds,
+  updateMealPlanItemAudience,
+  isMealPlanItemConfirmed,
 } = await import("../meal-plan-items");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -81,6 +84,28 @@ async function addItem(
   const item = await addMealPlanItem(...args);
   if (!item) throw new Error("fixture: addMealPlanItem refused the recipe");
   return item;
+}
+
+/** One self, one shared and one profile meal on 2026-05-15; returns the profile id too. */
+async function seedAudienceMeals(userId: string) {
+  const [profile] = await tx
+    .insert(familyProfiles)
+    .values({ userId, name: "Sam" })
+    .returning();
+  const recipe = await createRecipe(userId);
+  const mk = (audience: "self" | "shared" | "profile") =>
+    addItem({
+      userId,
+      recipeId: recipe.id,
+      plannedDate: "2026-05-15",
+      mealType: "dinner",
+      audience,
+      familyProfileId: audience === "profile" ? profile.id : null,
+    });
+  const self = await mk("self");
+  const shared = await mk("shared");
+  const forProfile = await mk("profile");
+  return { profile, self, shared, forProfile };
 }
 
 describe("meal-plan-items storage", () => {
@@ -569,6 +594,99 @@ describe("meal-plan-items storage", () => {
         "UTC",
       );
       expect(ids).not.toContain(item.id);
+    });
+  });
+
+  describe("audience", () => {
+    it("getMealPlanItems hides profile meals by default and shows them when asked", async () => {
+      await seedAudienceMeals(testUser.id);
+      const byDefault = await getMealPlanItems(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-15",
+      );
+      expect(byDefault.map((i) => i.audience).sort()).toEqual([
+        "self",
+        "shared",
+      ]);
+      const all = await getMealPlanItems(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-15",
+        { includeProfileMeals: true },
+      );
+      expect(all).toHaveLength(3);
+    });
+
+    it("getMealPlanItemSummaries never returns profile meals", async () => {
+      await seedAudienceMeals(testUser.id);
+      const rows = await getMealPlanItemSummaries(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-15",
+      );
+      expect(rows).toHaveLength(2);
+      expect(rows.some((r) => r.audience === "profile")).toBe(false);
+    });
+
+    it("updateMealPlanItemAudience changes the audience for the owner", async () => {
+      const { self, profile } = await seedAudienceMeals(testUser.id);
+      const updated = await updateMealPlanItemAudience(
+        self.id,
+        testUser.id,
+        "profile",
+        profile.id,
+      );
+      expect(updated?.audience).toBe("profile");
+      expect(updated?.familyProfileId).toBe(profile.id);
+      const back = await updateMealPlanItemAudience(
+        self.id,
+        testUser.id,
+        "shared",
+        null,
+      );
+      expect(back?.audience).toBe("shared");
+      expect(back?.familyProfileId).toBeNull();
+    });
+
+    it("updateMealPlanItemAudience returns undefined for the wrong user and leaves the row", async () => {
+      const { self } = await seedAudienceMeals(testUser.id);
+      const other = await createTestUser(tx);
+      const result = await updateMealPlanItemAudience(
+        self.id,
+        other.id,
+        "shared",
+        null,
+      );
+      expect(result).toBeUndefined();
+      const [row] = await tx
+        .select()
+        .from(mealPlanItems)
+        .where(eq(mealPlanItems.id, self.id));
+      expect(row.audience).toBe("self");
+    });
+  });
+
+  describe("isMealPlanItemConfirmed", () => {
+    it("is true only for the owner's confirmed item", async () => {
+      const recipe = await createRecipe(testUser.id);
+      const item = await addItem({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "lunch",
+      });
+      expect(await isMealPlanItemConfirmed(item.id, testUser.id)).toBe(false);
+      await tx.insert(dailyLogs).values({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        source: "meal_plan_confirm",
+        mealPlanItemId: item.id,
+        loggedAt: new Date(),
+      });
+      expect(await isMealPlanItemConfirmed(item.id, testUser.id)).toBe(true);
+      const other = await createTestUser(tx);
+      expect(await isMealPlanItemConfirmed(item.id, other.id)).toBe(false);
     });
   });
 });

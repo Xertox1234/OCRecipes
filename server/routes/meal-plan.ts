@@ -18,11 +18,17 @@ import {
   checkAiSharing,
   checkPremiumFeature,
   formatZodError,
+  getPremiumFeatures,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
 } from "./_helpers";
 
+import { getFamilyContext } from "../services/family-context";
+import {
+  mealAudienceInputSchema,
+  type MealAudience,
+} from "@shared/types/family";
 import { logger, toError } from "../lib/logger";
 import { isUniqueViolation } from "../lib/db-errors";
 import {
@@ -41,6 +47,49 @@ import {
 import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 
 export { validateMealPlanDateRange };
+
+/**
+ * Gate for writing a non-`self` audience, shared by POST and PATCH so they
+ * cannot drift. Sends the error and returns false when refused: 403 without the
+ * premium flag, 409 when only the user's switch is off, 404 for a profile that
+ * is not theirs. `self` skips every lookup.
+ */
+async function audienceAllowed(
+  req: AuthenticatedRequest,
+  res: Response,
+  audience: MealAudience,
+  familyProfileId: number | null,
+): Promise<boolean> {
+  if (audience === "self") return true;
+  const features = await getPremiumFeatures(req);
+  if (!features.familyProfiles) {
+    sendError(
+      res,
+      403,
+      "Family meal planning requires a premium subscription",
+      ErrorCode.PREMIUM_REQUIRED,
+    );
+    return false;
+  }
+  const context = await getFamilyContext(req.userId, features);
+  if (!context.active) {
+    sendError(
+      res,
+      409,
+      "Family meal planning is turned off",
+      ErrorCode.FAMILY_PLANNING_OFF,
+    );
+    return false;
+  }
+  if (audience === "profile" && familyProfileId !== null) {
+    const profile = await storage.getFamilyProfile(familyProfileId, req.userId);
+    if (!profile) {
+      sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
+      return false;
+    }
+  }
+  return true;
+}
 
 /** Meal types inferred from the normalized title + ingredient names. */
 function inferRecipeMealTypes(
@@ -271,10 +320,13 @@ export function register(app: Express): void {
           return;
         }
 
+        const features = await getPremiumFeatures(req);
+        const familyContext = await getFamilyContext(req.userId, features);
         const items = await storage.getMealPlanItems(
           req.userId,
           validation.start,
           validation.end,
+          { includeProfileMeals: familyContext.active },
         );
         res.json(items);
       } catch (error) {
@@ -314,6 +366,17 @@ export function register(app: Express): void {
             "Provide exactly one of recipeId, scannedItemId or recipe",
             ErrorCode.VALIDATION_ERROR,
           );
+          return;
+        }
+
+        if (
+          !(await audienceAllowed(
+            req,
+            res,
+            itemData.audience,
+            itemData.familyProfileId,
+          ))
+        ) {
           return;
         }
 
@@ -362,6 +425,8 @@ export function register(app: Express): void {
                 plannedDate: itemData.plannedDate,
                 mealType: itemData.mealType,
                 servings: itemData.servings,
+                audience: itemData.audience,
+                familyProfileId: itemData.familyProfileId,
               },
             },
           ]);
@@ -423,6 +488,65 @@ export function register(app: Express): void {
         res.status(201).json(mealPlanItem);
       } catch (error) {
         handleRouteError(res, error, "add item to plan");
+      }
+    },
+  );
+
+  // PATCH /api/meal-plan/items/:id - Change who a planned meal is for.
+  // Literal `/reorder` is a different path depth than `/items/:id`, so neither
+  // route can shadow the other.
+  app.patch(
+    "/api/meal-plan/items/:id",
+    requireAuth,
+    mealPlanRateLimit,
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id) {
+          sendError(res, 400, "Invalid item ID", ErrorCode.VALIDATION_ERROR);
+          return;
+        }
+        const parsed = mealAudienceInputSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const { audience, familyProfileId } = parsed.data;
+        if (!(await audienceAllowed(req, res, audience, familyProfileId))) {
+          return;
+        }
+        // A confirmed meal is already counted in the user's nutrition; it
+        // cannot become someone else's.
+        if (
+          audience === "profile" &&
+          (await storage.isMealPlanItemConfirmed(id, req.userId))
+        ) {
+          sendError(
+            res,
+            409,
+            "Meal plan item already confirmed",
+            ErrorCode.ALREADY_CONFIRMED,
+          );
+          return;
+        }
+        const updated = await storage.updateMealPlanItemAudience(
+          id,
+          req.userId,
+          audience,
+          familyProfileId,
+        );
+        if (!updated) {
+          sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
+          return;
+        }
+        res.json(updated);
+      } catch (error) {
+        handleRouteError(res, error, "update item audience");
       }
     },
   );
@@ -519,6 +643,17 @@ export function register(app: Express): void {
           return;
         }
 
+        // A profile's own meal is never the user's intake.
+        if (mealPlanItem.audience === "profile") {
+          sendError(
+            res,
+            400,
+            "A meal planned for a family profile cannot be confirmed",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
         // No duplicate pre-check: the unique index
         // `daily_logs_unique_meal_plan_confirm` (user_id, meal_plan_item_id)
         // is the guarantee, and the catch below maps its violation to 409.
@@ -602,6 +737,7 @@ export function register(app: Express): void {
         const plan = await buildPantryMealPlanForUser(
           req.userId,
           parsed.data.days,
+          features,
         );
 
         res.json(plan);
@@ -691,6 +827,13 @@ export function register(app: Express): void {
           }
         }
 
+        // With family planning on and at least one profile, a generated plan
+        // is cooked for everyone: each item is a shared meal at the user's own
+        // portion of 1. The recipe keeps the AI's yield.
+        const features = await getPremiumFeatures(req);
+        const family = await getFamilyContext(req.userId, features);
+        const forFamily = family.active && family.profiles.length > 0;
+
         // Create all recipes and plan items atomically
         const meals = parsed.data.meals.map((meal) => {
           const mealTypes = inferMealTypes(
@@ -726,7 +869,8 @@ export function register(app: Express): void {
               userId: req.userId,
               plannedDate: meal.plannedDate,
               mealType: meal.mealType,
-              servings: String(meal.servings),
+              servings: forFamily ? "1" : String(meal.servings),
+              ...(forFamily ? { audience: "shared" as const } : {}),
             },
           };
         });

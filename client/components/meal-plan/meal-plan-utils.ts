@@ -1,4 +1,6 @@
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
+import { countsTowardUser } from "./family-utils";
+import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 
@@ -73,6 +75,8 @@ export function computeMealSectionSummary(items: MealPlanItemWithRelations[]): {
 } {
   let totalCalories = 0;
   for (const item of items) {
+    // A profile's own meal is not the user's nutrition.
+    if (!countsTowardUser(item)) continue;
     const macros = computeItemMacros(item);
     if (macros) {
       totalCalories += macros.calories;
@@ -86,4 +90,38 @@ export function computeMealSectionSummary(items: MealPlanItemWithRelations[]): {
  */
 export function formatMacroLine(macros: ItemMacros): string {
   return `${macros.calories} cal \u00B7 ${macros.protein}g P \u00B7 ${macros.carbs}g C \u00B7 ${macros.fat}g F`;
+}
+
+/**
+ * The single add request for an AI meal suggestion: the recipe travels inline
+ * so the server creates it and its plan item in one transaction, and a
+ * failure leaves nothing behind.
+ */
+export function suggestionToPlanItem(
+  suggestion: MealSuggestion,
+  plannedDate: string,
+  mealType: MealType,
+) {
+  return {
+    recipe: {
+      title: suggestion.title,
+      description: suggestion.description,
+      difficulty: suggestion.difficulty,
+      prepTimeMinutes: suggestion.prepTimeMinutes,
+      instructions: suggestion.instructions,
+      dietTags: suggestion.dietTags,
+      sourceType: "ai_suggestion" as const,
+      caloriesPerServing: suggestion.calories,
+      proteinPerServing: suggestion.protein,
+      carbsPerServing: suggestion.carbs,
+      fatPerServing: suggestion.fat,
+      ingredients: suggestion.ingredients?.map((ing) => ({
+        name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+      })),
+    },
+    plannedDate,
+    mealType,
+  };
 }

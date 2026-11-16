@@ -86,6 +86,13 @@ describe("export coverage of user-linked tables", () => {
   });
 });
 
+describe("family profiles in the export", () => {
+  it("lists family_profiles as an exported table", async () => {
+    const { EXPORTED_USER_TABLES } = await import("../export");
+    expect(EXPORTED_USER_TABLES).toContain("family_profiles");
+  });
+});
+
 describe("export column allowlists for credential-bearing tables", () => {
   it("sign-in connections omit the Apple refresh token and provider subject", async () => {
     const { exportIdentityColumns } = await import("../export");
