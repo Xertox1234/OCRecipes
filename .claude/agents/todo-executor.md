@@ -419,28 +419,16 @@ Decide inline whether to preserve knowledge, using Step 6's `review_output` as e
    - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track), one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`, committed in step 7 (rubric and template: `.claude/skills/codify/SKILL.md` Steps 5-6; schema: `docs/solutions/README.md`).
    - **Reviewer agent update** — a new review rule for exactly **one** owning reviewer agent (single-write — see step 3)
 
-2. Pick the category by **nature of the finding**, not the todo's label (a `security` todo can yield `runtime-errors/` or `conventions/`). Choose exactly one of seven:
+2. Pick the category by **nature of the finding**, not the todo's label (a `security` todo can yield `runtime-errors/` or `conventions/`). Read the seven-row category table and its tie-break in `.claude/skills/codify/SKILL.md` Step 5 now and choose exactly one row — that file is the single source of truth for routing; this one keeps no copy.
 
-   | Finding nature                                                        | Track       | Destination dir       |
-   | --------------------------------------------------------------------- | ----------- | --------------------- |
-   | Crash / uncaught exception / throws                                   | `bug`       | `runtime-errors/`     |
-   | Wrong behavior, no crash (off-by-one, race, stale-state, etc.)        | `bug`       | `logic-errors/`       |
-   | Type-safety / DX / maintainability smell (no behavior bug)            | `bug`       | `code-quality/`       |
-   | Speed / memory / N+1 / wasted work                                    | `bug`       | `performance-issues/` |
-   | "Always do X / never do Y" project rule                               | `knowledge` | `conventions/`        |
-   | Reusable structural pattern (composable code shape)                   | `knowledge` | `design-patterns/`    |
-   | Procedural checklist triggered by an event (migration, rebrand, etc.) | `knowledge` | `best-practices/`     |
-
-   **Tie-break** in order: (1) documents a fix to a defect in the diff → **bug-track**; (2) documents a rule the diff complied with or a pattern it exemplifies → **knowledge-track**; (3) within bug-track, prefer the more specific (`runtime-errors` > `logic-errors` > `code-quality`).
-
-   Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` (frozen archive). `.claude/skills/codify/SKILL.md` is the single source of truth for routing.
+   Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` (frozen archive).
 
 3. Route reviewer-agent updates with the **canonical routing table in `.claude/skills/codify/SKILL.md` Step 5** — do not restate it. **Single-write rule:** the rule lands in exactly ONE owning reviewer file, never a second agent.
 
 4. Compose a short description of what was learned (constraint, workaround, rule, or review gap).
 
 5. Update the target files directly — only recurring, non-obvious, project-specific items; skip routine fixes.
-   - For **solutions**, first check the Step 3 `verified_solutions` note: if a surfaced solution in the same category covers the same files/finding, **update that file** at `docs/solutions/<category>/<existing-slug>.md` (extend its body, bump `last_updated`) instead of writing a duplicate. Otherwise create `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Either is committed in step 7 after 6b. Frontmatter per `docs/solutions/README.md`. Body per track (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Smell patterns` (optional) / `## Why` / `## Examples` / `## Exceptions` / `## Related Files` / `## See Also`). `## See Also` links: a **bare slug** for same-category targets (`[label](other-slug-2026-05-15.md)`), a `../<target-category>/` prefix for cross-category ones (`[label](../conventions/some-rule-2026-05-15.md)`) — never `../` for same-category.
+   - For **solutions**, first check the Step 3 `verified_solutions` note: if a surfaced solution in the same category covers the same files/finding, **update that file** at `docs/solutions/<category>/<existing-slug>.md` (extend its body, bump `last_updated`) instead of writing a duplicate. Otherwise create `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Either is committed in step 7 after 6b. Frontmatter, the body sections for the chosen track, the `tags:` routed-domain requirement and the `## See Also` link form are all in `.claude/skills/codify/SKILL.md` Step 6c — read it before writing the file; this one keeps no copy.
    - For **reviewer agent updates**, add the checklist item to the one owning `.claude/agents/*.md` file; when the owner is `security-auditor` and the finding is a repeatable failure mode, extend its `Common Vulnerabilities to Catch` list too.
 
 5b. **Rules routing**: If the finding was CRITICAL or HIGH severity AND is a one-bullet "never do X" rule, append it to `docs/rules/{domain}.md` (basename = domain: `security` → `docs/rules/security.md`, `react-native` → `docs/rules/react-native.md`, `accessibility` → `docs/rules/accessibility.md`, etc.). The 13 domain files: `api`, `architecture`, `database`, `security`, `react-native`, `accessibility`, `design-system`, `hooks`, `client-state`, `typescript`, `performance`, `testing`, `ai-prompting`. Include it in the step 7 commit.
