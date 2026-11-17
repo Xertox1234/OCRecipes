@@ -76,10 +76,12 @@ function getJudgeCall(backend: JudgeBackend) {
   } else {
     const client = new Anthropic();
     judgeCall = async (system, user, model) => {
+      // No `temperature`: Anthropic API version 2026-10-21 (SDK 1.x) rejects
+      // sampling parameters with a 400. Scores from this backend are therefore
+      // less repeatable than from the OpenRouter one, which still sends 0.
       const message = await client.messages.create({
         model,
         max_tokens: 1000,
-        temperature: 0,
         system,
         messages: [{ role: "user", content: user }],
       });
