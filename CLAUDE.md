@@ -18,7 +18,10 @@ OCRecipes: a mobile nutrition tracker — Expo/React Native client (`client/`), 
 
 ## Working rules
 
-- Strict TDD: a failing test first, then the implementation; tests pass before the PR.
+- Strict TDD: a failing test first, then the implementation; tests pass before the PR. To watch it fail and then pass, run only the test file you are writing (`npx vitest run <file>`); the full suite stays with the push gate and CI.
+  <!-- owner ruling 2026-11-16: the single-file run is the sanctioned red/green step -->
+- Size the process to the task. A scoped fix, tune or config change goes straight to implement → test → one review pass: no brainstorm, spec, plan or subagent-driven build. Use those for a new feature or a change with real unknowns, and say so when you escalate. This file outranks any skill or plugin rule that says otherwise (superpowers included).
+  <!-- owner correction, given five times, the latest 2026-08-13; it lived only in agent memory until 2026-11-16 -->
 - Ad-hoc worktree (outside `/todo`, `/todo-fast`, `/audit`): run `bash scripts/declare-worktree.sh "$(git rev-parse --show-toplevel)"` after entering it, and release with `--remove`/`--clear` when done. Write output files (reports, trends) inside the worktree. Guards then deny out-of-contract writes; bypass one command with `SKIP_WORKTREE_CONTRACT=1`. Coverage limits: `docs/superpowers/specs/2026-07-17-git-guardrails-design.md`.
 - After a code review, check for emergent patterns and codify them (`/codify`). Memory marked RESOLVED/SHIPPED/MERGED is reduced to a one-paragraph takeaway or deleted at codify time.
 - Review policy (one pass, plus at most one confirmation pass after in-place fixes) and the reviewer roster: `docs/AI_WORKFLOW.md` → Review Policy. A portable skill's review step goes to that roster, not `general-purpose`; implementation subagents stay `general-purpose`.
