@@ -44,7 +44,9 @@ import {
 } from "../lib/ai-safety";
 import {
   buildWriteCardPayload,
+  pantryRowLine,
   planGroceryCard,
+  planPantryCard,
   describeLiveCard,
   type WriteCardOutcome,
   type WriteCardProposal,
@@ -143,6 +145,11 @@ export interface CoachChatParams {
    * can show a write card. Absent → today's behavior exactly.
    */
   writeCards?: boolean;
+  /**
+   * Pantry card (spec 2026-11-16): the app declared it can draw the card AND
+   * the user's plan includes the pantry. The caller decides both.
+   */
+  pantryCard?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {
@@ -518,6 +525,7 @@ export async function* handleCoachChat(
   } = params;
   // Write cards ride on Coach Pro's blocks; the free tier never gets them.
   const writeCards = !!params.writeCards && isCoachPro;
+  const pantryCard = writeCards && !!params.pantryCard;
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
@@ -757,31 +765,60 @@ export async function* handleCoachChat(
           onWriteCardProposal: async (
             p: WriteCardProposal,
           ): Promise<void | WriteCardOutcome> => {
-            if (p.kind !== "grocery") {
+            if (p.kind !== "grocery" && p.kind !== "pantry") {
               writeCardProposal = p;
               writeCardPrepared = null;
               return;
             }
+            // These two are worked out now, so the tool result can say what
+            // the card shows. With no card to show, an earlier proposal from
+            // this turn stays.
             try {
+              if (p.kind === "pantry") {
+                const plan = await planPantryCard(p.args, userId);
+                if (!plan.payload) {
+                  return {
+                    kind: "pantry",
+                    shown: false,
+                    rows: [],
+                    dropped: plan.dropped,
+                  };
+                }
+                writeCardProposal = p;
+                writeCardPrepared = plan.payload;
+                return {
+                  kind: "pantry",
+                  shown: true,
+                  rows: plan.payload.rows.map(pantryRowLine),
+                  dropped: plan.dropped,
+                };
+              }
               const plan = await planGroceryCard(p.args, userId);
-              // The pantry covers it all: no card, and an earlier proposal
-              // from this turn stays.
-              if (!plan.payload) return { shown: false, leftOff: plan.leftOff };
+              if (!plan.payload) {
+                return { kind: "grocery", shown: false, leftOff: plan.leftOff };
+              }
               writeCardProposal = p;
               writeCardPrepared = plan.payload;
               return {
+                kind: "grocery",
                 shown: true,
                 leftOff: plan.leftOff,
                 unticked: plan.unticked,
               };
             } catch (err) {
               // Build it at the end of the turn instead, as before.
-              log.warn({ err: toError(err) }, "grocery card not planned");
+              log.warn(
+                { err: toError(err), kind: p.kind },
+                "coach write card not planned",
+              );
               writeCardProposal = p;
               writeCardPrepared = null;
             }
           },
           planRecipePool: [],
+          // Only when the app can draw the pantry card and the plan has the
+          // pantry: otherwise the model never gets update_pantry.
+          ...(pantryCard && { pantryCard: true }),
         }),
       },
     )) {

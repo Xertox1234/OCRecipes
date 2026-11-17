@@ -5,6 +5,8 @@ import {
   type FoodCardPayload,
   type GroceryCardEdits,
   type GroceryCardPayload,
+  type PantryCardEdits,
+  type PantryCardPayload,
   type PlanCardEdits,
   type PlanCardPayload,
   type WriteCardEdits,
@@ -28,6 +30,13 @@ import {
   revertGrocerySave,
 } from "./grocery";
 import {
+  buildPantryPayload,
+  describePantry,
+  pantryReceipt,
+  performPantrySave,
+  revertPantrySave,
+} from "./pantry";
+import {
   buildPlanPayload,
   performPlanSave,
   revertPlanSave,
@@ -40,6 +49,7 @@ export { WriteCardEditError };
 
 export type { WriteCardOutcome, WriteCardProposal } from "./tool-args";
 export { planGroceryCard, type GroceryCardPlan } from "./grocery";
+export { planPantryCard, pantryRowLine, type PantryCardPlan } from "./pantry";
 
 export async function buildWriteCardPayload(
   p: WriteCardProposal,
@@ -52,6 +62,8 @@ export async function buildWriteCardPayload(
       return buildGroceryPayload(p.args, ctx.userId);
     case "plan":
       return buildPlanPayload(p.args, ctx.userId, p.pool);
+    case "pantry":
+      return buildPantryPayload(p.args, ctx.userId);
   }
 }
 
@@ -88,6 +100,11 @@ export async function performWriteCardSave(
         userId: ctx.userId,
         afterCommit: ctx.afterCommit,
       });
+    case "pantry":
+      return performPantrySave(tx, card, parsed.data, {
+        userId: ctx.userId,
+        now: ctx.now,
+      });
   }
 }
 
@@ -103,6 +120,8 @@ export async function revertWriteCardSave(
       return revertGrocerySave(tx, card);
     case "plan":
       return revertPlanSave(tx, card, afterCommit);
+    case "pantry":
+      return revertPantrySave(tx, card);
   }
 }
 
@@ -116,6 +135,9 @@ export function writeCardReceiptFor(card: CoachWriteCard): string {
   if (card.kind === "grocery") {
     return groceryReceipt(card, edits as GroceryCardEdits);
   }
+  if (card.kind === "pantry") {
+    return pantryReceipt(card, edits as PantryCardEdits);
+  }
   return writeCardReceipt(card.kind, card.payload as WriteCardPayload, edits);
 }
 
@@ -123,6 +145,7 @@ const TOOL_FOR_KIND: Record<WriteCardKind, string> = {
   food: "log_food_item",
   grocery: "add_to_grocery_list",
   plan: "add_to_meal_plan",
+  pantry: "update_pantry",
 };
 
 const fmt = (n: number) => String(Math.round(n));
@@ -167,6 +190,7 @@ const KIND_LABEL: Record<WriteCardKind, string> = {
   food: "food",
   grocery: "grocery list",
   plan: "meal plan",
+  pantry: "pantry",
 };
 
 /**
@@ -188,6 +212,12 @@ export function describeLiveCard(card: CoachWriteCard): string {
       break;
     case "plan":
       body = describePlan(card.payload as PlanCardPayload, e as PlanCardEdits);
+      break;
+    case "pantry":
+      body = describePantry(
+        card.payload as PantryCardPayload,
+        e as PantryCardEdits,
+      );
       break;
   }
   return `Card on screen (${KIND_LABEL[card.kind]}, not saved): ${body}. To change it, call ${TOOL_FOR_KIND[card.kind]} again with the full updated contents.`;

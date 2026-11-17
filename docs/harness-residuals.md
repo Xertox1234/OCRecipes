@@ -425,3 +425,20 @@ because changing the entry changes gate verdicts.
 
 If reopened: read the address from git config (`user.email`) at run time instead of pinning it, and have
 the test set it. The address also stays in git history either way.
+
+### HIT IN REAL USE 2026-11-16 — one new solution title broke the inject hook's first-touch byte budget for `server/routes/**` (#1896)
+
+`.claude/hooks/test-inject-patterns.sh` requires a first touch of `server/routes/recipes.ts` to fit
+inline under the hook's `THRESHOLD` (9000 B) with no `TRUNCATED` marker. A new solution with
+`applies_to: ["server/routes/**/*.ts"]` and a 150-character title made that injection truncate, and the
+"Lint · Types · Patterns" job failed on a docs-only PR. Shortening the title to 88 characters passed
+at 8984 B, so the headroom on that path is under 20 bytes: the next solution that routes to
+`security`, `api` or `architecture` and applies to `server/routes/**` can fail the same test with any
+title of ordinary length. `client/components/**` has about 200 bytes left (8795 B).
+
+The local gates do not catch it: `preflight:fast` does not run the hook self-tests for a `docs/`
+change, and `check-solution-frontmatter` does not look at title length.
+
+If reopened: cap the title length the hook prints per solution line (or the number of solution lines
+per domain), so the payload size no longer depends on how long a new title is; and run
+`test-inject-patterns.sh` in the pre-push gate when `docs/solutions/**` changes.

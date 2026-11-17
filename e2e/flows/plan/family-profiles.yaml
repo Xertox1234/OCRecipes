@@ -1,5 +1,7 @@
 appId: com.ocrecipes.app
-name: "Plan - Family planning switch, a profile, and Who's it for?"
+# No "?" in the name: Maestro names the debug-output folder after it, and upload-artifact rejects
+# the character (guard: scripts/ci/__tests__/e2e-flow-names.test.ts).
+name: "Plan - Family planning switch, a profile, and who a meal is for"
 tags:
   - regression
   - plan
@@ -20,7 +22,8 @@ onFlowComplete:
 # (no allergy, no note), so the health-data consent sheet is never involved.
 #
 # Safe to retry: the profile and the switch stay on the account, and each step below is skipped
-# when an earlier attempt already did it.
+# when an earlier attempt already did it. Run on the iOS simulator from all three starting
+# states: switch off, switch on with nobody saved, and the person already saved.
 - runFlow: ../../helpers/launch-app.yaml
 # An earlier flow may have left the shared account signed in.
 - runFlow: ../../helpers/ensure-logged-out.yaml
@@ -51,21 +54,55 @@ onFlowComplete:
       - tapOn:
           id: "family-planning-switch"
 
-# With nobody saved yet, turning it on opens the add form. On a retry the person exists and the
-# app stays on the Profile tab, so this block is skipped.
+# With nobody saved yet, turning it on opens the add form.
 - extendedWaitUntil:
     visible: "Add a person"
     timeout: 10000
     optional: true
+
+# No form: the switch was already on (a retry). An earlier attempt may have stopped between the
+# switch and Save, so check the Family list and open the form from there when the person is missing.
+- runFlow:
+    when:
+      notVisible: "Add a person"
+    commands:
+      # The row sits right below the switch, where the scroll above leaves it under the tab bar:
+      # a tap there lands on a tab (measured on the iOS simulator: it opened Coach). Centre it first.
+      - scrollUntilVisible:
+          element: "Family"
+          direction: DOWN
+          timeout: 15000
+          centerElement: true
+      - tapOn: "Family"
+      - extendedWaitUntil:
+          visible: "(E2E Kid.*|Add a family member)"
+          timeout: 15000
+      - runFlow:
+          when:
+            notVisible: "E2E Kid.*"
+          commands:
+            - tapOn: "Add a family member"
+            - extendedWaitUntil:
+                visible: "Add a person"
+                timeout: 10000
+
 - runFlow:
     when:
       visible: "Add a person"
     commands:
       - tapOn: "Name"
       - inputText: "E2E Kid"
-      - hideKeyboard
+      # Drop the keyboard by tapping static text, NOT hideKeyboard: its iOS implementation is
+      # flaky (complete-onboarding.yaml) and failed here on the CI simulator (run 43981529576).
+      - tapOn:
+          text: "Allergies"
+          retryTapIfNoChange: false
+      - scrollUntilVisible:
+          element: "Save"
+          direction: DOWN
+          timeout: 15000
       - tapOn: "Save"
-      # Back on the Profile tab, with the Family row now present.
+      # Back on the screen the form was opened from; both show "Family" (the row, or the title).
       - extendedWaitUntil:
           visible: "Family"
           timeout: 15000
@@ -84,16 +121,14 @@ onFlowComplete:
 - assertVisible: "All"
 - assertVisible: "Me"
 
-# The add menu asks who the meal is for. Reached through today's day view: the grid's own
-# cells are matched by weekday, and the ones before today sit off-screen to the left, so a
-# regex tap on "an empty cell" can land on one that is not visible (measured).
-- tapOn: 'Today, .*'
-- scrollUntilVisible:
-    element: 'Add .* item'
-    direction: DOWN
-    timeout: 15000
+# The add menu asks who the meal is for. Opened from one of today's empty cells: the grid opens
+# on today's column, so that cell is on screen, while a regex over every empty cell can land on
+# an earlier day that sits off-screen to the left (measured). Not through today's day view: with
+# no meals planned, as on the CI account, that view shows an empty state and no "Add … item".
+# A cell's label starts with its weekday (week-grid-utils.ts getCellAccessibilityLabel).
+- evalScript: ${output.weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]}
 - tapOn:
-    text: 'Add .* item'
+    text: '${output.weekday} .*, empty, add a meal'
     index: 0
 - extendedWaitUntil:
     visible: "Who's it for\\?"

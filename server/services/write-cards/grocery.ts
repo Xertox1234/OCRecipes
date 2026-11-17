@@ -50,17 +50,18 @@ const MAX_GROCERY_LISTS = 50;
  * Match key for an item name: normalized, with the last word's plural ending
  * dropped ("apples" and "apple", "tomatoes" and "tomato", "berries" and
  * "berry" share a key). A blanket `(es|s)$` strip turned "apples" into "appl",
- * which never matched "apple".
+ * which never matched "apple". A final "ie" also becomes "y", so "cookie" and
+ * "cookies" meet at the same key; the key is only compared, never shown.
  */
-function matchKey(name: string): string {
+export function matchKey(name: string): string {
   const n = normalizeIngredientName(name);
-  if (/ies$/.test(n)) return n.replace(/ies$/, "y");
+  if (/ies?$/.test(n)) return n.replace(/ies?$/, "y");
   if (/(oes|ches|shes|xes|sses|zes)$/.test(n)) return n.replace(/es$/, "");
   if (/[^s]s$/.test(n)) return n.replace(/s$/, "");
   return n;
 }
 
-const unitKey = (unit: string | null | undefined) =>
+export const unitKey = (unit: string | null | undefined) =>
   unit?.toLowerCase().trim() ?? "";
 
 type PantryVerdict = "covered" | "unsure" | "buy";

@@ -160,6 +160,8 @@ describe("grocery write card", () => {
     ["berries", "Berry"],
     ["peach", "peaches"],
     ["egg", "eggs"],
+    ["cookie", "Cookies"],
+    ["brownies", "brownie"],
   ])("pantry %s matches %s", async (inPantry, asked) => {
     await pantry(inPantry);
     const plan = await planGroceryCard(one({ name: asked }), user.id);

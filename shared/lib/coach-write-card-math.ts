@@ -3,6 +3,8 @@ import type {
   FoodCardPayload,
   GroceryCardEdits,
   GroceryCardPayload,
+  PantryCardEdits,
+  PantryCardPayload,
   PlanCardEdits,
   PlanCardPayload,
   WriteCardEdits,
@@ -45,6 +47,43 @@ export function groceryKept(
   e: GroceryCardEdits,
 ): GroceryCardPayload["items"] {
   return p.items.filter((item, i) => e.ticked?.[i] ?? item.ticked);
+}
+
+export function pantryKept(
+  p: PantryCardPayload,
+  e: PantryCardEdits,
+): PantryCardPayload["rows"] {
+  return p.rows.filter((_, i) => e.ticked?.[i] ?? true);
+}
+
+/** The action as a word: the card never tells them apart by colour alone. */
+export const PANTRY_ACTION_LABEL: Record<
+  PantryCardPayload["rows"][number]["action"],
+  string
+> = { add: "Add", use: "Use", remove: "Remove" };
+
+/** "2.00" → "2", "0.50" → "0.5"; text that is not a number is kept. */
+function trimAmount(quantity: string): string {
+  const n = Number(quantity);
+  return quantity.trim() !== "" && Number.isFinite(n) ? String(n) : quantity;
+}
+
+function amountWithUnit(quantity: string | null, unit: string | null): string {
+  return [quantity === null ? null : trimAmount(quantity), unit]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** A pantry row's amount as the card shows it: "12", "1 L of 2 L", "all (500 g)". */
+export function pantryRowAmount(
+  row: PantryCardPayload["rows"][number],
+): string {
+  const held = amountWithUnit(row.held, row.unit);
+  if (row.action === "remove") return held;
+  if (row.action === "add") return amountWithUnit(row.quantity, row.unit);
+  if (row.all) return held ? `all (${held})` : "all";
+  const used = amountWithUnit(row.quantity, row.unit);
+  return held ? `${used} of ${held}` : used;
 }
 
 export type KeptPlanRow = Omit<PlanCardPayload["rows"][number], "alternatives">;
@@ -98,6 +137,8 @@ export function writeCardButtonLabel(
     }
     case "plan":
       return `Add ${planNoun(planKept(p as PlanCardPayload, e as PlanCardEdits))} to plan`;
+    case "pantry":
+      return "Update pantry";
   }
 }
 
@@ -122,5 +163,9 @@ export function writeCardReceipt(
     }
     case "plan":
       return `✓ ${planNoun(planKept(p as PlanCardPayload, e as PlanCardEdits))} added`;
+    // The server's receipt counts what the save really changed
+    // (write-cards/pantry.ts); this is the line when no counts exist.
+    case "pantry":
+      return "✓ Pantry updated";
   }
 }

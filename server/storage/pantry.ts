@@ -22,7 +22,7 @@ export type PantryTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * not queue behind unrelated per-user locks. Must be the first statement of the
  * transaction that goes on to insert.
  */
-async function lockPantryAndGetRoom(
+export async function lockPantryAndGetRoom(
   tx: PantryTx,
   userId: string,
 ): Promise<number> {
@@ -54,6 +54,31 @@ export async function insertPantryItemsUnderCap(
       ? await tx
           .insert(pantryItems)
           .values(fitting.map((item) => ({ ...item, userId })))
+          .returning()
+      : [];
+  return { created, skipped: items.length - created.length };
+}
+
+/**
+ * Put back rows a Coach pantry card deleted, under their ORIGINAL ids, so the
+ * card (which names rows by id) still matches them if it is saved again. Goes
+ * through the same lock and cap as any insert. An id is never reused by the
+ * sequence, so the only way one is taken is that the row is already back;
+ * that row is left as it is.
+ */
+export async function restorePantryItemsUnderCap(
+  tx: PantryTx,
+  userId: string,
+  items: (InsertPantryItem & { id: number })[],
+): Promise<{ created: PantryItem[]; skipped: number }> {
+  const room = await lockPantryAndGetRoom(tx, userId);
+  const fitting = items.slice(0, room);
+  const created =
+    fitting.length > 0
+      ? await tx
+          .insert(pantryItems)
+          .values(fitting.map((item) => ({ ...item, userId })))
+          .onConflictDoNothing({ target: pantryItems.id })
           .returning()
       : [];
   return { created, skipped: items.length - created.length };
@@ -126,6 +151,50 @@ export async function addGroceryItemToPantryAtomically(
     const [created] = await tx.insert(pantryItems).values(item).returning();
     return created;
   });
+}
+
+// ── Inside a caller's transaction (the Coach pantry card) ────────────
+// The pantry screen's update and delete below do not take the advisory lock,
+// so a card save reads each row FOR UPDATE before it compares and writes: a
+// concurrent edit either waits for the save or is seen by it.
+
+export async function getPantryItemForUpdate(
+  tx: PantryTx,
+  id: number,
+  userId: string,
+): Promise<PantryItem | undefined> {
+  const [row] = await tx
+    .select()
+    .from(pantryItems)
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
+    .for("update");
+  return row;
+}
+
+export async function setPantryItemQuantityInTx(
+  tx: PantryTx,
+  id: number,
+  userId: string,
+  quantity: string | null,
+): Promise<boolean> {
+  const updated = await tx
+    .update(pantryItems)
+    .set({ quantity, updatedAt: new Date() })
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
+    .returning({ id: pantryItems.id });
+  return updated.length > 0;
+}
+
+export async function deletePantryItemInTx(
+  tx: PantryTx,
+  id: number,
+  userId: string,
+): Promise<boolean> {
+  const deleted = await tx
+    .delete(pantryItems)
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
+    .returning({ id: pantryItems.id });
+  return deleted.length > 0;
 }
 
 export type PantryItemUpdates = Partial<
