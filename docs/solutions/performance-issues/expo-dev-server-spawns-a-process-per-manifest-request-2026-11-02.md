@@ -82,7 +82,7 @@ How to diagnose a CI timing flake:
 
 ## Related Files
 
-- `patches/expo++@expo+cli+58.1.20.patch` (regenerated from 58.1.19 at expo 58.0.25)
+- `patches/expo++@expo+cli+58.1.21.patch` (regenerated from 58.1.20 at expo 58.0.26)
 - `scripts/ci/__tests__/expo-cli-runtime-version-cache.test.ts`
 - `e2e/helpers/launch-app.yaml` (notes 5 and 6)
 - `.github/workflows/e2e-regression.yml` ("Keep Metro manifest warm",
