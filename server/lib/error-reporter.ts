@@ -20,9 +20,12 @@
  * privacy audit L8): two layers, and neither relies on an SDK default.
  * `buildSentryOptions` turns every `dataCollection` field off except request
  * headers, never buffers a request body, and sends no Sentry Logs. Then the
- * `beforeSend` scrub below strips sensitive headers, cookies, bodies and
- * query strings from whatever still reaches an event, so a control the SDK
- * renames or re-defaults in a later release fails closed, not open.
+ * `beforeSend` scrub below strips sensitive headers, cookies, bodies, query
+ * strings and the `user` block from whatever still reaches an event, so
+ * those stay off even if a later SDK release renames or re-defaults a
+ * collection control. It cannot cover a key the SDK renames (v11 renamed the
+ * breadcrumb query keys; both names are stripped now), and it never sees
+ * Sentry Logs, which is why logs have two switches of their own.
  */
 /* eslint-disable import/namespace -- eslint-plugin-import cannot read the
    exports of @sentry/node 11's bundled CJS entry ("No exported names found"),
@@ -190,6 +193,10 @@ function scrubbedRequestUrl(url: string): string {
  * Exported so it can be unit-tested without initializing Sentry.
  */
 export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
+  // The SDK fills `user` with the inferred client IP (and any id set on the
+  // scope) when `dataCollection.userInfo` is on. It is off, and nothing here
+  // sets a user, so anything present is unwanted.
+  delete event.user;
   const request = event.request;
   if (request) {
     const headers = request.headers;
@@ -253,8 +260,11 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   for (const crumb of event.breadcrumbs ?? []) {
     const data = crumb.data;
     if (!data) continue;
+    // v10 key names, then the names v11 renamed them to.
     if ("http.query" in data) delete data["http.query"];
     if ("http.fragment" in data) delete data["http.fragment"];
+    if ("url.query" in data) delete data["url.query"];
+    if ("url.fragment" in data) delete data["url.fragment"];
     if (typeof data.url === "string") {
       const queryStart = data.url.indexOf("?");
       if (queryStart !== -1) {
@@ -300,8 +310,11 @@ export function beforeSendHandler(
  *    local variables, gen-AI inputs and outputs). So every field is set here.
  * 2. `pinoIntegration` sends every pino line, at every level and with all its
  *    fields, as a Sentry LOG unless `log.levels` is emptied. v10 gated that
- *    behind `enableLogs`; v11 has no gate. Logs never pass through
- *    `beforeSend`, so `beforeSendLog` also drops them as a second lock.
+ *    behind `enableLogs`, but 10.78.0 defaulted that option to TRUE
+ *    (@sentry/core client.js: `enableLogs ?? ... ?? true`), so the config
+ *    this replaced was already shipping log lines; v11 has no gate at all.
+ *    Logs never pass through `beforeSend`, so `beforeSendLog` also drops
+ *    them as a second lock.
  * 3. The body-buffer switch was renamed `maxRequestBodySize`. The v10 name
  *    is ignored and the default falls back to `dataCollection.httpBodies`.
  */

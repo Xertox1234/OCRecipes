@@ -304,6 +304,49 @@ describe("error-reporter", () => {
       });
     });
 
+    it("strips the v11 breadcrumb query keys (url.query / url.fragment)", async () => {
+      // @sentry/node 11 renamed the outbound-request breadcrumb keys from
+      // `http.query` / `http.fragment` to the semantic-convention names. The
+      // crumb below is the shape the 11.14.0 SDK emitted in the security
+      // review's probe for PR 1920.
+      const { scrubEvent } = await importReporter();
+      const event = {
+        type: undefined,
+        breadcrumbs: [
+          {
+            category: "http",
+            data: {
+              status_code: 200,
+              url: "http://127.0.0.1:47835/upstream-fetch",
+              "http.request.method": "POST",
+              "url.query": "barcode=0123456789012",
+              "url.fragment": "section",
+            },
+          },
+        ],
+      };
+      const scrubbed = scrubEvent(event as ErrorEvent);
+      expect(scrubbed.breadcrumbs?.[0]?.data).toEqual({
+        status_code: 200,
+        url: "http://127.0.0.1:47835/upstream-fetch",
+        "http.request.method": "POST",
+      });
+    });
+
+    it("drops event.user (inferred client IP, user id) whatever the SDK attached", async () => {
+      // `dataCollection.userInfo: false` already keeps the SDK from filling
+      // this in; the scrub must hold on its own if that default ever moves.
+      const { scrubEvent } = await importReporter();
+      const event = {
+        type: undefined,
+        user: { ip_address: "203.0.113.77", id: "user-42" },
+        message: "boom",
+      };
+      const scrubbed = scrubEvent(event as ErrorEvent);
+      expect(scrubbed).not.toHaveProperty("user");
+      expect(scrubbed.message).toBe("boom");
+    });
+
     it("returns events without request or breadcrumbs unchanged", async () => {
       const { scrubEvent } = await importReporter();
       const event = { message: "boom" };
