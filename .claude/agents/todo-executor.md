@@ -286,7 +286,7 @@ npm run lint
 
 All three must pass with zero errors. A failure is an unresolved CRITICAL (Step 7): fix it, return to Step 5a, then repeat Step 5b if a second round is needed (same 2-round cap).
 
-After the full suite passes and Step 7's feedback is addressed, re-read every modified file and confirm each acceptance criterion is met. If not, go back to Step 4.
+You do not grade your own acceptance criteria: the `todo-verifier` does (Step 6).
 
 ---
 
@@ -319,8 +319,21 @@ This is a **branch** review (`$BASE...HEAD`); `git diff HEAD` would be empty aft
 If the `--name-only` list is empty, skip and set `review_output=""`. Otherwise:
 
 1. **Inspect the diff** (`git diff <BASE>...HEAD -- .`) — paths **and** content.
-2. **Always include `code-reviewer`**, then **add relevant domain reviewers** from the roster — typically **1–2 more, so ≤3 total**. Path is a hint, content overrides: JWT/ownership → `security-auditor`; route, Drizzle query, or service layering → `server-reviewer`; screen, camera, accessibility, or client perf → `mobile-reviewer`; AI-service or nutrition calculation → `ai-reviewer`; `any`/Zod/testing is the `code-reviewer` baseline. Docs/config-only or trivial diff → `code-reviewer` alone.
+2. **Always include `code-reviewer`**, then **add relevant domain reviewers** from the roster — typically **1–2 more, so ≤3 reviewers** (the verifier, item 3a, makes 4). Path is a hint, content overrides: JWT/ownership → `security-auditor`; route, Drizzle query, or service layering → `server-reviewer`; screen, camera, accessibility, or client perf → `mobile-reviewer`; AI-service or nutrition calculation → `ai-reviewer`; `any`/Zod/testing is the `code-reviewer` baseline. Docs/config-only or trivial diff → `code-reviewer` alone.
 3. **Dispatch the selected reviewers in parallel** (one Agent call each, **each with `run_in_background: false`**, in a single message — see Step 5b), using the **short form** from `docs/AI_WORKFLOW.md` → Review Policy: the prompt is `REVIEW-DISPATCH worktree=<literal $WORKTREE path> base=origin/<base branch from your spawn prompt>` plus that section's "If you can read this line" sentence; the `review-dispatch` mod fills in branch, HEAD and file list and hands the filled prompt back as a refusal. **Reissue every reviewer's Agent call with the text between its `----- BEGIN PROMPT -----` and `----- END PROMPT -----` lines as the whole prompt, copied exactly, all in one message with `code-reviewer` first** — the mod refuses a domain reviewer before it. Never stop on this refusal: it is the normal first step of every dispatch. Agent description: `todo: <todo title>`. Only if a reviewer replies "review-dispatch mod not loaded", re-dispatch with that file's full template, substituting agent, domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT` and the changed-file list. Each reviewer **must use `git -C "$WORKTREE"`** (its cwd is the main checkout, so otherwise it reviews an empty diff); no `cd` (can stall on a permission prompt). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash calls. If the todo has a **Scope Contract** section, paste it verbatim into every reviewer prompt (below the `REVIEW-DISPATCH` line — the mod passes those lines on), with your Step 4 list of out-of-contract files and their AC-tied reasons (empty if none), appending: "Diff every added mechanism/file against this Scope Contract. An out-of-contract file is a CRITICAL finding UNLESS it appears in the out-of-contract list above with a reason tied to a specific acceptance criterion — verify that reason actually holds (the file is genuinely needed for that AC), not just that it's listed; a listed-but-unnecessary file is still CRITICAL."
+
+3a. **The verifier.** In the reissue message, also send (once; its procedure is in its own file):
+
+```
+Agent({
+  description: "Verify: <todo title>",
+  subagent_type: "todo-verifier",
+  run_in_background: false,
+  prompt: "WORKTREE: <literal $WORKTREE>\nBRANCH: <$BRANCH>\nBASE: <full sha of $BASE>\nHEAD: <full sha of HEAD>\nTODO: todos/archive/<filename>.md\nORIGIN: todos/<filename>.md"
+})
+```
+
+If the type is rejected (a session started before the agent existed), send `general-purpose` with a prompt to read `.claude/agents/todo-verifier.md` and follow it, plus the same lines. Keep its reply block as `verifier_output`; no reply counts as `fail`.
 
 4. **Merge** all findings into one list (dedupe same file:line) and store it as `review_output`, noting which agent reported each finding.
 
@@ -339,6 +352,7 @@ Per `docs/AI_WORKFLOW.md` → Review Policy (**One review pass plus at most one 
    - Flag for Step 9 any WARNING that reveals a reusable rule.
 3. **SUGGESTION** — apply only if in scope and trivial; otherwise ignore.
 4. Findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
+   4a. **Verifier `fail`** — meet each `not met` criterion in scope, or, if it cannot be met in scope, add `Criterion N not met: <reason>` to the todo's `## Updates` (never edit the criterion): the PR is then held (Step 10 step 5), not the Failure Path. If you changed code for it, re-dispatch the verifier once at the fix commit (item 6); that verdict is final.
 5. After fixing, re-run Step 5a.
 6. **Commit the fixes**, so round 2 binds its record to a commit containing them. Subject: `wip: address review round 1 findings`.
 7. If you fixed anything, run Step 5b again against the fix commit. Do **not** run Step 6 again: round 2 is the Step 10 step 7 confirmation pass, which reviews the whole PR diff at the final head.
@@ -351,7 +365,7 @@ Per `docs/AI_WORKFLOW.md` → Review Policy (**One review pass plus at most one 
 
 The archive already happened in the commit gate (Step 5), following item 1. After verification and review, this step only commits what is still uncommitted (item 2) — normally nothing, since every Step 7 fix round commits itself.
 
-1. **Mark the todo `done`, then archive it** (run by the commit gate). First set frontmatter `status` from `in-progress` (Step 4.0) to `done`. Then move the file:
+1. **Mark the todo `done`, then archive it** (run by the commit gate). First set frontmatter `status` from `in-progress` (Step 4.0) to `done`, tick each criterion you met, and for each one you did not add a `## Updates` line `Criterion N not met: …`, `needs a person: …` or `moved to …` (`scripts/check-archived-todo-criteria.js` refuses the commit otherwise). Where a criterion's wording leaves its evidence unclear, add `Criterion N evidence: <test, file:line or command>` for the verifier. Then move the file:
 
 ```bash
 mv todos/<filename>.md todos/archive/<filename>.md
@@ -567,7 +581,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
 
 4. **Request Copilot review.** Once a valid `PR_URL` is in hand (from step 3, or a matching open PR found in step 6), call `mcp__github__request_copilot_review` with `owner: xertox1234`, `repo: OCRecipes`, and the PR number from `PR_URL`. Non-blocking — on any failure (auth, network, Copilot unavailable), log the error and continue to step 5.
 
-5. **Merge-eligibility check (low, non-`security`).** For a `low`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard, with the PR number from the `PR_URL` **in hand** (step 3, or step 6 on the already-exists path):
+5. **Merge-eligibility check (low, non-`security`).** First, any priority: unless the final `verifier_output` says `VERDICT: pass` or `none`, skip the rest of this step, **never call `gh pr merge`**, and report `MERGE_ELIGIBLE: held (verifier: <its VERDICT and COUNTS lines>)`. For a `low`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard, with the PR number from the `PR_URL` **in hand** (step 3, or step 6 on the already-exists path):
 
    ```bash
    scripts/todo-automerge-guard.sh <pr-number>; rc=$?
@@ -659,6 +673,7 @@ REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was neede
 ADVISOR: <green | yellow | red | skipped>
 DEFERRED_WARNINGS: <one line per unaddressed code review WARNING, YELLOW advisor reason, WARNING/SUGGESTION note behind an `advisory` Step 10 review-stamp record, or any other side problem noticed during the run (description + file path), or "none">
 NOT_CHECKED: <what this change skipped or did not verify (behaviour, platforms, edge cases) — not pipeline steps; "none" if nothing>
+VERIFIER: <VERDICT and COUNTS lines from the final verifier_output, at its VERIFIED-SHA | "no reply">; the needs-a-person criteria, one per line
 ```
 
 **On failure:**

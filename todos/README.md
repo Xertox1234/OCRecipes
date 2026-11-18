@@ -85,6 +85,21 @@ human_led: true
 - Add notes in the Updates section with date
 - Link to relevant PRs or commits when done
 
+## Archiving
+
+A todo moved to `todos/archive/` with `status: done` must account for every acceptance criterion:
+tick each one that is met, and for each one that is not, add a line to `## Updates` (N is its
+position in the list, counting from 1):
+
+- `Criterion N not met: <reason>`
+- `Criterion N needs a person: <what to check>`
+- `Criterion N moved to <todo path>`
+
+Never edit the criterion's own text. `scripts/check-archived-todo-criteria.js` (lint-staged)
+refuses a commit that leaves a criterion unticked without one of these lines. It checks only
+staged files, so archives written before 2026-11-17 are left as they are. A declared "not met"
+passes this check; in `/todo` the `todo-verifier` then holds the PR.
+
 ## Deferred findings
 
 Moved from CLAUDE.md (harness item 7, 2026-11-02); CLAUDE.md keeps a three-line summary. Most things noticed mid-session must NOT become a todo: the old "file everything deferred" rule buried the backlog and made finishing one todo spawn three.

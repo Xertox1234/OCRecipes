@@ -52,7 +52,7 @@ e2e-regression.yml --ref <branch>`) and the confirmation pass on that head toget
   push needs a new run. A red run may merge only with a line `Already failing on main: <flows>
 (nightly <run id>)`.
 
-**Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 domain reviewers (≤3 total)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 domain reviewers) because it is not itself nested in a parallel batch.
+**Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 domain reviewers (≤3 reviewers)** plus the `todo-verifier`, which checks acceptance criteria rather than code (≤4 agents per todo; owner raised the cap for it on 2026-11-17). The verifier is not a review pass and writes no review record. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 domain reviewers) because it is not itself nested in a parallel batch.
 
 #### Reviewer roster
 
