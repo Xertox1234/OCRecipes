@@ -5,8 +5,9 @@ Usage: python3 scripts/harness/agentcost.py <since YYYY-MM-DD> [<to YYYY-MM-DD>]
 Scans subagent transcripts under the OCRecipes project dir (agent type from each run's
 .meta.json). Per type: runs, turns per run, first-turn context (system prompt + dispatch,
 which is where an agent definition's size shows), and total cache reads/writes and output.
-/todo and /todo-fast executors are general-purpose runs that read todo-executor.md; they
-get their own line. Harness items 4/5 baseline (`2026-10-10 2026-11-02`): code-reviewer
+/todo and /todo-fast executors get their own line: before 2026-11-17 they were
+general-purpose runs that read todo-executor.md, since then they are typed `todo-executor`
+runs; both count under the same label so a comparison across the change stays on one line. Harness items 4/5 baseline (`2026-10-10 2026-11-02`): code-reviewer
 386 runs, 9.9 turns/run, first-turn context 71.8K; executor 60 runs, 102.9 turns/run.
 Re-measure (since 2026-11-03) target after #1689/#1690: code-reviewer first-turn ~53K.
 """
@@ -26,8 +27,10 @@ for meta in glob.glob(root + "/**/subagents/*.meta.json", recursive=True):
     except (OSError, ValueError):
         continue
     lines = open(f, errors="replace").read().splitlines()
-    if kind == "general-purpose" and lines and "todo-executor.md" in lines[0][:5000]:
-        kind = "general-purpose (/todo executor)"
+    if kind == "todo-executor" or (
+        kind == "general-purpose" and lines and "todo-executor.md" in lines[0][:5000]
+    ):
+        kind = "/todo executor"
     turns, first, cr, cw, out = 0, None, 0, 0, 0
     for ln in lines:
         try:

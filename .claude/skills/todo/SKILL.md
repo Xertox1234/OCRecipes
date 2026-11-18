@@ -303,13 +303,15 @@ Run the queue with a **rolling dispatcher**: keep up to 4 executors in flight, r
 
 Every executor is a `todo-executor` agent spawned in an **isolated worktree** via the Agent tool with these parameters:
 
+It is dispatched by its own type, so `.claude/agents/todo-executor.md` is its system prompt and its frontmatter applies. That file is read when the session starts. An edit to it, such as a `/codify` change during this sweep, reaches executors only after a session reload (`scripts/__tests__/agent-dispatch-types.test.ts` keeps every project agent dispatched by type).
+
 ```
 Agent({
   description: "Execute todo: <todo title>",
-  subagent_type: "general-purpose",
+  subagent_type: "todo-executor",
   model: "sonnet",
   isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nFirst action, before any other step: run `scripts/pg-lab/session-coord.sh register --kind todo-executor` (registers this session's kind in the coordination registry; silently no-ops if Postgres is down).\n\nExecute all steps in order and report the result."
+  prompt: "Your todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nFirst action, before any other step: run `scripts/pg-lab/session-coord.sh register --kind todo-executor` (registers this session's kind in the coordination registry; silently no-ops if Postgres is down).\n\nExecute all steps in order and report the result."
 })
 ```
 

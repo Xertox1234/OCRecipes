@@ -159,9 +159,9 @@ A **tight match** is a single surfaced solution where **all four** hold:
 ```
 Agent({
   description: "Research: <todo title>",
-  subagent_type: "general-purpose",
+  subagent_type: "todo-researcher",
   run_in_background: false,
-  prompt: "You are a todo researcher. Follow .claude/agents/todo-researcher.md exactly.\n\nTodo file: todos/<filename>.md\nAffected files: <comma-separated list of source files from Implementation Notes and Acceptance Criteria>\n\nReturn a research brief."
+  prompt: "Todo file: todos/<filename>.md\nAffected files: <comma-separated list of source files from Implementation Notes and Acceptance Criteria>\n\nReturn a research brief."
 })
 ```
 

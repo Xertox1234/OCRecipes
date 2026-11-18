@@ -222,7 +222,7 @@ Phase 1 sets up both correctly.
 
 Validate the Phase 2 findings against current documentation before the user triages them. The orchestrator's training knowledge lags real-world docs by months; this phase catches stale false positives (a finding the docs contradict) and stale knowledge gaps (a current best practice no agent knew to flag).
 
-1. **Launch doc-validation researcher agents in parallel (subagent type `general-purpose` — the dispatch prompt below is their full instruction set)** — one per audit domain that has at least one finding:
+1. **Launch doc-validation researcher agents in parallel (subagent type `docs-researcher`, whose instructions live in `.claude/agents/docs-researcher.md`)** — one per audit domain that has at least one finding:
    - `full`: launch one researcher per structural domain with findings, batched the same way Phase 2 batches its reviewer agents (first 4 domains, then the rest)
    - `pre-launch`: as `full`, **plus** one researcher per `reliability` _cluster_ with findings (see the `reliability` bullet below)
    - Named scope: launch one researcher for that domain
@@ -230,40 +230,19 @@ Validate the Phase 2 findings against current documentation before the user tria
    - **Maintainability skip:** do **not** dispatch a researcher for maintainability findings — they are structural opportunities, not library-API-driven. Mark each maintainability finding `Research` = `not-applicable` directly and skip to Phase 3 triage for those rows.
    - **Scanner skip:** rows with Agent = `scanner:<tool>` get no researcher — they are deterministic tool output, not judgment calls; their `Research` column is already `—`.
    - **Skip rule:** a domain with zero findings gets no researcher; if Phase 2 produced no findings at all, skip Phase 2.5 entirely
-   - Each agent runs as a subagent via the Agent tool with the `general-purpose` agent type (the Context7 MCP tools are deferred — the researcher loads them with ToolSearch `select:mcp__claude_ai_Context7__resolve-library-id,mcp__claude_ai_Context7__query-docs` before first use)
-2. Use this dispatch prompt for each researcher (fill in `[DOMAIN]` and the findings list):
+2. Dispatch each researcher like this, filling in the domain and its findings:
 
    ```
-   You are validating audit findings for the [DOMAIN] domain against current library documentation.
-
-   Findings to validate:
-   [paste this domain's findings — for each: ID, description, file:line, the pattern/rule cited]
-
-   For EACH finding, you MUST check current documentation: call
-   `mcp__claude_ai_Context7__resolve-library-id` to resolve the relevant
-   library, then `mcp__claude_ai_Context7__query-docs` to fetch its current
-   docs. A verdict with no doc citation is invalid — do not rely on training knowledge.
-
-   Return exactly one verdict per finding:
-   - `confirmed` — current docs agree the finding is valid
-   - `better-fix` — the finding is real, but current docs show a cleaner or different
-     fix than the discovering agent assumed; describe the doc-informed approach
-   - `contradicted` — current docs say the flagged pattern is fine, or the
-     "deprecated" API is not deprecated; cite the doc
-   - `not-applicable` — the finding does not hinge on external library/framework
-     behavior (e.g. IDOR, missing userId check, N+1 query, dead code); skip it,
-     no doc call needed. Also use `not-applicable` when a finding concerns custom
-     project code with no resolvable Context7 library.
-
-   Every non-`not-applicable` verdict MUST cite the specific doc retrieved (library + section).
-
-   Additionally: if, while validating, you notice a current-doc best practice clearly
-   unmet in code you ALREADY viewed, report it as a NEW finding candidate with
-   file:line and the doc citation. Do not perform a broad code audit — only report
-   gaps noticed incidentally.
-
-   Do NOT fix anything. Report verdicts and any new finding candidates only.
+   Agent({
+     description: "Research: <domain> findings",
+     subagent_type: "docs-researcher",
+     prompt: "Domain: <domain>\n\nFindings to validate:\n<this domain's findings — for each: ID, description, file:line, the pattern/rule cited>"
+   })
    ```
+
+   If the Agent tool rejects the `docs-researcher` type, this session started before the agent
+   existed (agent files load at session start). Dispatch `general-purpose` instead, with a prompt
+   that says to read `.claude/agents/docs-researcher.md` and follow it, plus the same domain and findings.
 
 3. As each researcher completes, update the manifest `Research` column for each finding:
    - `confirmed` → `Research` = `confirmed`; finding stays `open`
