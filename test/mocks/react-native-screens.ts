@@ -35,11 +35,16 @@
 // at a different, silent render-time site rather than the transform-time
 // crash this mock exists to fix.
 import React from "react";
+import { flattenStyle } from "./react-native";
 
 function screenEl(tag: string, displayName: string) {
   const Comp = React.forwardRef<unknown, Record<string, unknown>>(
     ({ children, ...rest }, ref) =>
-      React.createElement(tag, { ref, ...rest }, children as React.ReactNode),
+      React.createElement(
+        tag,
+        { ref, ...rest, style: flattenStyle(rest.style) },
+        children as React.ReactNode,
+      ),
   );
   Comp.displayName = displayName;
   return Comp;

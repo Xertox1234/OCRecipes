@@ -17,6 +17,7 @@
 //    (`{ error: string }`), not a wrapped NativeSyntheticEvent — expo-image's
 //    onError is a plain callback, never an RN-style native event object.
 import React from "react";
+import { flattenStyle } from "./react-native";
 
 export const Image = React.forwardRef<unknown, Record<string, unknown>>(
   (
@@ -50,6 +51,7 @@ export const Image = React.forwardRef<unknown, Record<string, unknown>>(
               })
           : undefined,
       ...rest,
+      style: flattenStyle(rest.style),
     }),
 );
 (Image as unknown as { displayName: string }).displayName = "ExpoImage";

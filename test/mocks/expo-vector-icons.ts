@@ -1,7 +1,7 @@
 // Mock @expo/vector-icons for component render tests.
 // Renders a span with the icon name as text content for easy assertions.
 import React from "react";
-import { ariaHiddenProps } from "./react-native";
+import { ariaHiddenProps, flattenStyle } from "./react-native";
 
 function createIconComponent(setName: string) {
   const Icon = React.forwardRef<
@@ -37,6 +37,7 @@ function createIconComponent(setName: string) {
             importantForAccessibility,
           ),
           ...rest,
+          style: flattenStyle(rest.style),
         },
         name,
       ),

@@ -623,7 +623,14 @@ describe("GoalSetupScreen — Calculate and Save point at what's missing", () =>
 // screen changes on Calculate, so a screen-reader user hears the "Still
 // needed" line — once per press.
 describe("GoalSetupScreen — Calculate with only a choice missing", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(async () => {
+    // `announceTogether` batches on a module-level `setTimeout(0)`. The test
+    // before this block ends with "Enter calories" still queued; under jsdom
+    // 31 that timer has not fired when this test announces, so the two merge
+    // into one message. Let the queue drain before counting announcements.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    vi.clearAllMocks();
+  });
 
   it("announces what's still needed once per press", async () => {
     const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");

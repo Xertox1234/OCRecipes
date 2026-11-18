@@ -1,5 +1,6 @@
 // Mock expo-linear-gradient for tests. Renders as a plain View.
 import React from "react";
+import { flattenStyle } from "./react-native";
 
 interface LinearGradientProps {
   colors: string[];
@@ -16,5 +17,8 @@ export function LinearGradient({
   end: _end,
   ...rest
 }: LinearGradientProps) {
-  return React.createElement("View", rest);
+  return React.createElement("View", {
+    ...rest,
+    style: flattenStyle(rest.style),
+  });
 }
