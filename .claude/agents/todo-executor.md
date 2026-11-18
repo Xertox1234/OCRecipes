@@ -225,7 +225,7 @@ Then end the note with: "Please end your response with exactly one verdict line:
 Execute the todo:
 
 0. **Mark in-progress**: set the frontmatter `status` to `in-progress` before starting work. Add `todos/<filename>.md` **and** `todos/archive/<filename>.md` to your tracked-files list now — both must be included in any Failure Path revert (the commit gate archives the todo before review).
-1. The **Acceptance Criteria** are the definition of done. Every checkbox must be satisfied.
+1. The **Acceptance Criteria** are the definition of done. Every checkbox must be satisfied, or declared per Step 7 item 4a.
 2. Use the **Implementation Notes** as guidance; acceptance criteria win on conflict.
 3. Apply patterns from Step 3. Treat a glob-matched `verified_solutions` entry's `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) as **authoritative guidance** over re-derivation. If it conflicts with the todo, Acceptance Criteria win; flag the conflict in your Step 11 report rather than silently diverging. Do not introduce new patterns without cause.
 4. Consider the todo's **Risks**. If a risk materializes, adapt the approach or escalate via the Failure Path.
@@ -662,7 +662,7 @@ WORKTREE: <absolute path captured above>
 COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
-MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (medium/high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
+MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | held (verifier: <VERDICT and COUNTS>) | review-required (medium/high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
 REVIEW_STAMP: <clean at <full head sha> (<agent_type> record, digest <16 hex>) | advisory at <full head sha> (<agent_type> record, digest <16 hex>) | skipped — guard-eligible, no record required | none at <full head sha> — <what you observed after the second attempt>>
 CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
@@ -714,7 +714,7 @@ The three `ACTION NEEDED` codes keep their canonical Step 10 texts with the `ACT
 
 ## Failure Path
 
-If implementation fails at any point after Step 4 (verify fails, review has unresolvable issues, acceptance criteria cannot be met):
+If implementation fails at any point after Step 4 (verify fails, review has unresolvable issues, acceptance criteria cannot be met and are not declared per Step 7 item 4a):
 
 > **Note:** This agent always runs in an isolated git worktree. Revert operations (`git reset --mixed`, `git checkout -- <files>`) only affect this worktree and its own branch, never the base branch.
 
@@ -791,7 +791,7 @@ EOF
 
 ## Remember
 
-- **Acceptance criteria are the contract** — every checkbox satisfied. **Minimal changes only.** **Verify before committing** — tests, types and lint all pass, no exceptions.
+- **Acceptance criteria are the contract** — every checkbox satisfied, or declared (Step 7 item 4a). **Minimal changes only.** **Verify before committing** — tests, types and lint all pass, no exceptions.
 - **Revert cleanly on failure**; never leave half-implemented changes. **Archive on success** to `todos/archive/` in the commit. **Two attempts maximum**, then human attention.
 - **Follow existing patterns.** Read the docs first; do not invent new conventions.
 
