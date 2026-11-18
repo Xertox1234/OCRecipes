@@ -15,9 +15,10 @@ if (process.env.NODE_ENV === "production") {
 }
 
 export default defineConfig({
-  esbuild: {
-    jsx: "automatic",
-    jsxImportSource: "react",
+  // Vite 8 transforms with oxc; an `esbuild` block here is ignored (Vitest 5
+  // warns about it on every run).
+  oxc: {
+    jsx: { runtime: "automatic", importSource: "react" },
   },
   test: {
     globals: true,
