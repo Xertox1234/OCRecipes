@@ -42,8 +42,9 @@ const UNCOMMITTED =
 const BEGIN = "----- BEGIN PROMPT -----";
 const END = "----- END PROMPT -----";
 // The placeholders this mod fills. Every other <…> in the template stays literal for the
-// reviewer to fill (its scratchpad, the sha it observes).
-const FILLED = [
+// reviewer to fill (its scratchpad, the sha it observes). Exported for
+// scripts/__tests__/review-dispatch-template.test.ts, which checks the live template.
+export const FILLED = [
   "<WORKTREE>",
   "<expected branch>",
   "<short HEAD>",

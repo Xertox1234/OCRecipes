@@ -1,12 +1,13 @@
 #!/usr/bin/env tsx
 // Single source of truth for the file-path -> domain mapping.
 //
-// Five artifacts derive from this module so they can never drift apart:
+// Six artifacts derive from this module so they can never drift apart:
 //   1. scripts/build-copilot-instructions.ts  -> .github/copilot-instructions.md
 //   2. scripts/build-domain-map.ts            -> .claude/hooks/lib/domain-map.sh
 //   3. .claude/skills/codify/SKILL.md  Step 1 (via the CLI below, --routing --typescript-crosscut)
 //   4. .claude/skills/spec-review/SKILL.md Step 3 (via the CLI below)
 //   5. .claude/agents/todo-executor.md Step 3b (via the CLI below, --typescript-crosscut)
+//   6. docs/AI_WORKFLOW.md dispatch prompt: each reviewer loads its docs/rules (CLI, --typescript-crosscut)
 //
 // Each rule's matcher is a structured descriptor that compiles three ways:
 // an anchored RegExp (for TS matching), a bash [[ glob ]] condition pair (for
