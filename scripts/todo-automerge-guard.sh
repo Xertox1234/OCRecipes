@@ -55,7 +55,9 @@
 # Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
 #          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
 #          file absent from the PR head, priority not low, 'security' in its
-#          frontmatter, or a sensitive-intent keyword in its frontmatter)
+#          frontmatter, or a sensitive-intent keyword in its frontmatter), or the VERIFIER
+#          GATE failed (no passing todo-verifier record on the PR's commits; the line names
+#          "verifier:")
 # Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, treat as HOLD
 # The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
 # needs individual review; an error means eligibility couldn't be decided (e.g. gh unauth).
@@ -498,6 +500,25 @@ while IFS= read -r tf; do
     exit 1
   fi
 done <<< "$todo_files"
+
+# VERIFIER GATE (todo-verifier Phase 2). An unmet acceptance criterion holds auto-merge (owner
+# ruling 2026-11-17). The verdict comes from the record .claude/hooks/todo-verifier-record-writer.sh
+# writes from the verifier's OWN reply, never from the executor's relay: no record, a fail, or an
+# inconsistent pass HOLDs. Inside the TODO GATE on purpose: under --paths-only it would HOLD every
+# ordinary PR, and merge-review-guard.sh stage 2 would then demand records it never needed.
+# The HOLD line names "verifier:" so /todo, /todo-fast and /land route it as a verifier hold.
+v_rc=0
+v_out="$(bash "$(dirname "$0")/verifier-record-status.sh" "$PR" 2>&1)" || v_rc=$?
+case "$v_rc" in
+  0) ;;
+  1)
+    echo "guard: HOLD PR #$PR — verifier: no passing todo-verifier record on this PR's commits ($v_out)"
+    echo "Needs individual review; exclude from the batch-merge."
+    exit 1 ;;
+  *)
+    echo "guard: ERROR PR #$PR — could not check the todo-verifier record (rc $v_rc): $(printf '%s' "$v_out" | head -1). Fail-closed."
+    exit 2 ;;
+esac
 fi
 
 # ── PATH GATE ─────────────────────────────────────────────────────────────────

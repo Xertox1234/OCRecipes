@@ -342,6 +342,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "todo-verifier",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/todo-verifier-record-writer.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [

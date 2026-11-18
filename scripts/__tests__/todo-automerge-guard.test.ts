@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -57,9 +58,22 @@ if [ "$1" = "api" ]; then
   # the file-list call would misroute it silently.
   _ep=""
   for a in "$@"; do
-    case "$a" in */pulls/*/files) _ep="files" ;; esac
+    case "$a" in
+      */pulls/*/files) _ep="files" ;;
+      */pulls/*/commits*) _ep="commits" ;;
+    esac
   done
   case "\$_ep" in
+    commits)
+      # The verifier gate (scripts/verifier-record-status.sh) lists the PR's commits, oldest
+      # first. Default: the one commit the runners below give a passing verifier record.
+      if [ -n "\${FAKE_GH_COMMITS_FAIL:-}" ]; then
+        echo "fake-gh: simulated pulls/commits failure" >&2
+        exit 1
+      fi
+      printf '%s\\n' "\${FAKE_GH_PR_COMMITS:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
+      exit 0
+      ;;
     files)
       if [ "\${FAKE_GH_DIFF_EXIT:-0}" != "0" ]; then
         echo "fake-gh: simulated pulls/files failure" >&2
@@ -141,6 +155,30 @@ function frontmatter(fields: Record<string, string>): string {
   return `---\n${lines}\n---\n\n# Body\n`;
 }
 
+// The verifier gate (scripts/verifier-record-status.sh) needs a passing todo-verifier record
+// on one of the PR's commits. Both runners give every row one by default, on the fake gh's
+// default commit, so rows about other gates keep their verdicts; the verifier rows override.
+const VERIFIED_SHA = "a".repeat(40);
+function verifierRoot(
+  record: Record<string, unknown> | null = {
+    verdict: "pass",
+    not_met: 0,
+    criteria_edited: "no",
+  },
+): string {
+  const root = mkdtempSync(join(tmpdir(), "verifier-root-"));
+  tempDirs.push(root);
+  if (record) {
+    const dir = join(root, VERIFIED_SHA, "verifier");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "todo-verifier.json"),
+      JSON.stringify({ head_sha: VERIFIED_SHA, ...record }),
+    );
+  }
+  return root;
+}
+
 function runGuardRaw(env: Record<string, string>): {
   status: number | null;
   stdout: string;
@@ -156,6 +194,7 @@ function runGuardRaw(env: Record<string, string>): {
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH}`,
+      REVIEW_STAMP_ROOT: verifierRoot(),
       ...env,
     },
   });
@@ -178,6 +217,7 @@ function runGuard(
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH}`,
+      REVIEW_STAMP_ROOT: verifierRoot(),
       FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, ...diffFiles].join("\n"),
       FAKE_GH_FRONTMATTER: todoFrontmatter,
     },
@@ -870,6 +910,9 @@ function runGuardPathsOnly(files: string[]): {
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH ?? ""}`,
+      // NO verifier record: --paths-only must never consult the verifier gate, so its OK rows
+      // below double as proof of that (merge-review-guard.sh stage 2 relies on it).
+      REVIEW_STAMP_ROOT: verifierRoot(null),
       FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
     },
   });
@@ -890,6 +933,7 @@ function runGuardDefault(files: string[]): {
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH ?? ""}`,
+      REVIEW_STAMP_ROOT: verifierRoot(),
       FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
     },
   });
@@ -1665,5 +1709,75 @@ describe("todo-automerge-guard.sh (platform scope, harness N6: an upload change 
     });
     expect(status).toBe(2);
     expect(stdout).toContain("platform-scope");
+  });
+});
+
+describe("todo-automerge-guard.sh (verifier gate: the todo-verifier's own record)", () => {
+  const lowTodoEnv = {
+    FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/lib/format.ts"].join("\n"),
+    FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+  };
+
+  it("allows a low todo whose commit has a passing verifier record (control)", () => {
+    const r = runGuardRaw(lowTodoEnv);
+    expect(r.status).toBe(0);
+  });
+
+  it("HOLDs a low todo with no verifier record, naming the verifier", () => {
+    const r = runGuardRaw({
+      ...lowTodoEnv,
+      REVIEW_STAMP_ROOT: verifierRoot(null),
+    });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("guard: HOLD PR #123 — verifier:");
+  });
+
+  it("HOLDs a low todo whose verifier record is a fail", () => {
+    const r = runGuardRaw({
+      ...lowTodoEnv,
+      REVIEW_STAMP_ROOT: verifierRoot({
+        verdict: "fail",
+        not_met: 1,
+        criteria_edited: "no",
+      }),
+    });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("verifier=fail");
+  });
+
+  it("HOLDs when a newer commit's record fails even though the older one passes", () => {
+    const b = "b".repeat(40);
+    const root = verifierRoot();
+    mkdirSync(join(root, b, "verifier"), { recursive: true });
+    writeFileSync(
+      join(root, b, "verifier", "todo-verifier.json"),
+      JSON.stringify({
+        head_sha: b,
+        verdict: "fail",
+        not_met: 1,
+        criteria_edited: "no",
+      }),
+    );
+    const r = runGuardRaw({
+      ...lowTodoEnv,
+      REVIEW_STAMP_ROOT: root,
+      FAKE_GH_PR_COMMITS: `${VERIFIED_SHA}\n${b}`,
+    });
+    expect(r.status).toBe(1);
+  });
+
+  it("ERRORs (exit 2), never passes, when the commit list cannot be read", () => {
+    const r = runGuardRaw({ ...lowTodoEnv, FAKE_GH_COMMITS_FAIL: "1" });
+    expect(r.status).toBe(2);
+  });
+
+  it("does not consult the verifier for a todo the TODO gate already HOLDs (priority first)", () => {
+    const r = runGuardRaw({
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/lib/format.ts"].join("\n"),
+      FAKE_GH_FRONTMATTER: GENERIC_MEDIUM_TODO,
+      REVIEW_STAMP_ROOT: verifierRoot(null),
+    });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("priority 'medium'");
   });
 });

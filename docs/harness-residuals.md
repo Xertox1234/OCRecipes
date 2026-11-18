@@ -442,3 +442,26 @@ change, and `check-solution-frontmatter` does not look at title length.
 If reopened: cap the title length the hook prints per solution line (or the number of solution lines
 per domain), so the payload size no longer depends on how long a new title is; and run
 `test-inject-patterns.sh` in the pre-push gate when `docs/solutions/**` changes.
+
+### Constructed 2026-11-17 — the todo-verifier record is enforced at the auto-merge guard, not at the merge hook (verifier Phase 2)
+
+`scripts/todo-automerge-guard.sh` now HOLDs a low todo PR without a passing `todo-verifier` record
+(written by `.claude/hooks/todo-verifier-record-writer.sh` from the verifier's own reply). Three gaps
+are left open on purpose:
+
+1. **The arming is still the executor's.** `merge-review-guard.sh` stage 1 runs the full guard on a
+   `todo/*` branch, but when that HOLDs, stage 2 (`--paths-only`) still exempts a PR whose files are
+   all on the allowlist. So an executor that ignores the guard's exit code and runs
+   `gh pr merge --auto` gets through. The same is true today of a priority or keyword HOLD. What
+   Phase 2 changed is where the verdict comes from (the hook's record, not the executor's relay),
+   not who arms the merge. If reopened: in stage 1, deny an `--auto` merge of a `todo/*` branch
+   whose full guard returns 1.
+2. **Commits after the verified one are not re-verified.** The verifier runs at executor Step 6;
+   Steps 7–9 can commit review fixes, the archive ticks and codify docs. The newest commit with a
+   record governs, and `verifier-record-status.sh` prints how many commits came after it
+   (`later_commits=`). Of the last 20 merged `todo/*` PRs, 9 had more than one commit and at least 5
+   had a code fix after the first, so holding on any later commit would have held about a quarter
+   or more of them.
+3. **The record is an unprotected file** under the review-stamp directory, like the reviewers'
+   records (review-stamp-writer.sh header): a fabricated record passes. It closes the honest
+   failure (a verifier that never ran, or a misread verdict), not a deliberate forgery.
