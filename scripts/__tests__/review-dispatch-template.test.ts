@@ -6,12 +6,20 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  extractTemplate,
-  FILLED,
-} from "../../.claude/mods/review-dispatch/hooks/register";
 
 const ROOT = path.resolve(__dirname, "../..");
+
+// The mod runs for real here, but it is imported through a non-literal path on purpose:
+// tsc's `**/*.ts` include skips dot-directories, so `.claude/mods/**` is outside the
+// project's type check (mods are typed by the Claude Code engine's own declarations). A
+// static import would pull register.ts into `tsc --noEmit`, where `claude-code` does not
+// resolve.
+const MOD = path.join(ROOT, ".claude/mods/review-dispatch/hooks/register.ts");
+const { extractTemplate, FILLED } = (await import(MOD)) as {
+  extractTemplate: (doc: string) => string;
+  FILLED: readonly string[];
+};
+
 const template = extractTemplate(
   readFileSync(path.join(ROOT, "docs/AI_WORKFLOW.md"), "utf8"),
 );
