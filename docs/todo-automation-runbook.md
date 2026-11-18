@@ -96,6 +96,14 @@ only through the guard, never unconditionally. The filters:
    app where dietary data is core product logic, not just a security concern — see the
    script's own comment). See the script's own header comment for the full model; to widen
    the pass further, add a known-safe prefix to the allowlist in the script.)
+
+   Since 2026-11-17 the TODO gate also has a **verifier gate**: the PR needs a passing
+   `todo-verifier` record (`scripts/verifier-record-status.sh`). The SubagentStop hook
+   `.claude/hooks/todo-verifier-record-writer.sh` writes it from the verifier's own reply,
+   keyed to the commit it checked. Among the PR's commits, the newest one with a record
+   governs. No record, a `fail`, `not_met` above 0 or edited criteria HOLDs, and the HOLD
+   line names `verifier:`. `--paths-only` never runs this gate.
+
 4. **Bounded stop conditions** — the `/goal` condition halts on N PRs opened / token
    cap / repeated failures, so a systemic mistake can't burn the whole backlog before
    you wake.

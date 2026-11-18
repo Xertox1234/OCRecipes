@@ -108,6 +108,10 @@ if [ "${1:-}" = "api" ]; then
     *actions/workflows/e2e-regression.yml/runs*)
       [ -n "${FAKE_RUNS_FAIL:-}" ] && exit 1
       printf '%s\n' "${FAKE_RUN:-}"; exit 0 ;;
+    # The full guard's verifier gate lists the PR's commits; the head is the only one here.
+    */pulls/*/commits*)
+      [ -n "${FAKE_API_FAIL:-}" ] && exit 1
+      printf '%s\n' "${FAKE_COMMITS:-1234567890abcdef1234567890abcdef12345678}"; exit 0 ;;
   esac
   # todo-automerge-guard.sh reads its file list from pulls/{n}/files so that a rename SOURCE
   # path (previous_filename) is gated and not just the destination. That is also a `gh api`
@@ -962,11 +966,20 @@ assert_exempt "todo/* with safe paths is exempt" "$out" "--paths-only"
 #     stopped discriminating the moment the file list moved off the diff subcommand (which it
 #     did so a rename SOURCE path is gated, not just the destination). Match contents.
 export FAKE_API_FAIL=""
+#     24b first: with NO todo-verifier record the full guard HOLDs at its verifier gate, so
+#     stage 1 does not exempt — stage 2's allowlist still does, so the verdict is unchanged.
+out=$(mcp_payload 938 | run)
+assert_exempt "no verifier record: stage 2, not stage 1, exempts" "$out" "--paths-only"
+# The verifier's record sits one level below the reviewers' (todo-verifier-record-writer.sh).
+mkdir -p "$ROOT/$SHA/verifier"
+printf '{"head_sha":"%s","verdict":"pass","not_met":0,"criteria_edited":"no"}\n' "$SHA" \
+  > "$ROOT/$SHA/verifier/todo-verifier.json"
 : > "$GH_LOG"
 out=$(mcp_payload 938 | run)
 grep -q '^api .*/contents/' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fires)" \
                           || bad "todo/* branch runs the FULL guard (stage 1 fires)" "$(cat "$GH_LOG")"
 assert_exempt "stage 1's exemption names the todo/* route" "$out" "a todo/* branch"
+rm -rf "$ROOT/$SHA/verifier"
 
 # 25. …and the SAME file list on a non-todo branch does NOT run it. This is the #938
 #     shape: an interactive PR that happens to carry a todos/archive file. A stage 1 keyed
@@ -1778,7 +1791,7 @@ unset _mrgcloser_hits _mrgcloser_prose
 # 202 -> 207 (2026-11-01, code-reviewer record required): +5 rows (9c-1, 9c-2, 9c-2b, 9c-3, 9c-4).
 # 207 -> 219 (2026-11-01, harness N6 real-platform check): +12 = rows P1-P10 and P8b (P9 asserts twice).
 # 219 -> 220 (2026-11-01, harness N8 exemption note): +1 = stage 1's exemption names the todo/* route.
-EXPECTED_TOTAL=220
+EXPECTED_TOTAL=221
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
