@@ -104,6 +104,23 @@ export function ariaModalProps(accessibilityViewIsModal: unknown): {
   return accessibilityViewIsModal === true ? { "aria-modal": true } : {};
 }
 
+/**
+ * Collapse an RN `style` (object, nested array, falsy entries) into the one
+ * plain object a DOM element takes. Every mock that forwards `style` to a DOM
+ * node goes through this: handed an array, react-dom runs
+ * `element.style[0] = {...}`, which jsdom 31 rejects with a TypeError that
+ * fails the render (jsdom 28 ignored it, so array styles were never applied).
+ */
+export function flattenStyle(
+  style: unknown,
+): Record<string, unknown> | undefined {
+  if (!style) return undefined;
+  if (!Array.isArray(style)) return style as Record<string, unknown>;
+  const merged: Record<string, unknown> = {};
+  for (const entry of style) Object.assign(merged, flattenStyle(entry));
+  return merged;
+}
+
 /** Helper to create a forwarding mock component that renders an HTML element. */
 function mockComponent(
   Element: string,
@@ -124,6 +141,7 @@ function mockComponent(
         accessibilityElementsHidden,
         importantForAccessibility,
         accessibilityViewIsModal,
+        style,
         ...rest
       },
       ref,
@@ -133,6 +151,7 @@ function mockComponent(
         Element,
         {
           ref,
+          style: flattenStyle(style),
           "data-testid": testID,
           role: accessibilityRole,
           "aria-label": accessibilityLabel,
@@ -263,6 +282,7 @@ export const Image = React.forwardRef<unknown, Record<string, unknown>>(
       "aria-label": accessibilityLabel,
       alt: accessibilityLabel,
       ...rest,
+      style: flattenStyle(rest.style),
     }),
 );
 (Image as unknown as { displayName: string }).displayName = "Image";
@@ -289,6 +309,7 @@ export const TextInput = React.forwardRef<unknown, Record<string, unknown>>(
             (onChangeText as (v: string) => void)(e.target.value)
         : undefined,
       ...rest,
+      style: flattenStyle(rest.style),
     }),
 );
 (TextInput as unknown as { displayName: string }).displayName = "TextInput";
@@ -377,7 +398,13 @@ export const Modal = React.forwardRef<unknown, Record<string, unknown>>(
     visible !== false
       ? React.createElement(
           "div",
-          { ref, "data-testid": testID, role: "dialog", ...rest },
+          {
+            ref,
+            "data-testid": testID,
+            role: "dialog",
+            ...rest,
+            style: flattenStyle(rest.style),
+          },
           children as React.ReactNode,
         )
       : null,
@@ -393,6 +420,7 @@ export const ActivityIndicator = React.forwardRef<
     "data-testid": testID,
     role: "progressbar",
     ...rest,
+    style: flattenStyle(rest.style),
   }),
 );
 (ActivityIndicator as unknown as { displayName: string }).displayName =
@@ -449,6 +477,7 @@ export const TouchableOpacity = React.forwardRef<
         ...(a11y?.busy != null && { "aria-busy": a11y.busy }),
         ...(a11y?.checked != null && { "aria-checked": a11y.checked }),
         ...rest,
+        style: flattenStyle(rest.style),
       } as Record<string, unknown>,
       children as React.ReactNode,
     );
@@ -483,6 +512,7 @@ export const Switch = React.forwardRef<unknown, Record<string, unknown>>(
       "data-testid": testID,
       "aria-label": accessibilityLabel,
       ...rest,
+      style: flattenStyle(rest.style),
     }),
 );
 (Switch as unknown as { displayName: string }).displayName = "Switch";

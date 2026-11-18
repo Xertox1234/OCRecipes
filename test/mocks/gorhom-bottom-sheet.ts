@@ -2,7 +2,11 @@
 // Mock @gorhom/bottom-sheet for recipe-builder sheet component tests.
 // Renders simple HTML equivalents so render assertions work in jsdom.
 import React from "react";
-import { createFlatListMock, ariaModalProps } from "./react-native";
+import {
+  createFlatListMock,
+  ariaModalProps,
+  flattenStyle,
+} from "./react-native";
 
 // Re-export mocked RN primitives as BottomSheet equivalents
 export const BottomSheetTextInput = React.forwardRef<
@@ -18,6 +22,7 @@ export const BottomSheetTextInput = React.forwardRef<
           (onChangeText as (v: string) => void)(e.target.value)
       : undefined,
     ...rest,
+    style: flattenStyle(rest.style),
   }),
 );
 (BottomSheetTextInput as unknown as { displayName: string }).displayName =
@@ -36,6 +41,7 @@ export const BottomSheetScrollView = React.forwardRef<
       "data-testid": testID,
       ...ariaModalProps(accessibilityViewIsModal),
       ...rest,
+      style: flattenStyle(rest.style),
     },
     children as React.ReactNode,
   ),
@@ -61,6 +67,7 @@ export const BottomSheetView = React.forwardRef<
       "data-testid": testID,
       ...ariaModalProps(accessibilityViewIsModal),
       ...rest,
+      style: flattenStyle(rest.style),
     },
     children as React.ReactNode,
   ),
@@ -94,6 +101,7 @@ export const BottomSheetModal = React.forwardRef<
       "data-testid": "bottom-sheet-modal",
       "data-accessible": String(accessible),
       ...rest,
+      style: flattenStyle(rest.style),
     },
     children as React.ReactNode,
   );

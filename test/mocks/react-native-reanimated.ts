@@ -2,7 +2,7 @@
 // Returns static values so components render without native animation runtime.
 import React from "react";
 import { vi } from "vitest";
-import { ariaHiddenProps, ariaModalProps } from "./react-native";
+import { ariaHiddenProps, ariaModalProps, flattenStyle } from "./react-native";
 
 // `get`/`set` mirror Reanimated 4's React-Compiler-safe accessors (writing
 // `.value` directly makes the compiler bail out of the file).
@@ -146,10 +146,13 @@ function mapA11yProps(props: Record<string, unknown>) {
     exiting: _exiting,
     layout: _layout,
     testID,
+    style,
     ...domSafe
   } = props;
   return {
     ...domSafe,
+    // An RN style array would throw on a DOM node; see `flattenStyle`.
+    style: flattenStyle(style),
     ...(testID ? { "data-testid": testID } : {}),
     ...(accessibilityRole ? { role: accessibilityRole as string } : {}),
     ...(accessibilityLabel
