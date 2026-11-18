@@ -76,14 +76,18 @@ describe("agent dispatch types", () => {
     const types = (rel: string) =>
       dispatches.filter((d) => d.rel === rel).map((d) => d.type);
     expect(types(".claude/skills/todo/SKILL.md")).toContain("todo-executor");
-    expect(types(".claude/agents/todo-executor.md")).toContain(
-      "todo-researcher",
+    expect(types(".claude/agents/todo-executor.md")).toEqual(
+      expect.arrayContaining(["todo-researcher", "todo-verifier"]),
     );
     expect(types(".claude/skills/audit/SKILL.md")).toContain("docs-researcher");
   });
 
-  it("researchers cannot edit files", () => {
-    for (const agent of ["todo-researcher", "docs-researcher"]) {
+  it("researchers and the verifier cannot edit files", () => {
+    for (const agent of [
+      "todo-researcher",
+      "docs-researcher",
+      "todo-verifier",
+    ]) {
       const disallowed =
         /^disallowedTools:\s*(.+)$/m.exec(frontmatter(agent))?.[1] ?? "";
       expect(disallowed.split(/,\s*/)).toEqual(

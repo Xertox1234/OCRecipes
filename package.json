@@ -285,6 +285,9 @@
     "{.claude/hooks/**/*.sh,todos/**/*.md}": [
       "node scripts/check-claim-staleness.js"
     ],
+    "todos/archive/*.md": [
+      "node scripts/check-archived-todo-criteria.js"
+    ],
     "*.{js,md}": [
       "prettier --write"
     ],

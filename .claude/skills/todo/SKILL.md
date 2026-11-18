@@ -387,7 +387,7 @@ After the queue is fully drained (or after early termination):
 
 3. **Print the summary table:**
 
-   The **Branch / PR** column shows the PR URL for every todo (all priorities open a PR). Key off each todo's `MERGE_ELIGIBLE`: `yes (auto-merge enabled)` → "auto-merging on green CI"; `yes (auto-merge enable FAILED ...)` → "auto-merge failed to arm — needs manual merge or review"; `held` → "held — guard HOLD (path or todo-frontmatter gate; see the executor's reason line)"; `review-required` → "needs individual review"; `unknown` → "guard couldn't evaluate — review by hand". Show `pending manual creation` if PR creation failed.
+   The **Branch / PR** column shows the PR URL for every todo (all priorities open a PR). Key off each todo's `MERGE_ELIGIBLE`: `yes (auto-merge enabled)` → "auto-merging on green CI"; `yes (auto-merge enable FAILED ...)` → "auto-merge failed to arm — needs manual merge or review"; `held (verifier: …)` → "held — acceptance criterion not met (verifier); fix it on the branch or ask the owner, never a plain merge"; any other `held` → "held — guard HOLD (path or todo-frontmatter gate; see the executor's reason line)"; `review-required` → "needs individual review"; `unknown` → "guard couldn't evaluate — review by hand". Show `pending manual creation` if PR creation failed.
 
    | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
