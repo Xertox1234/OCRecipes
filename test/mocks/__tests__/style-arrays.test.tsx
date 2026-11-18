@@ -30,6 +30,7 @@ import {
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { BottomSheetView } from "@gorhom/bottom-sheet";
 import Animated from "react-native-reanimated";
 import { renderComponent } from "../../utils/render-component";
@@ -99,6 +100,7 @@ describe("mocks render an RN style array", () => {
           />
         ),
       ],
+      ["BlurView", (style) => <BlurView data-testid="node" style={style} />],
       [
         "BottomSheetView",
         (style) => (

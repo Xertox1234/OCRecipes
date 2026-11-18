@@ -13,7 +13,10 @@ export const Platform = {
 export const useColorScheme = vi.fn((): "light" | "dark" | null => "light");
 export const StyleSheet = {
   create: <T extends Record<string, unknown>>(styles: T): T => styles,
-  flatten: (style: unknown) => style,
+  // The real flatten merges arrays. An identity mock handed app code that
+  // destructures the result (FocusField's shell) an array, whose rest-spread
+  // became `{ 0: ..., 1: ... }`: a style object with numeric keys.
+  flatten: (style: unknown) => flattenStyle(style),
 };
 export const Appearance = { getColorScheme: () => "light" };
 export const Dimensions = { get: () => ({ width: 375, height: 812 }) };
