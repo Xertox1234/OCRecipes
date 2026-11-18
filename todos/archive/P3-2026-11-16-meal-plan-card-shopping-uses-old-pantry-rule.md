@@ -1,6 +1,6 @@
 ---
 title: "Meal-plan card's shopping step still subtracts the pantry by exact unit"
-status: backlog
+status: done
 priority: low
 created: 2026-11-16
 updated: 2026-11-16
@@ -31,12 +31,12 @@ and "2 cups milk" is not covered by "1 litre milk". The grocery card handles bot
 
 ## Acceptance Criteria
 
-- [ ] `deductPantryFromGrocery` has other callers; list them first and decide, per caller,
+- [x] `deductPantryFromGrocery` has other callers; list them first and decide, per caller,
       whether the new rule applies. Record the decision in the PR.
-- [ ] The plan card's shopping step and the grocery card give the same answer for the same
+- [x] The plan card's shopping step and the grocery card give the same answer for the same
       pantry and the same items, proven by a test that runs both on one fixture.
-- [ ] One implementation of the name and unit matching, not two.
-- [ ] Tests first, red before the change.
+- [x] One implementation of the name and unit matching, not two.
+- [x] Tests first, red before the change.
 
 ## Implementation Notes
 
@@ -66,3 +66,10 @@ means "buy". Confirm against `docs/superpowers/specs/2026-11-09-coach-write-card
 ### 2026-11-16
 
 - Initial creation
+
+### 2026-11-17
+
+- Callers of `deductPantryFromGrocery`: `server/routes/grocery.ts` (the app's own list generation) and `server/services/write-cards/plan.ts`. Decision: the plan card moves to the new rule; the route keeps the old function unchanged (changing it is a product change, per Risks).
+- The shared rule (`matchKey`, `unitKey`, `pantryVerdict`, `groupPantryByKey`) now lives in `server/services/pantry-deduction.ts`; `grocery.ts` imports and re-exports `matchKey`/`unitKey` (used by `pantry.ts`).
+- Plan card: only "covered" leaves an item off; "unsure" and "buy" are bought (no per-item ticks).
+- Criterion 2 evidence: `server/services/write-cards/__tests__/plan.test.ts` "addShopping answers like the grocery card for the same pantry and items" (red before the change).

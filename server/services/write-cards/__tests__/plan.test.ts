@@ -46,6 +46,9 @@ const {
   addMealPlanCardArgsSchema,
 } = await import("../plan");
 const { WriteCardEditError } = await import("../errors");
+const { planGroceryCard, addGroceryCardArgsSchema } = await import(
+  "../grocery"
+);
 
 let tx: NodePgDatabase<typeof schema>;
 let user: schema.User;
@@ -563,6 +566,65 @@ describe("plan write card", () => {
       .from(schema.groceryListItems)
       .where(eq(schema.groceryListItems.groceryListId, list.id));
     expect(after).toHaveLength(0);
+  });
+
+  it("addShopping answers like the grocery card for the same pantry and items", async () => {
+    const [list] = await tx
+      .insert(schema.groceryLists)
+      .values({
+        userId: user.id,
+        title: "Weekly shop",
+        dateRangeStart: "2026-11-01",
+        dateRangeEnd: "2026-11-07",
+      })
+      .returning();
+    // "Chickpeas" asked for; the pantry holds it singular, in the same unit.
+    // "Spinach" asked for in bags; the pantry has it in another unit (unsure).
+    await tx.insert(schema.pantryItems).values([
+      { userId: user.id, name: "chickpea", quantity: "3", unit: "can" },
+      { userId: user.id, name: "spinach", quantity: "2", unit: "cups" },
+    ]);
+    const shawarma = await community("Chicken shawarma bowl");
+    const p = await buildPlanPayload(
+      addMealPlanCardArgsSchema.parse({
+        rows: [
+          {
+            plannedDate: "2026-11-09",
+            mealType: "dinner",
+            recipe: { source: "community", id: shawarma.id },
+            alternatives: [],
+          },
+        ],
+      }),
+      user.id,
+    );
+    await performPlanSave(
+      tx,
+      card(p),
+      { addShopping: true },
+      { userId: user.id },
+    );
+    const added = (
+      await tx
+        .select()
+        .from(schema.groceryListItems)
+        .where(eq(schema.groceryListItems.groceryListId, list.id))
+    )
+      .map((r) => r.name)
+      .sort();
+
+    const grocery = await planGroceryCard(
+      addGroceryCardArgsSchema.parse({
+        items: [
+          { name: "chickpeas", quantity: "1", unit: "can" },
+          { name: "spinach", quantity: "1", unit: "bag" },
+        ],
+      }),
+      user.id,
+    );
+    const onCard = (grocery.payload?.items ?? []).map((i) => i.name).sort();
+    expect(added).toEqual(onCard);
+    expect(added).toEqual(["spinach"]);
   });
 
   it("startPlanImageJobs asks for a cover only for copies without an image", async () => {

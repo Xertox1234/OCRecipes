@@ -39,7 +39,7 @@ import {
   categorizeIngredient,
   generateGroceryItems,
 } from "../grocery-generation";
-import { deductPantryFromGrocery } from "../pantry-deduction";
+import { groupPantryByKey, matchKey, pantryVerdict } from "../pantry-deduction";
 import { autoGenerateRecipeImage } from "../recipe-auto-image";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { WriteCardEditError } from "./errors";
@@ -341,9 +341,18 @@ export async function performPlanSave(
       throw new WriteCardEditError("That grocery list isn't available.");
     }
     const pantry = await getPantryItems(ctx.userId);
-    const items = deductPantryFromGrocery(
-      generateGroceryItems(shopping),
-      pantry,
+    // Same rule as the grocery card. The plan card has no per-item ticks, so
+    // only "covered" leaves an item off; "unsure" is bought.
+    const byKey = groupPantryByKey(pantry, new Date());
+    const items = generateGroceryItems(shopping).filter(
+      (i) =>
+        pantryVerdict(
+          {
+            quantity: i.quantity === null ? null : String(i.quantity),
+            unit: i.unit,
+          },
+          byKey.get(matchKey(i.name)) ?? [],
+        ) !== "covered",
     );
     const rows = await addGroceryListItems(
       items.map((i) => ({

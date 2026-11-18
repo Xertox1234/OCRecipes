@@ -1,8 +1,4 @@
-import type {
-  CoachWriteCard,
-  CoachWriteCardSavedRefs,
-  PantryItem,
-} from "@shared/schema";
+import type { CoachWriteCard, CoachWriteCardSavedRefs } from "@shared/schema";
 import {
   groceryEditsSchema,
   type GroceryCardEdits,
@@ -29,10 +25,17 @@ import {
   parseQuantityForSum,
 } from "../grocery-generation";
 import { civilDateString } from "../../lib/civil-date";
+import {
+  groupPantryByKey,
+  matchKey,
+  pantryVerdict,
+  unitKey,
+} from "../pantry-deduction";
 import { WriteCardEditError } from "./errors";
 import type { AddGroceryCardArgs } from "./tool-args";
 
 export { addGroceryCardArgsSchema, type AddGroceryCardArgs } from "./tool-args";
+export { matchKey, unitKey };
 
 /**
  * Grocery write card (spec 2026-11-09): a checklist Coach builds for a dish or
@@ -45,58 +48,6 @@ const LISTS_OFFERED = 4;
 const DEFAULT_NEW_LIST_NAME = "Coach list";
 /** Same cap the generate-list route applies (server/routes/grocery.ts). */
 const MAX_GROCERY_LISTS = 50;
-
-/**
- * Match key for an item name: normalized, with the last word's plural ending
- * dropped ("apples" and "apple", "tomatoes" and "tomato", "berries" and
- * "berry" share a key). A blanket `(es|s)$` strip turned "apples" into "appl",
- * which never matched "apple". A final "ie" also becomes "y", so "cookie" and
- * "cookies" meet at the same key; the key is only compared, never shown.
- */
-export function matchKey(name: string): string {
-  const n = normalizeIngredientName(name);
-  if (/ies?$/.test(n)) return n.replace(/ies?$/, "y");
-  if (/(oes|ches|shes|xes|sses|zes)$/.test(n)) return n.replace(/es$/, "");
-  if (/[^s]s$/.test(n)) return n.replace(/s$/, "");
-  return n;
-}
-
-export const unitKey = (unit: string | null | undefined) =>
-  unit?.toLowerCase().trim() ?? "";
-
-type PantryVerdict = "covered" | "unsure" | "buy";
-
-/**
- * What the pantry says about one item. Only a clear answer leaves it off the
- * card: dropping an item the user still needs is the costly mistake, so a
- * match that cannot be judged keeps the item, unticked.
- *   - covered: nothing asked beyond the name, or the same unit holds enough.
- *   - unsure:  the pantry has it, in an unknown amount or another unit.
- *   - buy:     not there, or a known amount in the same unit that is too small.
- */
-function pantryVerdict(
-  item: AddGroceryCardArgs["items"][number],
-  rows: PantryItem[],
-): PantryVerdict {
-  const stocked = rows.filter((r) => {
-    const qty = parseQuantityForSum(r.quantity);
-    return qty === null || qty > 0;
-  });
-  if (stocked.length === 0) return "buy";
-  const need = parseQuantityForSum(item.quantity);
-  if (need === null) return "covered";
-
-  const unit = unitKey(item.unit);
-  let have = 0;
-  let judgeable = true;
-  for (const r of stocked) {
-    const qty = parseQuantityForSum(r.quantity);
-    if (qty === null || unitKey(r.unit) !== unit) judgeable = false;
-    else have += qty;
-  }
-  if (have >= need) return "covered";
-  return judgeable ? "buy" : "unsure";
-}
 
 export interface GroceryCardPlan {
   /** Null when the pantry covers every item: there is no card to show. */
@@ -120,12 +71,7 @@ export async function planGroceryCard(
     getPantryItems(userId),
     getGroceryLists(userId, LISTS_OFFERED),
   ]);
-  const byKey = new Map<string, PantryItem[]>();
-  for (const row of pantry) {
-    if (row.expiresAt && row.expiresAt.getTime() <= now.getTime()) continue;
-    const key = matchKey(row.name);
-    byKey.set(key, [...(byKey.get(key) ?? []), row]);
-  }
+  const byKey = groupPantryByKey(pantry, now);
 
   const items: GroceryCardPayload["items"] = [];
   const leftOff: string[] = [];

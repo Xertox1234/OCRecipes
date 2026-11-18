@@ -1,6 +1,7 @@
 import type { PantryItem } from "@shared/schema";
 import {
   type AggregatedGroceryItem,
+  normalizeIngredientName,
   parseQuantityForSum,
   roundQuantity,
 } from "./grocery-generation";
@@ -64,4 +65,71 @@ export function deductPantryFromGrocery(
   }
 
   return result;
+}
+
+/**
+ * Match key for an item name: normalized, with the last word's plural ending
+ * dropped ("apples" and "apple", "tomatoes" and "tomato", "berries" and
+ * "berry" share a key). A blanket `(es|s)$` strip turned "apples" into "appl",
+ * which never matched "apple". A final "ie" also becomes "y", so "cookie" and
+ * "cookies" meet at the same key; the key is only compared, never shown.
+ */
+export function matchKey(name: string): string {
+  const n = normalizeIngredientName(name);
+  if (/ies?$/.test(n)) return n.replace(/ies?$/, "y");
+  if (/(oes|ches|shes|xes|sses|zes)$/.test(n)) return n.replace(/es$/, "");
+  if (/[^s]s$/.test(n)) return n.replace(/s$/, "");
+  return n;
+}
+
+export const unitKey = (unit: string | null | undefined) =>
+  unit?.toLowerCase().trim() ?? "";
+
+export type PantryVerdict = "covered" | "unsure" | "buy";
+
+/**
+ * What the pantry says about one item. Only a clear answer leaves it off the
+ * list: dropping an item the user still needs is the costly mistake, so a
+ * match that cannot be judged keeps the item.
+ *   - covered: nothing asked beyond the name, or the same unit holds enough.
+ *   - unsure:  the pantry has it, in an unknown amount or another unit.
+ *   - buy:     not there, or a known amount in the same unit that is too small.
+ * Shared by Coach's grocery card and the plan card's shopping step.
+ */
+export function pantryVerdict(
+  item: { quantity?: string | null; unit?: string | null },
+  rows: PantryItem[],
+): PantryVerdict {
+  const stocked = rows.filter((r) => {
+    const qty = parseQuantityForSum(r.quantity);
+    return qty === null || qty > 0;
+  });
+  if (stocked.length === 0) return "buy";
+  const need = parseQuantityForSum(item.quantity);
+  if (need === null) return "covered";
+
+  const unit = unitKey(item.unit);
+  let have = 0;
+  let judgeable = true;
+  for (const r of stocked) {
+    const qty = parseQuantityForSum(r.quantity);
+    if (qty === null || unitKey(r.unit) !== unit) judgeable = false;
+    else have += qty;
+  }
+  if (have >= need) return "covered";
+  return judgeable ? "buy" : "unsure";
+}
+
+/** Pantry rows grouped by item match key, skipping expired ones. */
+export function groupPantryByKey(
+  pantry: PantryItem[],
+  now: Date,
+): Map<string, PantryItem[]> {
+  const byKey = new Map<string, PantryItem[]>();
+  for (const row of pantry) {
+    if (row.expiresAt && row.expiresAt.getTime() <= now.getTime()) continue;
+    const key = matchKey(row.name);
+    byKey.set(key, [...(byKey.get(key) ?? []), row]);
+  }
+  return byKey;
 }
