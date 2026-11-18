@@ -17,13 +17,16 @@ import { screen } from "@testing-library/react";
 import {
   ActivityIndicator,
   Image,
+  type ImageStyle,
   Modal,
   ScrollView,
+  type StyleProp,
   Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  type ViewStyle,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -32,7 +35,7 @@ import Animated from "react-native-reanimated";
 import { renderComponent } from "../../utils/render-component";
 import { flattenStyle } from "../react-native";
 
-const nested = [
+const nested: StyleProp<ViewStyle> = [
   { opacity: 0.5 },
   false,
   null,
@@ -58,40 +61,61 @@ describe("flattenStyle", () => {
 });
 
 describe("mocks render an RN style array", () => {
-  const rows: [string, (style: unknown) => React.ReactElement][] = [
-    ["View", (style) => <View testID="node" style={style} />],
-    ["Text", (style) => <Text testID="node" style={style} />],
-    ["ScrollView", (style) => <ScrollView testID="node" style={style} />],
-    ["Image", (style) => <Image testID="node" style={style} />],
-    ["TextInput", (style) => <TextInput testID="node" style={style} />],
+  const rows: [string, (style: StyleProp<ViewStyle>) => React.ReactElement][] =
     [
-      "TouchableOpacity",
-      (style) => <TouchableOpacity testID="node" style={style} />,
-    ],
-    ["Switch", (style) => <Switch testID="node" style={style} />],
-    [
-      "ActivityIndicator",
-      (style) => <ActivityIndicator testID="node" style={style} />,
-    ],
-    ["Modal", (style) => <Modal testID="node" style={style} />],
-    ["expo-image Image", (style) => <ExpoImage testID="node" style={style} />],
-    [
-      "LinearGradient",
-      (style) => (
-        <LinearGradient
-          colors={["#000", "#fff"]}
-          data-testid="node"
-          style={style}
-        />
-      ),
-    ],
-    [
-      "BottomSheetView",
-      (style) => <BottomSheetView testID="node" style={style} />,
-    ],
-    ["Animated.View", (style) => <Animated.View testID="node" style={style} />],
-    ["Animated.Text", (style) => <Animated.Text testID="node" style={style} />],
-  ];
+      ["View", (style) => <View testID="node" style={style} />],
+      ["Text", (style) => <Text testID="node" style={style} />],
+      ["ScrollView", (style) => <ScrollView testID="node" style={style} />],
+      [
+        "Image",
+        (style) => (
+          <Image testID="node" style={style as StyleProp<ImageStyle>} />
+        ),
+      ],
+      ["TextInput", (style) => <TextInput testID="node" style={style} />],
+      [
+        "TouchableOpacity",
+        (style) => <TouchableOpacity testID="node" style={style} />,
+      ],
+      ["Switch", (style) => <Switch testID="node" style={style} />],
+      [
+        "ActivityIndicator",
+        (style) => <ActivityIndicator testID="node" style={style} />,
+      ],
+      ["Modal", (style) => <Modal testID="node" style={style} />],
+      [
+        "expo-image Image",
+        (style) => (
+          <ExpoImage testID="node" style={style as StyleProp<ImageStyle>} />
+        ),
+      ],
+      [
+        "LinearGradient",
+        (style) => (
+          <LinearGradient
+            colors={["#000", "#fff"]}
+            data-testid="node"
+            style={style}
+          />
+        ),
+      ],
+      [
+        "BottomSheetView",
+        (style) => (
+          <BottomSheetView testID="node" style={style}>
+            {null}
+          </BottomSheetView>
+        ),
+      ],
+      [
+        "Animated.View",
+        (style) => <Animated.View testID="node" style={style} />,
+      ],
+      [
+        "Animated.Text",
+        (style) => <Animated.Text testID="node" style={style} />,
+      ],
+    ];
 
   it.each(rows)("%s applies the merged style", (_name, build) => {
     renderComponent(build(nested));
