@@ -1,5 +1,10 @@
-import React, { useEffect } from "react";
-import { StyleSheet, AccessibilityInfo, Platform } from "react-native";
+import React, { useEffect, useState } from "react";
+import {
+  StyleSheet,
+  AccessibilityInfo,
+  Platform,
+  Pressable,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, { SlideInUp, SlideOutUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +26,8 @@ import {
 
 const OFFLINE_MESSAGE = "You're offline. Some features may be unavailable.";
 const BACK_ONLINE_MESSAGE = "Back online";
+/** How long the offline banner stays before it slides away. */
+export const OFFLINE_BANNER_VISIBLE_MS = 4000;
 
 export function OfflineBanner() {
   const insets = useSafeAreaInsets();
@@ -44,7 +51,24 @@ export function OfflineBanner() {
     }
   }, [isOffline]);
 
-  if (!isOffline) return null;
+  // The banner floats over every screen's top bar (back, close, Reload), so it
+  // must not stay there for the whole time the device is offline: it hides
+  // after a few seconds or on a tap, and comes back on the next drop.
+  const [hidden, setHidden] = useState(false);
+  // Reset during render when connectivity flips, so the next drop shows the
+  // banner again (React's "adjust state when a prop changes" pattern).
+  const [prevOffline, setPrevOffline] = useState(isOffline);
+  if (prevOffline !== isOffline) {
+    setPrevOffline(isOffline);
+    setHidden(false);
+  }
+  useEffect(() => {
+    if (!isOffline) return;
+    const timer = setTimeout(() => setHidden(true), OFFLINE_BANNER_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [isOffline]);
+
+  if (!isOffline || hidden) return null;
 
   const entering = reducedMotion
     ? undefined
@@ -69,22 +93,33 @@ export function OfflineBanner() {
       accessible
       accessibilityRole="alert"
       accessibilityLabel={OFFLINE_MESSAGE}
+      accessibilityHint="Double-tap to hide"
       accessibilityLiveRegion="assertive"
     >
-      <Feather
-        name="wifi-off"
-        size={16}
-        color={theme.backgroundDefault}
+      {/* The alert semantics stay on the grouped parent (react-native-web's
+          Pressable drops accessibilityLiveRegion); a screen-reader double-tap
+          activates the group's centre, which lands on this Pressable. */}
+      <Pressable
+        onPress={() => setHidden(true)}
+        style={styles.content}
         accessible={false}
-      />
-      <ThemedText
-        type="small"
-        maxScale={MAX_FONT_SCALE_CONSTRAINED}
-        style={[styles.message, { color: theme.backgroundDefault }]}
-        numberOfLines={1}
+        accessibilityLabel="Hide offline message"
       >
-        {OFFLINE_MESSAGE}
-      </ThemedText>
+        <Feather
+          name="wifi-off"
+          size={16}
+          color={theme.backgroundDefault}
+          accessible={false}
+        />
+        <ThemedText
+          type="small"
+          maxScale={MAX_FONT_SCALE_CONSTRAINED}
+          style={[styles.message, { color: theme.backgroundDefault }]}
+          numberOfLines={1}
+        >
+          {OFFLINE_MESSAGE}
+        </ThemedText>
+      </Pressable>
     </Animated.View>
   );
 }
@@ -94,13 +129,15 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: Spacing.lg,
     right: Spacing.lg,
+    borderRadius: BorderRadius.card,
+    zIndex: 9998,
+  },
+  content: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.card,
-    zIndex: 9998,
   },
   message: {
     flex: 1,
