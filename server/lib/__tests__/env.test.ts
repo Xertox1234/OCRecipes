@@ -329,6 +329,10 @@ describe("validateEnv IAP / RTDN configuration", () => {
   beforeEach(() => {
     process.env = { ...saved, ...BASE, ...R2 };
     for (const k of IAP_KEYS) delete process.env[k];
+    // An AI route, set here rather than read from the machine: without one the
+    // M-rel-3 startup warning names GOOGLE_VERTEX_* and matches the
+    // /APPLE_|GOOGLE_/ filter below.
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.NODE_ENV = "production";
     mockWarn.mockClear();
   });
