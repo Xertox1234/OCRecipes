@@ -70,6 +70,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
 import pg from "pg";
+import { toError } from "../../server/lib/logger";
 import {
   Node,
   Project,
@@ -619,7 +620,7 @@ async function main(): Promise<void> {
 
 if (process.argv[1]?.endsWith("symbol-graph.ts")) {
   main().catch((err: unknown) => {
-    console.error("symbol-graph.ts --rebuild failed:", err);
+    console.error("symbol-graph.ts --rebuild failed:", toError(err));
     process.exit(1);
   });
 }

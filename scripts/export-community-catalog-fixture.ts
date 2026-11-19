@@ -12,6 +12,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { storage } from "../server/storage";
+import { toError } from "../server/lib/logger";
 
 const OUT = path.resolve(
   process.cwd(),
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
 main().then(
   () => process.exit(0),
   (err) => {
-    console.error(err);
+    console.error(toError(err));
     process.exit(1);
   },
 );

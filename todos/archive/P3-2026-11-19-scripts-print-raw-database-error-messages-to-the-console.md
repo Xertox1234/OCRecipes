@@ -83,8 +83,8 @@ found.
   the file-delete catch in cleanup-seed-recipes (no database statement in the try);
   preview-art-direction (no database); purge-inspired-suggestions (already logs through
   `toError`); backfill-ai-rows and the five `-utils` files (print no caught error).
-- Not changed, outside this todo's scope: nine scripts under top-level `scripts/` import the
-  database client and print a caught error (migrate-instructions,
-  export-community-catalog-fixture, mfa-reset, migrate-recipe-ingredients,
-  cleanup-junk-mealplan-recipes, cleanup-junk-recipes, check-timestamptz-migration,
-  canonicalize-recipe, pg-lab/symbol-graph). Raised with the owner in the PR.
+- Also changed, at the owner's request (2026-11-19), beyond this todo's scope: the nine
+  scripts under top-level `scripts/` that open a database connection and print a caught error
+  now print it through `toError` (migrate-instructions, export-community-catalog-fixture,
+  mfa-reset, migrate-recipe-ingredients, cleanup-junk-mealplan-recipes, cleanup-junk-recipes,
+  check-timestamptz-migration, canonicalize-recipe, pg-lab/symbol-graph).

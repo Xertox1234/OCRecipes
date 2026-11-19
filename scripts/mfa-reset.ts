@@ -14,6 +14,7 @@
  */
 import "dotenv/config";
 import { storage } from "../server/storage";
+import { toError } from "../server/lib/logger";
 import { sendTwoFactorNotice } from "../server/services/email";
 
 export function parseArgs(argv: readonly string[]): {
@@ -74,7 +75,7 @@ if (isMain) {
     await resetMfaForUser(userId, { dryRun });
     process.exit(0);
   })().catch((err) => {
-    console.error("MFA reset failed:", err);
+    console.error("MFA reset failed:", toError(err));
     process.exit(1);
   });
 }

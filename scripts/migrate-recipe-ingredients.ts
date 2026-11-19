@@ -22,6 +22,7 @@
  */
 import "dotenv/config";
 import { db } from "../server/db";
+import { toError } from "../server/lib/logger";
 import { communityRecipes } from "../shared/schema";
 import { sql, eq } from "drizzle-orm";
 // Parsers live in the -utils leaf (DB-free) so the A-D pattern matrix is
@@ -197,7 +198,7 @@ const isMain = (() => {
 })();
 if (isMain) {
   main().catch((err) => {
-    console.error("Migration failed:", err);
+    console.error("Migration failed:", toError(err));
     process.exit(1);
   });
 }
