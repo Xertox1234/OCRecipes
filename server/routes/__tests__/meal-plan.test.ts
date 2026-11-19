@@ -6,6 +6,8 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../meal-plan";
+import { autoGenerateRecipeImage } from "../../services/recipe-auto-image";
+import { dishImageKey } from "../../lib/dish-image-key";
 import {
   createMockMealPlanRecipe,
   createMockMealPlanItem,
@@ -44,6 +46,8 @@ vi.mock("../../storage", () => ({
     getFamilyProfile: vi.fn(),
     countFamilyProfiles: vi.fn(),
     createMealPlanFromSuggestions: vi.fn(),
+    getDishImageUrl: vi.fn(),
+    recordDishImage: vi.fn(),
     incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -78,6 +82,17 @@ vi.mock("../../services/pantry-meal-plan", async () => {
 vi.mock("../../services/recipe-generation", () => ({
   generateRecipeImage: vi.fn().mockResolvedValue(null),
 }));
+
+// A spy over the real background step, so the shared-picture tests can read
+// what the route hands it while every other test keeps the real behaviour.
+vi.mock("../../services/recipe-auto-image", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../services/recipe-auto-image")>();
+  return {
+    ...actual,
+    autoGenerateRecipeImage: vi.fn(actual.autoGenerateRecipeImage),
+  };
+});
 
 // The generate-from-pantry AI gate, pinned so the result does not depend on
 // whether the machine running the tests has an AI route configured (CI has none).
@@ -479,6 +494,111 @@ describe("Meal Plan Routes", () => {
     });
   });
 
+  describe("shared dish picture on POST /api/meal-plan/recipes", () => {
+    const SHARED = "https://cdn.example.test/recipe-images/shared.jpg";
+    const quickEntryBody = {
+      title: "Bacon and Eggs",
+      sourceType: "quick_entry",
+      caloriesPerServing: "410",
+    };
+
+    it("creates a quick entry with the shared picture and makes no image call", async () => {
+      vi.mocked(storage.getDishImageUrl).mockResolvedValue(SHARED);
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({
+          title: "Bacon and Eggs",
+          sourceType: "quick_entry",
+          imageUrl: SHARED,
+        }),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send(quickEntryBody);
+
+      expect(res.status).toBe(201);
+      expect(storage.getDishImageUrl).toHaveBeenCalledWith(
+        dishImageKey("bacon and eggs"),
+      );
+      expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+        expect.objectContaining({ imageUrl: SHARED }),
+        undefined,
+      );
+      expect(autoGenerateRecipeImage).not.toHaveBeenCalled();
+    });
+
+    it("hands the key to the image step when no shared picture exists", async () => {
+      vi.mocked(storage.getDishImageUrl).mockResolvedValue(null);
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({
+          title: "Bacon and Eggs",
+          sourceType: "quick_entry",
+        }),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send(quickEntryBody);
+
+      expect(res.status).toBe(201);
+      expect(autoGenerateRecipeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Bacon and Eggs" }),
+        "1",
+        dishImageKey("bacon and eggs"),
+      );
+    });
+
+    it("leaves a user_created recipe out of sharing", async () => {
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Chicken Salad",
+          instructions: ["Toss it all together"],
+          ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
+        });
+
+      expect(res.status).toBe(201);
+      expect(storage.getDishImageUrl).not.toHaveBeenCalled();
+      expect(autoGenerateRecipeImage).toHaveBeenCalledWith(
+        expect.anything(),
+        "1",
+        null,
+      );
+    });
+
+    it("never looks up or shares a quick entry that came with its own picture", async () => {
+      // Only a photo on our own storage survives validation (audit M1).
+      vi.stubEnv("R2_PUBLIC_BASE_URL", "https://cdn.example.test");
+      const own = "https://cdn.example.test/recipe-images/own.jpg";
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({
+          title: "Bacon and Eggs",
+          sourceType: "quick_entry",
+          imageUrl: own,
+        }),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({ ...quickEntryBody, imageUrl: own });
+      vi.unstubAllEnvs();
+
+      expect(res.status).toBe(201);
+      expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+        expect.objectContaining({ imageUrl: own }),
+        undefined,
+      );
+      expect(storage.getDishImageUrl).not.toHaveBeenCalled();
+      expect(autoGenerateRecipeImage).not.toHaveBeenCalled();
+    });
+  });
+
   describe("PUT /api/meal-plan/recipes/:id", () => {
     it("updates a recipe", async () => {
       vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(
@@ -828,6 +948,71 @@ describe("Meal Plan Routes", () => {
         expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
         expect(storage.addMealPlanItem).not.toHaveBeenCalled();
         expect(storage.getMealPlanRecipe).not.toHaveBeenCalled();
+      });
+
+      describe("shared dish picture", () => {
+        const SHARED = "https://cdn.example.test/recipe-images/shared.jpg";
+        const quickBody = {
+          recipe: {
+            title: "Bacon and Eggs",
+            sourceType: "quick_entry",
+            caloriesPerServing: "410",
+          },
+          plannedDate: "2025-01-01",
+          mealType: "breakfast",
+        };
+
+        beforeEach(() => {
+          vi.mocked(storage.createMealPlanFromSuggestions).mockResolvedValue([
+            { recipeId: 31, mealPlanItemId: 7 },
+          ]);
+        });
+
+        it("creates the quick entry with the shared picture and makes no image call", async () => {
+          vi.mocked(storage.getDishImageUrl).mockResolvedValue(SHARED);
+
+          const res = await request(app)
+            .post("/api/meal-plan/items")
+            .set("Authorization", "Bearer token")
+            .send(quickBody);
+
+          expect(res.status).toBe(201);
+          const [meals] = vi.mocked(storage.createMealPlanFromSuggestions).mock
+            .calls[0];
+          expect(meals[0].recipe.imageUrl).toBe(SHARED);
+          expect(autoGenerateRecipeImage).not.toHaveBeenCalled();
+        });
+
+        it("hands the key to the image step when no shared picture exists", async () => {
+          vi.mocked(storage.getDishImageUrl).mockResolvedValue(null);
+
+          const res = await request(app)
+            .post("/api/meal-plan/items")
+            .set("Authorization", "Bearer token")
+            .send(quickBody);
+
+          expect(res.status).toBe(201);
+          expect(autoGenerateRecipeImage).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 31 }),
+            "1",
+            dishImageKey("bacon and eggs"),
+          );
+        });
+
+        it("leaves any other inline recipe out of sharing", async () => {
+          const res = await request(app)
+            .post("/api/meal-plan/items")
+            .set("Authorization", "Bearer token")
+            .send(inlineBody);
+
+          expect(res.status).toBe(201);
+          expect(storage.getDishImageUrl).not.toHaveBeenCalled();
+          expect(autoGenerateRecipeImage).toHaveBeenCalledWith(
+            expect.anything(),
+            "1",
+            null,
+          );
+        });
       });
 
       it("returns 400 when recipe is combined with recipeId", async () => {

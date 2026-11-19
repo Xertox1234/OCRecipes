@@ -1,7 +1,10 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { autoGenerateRecipeImage } from "../services/recipe-auto-image";
+import {
+  autoGenerateRecipeImage,
+  sharedDishImage,
+} from "../services/recipe-auto-image";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -189,10 +192,18 @@ export function register(app: Express): void {
           return;
         }
 
+        // A quick entry reuses the picture already made for its dish name.
+        const shared = await sharedDishImage(
+          sourceType,
+          recipeData.title,
+          recipeData.imageUrl,
+        );
+
         const mealTypes = inferRecipeMealTypes(recipeData.title, ingredients);
         const recipe = await storage.createMealPlanRecipe(
           {
             ...recipeData,
+            ...(shared.url ? { imageUrl: shared.url } : {}),
             userId: req.userId,
             sourceType,
             mealTypes,
@@ -219,7 +230,7 @@ export function register(app: Express): void {
         if (!recipe.imageUrl) {
           fireAndForget(
             "recipe-image-gen",
-            autoGenerateRecipeImage(recipe, req.userId),
+            autoGenerateRecipeImage(recipe, req.userId, shared.key),
           );
         }
 
@@ -400,12 +411,19 @@ export function register(app: Express): void {
             instructions: recipeData.instructions,
           });
           const mealTypes = inferRecipeMealTypes(recipeData.title, ingredients);
+          // A quick entry reuses the picture already made for its dish name.
+          const shared = await sharedDishImage(
+            sourceType,
+            recipeData.title,
+            recipeData.imageUrl,
+          );
           // Recipe + plan item in ONE transaction (a failed item insert leaves
           // no orphan recipe). Both rows are owned by req.userId only.
           const [created] = await storage.createMealPlanFromSuggestions([
             {
               recipe: {
                 ...recipeData,
+                ...(shared.url ? { imageUrl: shared.url } : {}),
                 title: normalized.title ?? recipeData.title,
                 description: normalized.description,
                 difficulty: normalized.difficulty,
@@ -432,7 +450,7 @@ export function register(app: Express): void {
               },
             },
           ]);
-          if (!recipeData.imageUrl) {
+          if (!recipeData.imageUrl && !shared.url) {
             fireAndForget(
               "recipe-image-gen",
               autoGenerateRecipeImage(
@@ -443,6 +461,7 @@ export function register(app: Express): void {
                   mealTypes,
                 },
                 req.userId,
+                shared.key,
               ),
             );
           }
