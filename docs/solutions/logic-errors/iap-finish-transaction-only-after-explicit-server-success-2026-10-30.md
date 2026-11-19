@@ -45,7 +45,7 @@ The client treated transport success as business success. The `apiRequest` contr
 - `client/hooks/usePurchase.ts`: purchase and restore flows.
 - `client/lib/iap/purchase-utils.ts`: `entitlementError`, `PERMANENT_DECLINE_CODES`.
 - `client/components/upgrade-modal-utils.ts`: `PURCHASE_DECLINED` copy.
-- `client/lib/iap/__tests__/usePurchase.hook.test.ts`, `client/lib/iap/__tests__/purchase-utils.test.ts`.
+- `client/hooks/__tests__/usePurchase.test.ts`, `client/lib/iap/__tests__/purchase-utils.test.ts`.
 - `server/routes/subscription.ts`: 200 + `success:false` decline shape.
 
 ## See Also
