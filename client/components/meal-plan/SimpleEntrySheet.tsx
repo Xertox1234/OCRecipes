@@ -38,6 +38,7 @@ import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import {
   useAddMealPlanItem,
   invalidateMealPlanItems,
+  refreshMealPlanItemsForPendingPicture,
 } from "@/hooks/useMealPlan";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
@@ -131,7 +132,11 @@ function SimpleEntrySheetContentInner(
   // The recipe a failed add already created, keyed by its name and numbers, so
   // a retry adds that recipe instead of creating a second copy, and an edited
   // amount saves a fresh one.
-  const createdRecipeRef = useRef<{ key: string; id: number } | null>(null);
+  const createdRecipeRef = useRef<{
+    key: string;
+    id: number;
+    hasPicture: boolean;
+  } | null>(null);
   const { snapToIndex } = useBottomSheet();
 
   const parseFoodText = useParseFoodText();
@@ -360,8 +365,10 @@ function SimpleEntrySheetContentInner(
     const key = retryKey(title, totals);
     try {
       let recipeId: number;
+      let hasPicture: boolean;
       if (createdRecipeRef.current?.key === key) {
         recipeId = createdRecipeRef.current.id;
+        hasPicture = createdRecipeRef.current.hasPicture;
       } else {
         createdRecipeRef.current = null;
         // A slim recipe: the dish name and one serving's adjusted totals.
@@ -374,7 +381,10 @@ function SimpleEntrySheetContentInner(
           fatPerServing: totals.fat.toString(),
           servings: 1,
         });
-        createdRecipeRef.current = { key, id: recipe.id };
+        // A dish someone has entered before comes back with its shared
+        // picture; a new one gets its picture generated after the save.
+        hasPicture = Boolean(recipe.imageUrl);
+        createdRecipeRef.current = { key, id: recipe.id, hasPicture };
         recipeId = recipe.id;
       }
 
@@ -387,6 +397,7 @@ function SimpleEntrySheetContentInner(
 
       createdRecipeRef.current = null;
       invalidateMealPlanItems(queryClient);
+      if (!hasPicture) refreshMealPlanItemsForPendingPicture(queryClient);
       // The sheet closes, so confirm with a toast (fires its own Success).
       toast.success(formatPlanAddSuccess(plannedDate, mealType));
       onDismiss();

@@ -15,6 +15,7 @@ const mockStartListening = vi.fn();
 const mockStopListening = vi.fn();
 const mockNotification = vi.fn();
 const mockToastSuccess = vi.fn();
+const mockPictureRefresh = vi.fn();
 
 let mockIsListening = false;
 let mockTranscript = "";
@@ -40,6 +41,8 @@ vi.mock("@/hooks/useMealPlan", () => ({
     mutateAsync: mockAddItem,
   }),
   invalidateMealPlanItems: vi.fn(),
+  refreshMealPlanItemsForPendingPicture: (...args: unknown[]) =>
+    mockPictureRefresh(...args),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -553,6 +556,52 @@ describe("SimpleEntrySheet", () => {
       "Added to Wednesday Lunch",
     );
     expect(mockNotification).not.toHaveBeenCalled();
+  });
+
+  // The picture is generated after the save, so the plan refreshed without it.
+  it("keeps checking the plan for the picture when the entry was saved without one", async () => {
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
+    mockCreateRecipe.mockResolvedValue({ id: 42, imageUrl: null });
+    mockAddItem.mockResolvedValue({ id: 1 });
+
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    await submitDish("soup");
+
+    await waitFor(() => {
+      expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
+    });
+    expect(mockPictureRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("does not keep checking when the entry already has its picture", async () => {
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
+    mockCreateRecipe.mockResolvedValue({
+      id: 42,
+      imageUrl: "https://cdn.example/recipe-images/soup.jpg",
+    });
+    mockAddItem.mockResolvedValue({ id: 1 });
+
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    await submitDish("soup");
+
+    await waitFor(() => {
+      expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
+    });
+    expect(mockPictureRefresh).not.toHaveBeenCalled();
+  });
+
+  it("does not keep checking after a failed add", async () => {
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
+    mockCreateRecipe.mockResolvedValue({ id: 42, imageUrl: null });
+    mockAddItem.mockRejectedValue(new Error("500"));
+
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    await submitDish("soup");
+
+    await waitFor(() => {
+      expect(screen.getByText(ADD_ERROR)).toBeTruthy();
+    });
+    expect(mockPictureRefresh).not.toHaveBeenCalled();
   });
 
   it("a failed add says it couldn't add to the plan, with no success toast", async () => {

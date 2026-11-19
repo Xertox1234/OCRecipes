@@ -24,6 +24,28 @@ export function invalidateMealPlanItems(
 }
 
 /**
+ * How long after a save to look again for a recipe picture that is still
+ * being generated. Generation takes a few seconds to about half a minute.
+ */
+export const PENDING_PICTURE_REFRESH_DELAYS_MS = [6_000, 15_000, 30_000];
+
+/**
+ * A recipe saved without a picture gets one generated in the background, after
+ * the plan has already been refetched without it. Refetch the plan items a few
+ * more times so the picture shows up on its own. Not tied to a component: the
+ * sheet that calls this has closed by the time the picture lands. Returns a
+ * cancel function.
+ */
+export function refreshMealPlanItemsForPendingPicture(
+  queryClient: ReturnType<typeof useQueryClient>,
+): () => void {
+  const timers = PENDING_PICTURE_REFRESH_DELAYS_MS.map((delay) =>
+    setTimeout(() => invalidateMealPlanItems(queryClient), delay),
+  );
+  return () => timers.forEach(clearTimeout);
+}
+
+/**
  * `enabled` lets a caller gate the request on something beyond having a
  * date range (e.g. a premium-feature check) without overloading `startDate`/
  * `endDate` to mean "off" via empty strings — see
