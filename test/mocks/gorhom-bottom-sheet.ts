@@ -116,4 +116,14 @@ export const BottomSheetBackdrop = React.forwardRef<
 (BottomSheetBackdrop as unknown as { displayName: string }).displayName =
   "BottomSheetBackdrop";
 
+/** Sheet controls a sheet's own content reaches through context. */
+const bottomSheetMethods = {
+  snapToIndex: () => {},
+  snapToPosition: () => {},
+  expand: () => {},
+  collapse: () => {},
+  close: () => {},
+};
+export const useBottomSheet = () => bottomSheetMethods;
+
 export default {};
