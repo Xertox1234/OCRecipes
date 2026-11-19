@@ -75,6 +75,33 @@ describe("getGroceryListsWithOpenItems", () => {
     expect(lists[1].boughtCount).toBe(0);
   });
 
+  it("caps the open items per list in the query and still counts them all", async () => {
+    const big = await makeList(user.id, "Big shop", new Date("2026-11-08"));
+    const small = await makeList(user.id, "Small", new Date("2026-11-01"));
+    await tx.insert(schema.groceryListItems).values([
+      ...Array.from({ length: 7 }, (_, i) => ({
+        groceryListId: big.id,
+        name: `Item ${i}`,
+        category: "pantry",
+      })),
+      { groceryListId: big.id, name: "Bought", isChecked: true },
+      { groceryListId: small.id, name: "Tea" },
+    ]);
+    const lists = await getGroceryListsWithOpenItems(user.id, {
+      itemsPerList: 3,
+    });
+    expect(lists[0].items.map((i) => i.name)).toEqual([
+      "Item 0",
+      "Item 1",
+      "Item 2",
+    ]);
+    expect(lists[0].openCount).toBe(7);
+    expect(lists[0].boughtCount).toBe(1);
+    // The cap is per list, not across lists.
+    expect(lists[1].items.map((i) => i.name)).toEqual(["Tea"]);
+    expect(lists[1].openCount).toBe(1);
+  });
+
   it("never returns another user's lists or items", async () => {
     const other = await createTestUser(tx);
     const theirs = await makeList(

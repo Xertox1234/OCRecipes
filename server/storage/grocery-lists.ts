@@ -7,7 +7,16 @@ import {
   groceryListItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, sql, ilike, inArray } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  sql,
+  ilike,
+  inArray,
+  lte,
+  getTableColumns,
+} from "drizzle-orm";
 import { escapeLike } from "./helpers";
 
 // ============================================================================
@@ -42,11 +51,16 @@ export async function getGroceryLists(
 }
 
 export type GroceryListWithOpenItems = GroceryList & {
-  /** The items still to buy. */
+  /** The items still to buy, at most `itemsPerList` of them. */
   items: GroceryListItem[];
+  /** How many items are still to buy, including any past the cap. */
+  openCount: number;
   /** How many items are already ticked off. */
   boughtCount: number;
 };
+
+/** Default cap on the open items returned per list. */
+const OPEN_ITEMS_PER_LIST = 60;
 
 /**
  * The user's newest lists (optionally those whose title contains some text)
@@ -55,7 +69,7 @@ export type GroceryListWithOpenItems = GroceryList & {
  */
 export async function getGroceryListsWithOpenItems(
   userId: string,
-  opts: { titleContains?: string; limit?: number } = {},
+  opts: { titleContains?: string; limit?: number; itemsPerList?: number } = {},
 ): Promise<GroceryListWithOpenItems[]> {
   const lists = await db
     .select()
@@ -71,24 +85,46 @@ export async function getGroceryListsWithOpenItems(
     .orderBy(desc(groceryLists.createdAt))
     .limit(opts.limit ?? 4);
   if (lists.length === 0) return [];
+  const listIds = lists.map((l) => l.id);
+  // is_checked is nullable: NULL counts as not yet bought.
+  const open = sql`${groceryListItems.isChecked} IS NOT TRUE`;
 
-  const items = await db
-    .select()
-    .from(groceryListItems)
-    .where(
-      inArray(
-        groceryListItems.groceryListId,
-        lists.map((l) => l.id),
+  // The cap is applied per list in the query, so a list of thousands of lines
+  // is never read whole; the counts come from their own aggregate.
+  const ranked = db
+    .select({
+      ...getTableColumns(groceryListItems),
+      pos: sql<number>`row_number() OVER (PARTITION BY ${groceryListItems.groceryListId} ORDER BY ${groceryListItems.category}, ${groceryListItems.name}, ${groceryListItems.id})`.as(
+        "pos",
       ),
-    )
-    .orderBy(groceryListItems.category, groceryListItems.name);
+    })
+    .from(groceryListItems)
+    .where(and(inArray(groceryListItems.groceryListId, listIds), open))
+    .as("ranked");
+  const rows = await db
+    .select()
+    .from(ranked)
+    .where(lte(ranked.pos, opts.itemsPerList ?? OPEN_ITEMS_PER_LIST))
+    .orderBy(ranked.groceryListId, ranked.pos);
+  const counts = await db
+    .select({
+      groceryListId: groceryListItems.groceryListId,
+      openCount: sql<number>`count(*) FILTER (WHERE ${open})::int`,
+      boughtCount: sql<number>`count(*) FILTER (WHERE ${groceryListItems.isChecked} IS TRUE)::int`,
+    })
+    .from(groceryListItems)
+    .where(inArray(groceryListItems.groceryListId, listIds))
+    .groupBy(groceryListItems.groceryListId);
+  const countsById = new Map(counts.map((c) => [c.groceryListId, c]));
 
-  return lists.map((list) => {
-    const mine = items.filter((i) => i.groceryListId === list.id);
-    // is_checked is nullable: NULL counts as not yet bought.
-    const open = mine.filter((i) => i.isChecked !== true);
-    return { ...list, items: open, boughtCount: mine.length - open.length };
-  });
+  return lists.map((list) => ({
+    ...list,
+    items: rows
+      .filter((r) => r.groceryListId === list.id)
+      .map(({ pos: _pos, ...item }) => item),
+    openCount: countsById.get(list.id)?.openCount ?? 0,
+    boughtCount: countsById.get(list.id)?.boughtCount ?? 0,
+  }));
 }
 
 export async function getGroceryListWithItems(

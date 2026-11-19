@@ -388,10 +388,13 @@ export async function getMostEatenFoods(
  * reads the copy first). A missing recipe value is copied as 0 — null on the
  * row means "not snapshotted", never "the recipe had no value".
  */
-export async function createDailyLog(log: InsertDailyLog): Promise<DailyLog> {
+export async function createDailyLog(
+  log: InsertDailyLog,
+  executor: Pick<typeof db, "select" | "insert"> = db,
+): Promise<DailyLog> {
   let snapshot = {};
   if (log.recipeId) {
-    const [recipe] = await db
+    const [recipe] = await executor
       .select({
         calories: sql<string>`COALESCE(${mealPlanRecipes.caloriesPerServing}, 0)`,
         protein: sql<string>`COALESCE(${mealPlanRecipes.proteinPerServing}, 0)`,
@@ -402,7 +405,7 @@ export async function createDailyLog(log: InsertDailyLog): Promise<DailyLog> {
       .where(eq(mealPlanRecipes.id, log.recipeId));
     if (recipe) snapshot = recipe;
   }
-  const [dailyLog] = await db
+  const [dailyLog] = await executor
     .insert(dailyLogs)
     .values({ ...log, ...snapshot })
     .returning();

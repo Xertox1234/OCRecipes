@@ -520,12 +520,15 @@ export function register(app: Express): void {
         if (!(await audienceAllowed(req, res, audience, familyProfileId))) {
           return;
         }
-        // A confirmed meal is already counted in the user's nutrition; it
-        // cannot become someone else's.
-        if (
-          audience === "profile" &&
-          (await storage.isMealPlanItemConfirmed(id, req.userId))
-        ) {
+        // Storage refuses a confirmed meal becoming a profile's, under a row
+        // lock shared with the confirm route (a race-free check).
+        const updated = await storage.updateMealPlanItemAudience(
+          id,
+          req.userId,
+          audience,
+          familyProfileId,
+        );
+        if (updated === "confirmed") {
           sendError(
             res,
             409,
@@ -534,12 +537,6 @@ export function register(app: Express): void {
           );
           return;
         }
-        const updated = await storage.updateMealPlanItemAudience(
-          id,
-          req.userId,
-          audience,
-          familyProfileId,
-        );
         if (!updated) {
           sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
           return;
@@ -636,15 +633,18 @@ export function register(app: Express): void {
           return;
         }
 
-        // Fetch meal plan item and verify ownership (IDOR)
-        const mealPlanItem = await storage.getMealPlanItemById(id, req.userId);
-        if (!mealPlanItem) {
+        // Storage scopes the item to the user (IDOR) and refuses a profile's
+        // meal under a row lock shared with the audience change. No duplicate
+        // pre-check: the unique index `daily_logs_unique_meal_plan_confirm`
+        // (user_id, meal_plan_item_id) is the guarantee, and the catch below
+        // maps its violation to 409.
+        const result = await storage.createMealPlanConfirmLog(id, req.userId);
+        if (result.status === "not_found") {
           sendError(res, 404, "Meal plan item not found", ErrorCode.NOT_FOUND);
           return;
         }
-
         // A profile's own meal is never the user's intake.
-        if (mealPlanItem.audience === "profile") {
+        if (result.status === "profile") {
           sendError(
             res,
             400,
@@ -654,22 +654,7 @@ export function register(app: Express): void {
           return;
         }
 
-        // No duplicate pre-check: the unique index
-        // `daily_logs_unique_meal_plan_confirm` (user_id, meal_plan_item_id)
-        // is the guarantee, and the catch below maps its violation to 409.
-
-        // Create daily log entry
-        const dailyLog = await storage.createDailyLog({
-          userId: req.userId,
-          scannedItemId: mealPlanItem.scannedItemId || null,
-          recipeId: mealPlanItem.recipeId || null,
-          mealPlanItemId: mealPlanItem.id,
-          source: "meal_plan_confirm",
-          servings: mealPlanItem.servings || "1",
-          mealType: mealPlanItem.mealType,
-        });
-
-        res.status(201).json(dailyLog);
+        res.status(201).json(result.log);
       } catch (error) {
         // Catch unique constraint violation from concurrent confirms
         if (isUniqueViolation(error)) {
@@ -832,7 +817,7 @@ export function register(app: Express): void {
         // portion of 1. The recipe keeps the AI's yield.
         const features = await getPremiumFeatures(req);
         const family = await getFamilyContext(req.userId, features);
-        const forFamily = family.active && family.profiles.length > 0;
+        const forFamily = family.active && family.profileCount > 0;
 
         // Create all recipes and plan items atomically
         const meals = parsed.data.meals.map((meal) => {

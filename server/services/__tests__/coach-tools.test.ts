@@ -601,12 +601,18 @@ describe("Coach Tools Service", () => {
     over: Partial<
       Awaited<ReturnType<typeof storage.getGroceryListsWithOpenItems>>[number]
     > = {},
-  ) => ({
-    ...createMockGroceryList({ id: 3, title: "Weekly shop" }),
-    items: [createMockGroceryListItem({ id: 1, name: "Milk" })],
-    boughtCount: 2,
-    ...over,
-  });
+  ) => {
+    const items = over.items ?? [
+      createMockGroceryListItem({ id: 1, name: "Milk" }),
+    ];
+    return {
+      ...createMockGroceryList({ id: 3, title: "Weekly shop" }),
+      items,
+      openCount: items.length,
+      boughtCount: 2,
+      ...over,
+    };
+  };
 
   it("get_grocery_lists returns compact lists and sanitizes titles and item text", async () => {
     vi.mocked(storage.getGroceryListsWithOpenItems).mockResolvedValueOnce([
@@ -633,7 +639,7 @@ describe("Coach Tools Service", () => {
     };
     expect(storage.getGroceryListsWithOpenItems).toHaveBeenCalledWith(
       "user-1",
-      { titleContains: undefined, limit: 4 },
+      { titleContains: undefined, limit: 4, itemsPerList: 60 },
     );
     expect(JSON.stringify(out)).not.toMatch(INJECTED);
     expect(out.lists[0]).toMatchObject({ id: 3, boughtCount: 2 });
@@ -649,10 +655,12 @@ describe("Coach Tools Service", () => {
 
   it("get_grocery_lists passes the list name on and caps long lists", async () => {
     vi.mocked(storage.getGroceryListsWithOpenItems).mockResolvedValueOnce([
+      // Storage returns the first 60 open items and counts all 75.
       openList({
-        items: Array.from({ length: 75 }, (_, i) =>
+        items: Array.from({ length: 60 }, (_, i) =>
           createMockGroceryListItem({ id: i + 1, name: `Item ${i}` }),
         ),
+        openCount: 75,
       }),
     ]);
     const out = (await executeToolCall(
@@ -662,7 +670,7 @@ describe("Coach Tools Service", () => {
     )) as { lists: { items: unknown[]; moreItems?: number }[] };
     expect(storage.getGroceryListsWithOpenItems).toHaveBeenCalledWith(
       "user-1",
-      { titleContains: "weekly", limit: 4 },
+      { titleContains: "weekly", limit: 4, itemsPerList: 60 },
     );
     expect(out.lists[0].items).toHaveLength(60);
     expect(out.lists[0].moreItems).toBe(15);

@@ -3,6 +3,7 @@ import {
   type MealPlanRecipe,
   type InsertMealPlanItem,
   type MealPlanItem,
+  type DailyLog,
   scannedItems,
   dailyLogs,
   mealPlanRecipes,
@@ -12,6 +13,7 @@ import { db } from "../db";
 import { eq, and, gte, lte, lt, ne, sql, inArray, isNull } from "drizzle-orm";
 import type { MealAudience } from "@shared/types/family";
 import { getDayBounds } from "./helpers";
+import { createDailyLog } from "./nutrition";
 
 // ============================================================================
 // MEAL PLAN ITEMS
@@ -305,19 +307,88 @@ export async function removeMealPlanItem(
   return result.length > 0;
 }
 
-/** Sets who a planned meal is for; undefined when the item is not the user's. */
+/**
+ * Sets who a planned meal is for; undefined when the item is not the user's,
+ * "confirmed" when it would become a profile's meal but is already counted as
+ * the user's intake.
+ *
+ * The item row is locked FOR UPDATE before the confirmed check, and
+ * {@link createMealPlanConfirmLog} locks the same row FOR SHARE, so the two
+ * serialize. Without the lock they interleave: a confirm's log insert takes
+ * only FOR KEY SHARE (the foreign key), which an audience UPDATE does not
+ * conflict with, and neither side sees the other's uncommitted write.
+ */
 export async function updateMealPlanItemAudience(
   id: number,
   userId: string,
   audience: MealAudience,
   familyProfileId: number | null,
-): Promise<MealPlanItem | undefined> {
-  const [updated] = await db
-    .update(mealPlanItems)
-    .set({ audience, familyProfileId })
-    .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
-    .returning();
-  return updated;
+): Promise<MealPlanItem | undefined | "confirmed"> {
+  return db.transaction(async (tx) => {
+    const [item] = await tx
+      .select({ id: mealPlanItems.id })
+      .from(mealPlanItems)
+      .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
+      .for("update");
+    if (!item) return undefined;
+    // A confirmed meal is already counted in the user's nutrition; it cannot
+    // become someone else's.
+    if (
+      audience === "profile" &&
+      (await isMealPlanItemConfirmed(id, userId, tx))
+    ) {
+      return "confirmed";
+    }
+    const [updated] = await tx
+      .update(mealPlanItems)
+      .set({ audience, familyProfileId })
+      .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
+      .returning();
+    return updated;
+  });
+}
+
+export type MealPlanConfirmResult =
+  | { status: "not_found" }
+  | { status: "profile" }
+  | { status: "created"; log: DailyLog };
+
+/**
+ * Logs a planned meal as the user's intake. Refuses an item that is not the
+ * user's ("not_found") or is planned for a family profile ("profile" — a
+ * profile's meal is never the user's intake). The item row is locked FOR SHARE
+ * so a concurrent change to a profile's meal ({@link updateMealPlanItemAudience})
+ * either lands first and is seen here, or waits and sees this log.
+ *
+ * A second confirm of the same item is refused by the unique index
+ * `daily_logs_unique_meal_plan_confirm`; its violation propagates to the caller.
+ */
+export async function createMealPlanConfirmLog(
+  id: number,
+  userId: string,
+): Promise<MealPlanConfirmResult> {
+  return db.transaction(async (tx) => {
+    const [item] = await tx
+      .select()
+      .from(mealPlanItems)
+      .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
+      .for("share");
+    if (!item) return { status: "not_found" };
+    if (item.audience === "profile") return { status: "profile" };
+    const log = await createDailyLog(
+      {
+        userId,
+        scannedItemId: item.scannedItemId || null,
+        recipeId: item.recipeId || null,
+        mealPlanItemId: item.id,
+        source: "meal_plan_confirm",
+        servings: item.servings || "1",
+        mealType: item.mealType,
+      },
+      tx,
+    );
+    return { status: "created", log };
+  });
 }
 
 export async function reorderMealPlanItems(
@@ -391,8 +462,9 @@ export async function getConfirmedMealPlanItemIds(
 export async function isMealPlanItemConfirmed(
   id: number,
   userId: string,
+  executor: Pick<typeof db, "select"> = db,
 ): Promise<boolean> {
-  const [row] = await db
+  const [row] = await executor
     .select({ id: dailyLogs.id })
     .from(dailyLogs)
     .where(and(eq(dailyLogs.mealPlanItemId, id), eq(dailyLogs.userId, userId)))

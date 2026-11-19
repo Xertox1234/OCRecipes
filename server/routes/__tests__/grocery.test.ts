@@ -95,7 +95,7 @@ describe("Grocery Routes", () => {
     );
     vi.mocked(getFamilyContext).mockResolvedValue({
       active: false,
-      profiles: [],
+      profileCount: 0,
     });
     app = createApp();
   });
@@ -107,9 +107,7 @@ describe("Grocery Routes", () => {
       );
       vi.mocked(getFamilyContext).mockResolvedValue({
         active: true,
-        profiles: [{ id: 1 }, { id: 2 }, { id: 3 }] as Awaited<
-          ReturnType<typeof getFamilyContext>
-        >["profiles"],
+        profileCount: 3,
       });
       vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
         [],

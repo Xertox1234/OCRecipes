@@ -243,7 +243,7 @@ function compactGroceryList(
   >[number],
 ) {
   const shown = list.items.slice(0, GROCERY_ITEMS_PER_LIST);
-  const moreItems = list.items.length - shown.length;
+  const moreItems = list.openCount - shown.length;
   return {
     id: list.id,
     title: sanitizeUserInput(list.title),
@@ -1121,6 +1121,7 @@ export async function executeToolCall(
       const lists = await storage.getGroceryListsWithOpenItems(userId, {
         titleContains: parsed.data.listName || undefined,
         limit: GROCERY_LISTS_RETURNED,
+        itemsPerList: GROCERY_ITEMS_PER_LIST,
       });
       return { lists: lists.map(compactGroceryList) };
     }
