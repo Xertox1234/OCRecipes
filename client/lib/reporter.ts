@@ -10,6 +10,7 @@
  */
 
 import * as Sentry from "@sentry/react-native";
+import { ApiError } from "./api-error";
 
 const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
@@ -160,5 +161,11 @@ export function reportError(error: unknown, context?: string): void {
   if (context) {
     Sentry.addBreadcrumb({ message: context, level: "error" });
   }
-  Sentry.captureException(error);
+  // Tag a failed API call with the server's request id, so the report can be
+  // matched to the server's log line for it (reliability audit L-obs-3).
+  const requestId = error instanceof ApiError ? error.requestId : undefined;
+  Sentry.captureException(
+    error,
+    requestId ? { tags: { request_id: requestId } } : undefined,
+  );
 }

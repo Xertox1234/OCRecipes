@@ -316,5 +316,98 @@ describe("push receipts", () => {
   });
 });
 
+// Reliability audit 2026-11-19 M-obs-3: broken APNs/FCM credentials make every
+// ticket an error, and callers read the failed send as "no device", so the
+// weekly report falls back to the popup and reminders stop with no alert.
+// Credential/setup codes go to error level (Sentry); the logs carry the code,
+// never the ticket or receipt (receipt details hold the device push token).
+describe("push error logging (M-obs-3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN),
+    ]);
+  });
+
+  const loggedText = (spy: { mock: { calls: unknown[][] } }) =>
+    JSON.stringify(spy.mock.calls, (_k, v) =>
+      v instanceof Error ? v.message : v,
+    );
+
+  it.each(["InvalidCredentials", "DeveloperError"])(
+    "a %s ticket is logged at error level with the code only",
+    async (code) => {
+      expoMock.send.mockResolvedValue([
+        {
+          status: "error",
+          message: `"${VALID_TOKEN}" failed`,
+          details: { error: code, expoPushToken: VALID_TOKEN },
+        },
+      ]);
+      const errorSpy = vi.spyOn(logger, "error");
+      const warnSpy = vi.spyOn(logger, "warn");
+
+      await sendPushToUser("1", "title", "body");
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ code, err: expect.any(Error) }),
+        "push-notifications: delivery error",
+      );
+      expect(loggedText(errorSpy) + loggedText(warnSpy)).not.toContain(
+        "ExponentPushToken",
+      );
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    },
+  );
+
+  it("a rate-limit ticket stays a warning, with the code and no ticket", async () => {
+    expoMock.send.mockResolvedValue([
+      {
+        status: "error",
+        message: `"${VALID_TOKEN}" rate limited`,
+        details: { error: "MessageRateExceeded", expoPushToken: VALID_TOKEN },
+      },
+    ]);
+    const errorSpy = vi.spyOn(logger, "error");
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    await sendPushToUser("1", "title", "body");
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      { code: "MessageRateExceeded", userId: "1" },
+      "push-notifications: delivery error",
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(loggedText(warnSpy)).not.toContain("ExponentPushToken");
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("an InvalidCredentials receipt is logged at error level without the token", async () => {
+    vi.useFakeTimers();
+    expoMock.send.mockResolvedValue([{ status: "ok", id: "r1" }]);
+    expoMock.getReceipts.mockResolvedValueOnce({
+      r1: {
+        status: "error",
+        message: `"${VALID_TOKEN}" bad credentials`,
+        details: { error: "InvalidCredentials", expoPushToken: VALID_TOKEN },
+      },
+    });
+    const errorSpy = vi.spyOn(logger, "error");
+
+    await sendPushToUser("1", "title", "body");
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "InvalidCredentials" }),
+      "push-notifications: receipt error",
+    );
+    expect(loggedText(errorSpy)).not.toContain("ExponentPushToken");
+    errorSpy.mockRestore();
+    vi.useRealTimers();
+  });
+});
+
 // The absent-EXPO_ACCESS_TOKEN path is covered in push-notifications-unconfigured.test.ts
 // (a dedicated file that imports the module without the env var set, giving a fresh singleton).

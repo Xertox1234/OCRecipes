@@ -12,7 +12,9 @@ const getAccessToken = vi.fn();
 const GoogleAuthCtor = vi.fn();
 const JWTCtor = vi.fn();
 const jwtClient = { kind: "jwt-client" };
-vi.mock("google-auth-library", () => ({
+// The real gaxios: vertex-client checks `instanceof gaxios.GaxiosError`.
+vi.mock("google-auth-library", async (importOriginal) => ({
+  gaxios: (await importOriginal<typeof import("google-auth-library")>()).gaxios,
   GoogleAuth: vi.fn().mockImplementation(function (opts: unknown) {
     GoogleAuthCtor(opts);
     return { getAccessToken };
@@ -86,11 +88,13 @@ describe("createVertexClient", () => {
         apiKey: expect.any(Function),
       }),
     );
-    expect(JWTCtor).toHaveBeenCalledWith({
-      email: FULL.GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL,
-      key: "-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n",
-      scopes: [VERTEX_SCOPE],
-    });
+    expect(JWTCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: FULL.GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL,
+        key: "-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n",
+        scopes: [VERTEX_SCOPE],
+      }),
+    );
   });
 
   it("hands GoogleAuth a ready JWT client, not the deprecated `credentials` option", () => {

@@ -221,6 +221,59 @@ describe("Recipe Import", () => {
       });
     });
 
+    // Reliability audit 2026-11-19 M-xc-2: mangled names miss grocery merges
+    // and pantry matches. A unit must end at a word boundary ("3 lemons" read
+    // as 3 l "emons"), and ranges, a trailing period, a can size and "3 x"
+    // keep the name clean.
+    it.each([
+      ["1 tsp. salt", { quantity: "1", unit: "tsp", name: "salt" }],
+      [
+        "2-3 cloves garlic",
+        { quantity: "2-3", unit: "cloves", name: "garlic" },
+      ],
+      ["2 to 3 carrots", { quantity: "2 to 3", unit: null, name: "carrots" }],
+      [
+        "1 (14 oz) can tomatoes",
+        { quantity: "1", unit: "can", name: "tomatoes (14 oz)" },
+      ],
+      ["1,5 l milk", { quantity: "1,5", unit: "l", name: "milk" }],
+      [
+        "3 x 400g tins tomatoes",
+        { quantity: "3", unit: null, name: "400g tins tomatoes" },
+      ],
+      ["3 lemons", { quantity: "3", unit: null, name: "lemons" }],
+      ["2 green onions", { quantity: "2", unit: null, name: "green onions" }],
+      ["1 litre stock", { quantity: "1", unit: "litre", name: "stock" }],
+      ["4 ozzies", { quantity: "4", unit: null, name: "ozzies" }],
+      [
+        "200g rice noodles",
+        { quantity: "200", unit: "g", name: "rice noodles" },
+      ],
+      ["1 1/2 cups milk", { quantity: "1 1/2", unit: "cups", name: "milk" }],
+      ["1-1/2 cups milk", { quantity: "1-1/2", unit: "cups", name: "milk" }],
+      ["½ tsp pepper", { quantity: "½", unit: "tsp", name: "pepper" }],
+      ["2 tomatoes", { quantity: "2", unit: null, name: "tomatoes" }],
+      [
+        "1 cup, packed brown sugar",
+        { quantity: "1", unit: "cup", name: "packed brown sugar" },
+      ],
+      ["1 tbsp/15ml oil", { quantity: "1", unit: "tbsp", name: "15ml oil" }],
+      [
+        "2 large, ripe tomatoes",
+        { quantity: "2", unit: "large", name: "ripe tomatoes" },
+      ],
+      [
+        "2 cans (15 oz each) black beans",
+        { quantity: "2", unit: "cans", name: "black beans (15 oz each)" },
+      ],
+      [
+        "1 (400 g) tin chickpeas",
+        { quantity: "1", unit: "tin", name: "chickpeas (400 g)" },
+      ],
+    ])("parses %j", (raw, expected) => {
+      expect(parseIngredientString(raw)).toEqual(expected);
+    });
+
     it("trims whitespace", () => {
       const result = parseIngredientString("  2 tbsp olive oil  ");
       expect(result).toEqual({

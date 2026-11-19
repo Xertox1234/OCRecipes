@@ -48,6 +48,7 @@ import {
   planGroceryCard,
   planPantryCard,
   describeLiveCard,
+  WriteCardEditError,
   type WriteCardOutcome,
   type WriteCardProposal,
 } from "./write-cards";
@@ -498,10 +499,16 @@ async function createWriteCardBlock(
       ...(previous?.status === "replaced" && { replacesCardId: previous.id }),
     };
   } catch (err) {
-    log.warn(
-      { err: toError(err), kind: proposal.kind },
-      "coach write card not built",
-    );
+    // A card the builder refuses on purpose (nothing to log, a recipe gone)
+    // is a warning. Anything else (a storage or migration break) leaves the
+    // reply promising a card that never appears: error level, so Sentry sees
+    // it (reliability audit 2026-11-19, M-obs-2). Never log the payload.
+    const fields = { err: toError(err), kind: proposal.kind };
+    if (err instanceof WriteCardEditError) {
+      log.warn(fields, "coach write card not built");
+    } else {
+      log.error(fields, "coach write card not built");
+    }
     return null;
   }
 }

@@ -162,6 +162,13 @@ export default function RecipeImportScreen() {
     navigation,
   ]);
 
+  // The hidden page failed to load or its renderer died: go straight to the
+  // sign-in sheet instead of waiting out the 15 s timer (reliability audit
+  // 2026-11-19, L-crel-1). Leaving "device" unmounts the WebView.
+  const handleDeviceLoadFailed = useCallback(() => {
+    setState((s) => (s === "device" ? "needs-browser" : s));
+  }, []);
+
   const handleBlocks = useCallback(
     async (blocks: string[], currentUrl: string) => {
       // An empty first page (redirect hop) is skipped; the extractor runs again
@@ -299,7 +306,12 @@ export default function RecipeImportScreen() {
         )}
 
         {state === "device" && (
-          <ImportWebView url={attemptUrl} hidden onBlocks={handleBlocks} />
+          <ImportWebView
+            url={attemptUrl}
+            hidden
+            onBlocks={handleBlocks}
+            onLoadFailed={handleDeviceLoadFailed}
+          />
         )}
 
         {(state === "loading" || state === "device") && (

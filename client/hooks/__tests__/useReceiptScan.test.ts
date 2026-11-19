@@ -86,6 +86,43 @@ describe("useReceiptScan", () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 
+  it("a superseded scan rejects as AbortError even when expo/fetch rejects with a plain Error (M-obs-1)", async () => {
+    // expo/fetch (the global fetch on a device) rejects an abort before
+    // headers as a plain Error, not an AbortError; the global mutation net
+    // would show "Something went wrong" for a cancel the user caused.
+    let calls = 0;
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          calls += 1;
+          if (calls > 1) {
+            resolve(new Response(JSON.stringify({}), { status: 500 }));
+            return;
+          }
+          init.signal?.addEventListener("abort", () =>
+            reject(new Error("fetch failed: Fetch request has been canceled")),
+          );
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useReceiptScan(), { wrapper });
+
+    let first!: Promise<unknown>;
+    act(() => {
+      first = result.current.mutateAsync(["file://photo-1.jpg"]);
+    });
+    const firstOutcome = first.catch((e: unknown) => e);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+
+    act(() => {
+      result.current.mutateAsync(["file://photo-2.jpg"]).catch(() => {});
+    });
+
+    expect(await firstOutcome).toMatchObject({ name: "AbortError" });
+  });
+
   it("appends each compressed photo as a file object expo/fetch can send", async () => {
     const append = vi.spyOn(FormData.prototype, "append");
     const fetchMock = vi.fn(async () => ({

@@ -3,6 +3,7 @@ import {
   civilDateString,
   civilDateToInstant,
   civilHourInTz,
+  sameElapsedTimeOnPreviousDay,
 } from "../civil-date";
 import { getDayBounds } from "../../storage/helpers";
 
@@ -181,5 +182,38 @@ describe("civilHourInTz", () => {
     // Documented in the JSDoc; callers taking a tz from a request must route it
     // through `parseTimezone` first.
     expect(() => civilHourInTz(new Date(), "Not/AZone")).toThrow(RangeError);
+  });
+});
+
+// Reliability audit 2026-11-19 L-xc-3: "yesterday" was now − 24 h, which lands
+// two civil days back in the first hour after a spring-forward.
+describe("sameElapsedTimeOnPreviousDay", () => {
+  it("is 24 h back on an ordinary day", () => {
+    expect(
+      sameElapsedTimeOnPreviousDay(
+        new Date("2026-11-09T18:00:00Z"),
+        "UTC",
+      ).toISOString(),
+    ).toBe("2026-11-08T18:00:00.000Z");
+  });
+
+  it("stays on the previous civil day after a spring-forward", () => {
+    // 2027-03-15 00:30 PDT; the 14th had 23 hours. Expect 00:30 PST on the 14th.
+    const y = sameElapsedTimeOnPreviousDay(
+      new Date("2027-03-15T07:30:00Z"),
+      "America/Los_Angeles",
+    );
+    expect(civilDateString(y, "America/Los_Angeles")).toBe("2027-03-14");
+    expect(y.toISOString()).toBe("2027-03-14T08:30:00.000Z");
+  });
+
+  it("stays on the previous civil day late on a fall-back day", () => {
+    // 2026-11-01 had 25 hours in LA; 23:30 PST that night is 24.5 h after
+    // midnight, more than all of Oct 31. The result must still be Oct 31.
+    const y = sameElapsedTimeOnPreviousDay(
+      new Date("2026-11-02T07:30:00Z"),
+      "America/Los_Angeles",
+    );
+    expect(civilDateString(y, "America/Los_Angeles")).toBe("2026-10-31");
   });
 });

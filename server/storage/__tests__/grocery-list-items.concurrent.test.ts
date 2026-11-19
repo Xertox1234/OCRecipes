@@ -20,6 +20,7 @@ import {
   insertGroceryListItemsUnderCap,
   MAX_GROCERY_LIST_ITEMS,
 } from "../grocery-lists";
+import { GroceryListNotFoundError } from "../grocery-list-errors";
 
 const createdUserIds: string[] = [];
 
@@ -90,7 +91,7 @@ describe("insertGroceryListItemsUnderCap", () => {
     const { userId: otherUserId } = await createCommittedList(0);
     await expect(
       insertGroceryListItemsUnderCap(listId, otherUserId, [{ name: "Sneaky" }]),
-    ).rejects.toThrow("Grocery list not found");
+    ).rejects.toBeInstanceOf(GroceryListNotFoundError);
     expect(await committedCount(listId)).toBe(0);
   });
 

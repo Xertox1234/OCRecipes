@@ -6,6 +6,7 @@
  * satisfying the Storage Layer Purity pattern.
  */
 import MiniSearch from "minisearch";
+import { logger, toError } from "./logger";
 import type { SearchableRecipe } from "@shared/types/recipe-search";
 import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
 import { toTotalTimeMinutes } from "@shared/lib/recipe-time";
@@ -217,8 +218,13 @@ export function addToIndex(doc: SearchableRecipe): void {
   if (documentStore.has(doc.id)) {
     try {
       index.remove({ id: doc.id } as SearchableRecipe);
-    } catch {
-      // ignore if not in index
+    } catch (err) {
+      // Best effort; the add below still runs. Logged so a systematic fault
+      // is not invisible (reliability audit 2026-11-19, L-obs-1).
+      logger.warn(
+        { err: toError(err), id: doc.id },
+        "search index: remove before re-add failed",
+      );
     }
   }
   index.add(doc);
@@ -231,8 +237,8 @@ export function removeFromIndex(id: string): void {
     const doc = documentStore.get(id)!;
     try {
       index.remove(doc);
-    } catch {
-      // ignore
+    } catch (err) {
+      logger.warn({ err: toError(err), id }, "search index: remove failed");
     }
     documentStore.delete(id);
   }

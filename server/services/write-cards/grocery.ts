@@ -24,7 +24,7 @@ import {
   normalizeIngredientName,
   parseQuantityForSum,
 } from "../grocery-generation";
-import { civilDateString } from "../../lib/civil-date";
+import { addCivilDays, civilDateString } from "../../lib/civil-date";
 import {
   groupPantryByKey,
   matchKey,
@@ -128,11 +128,16 @@ function parseGroceryEdits(
   return parsed.data;
 }
 
+/** grocery_list_items.quantity is numeric(10,2), as in the pantry card. */
+const MAX_QUANTITY = 99_999_999.99;
+
 function toRow(item: GroceryCardPayload["items"][number]) {
   const qty = parseQuantityForSum(item.quantity);
   return {
     name: item.name,
-    quantity: qty === null ? null : String(qty),
+    // Too large to store: keep the line, drop the amount, rather than failing
+    // the whole save (reliability audit 2026-11-19, L-xc-5).
+    quantity: qty === null || qty > MAX_QUANTITY ? null : String(qty),
     unit: item.unit,
     category: categorizeIngredient(item.name),
   };
@@ -166,10 +171,8 @@ export async function performGrocerySave(
         userId: ctx.userId,
         title: payload.newListName,
         dateRangeStart: civilDateString(ctx.now, ctx.tz),
-        dateRangeEnd: civilDateString(
-          new Date(ctx.now.getTime() + 6 * 24 * 60 * 60 * 1000),
-          ctx.tz,
-        ),
+        // Calendar days, not 6 × 24 h, which ends a day early across a DST change.
+        dateRangeEnd: addCivilDays(civilDateString(ctx.now, ctx.tz), 6),
       },
       kept.map(toRow),
       MAX_GROCERY_LISTS,

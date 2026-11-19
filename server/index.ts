@@ -414,8 +414,12 @@ function startServer() {
               retentionInFlight = null;
             }
           });
+          // Returned so node-cron's noOverlap can see the run is still going
+          // (reliability audit 2026-11-19, L-rel-4). Deletes are idempotent and
+          // Railway runs one instance, so there is no cross-instance claim.
+          return run;
         },
-        { timezone: "UTC" },
+        { timezone: "UTC", noOverlap: true, name: "retention-cleanup" },
       );
       logger.info(
         { schedule: "0 3 * * * UTC" },

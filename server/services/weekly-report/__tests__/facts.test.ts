@@ -84,6 +84,26 @@ describe("buildWeeklyFacts — protein rule", () => {
   });
 });
 
+// Reliability audit 2026-11-19 L-xc-7: a day whose meals carry no protein
+// figure is unknown, not a missed target — the writer (and the model) read
+// `false` as "not met".
+describe("buildWeeklyFacts — a nutrient no meal recorded", () => {
+  it("is unknown (null) for a logged day, while other nutrients still count", () => {
+    const f = facts({ logs: twoMeals(DATES[0], { calories: 2000 }) });
+    expect(f.days[0].protein).toBeNull();
+    expect(f.days[0].proteinMet).toBeNull();
+    expect(f.days[0].caloriesMet).toBe(true);
+    expect(f.proteinDaysMet).toBe(0);
+    expect(weeklyFactsSchema.safeParse(f).success).toBe(true);
+  });
+
+  it("stays not met (false) on a day with no meals (control)", () => {
+    const f = facts({ logs: twoMeals(DATES[0], { protein: 120 }) });
+    expect(f.days[1].meals).toBe(0);
+    expect(f.days[1].proteinMet).toBe(false);
+  });
+});
+
 describe("buildWeeklyFacts — calorie rule (±10%)", () => {
   it("1800 and 2200 are met; 1799 and 2201 are not", () => {
     const f = facts({

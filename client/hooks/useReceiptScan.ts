@@ -5,6 +5,7 @@ import { tokenStorage } from "@/lib/token-storage";
 import { createUploadFilePart } from "@/lib/upload-file-part";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { ApiError } from "@/lib/api-error";
+import { requestAbortedError } from "@/lib/fetch-timeout";
 import { raiseIfAiSharingRequired } from "@/lib/ai-sharing-events";
 import { logger } from "@/lib/logger";
 import {
@@ -120,13 +121,15 @@ export function useReceiptScan() {
         );
         return parsed.data;
       } catch (error) {
-        // An unmount abort is not a failure.
-        if (!controller.signal.aborted) {
-          logger.warn(
-            `Receipt scan failed at ${stage} after ${Date.now() - stageStart} ms`,
-            error,
-          );
-        }
+        // An abort (unmount, or a newer scan superseding this one) is not a
+        // failure. Rethrow it as a named AbortError: on a device the global
+        // fetch is expo/fetch, which rejects an abort as a plain Error, and the
+        // global mutation net would show "Something went wrong" for it.
+        if (controller.signal.aborted) throw requestAbortedError();
+        logger.warn(
+          `Receipt scan failed at ${stage} after ${Date.now() - stageStart} ms`,
+          error,
+        );
         throw error;
       } finally {
         // Runs on success AND on AbortError (unmount-mid-scan): the abort

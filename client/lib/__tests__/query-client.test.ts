@@ -455,7 +455,7 @@ describe("request deadlines and cancellation (R16 / N3)", () => {
     const { apiRequest } = await import("../query-client");
     const { DEFAULT_REQUEST_TIMEOUT_MS } = await import("../fetch-timeout");
     const p = apiRequest("GET", "/api/x", undefined, undefined, null);
-    const settled = expect(p).rejects.toMatchObject({ name: "AbortError" });
+    const settled = expect(p).rejects.toMatchObject({ name: "TimeoutError" });
     await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS);
     await settled;
   });
@@ -485,7 +485,7 @@ describe("request deadlines and cancellation (R16 / N3)", () => {
     const { DEFAULT_REQUEST_TIMEOUT_MS } = await import("../fetch-timeout");
     const fn = getQueryFn({ on401: "throw" });
     const p = fn(queryCtx(new AbortController().signal));
-    const settled = expect(p).rejects.toMatchObject({ name: "AbortError" });
+    const settled = expect(p).rejects.toMatchObject({ name: "TimeoutError" });
     await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS);
     await settled;
   });

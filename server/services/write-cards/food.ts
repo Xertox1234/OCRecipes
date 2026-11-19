@@ -9,7 +9,10 @@ import { lookupNutrition as defaultLookupNutrition } from "../nutrition-lookup";
 import { parseServingGrams } from "../barcode-lookup";
 import { scaleToGrams } from "../portion-nutrition";
 import { inferMealTimeHint } from "../../lib/meal-time-hint";
-import { civilHourInTz } from "../../lib/civil-date";
+import {
+  civilHourInTz,
+  sameElapsedTimeOnPreviousDay,
+} from "../../lib/civil-date";
 import {
   createScannedItemWithLog,
   softDeleteScannedItem,
@@ -159,13 +162,11 @@ function parseFoodEdits(p: FoodCardPayload, raw: unknown): FoodCardEdits {
   return parsed.data;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 export async function performFoodSave(
   tx: WriteCardTx,
   card: CoachWriteCard,
   rawEdits: unknown,
-  ctx: { userId: string; now: Date },
+  ctx: { userId: string; tz: string; now: Date },
 ): Promise<CoachWriteCardSavedRefs> {
   const payload = card.payload as FoodCardPayload;
   const edits = parseFoodEdits(payload, rawEdits);
@@ -176,7 +177,9 @@ export async function performFoodSave(
   const mealType = edits.mealType ?? payload.mealType;
   const day = edits.day ?? payload.day;
   const occurredAt =
-    day === "yesterday" ? new Date(ctx.now.getTime() - DAY_MS) : undefined;
+    day === "yesterday"
+      ? sameElapsedTimeOnPreviousDay(ctx.now, ctx.tz)
+      : undefined;
 
   const scannedItemIds: number[] = [];
   // Sequential on one tx client (database rules: never Promise.all on a tx).

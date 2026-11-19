@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { getLastWebViewProps } from "../../../../test/mocks/react-native-webview";
 import { ImportWebView } from "../ImportWebView";
@@ -26,4 +26,26 @@ describe("ImportWebView lockdown", () => {
     expect(gate({ url: "ocrecipes://x", isTopFrame: true })).toBe(false);
     expect(gate({ url: "https://a.test", isTopFrame: true })).toBe(true);
   });
+});
+
+// Reliability audit 2026-11-19 L-crel-1: a page that fails to load (offline,
+// a killed renderer) must be reported, or the screen reads it as "no recipe".
+describe("ImportWebView load failure", () => {
+  it.each(["onError", "onContentProcessDidTerminate", "onRenderProcessGone"])(
+    "%s reports a failed load",
+    (handler) => {
+      const onLoadFailed = vi.fn();
+      renderComponent(
+        <ImportWebView
+          url="https://a.test/r"
+          onBlocks={() => {}}
+          onLoadFailed={onLoadFailed}
+        />,
+      );
+      (getLastWebViewProps()[handler] as (e: unknown) => void)({
+        nativeEvent: {},
+      });
+      expect(onLoadFailed).toHaveBeenCalledOnce();
+    },
+  );
 });

@@ -166,7 +166,8 @@ async function postCoverSet(
   input: CoverSetRequest,
 ): Promise<CoverCandidateSet> {
   // Own signal, so apiRequest's shorter default deadline doesn't apply.
-  // AbortController + setTimeout: Hermes has no AbortSignal.timeout.
+  // AbortController + setTimeout rather than AbortSignal.timeout, so the
+  // timer is cleared as soon as the request settles.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), COVER_SET_DEADLINE_MS);
   try {

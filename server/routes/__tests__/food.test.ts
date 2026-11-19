@@ -25,7 +25,15 @@ vi.mock("express-rate-limit");
 
 vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
 
-vi.mock("../../lib/openai", () => ({ isAiConfigured: true }));
+const { openaiState } = vi.hoisted(() => ({
+  openaiState: { direct: true },
+}));
+vi.mock("../../lib/openai", () => ({
+  isAiConfigured: true,
+  get isOpenAIDirectConfigured() {
+    return openaiState.direct;
+  },
+}));
 
 vi.mock("../../services/food-nlp", () => ({
   parseNaturalLanguageFood: vi.fn(),
@@ -186,9 +194,30 @@ describe("Food Routes", () => {
 
     beforeEach(() => {
       process.env.VOICE_TRANSCRIPTION_ENABLED = "true";
+      openaiState.direct = true;
     });
     afterAll(() => {
       delete process.env.VOICE_TRANSCRIPTION_ENABLED;
+      openaiState.direct = true;
+    });
+
+    // M-rel-3: transcription is the one path still on the OpenAI-direct key;
+    // the aiChat route guard no longer reads that key.
+    it("answers 503 AI_NOT_CONFIGURED when the OpenAI-direct key is unset", async () => {
+      openaiState.direct = false;
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+
+      const res = await request(app)
+        .post("/api/food/transcribe")
+        .set("Authorization", "Bearer token")
+        .attach("audio", VALID_M4A_HEADER, {
+          filename: "test.m4a",
+          contentType: "audio/m4a",
+        });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("AI_NOT_CONFIGURED");
+      expect(transcribeAudio).not.toHaveBeenCalled();
     });
 
     it("returns 403 for non-premium users", async () => {

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { addGroceryCardArgsSchema, logFoodCardArgsSchema } from "../tool-args";
+import {
+  addGroceryCardArgsSchema,
+  addMealPlanCardArgsSchema,
+  logFoodCardArgsSchema,
+} from "../tool-args";
 
 // The model writes this text and the card shows and saves it, without it ever
 // passing through the reply's output screen (audit 2026-11-12).
@@ -58,5 +62,27 @@ describe("write-card tool arguments", () => {
       addGroceryCardArgsSchema.safeParse(grocery({}, { listName: UNSAFE }))
         .success,
     ).toBe(false);
+  });
+});
+
+// L-xc-4: a regex alone let "2026-02-30" through; Postgres then rejected the
+// date after the model had already said the card was shown.
+describe("meal plan card plannedDate", () => {
+  const plan = (plannedDate: string) => ({
+    rows: [
+      {
+        plannedDate,
+        mealType: "dinner",
+        recipe: { source: "community", id: 1 },
+      },
+    ],
+  });
+  it("accepts a real date (control)", () => {
+    expect(
+      addMealPlanCardArgsSchema.safeParse(plan("2026-02-28")).success,
+    ).toBe(true);
+  });
+  it.each(["2026-02-30", "2026-13-45", "2026-00-10"])("rejects %s", (date) => {
+    expect(addMealPlanCardArgsSchema.safeParse(plan(date)).success).toBe(false);
   });
 });

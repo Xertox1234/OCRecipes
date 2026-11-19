@@ -255,6 +255,41 @@ describe("grocery write card", () => {
     expect(await itemsOf(foreign.id)).toHaveLength(0);
   });
 
+  it("a new list spans seven civil days even across a DST change (L-xc-3)", async () => {
+    const p = await buildGroceryPayload(args, user.id);
+    // 2026-11-01 00:30 PDT, the 25-hour fall-back day in Los Angeles.
+    const refs = await performGrocerySave(
+      tx,
+      card(p),
+      { listId: "new" },
+      {
+        userId: user.id,
+        tz: "America/Los_Angeles",
+        now: new Date("2026-11-01T07:30:00Z"),
+      },
+    );
+    const [created] = await tx
+      .select()
+      .from(schema.groceryLists)
+      .where(eq(schema.groceryLists.id, refs.createdListId!));
+    expect(created.dateRangeStart).toBe("2026-11-01");
+    expect(created.dateRangeEnd).toBe("2026-11-07");
+  });
+
+  it("a quantity too large for numeric(10,2) is saved without a quantity (L-xc-5)", async () => {
+    const list = await makeList("Weekly shop", new Date("2026-11-08"));
+    const p = await buildGroceryPayload(
+      addGroceryCardArgsSchema.parse({
+        items: [{ name: "Rice", quantity: "1000000000", unit: "g" }],
+      }),
+      user.id,
+    );
+    await performGrocerySave(tx, card(p), { listId: list.id }, ctx());
+    expect(await itemsOf(list.id)).toMatchObject([
+      { name: "Rice", quantity: null, unit: "g" },
+    ]);
+  });
+
   it("save to new list creates it and undo deletes it", async () => {
     const p = await buildGroceryPayload(args, user.id);
     const refs = await performGrocerySave(

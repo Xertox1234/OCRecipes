@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api-error";
+import { ApiError, OfflineError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   shouldTryDeviceFallback,
@@ -80,5 +80,14 @@ describe("shouldTryDeviceFallback", () => {
   it("is false for a plain Error and undefined", () => {
     expect(shouldTryDeviceFallback(new Error("x"))).toBe(false);
     expect(shouldTryDeviceFallback(undefined)).toBe(false);
+  });
+});
+
+describe("offline (L-crel-2)", () => {
+  it("says so, and does not try the on-device fallback", () => {
+    expect(urlImportErrorCopy(new OfflineError())).toBe(
+      "You're offline. Connect, then try again.",
+    );
+    expect(shouldTryDeviceFallback(new OfflineError())).toBe(false);
   });
 });

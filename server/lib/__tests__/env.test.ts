@@ -406,3 +406,56 @@ describe("validateEnv IAP / RTDN configuration", () => {
     expect(ws.filter((w) => /APPLE_|GOOGLE_/.test(w))).toEqual([]);
   });
 });
+
+describe("validateEnv AI route warnings (reliability audit M-rel-3)", () => {
+  const saved = { ...process.env };
+  const VERTEX = {
+    GOOGLE_VERTEX_PROJECT: "oc-vision",
+    GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL: "ai@oc-vision.iam.gserviceaccount.com",
+    GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY: "pem",
+  };
+  const warned = (needle: string) =>
+    mockWarn.mock.calls.some((c) => String(c[1]).includes(needle));
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE };
+    process.env.NODE_ENV = "development";
+    delete process.env.RECEIPT_VALIDATION_STUB;
+    delete process.env.OPENROUTER_API_KEY;
+    for (const k of Object.keys(VERTEX)) delete process.env[k];
+    mockWarn.mockClear();
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it("warns when neither OpenRouter nor Vertex is configured", async () => {
+    const { validateEnv } = await load();
+    validateEnv();
+    expect(warned("No AI route configured")).toBe(true);
+  });
+
+  it("does not warn about the AI route when OpenRouter is set", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    const { validateEnv } = await load();
+    validateEnv();
+    expect(warned("No AI route configured")).toBe(false);
+  });
+
+  it("does not warn when the full Vertex set is present", async () => {
+    Object.assign(process.env, VERTEX);
+    const { validateEnv } = await load();
+    validateEnv();
+    expect(warned("No AI route configured")).toBe(false);
+    expect(warned("GOOGLE_VERTEX_")).toBe(false);
+  });
+
+  it("names the missing variable when the Vertex set is only partly present", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    Object.assign(process.env, VERTEX);
+    delete process.env.GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY;
+    const { validateEnv } = await load();
+    validateEnv();
+    expect(warned("GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY")).toBe(true);
+    expect(warned("Vertex route is off")).toBe(true);
+  });
+});

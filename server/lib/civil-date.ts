@@ -131,6 +131,36 @@ export function civilDateToInstant(dateStr: string, tz: string = "UTC"): Date {
   return new Date(civilMidnightUtcMs(year, month, day, tz));
 }
 
+/** Add whole days to a `yyyy-mm-dd` civil date (calendar maths, no tz). */
+export function addCivilDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * An instant on the previous civil date in `tz`, the same time after its local
+ * midnight as `now` is after today's. On a day with a DST change that is up to
+ * an hour off the wall-clock time; the DATE is what matters here. Not
+ * `now - 24 h`, which lands two civil days back in the first hour after a
+ * spring-forward. Clamped to the previous date, whose day can be shorter than
+ * the time elapsed since today's midnight (late on a fall-back day)
+ * (reliability audit 2026-11-19, L-xc-3).
+ */
+export function sameElapsedTimeOnPreviousDay(
+  now: Date,
+  tz: string = "UTC",
+): Date {
+  const today = civilDateString(now, tz);
+  const todayStart = civilDateToInstant(today, tz).getTime();
+  const yesterdayStart = civilDateToInstant(
+    addCivilDays(today, -1),
+    tz,
+  ).getTime();
+  return new Date(
+    Math.min(yesterdayStart + (now.getTime() - todayStart), todayStart - 1),
+  );
+}
+
 /**
  * The hour (0-23) of an INSTANT as seen in `tz`.
  *

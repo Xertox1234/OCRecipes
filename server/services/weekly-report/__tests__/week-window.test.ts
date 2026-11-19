@@ -10,7 +10,7 @@ describe("reportWeekFor", () => {
     );
     expect(w.weekStart).toBe("2026-11-01");
     expect(w.weekEnd).toBe("2026-11-07");
-    expect(w.isSundayEvening).toBe(false);
+    expect(w.isReportDue).toBe(false);
   });
 
   it("Sunday 18:00 in Los Angeles reports the week that just ended", () => {
@@ -21,7 +21,7 @@ describe("reportWeekFor", () => {
     );
     expect(w.weekStart).toBe("2026-11-08");
     expect(w.weekEnd).toBe("2026-11-14");
-    expect(w.isSundayEvening).toBe(true);
+    expect(w.isReportDue).toBe(true);
     expect(w.fromUtc.toISOString()).toBe("2026-11-08T08:00:00.000Z");
     expect(w.toUtc.toISOString()).toBe("2026-11-15T08:00:00.000Z");
   });
@@ -45,7 +45,23 @@ describe("reportWeekFor", () => {
     );
     expect(w.weekStart).toBe("2026-11-08");
     expect(w.weekEnd).toBe("2026-11-14");
-    expect(w.isSundayEvening).toBe(true);
+    expect(w.isReportDue).toBe(true);
     expect(w.toUtc.toISOString()).toBe("2026-11-14T11:00:00.000Z");
+  });
+
+  // Reliability audit 2026-11-19 M-rel-1: a restart or DB blip on the single
+  // 18:00 tick lost the week's report. Generation is idempotent per (user,
+  // week), so each later tick until 22:00 is a catch-up; none runs late at night.
+  it.each([
+    ["Sun 17:00", "2026-11-16T01:00:00Z", false],
+    ["Sun 18:00", "2026-11-16T02:00:00Z", true],
+    ["Sun 19:30", "2026-11-16T03:30:00Z", true],
+    ["Sun 21:59", "2026-11-16T05:59:00Z", true],
+    ["Sun 22:00", "2026-11-16T06:00:00Z", false],
+    ["Mon 18:00", "2026-11-17T02:00:00Z", false],
+  ])("Los Angeles %s (%s) → due %s", (_label, iso, due) => {
+    expect(
+      reportWeekFor(new Date(iso), "America/Los_Angeles").isReportDue,
+    ).toBe(due);
   });
 });

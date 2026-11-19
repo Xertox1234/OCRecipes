@@ -7,6 +7,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { parseTimezone } from "../lib/civil-date";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { logger, toError } from "../lib/logger";
 import {
   afterWriteCardSave,
   performWriteCardSave,
@@ -44,6 +45,25 @@ const cardIdSchema = z.string().uuid();
 const saveBodySchema = z
   .object({ edits: z.record(z.string(), z.unknown()).optional() })
   .strict();
+
+/**
+ * Run the post-commit steps (search-index writes). The card is already saved,
+ * so one failing step must not skip the rest or turn the reply into a 500 —
+ * the app would retry and hit "already saved" (reliability audit 2026-11-19,
+ * L-obs-1). A best-effort side effect: warn, not error.
+ */
+function runAfterCommit(steps: (() => void)[]): void {
+  for (const step of steps) {
+    try {
+      step();
+    } catch (err) {
+      logger.warn(
+        { err: toError(err) },
+        "coach write card: after-commit step failed",
+      );
+    }
+  }
+}
 
 export function register(app: Express): void {
   app.post(
@@ -95,7 +115,7 @@ export function register(app: Express): void {
             }),
           body.data.edits,
         );
-        for (const fn of afterCommit) fn();
+        runAfterCommit(afterCommit);
         switch (result.status) {
           case "not_found":
             return sendError(res, 404, "Card not found", ErrorCode.NOT_FOUND);
@@ -159,7 +179,7 @@ export function register(app: Express): void {
           (tx, card) =>
             revertWriteCardSave(tx, card, (fn) => afterCommit.push(fn)),
         );
-        for (const fn of afterCommit) fn();
+        runAfterCommit(afterCommit);
         switch (result.status) {
           case "not_found":
             return sendError(res, 404, "Card not found", ErrorCode.NOT_FOUND);

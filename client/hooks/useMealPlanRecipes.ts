@@ -3,8 +3,10 @@ import {
   useMutation,
   useQueryClient,
   keepPreviousData,
+  onlineManager,
 } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { OfflineError } from "@/lib/api-error";
 import type {
   MealPlanRecipe,
   RecipeIngredient,
@@ -131,12 +133,24 @@ export function useImportRecipeFromUrl() {
   });
 }
 
+/**
+ * "always" + an online check: with the default "online", an offline import
+ * pauses (the screen's spinner never stops) and then fires on reconnect for a
+ * screen that may be gone. Fail fast with OfflineError instead (reliability
+ * audit 2026-11-19, L-crel-2).
+ */
+function throwIfOffline(): void {
+  if (!onlineManager.isOnline()) throw new OfflineError();
+}
+
 export function useParseRecipeFromPage() {
   return useMutation({
+    networkMode: "always",
     mutationFn: async ({
       url,
       ldJson,
     }: ParsePageParams): Promise<ImportedRecipeData> => {
+      throwIfOffline();
       const res = await apiRequest(
         "POST",
         "/api/meal-plan/recipes/parse-page",
@@ -152,7 +166,9 @@ export function useParseRecipeFromPage() {
 
 export function useParseRecipeFromUrl() {
   return useMutation({
+    networkMode: "always",
     mutationFn: async (url: string): Promise<ImportedRecipeData> => {
+      throwIfOffline();
       const res = await apiRequest("POST", "/api/meal-plan/recipes/parse-url", {
         url,
       });

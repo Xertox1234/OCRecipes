@@ -1,5 +1,9 @@
-import { ApiError } from "@/lib/api-error";
+import { ApiError, OfflineError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
+
+/** Shown when an import is refused before sending because the device is offline. */
+export const OFFLINE_IMPORT_MESSAGE =
+  "You're offline. Connect, then try again.";
 
 /**
  * Map a URL-import failure to user-facing copy. The server sends every import
@@ -7,6 +11,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
  * `ApiError.code` instead.
  */
 export function urlImportErrorCopy(error: unknown): string {
+  if (error instanceof OfflineError) return OFFLINE_IMPORT_MESSAGE;
   if (error instanceof ApiError) {
     switch (error.code) {
       case ErrorCode.FETCH_FAILED:

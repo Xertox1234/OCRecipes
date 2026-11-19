@@ -91,6 +91,7 @@ export async function performWriteCardSave(
     case "food":
       return performFoodSave(tx, card, parsed.data, {
         userId: ctx.userId,
+        tz: ctx.tz,
         now: ctx.now,
       });
     case "grocery":
