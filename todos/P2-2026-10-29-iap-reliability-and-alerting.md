@@ -70,3 +70,7 @@ Each item checked against the code first:
   - Store notifications on an ownerless row still record refunds/expiries; a renewal returns `ownerless` and extends no one.
   - **Prod migration must be applied and verified BEFORE that PR merges** (owner runs or authorises it).
 - **Landed 2026-11-06:** #1765 (server fixes) and #1766 (M-obs-4) merged. Prod migration 0038 applied (owner-authorised via the Railway CLI); prod verify printed `YES|n`. #1767 carries L-data-8. **Left on this todo: only the launch-gated sandbox purchase/restore/refund checks.**
+
+### 2026-11-19
+
+- **Added from the 2026-11-19 reliability audit (L-rel-5):** the Apple receipt verifier and the #1857 first-claim status check (`server/services/apple-subscription-status.ts:19-107`, `receipt-validation.ts:125-144`, `routes/subscription.ts:78-101`) are pinned to one `APPLE_ENVIRONMENT`. With `production`, a TestFlight / App Review sandbox purchase fails, and the status call would return 404 → `STORE_API_ERROR` + a Sentry event on every retry. Apple's documented approach is production first, then sandbox on "not found". Also: the status call's `Promise.race` timeout does not abort the underlying HTTP request. Check both during the launch-gated sandbox pass.

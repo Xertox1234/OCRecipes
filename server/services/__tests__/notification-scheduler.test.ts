@@ -808,6 +808,25 @@ describe("weekly report schedule", () => {
     expect(sendDueWeeklyReportPushes).toHaveBeenCalledWith(now);
   });
 
+  // M-rel-1: a missed 18:00 tick (restart, DB blip) is caught up later the
+  // same evening; generation skips a week that already has a report.
+  it("catches up a user later on Sunday evening, before 22:00", async () => {
+    setupUsers();
+    // 2026-11-16T05:00Z = Sun 21:00 in LA; Mon 14:00 in Tokyo; Mon 05:00 UTC.
+    const now = new Date("2026-11-16T05:00:00Z");
+    await runWeeklyReports(now);
+    expect(vi.mocked(generateWeeklyReportForUser).mock.calls).toEqual([
+      ["la-user", now, "America/Los_Angeles"],
+    ]);
+  });
+
+  it("does not run at Sunday 22:00", async () => {
+    setupUsers();
+    const now = new Date("2026-11-16T06:00:00Z"); // Sun 22:00 in LA
+    await runWeeklyReports(now);
+    expect(generateWeeklyReportForUser).not.toHaveBeenCalled();
+  });
+
   it("still sends due pushes in an hour when nobody is at Sunday 18:00", async () => {
     setupUsers();
     const now = new Date("2026-11-17T17:00:00Z"); // Tuesday everywhere

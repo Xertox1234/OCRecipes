@@ -11,7 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { AppState, Platform } from "react-native";
 import { tokenStorage } from "./token-storage";
-import { ApiError } from "./api-error";
+import { ApiError, OfflineError } from "./api-error";
 import { raiseIfAiSharingRequired } from "./ai-sharing-events";
 import { fetchWithTimeout } from "./fetch-timeout";
 import { queryKeyLabel, reportError } from "./reporter";
@@ -65,8 +65,23 @@ async function throwIfResNotOk(res: Response) {
     // and existing message-based callers stay valid. The numeric `status` is
     // also attached so callers can branch on the status class (4xx vs 5xx)
     // without regexing the message (see offline-queue-drain.ts).
-    throw new ApiError(`${res.status}: ${text}`, code, res.status);
+    const err = new ApiError(`${res.status}: ${text}`, code, res.status);
+    err.requestId = readRequestId(res);
+    throw err;
   }
+}
+
+/** The server's request ids are UUIDs (server/index.ts genReqId). */
+const REQUEST_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The response's `X-Request-Id`, when it is a well-formed id. Tolerates a
+ * response with no `headers` (test doubles build bare objects).
+ */
+function readRequestId(res: Response): string | undefined {
+  const value = (res.headers as Headers | undefined)?.get("x-request-id");
+  return value && REQUEST_ID.test(value) ? value : undefined;
 }
 
 type SessionExpiryListener = () => void;
@@ -296,8 +311,9 @@ export function resolveImageUrl(
 
 /**
  * Per-query opt-out flag. Set `meta: { silentError: true }` on a query whose
- * screen already renders its own error UI, to suppress the global toast and
- * avoid double-reporting the same failure.
+ * screen already renders its own error UI, to suppress the global toast so
+ * the user is not shown the same failure twice. The failure is still reported
+ * to Sentry (see `queryCache` below).
  */
 export interface QueryErrorMeta extends Record<string, unknown> {
   silentError?: boolean;
@@ -328,8 +344,9 @@ export function shouldSurfaceQueryError(
  * Per-mutation opt-out flag. Set `meta: { silentError: true }` on a mutation
  * whose call site already shows its own visible error (an `onError` with
  * Alert/toast, a try/catch around `mutateAsync` that surfaces one, or an
- * `isError`-driven inline error view), to suppress the global toast and
- * avoid double-reporting the same failure. Mirrors `QueryErrorMeta`.
+ * `isError`-driven inline error view), to suppress the global toast so the
+ * user is not shown the same failure twice. The failure is still reported to
+ * Sentry. Mirrors `QueryErrorMeta`.
  */
 export interface MutationErrorMeta extends Record<string, unknown> {
   silentError?: boolean;
@@ -358,6 +375,9 @@ export function shouldSurfaceMutationError(
     return false;
   }
   if (error instanceof Error && /^4\d\d:/.test(error.message)) return false;
+  // Refused before sending because the device is offline (L-crel-2): the
+  // screen says so, and it is not a failure to report.
+  if (error instanceof OfflineError) return false;
   return true;
 }
 
@@ -403,10 +423,15 @@ const GLOBAL_QUERY_ERROR_MESSAGE =
  * rather than appending, so an offline storm of failing queries/mutations
  * collapses to a single visible toast. Do not reintroduce a queue here.
  */
+// `silentError` hides only the toast: an opted-out call still reports a
+// failure the toast filter would otherwise surface (reliability audit
+// 2026-11-19, M-obs-4). Filtering with `undefined` meta keeps the same
+// 4xx / deliberate-cancel exclusions for both.
 const queryCache = new QueryCache({
   onError: (error, query) => {
-    if (!shouldSurfaceQueryError(error, query.meta)) return;
+    if (!shouldSurfaceQueryError(error, undefined)) return;
     reportError(error, `QueryCache.onError [${queryKeyLabel(query.queryKey)}]`);
+    if (!shouldSurfaceQueryError(error, query.meta)) return;
     queryErrorListeners.forEach((listener) => {
       listener(GLOBAL_QUERY_ERROR_MESSAGE);
     });
@@ -423,11 +448,12 @@ const GLOBAL_MUTATION_ERROR_MESSAGE = "Something went wrong. Please try again.";
  */
 const mutationCache = new MutationCache({
   onError: (error, _variables, _onMutateResult, mutation) => {
-    if (!shouldSurfaceMutationError(error, mutation.meta)) return;
+    if (!shouldSurfaceMutationError(error, undefined)) return;
     reportError(
       error,
       `MutationCache.onError [${mutation.options.mutationKey ? queryKeyLabel(mutation.options.mutationKey) : mutation.mutationId}]`,
     );
+    if (!shouldSurfaceMutationError(error, mutation.meta)) return;
     queryErrorListeners.forEach((listener) => {
       listener(GLOBAL_MUTATION_ERROR_MESSAGE);
     });

@@ -1,3 +1,4 @@
+import { GroceryListNotFoundError } from "./grocery-list-errors";
 import {
   type GroceryList,
   type InsertGroceryList,
@@ -210,7 +211,7 @@ export async function insertGroceryListItemsUnderCap(
           eq(groceryLists.userId, userId),
         ),
       );
-    if (!owned) throw new Error("Grocery list not found for this user");
+    if (!owned) throw new GroceryListNotFoundError();
     const [countRow] = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(groceryListItems)

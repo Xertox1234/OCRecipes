@@ -125,7 +125,7 @@ describe("performWriteCardSave", () => {
       tx,
       foodCard,
       { counts: [1, 1] },
-      { userId: "1", now: ctx.now },
+      { userId: "1", tz: ctx.tz, now: ctx.now },
     );
   });
 });

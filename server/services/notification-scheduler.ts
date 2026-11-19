@@ -358,7 +358,8 @@ export async function sendMealLogReminders(
 
 /**
  * Coach weekly report, run every hour: write the report for each user whose
- * local time is Sunday 18:00, then send every push that is due (including
+ * local time is Sunday 18:00–21:59 (the later ticks catch up a missed one —
+ * see WEEKLY_REPORT_CATCH_UP_HOURS), then send every push that is due (including
  * ones held overnight). Generation is idempotent per (user, week) and pushes
  * are claimed before sending, so a re-run sends nothing twice.
  */
@@ -370,14 +371,13 @@ export async function runWeeklyReports(now: Date): Promise<void> {
         tzMap = await storage.getUserTimezones(pageUserIds);
       } catch (err) {
         logger.error(
-          { err },
+          { err: toError(err) },
           "notification-scheduler: failed to fetch timezones for weekly report page",
         );
         return;
       }
       const due = pageUserIds.filter(
-        (id) =>
-          reportWeekFor(now, parseTimezone(tzMap.get(id))).isSundayEvening,
+        (id) => reportWeekFor(now, parseTimezone(tzMap.get(id))).isReportDue,
       );
       await runBounded(due, async (userId) => {
         try {
@@ -388,7 +388,7 @@ export async function runWeeklyReports(now: Date): Promise<void> {
           );
         } catch (err) {
           logger.error(
-            { err, userId },
+            { err: toError(err), userId },
             "notification-scheduler: failed weekly report for user",
           );
         }

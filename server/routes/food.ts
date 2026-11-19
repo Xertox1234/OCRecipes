@@ -8,6 +8,7 @@ import {
   handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
+  checkOpenAIDirectConfigured,
   checkAiSharing,
   claimAiCallOrReject,
 } from "./_helpers";
@@ -94,6 +95,9 @@ export function register(app: Express): void {
           );
         }
 
+        // Transcription uses the OpenAI-direct key; parsing the transcript
+        // uses aiChat. Both must be configured.
+        if (!checkOpenAIDirectConfigured(res)) return;
         if (!checkAiConfigured(res)) return;
         if (!(await checkAiSharing(req, res))) return;
 

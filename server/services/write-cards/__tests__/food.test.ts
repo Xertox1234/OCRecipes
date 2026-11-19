@@ -325,7 +325,7 @@ describe("performFoodSave / revertFoodSave", () => {
       tx,
       card(),
       { counts: [3, 0], mealType: "lunch" },
-      { userId: user.id, now: new Date() },
+      { userId: user.id, tz: "UTC", now: new Date() },
     );
     expect(refs.scannedItemIds).toHaveLength(1);
     const logs = await logsFor();
@@ -347,12 +347,26 @@ describe("performFoodSave / revertFoodSave", () => {
       tx,
       card(),
       { day: "yesterday" },
-      { userId: user.id, now },
+      { userId: user.id, tz: "UTC", now },
     );
     const logs = await logsFor();
     expect(logs).toHaveLength(2);
     for (const l of logs) {
       expect(l.loggedAt.toISOString()).toBe("2026-11-08T18:00:00.000Z");
+    }
+  });
+
+  it("yesterday keeps the previous civil day across a DST change (L-xc-3)", async () => {
+    // 2027-03-15 00:30 in Los Angeles, just after the 23-hour 14th.
+    const now = new Date("2027-03-15T07:30:00Z");
+    await performFoodSave(
+      tx,
+      card(),
+      { day: "yesterday" },
+      { userId: user.id, tz: "America/Los_Angeles", now },
+    );
+    for (const l of await logsFor()) {
+      expect(l.loggedAt.toISOString()).toBe("2027-03-14T08:30:00.000Z");
     }
   });
 
@@ -362,7 +376,7 @@ describe("performFoodSave / revertFoodSave", () => {
         tx,
         card(),
         { calories: 1 },
-        { userId: user.id, now: new Date() },
+        { userId: user.id, tz: "UTC", now: new Date() },
       ),
     ).rejects.toBeInstanceOf(WriteCardEditError);
     expect(await logsFor()).toHaveLength(0);
@@ -374,7 +388,7 @@ describe("performFoodSave / revertFoodSave", () => {
         tx,
         card(),
         { counts: [1] },
-        { userId: user.id, now: new Date() },
+        { userId: user.id, tz: "UTC", now: new Date() },
       ),
     ).rejects.toBeInstanceOf(WriteCardEditError);
   });
@@ -385,7 +399,7 @@ describe("performFoodSave / revertFoodSave", () => {
         tx,
         card(),
         { counts: [0, 0] },
-        { userId: user.id, now: new Date() },
+        { userId: user.id, tz: "UTC", now: new Date() },
       ),
     ).rejects.toBeInstanceOf(WriteCardEditError);
   });
@@ -395,7 +409,7 @@ describe("performFoodSave / revertFoodSave", () => {
       tx,
       card(),
       {},
-      { userId: user.id, now: new Date() },
+      { userId: user.id, tz: "UTC", now: new Date() },
     );
     await revertFoodSave(
       tx,

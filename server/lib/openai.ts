@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { logger } from "./logger";
-import { OPENAI_DEFAULT_TIMEOUT_MS } from "./ai-config";
+import { OPENAI_DEFAULT_TIMEOUT_MS, hasAiChatRoute } from "./ai-config";
 
 // Timeout constants live in ai-config.ts (constructs nothing); re-exported so
 // existing importers and their vi.mock("…/lib/openai") factories keep applying.
@@ -12,12 +12,25 @@ export {
   VERTEX_BACKUP_TIMEOUT_FAST_MS,
 } from "./ai-config";
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
-  logger.warn("AI_INTEGRATIONS_OPENAI_API_KEY not set — AI features will fail");
+if (
+  process.env.VOICE_TRANSCRIPTION_ENABLED === "true" &&
+  !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+) {
+  logger.warn(
+    "AI_INTEGRATIONS_OPENAI_API_KEY not set — voice transcription will answer 503",
+  );
 }
 
-/** Whether OpenAI API is configured and AI features should work */
-export const isAiConfigured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+/**
+ * Whether the AI routes can work: aiChat has an OpenRouter or Vertex route
+ * (`hasAiChatRoute`). Read once at import. Env warnings for a missing or
+ * partial set live in env.ts.
+ */
+export const isAiConfigured = hasAiChatRoute();
+
+/** Whether the OpenAI-direct key is set — voice transcription only (`getOpenAI`). */
+export const isOpenAIDirectConfigured =
+  !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 
 let client: OpenAI | undefined;
 

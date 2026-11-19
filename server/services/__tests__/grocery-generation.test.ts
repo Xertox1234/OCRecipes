@@ -193,6 +193,21 @@ describe("quantity parsing and rounding (R36)", () => {
     expect(parseQuantityForSum("1.5 tbsp")).toBe(1.5);
   });
 
+  // L-xc-6: one comma rule, shared with the import parser's quantities. A
+  // comma before exactly three digits groups thousands; before one or two
+  // digits it is a decimal comma.
+  it("reads a thousands separator and a decimal comma", () => {
+    expect(parseQuantityForSum("1,000")).toBe(1000);
+    expect(parseQuantityForSum("1,000 g")).toBe(1000);
+    expect(parseQuantityForSum("1,5")).toBe(1.5);
+    expect(parseQuantityForSum("1,25 l")).toBe(1.25);
+    expect(parseQuantityForSum("1,5-2")).toBe(2);
+    expect(parseQuantityForSum("1,000,000")).toBe(1_000_000);
+    // A leading "0," is never a thousands group.
+    expect(parseQuantityForSum("0,125")).toBe(0.125);
+    expect(parseQuantityForSum("0,500 l")).toBe(0.5);
+  });
+
   it("treats a hyphenated mixed number as one quantity, not a range", () => {
     expect(parseQuantityForSum("1-1/2")).toBe(1.5);
     expect(parseQuantityForSum("1-1/2 cups")).toBe(1.5);

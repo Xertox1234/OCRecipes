@@ -1,17 +1,26 @@
 import {
+  addCivilDays,
   civilDateString,
   civilDateToInstant,
   civilHourInTz,
 } from "../../lib/civil-date";
 
+// Lives in lib/civil-date (the write cards use it too); re-exported for the
+// weekly report modules that import it from here.
+export { addCivilDays };
+
 /** Hour of the local Sunday when the weekly report is written. */
 export const WEEKLY_REPORT_LOCAL_HOUR = 18;
 
-/** Add whole days to a `yyyy-mm-dd` civil date (calendar maths, no tz). */
-export function addCivilDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
+/**
+ * Hours from WEEKLY_REPORT_LOCAL_HOUR during which each hourly tick tries
+ * again: 18:00–21:59. Generation is idempotent per (user, week), so a later
+ * tick only writes a report the 18:00 tick missed (a restart, a DB blip, a
+ * throw), and a user whose generation keeps failing is tried at most four
+ * times a week. It stops at 22:00 so no catch-up push lands late at night
+ * (reliability audit 2026-11-19, M-rel-1).
+ */
+export const WEEKLY_REPORT_CATCH_UP_HOURS = 4;
 
 /** 0 = Sunday … 6 = Saturday for a `yyyy-mm-dd` civil date. */
 export function civilWeekday(dateStr: string): number {
@@ -28,8 +37,8 @@ export interface ReportWeek {
   fromUtc: Date;
   /** Local midnight at the start of the Sunday after weekEnd (exclusive). */
   toUtc: Date;
-  /** True when `now` is local Sunday in the report hour. */
-  isSundayEvening: boolean;
+  /** True when `now` is local Sunday within the report window (18:00–21:59). */
+  isReportDue: boolean;
 }
 
 /**
@@ -47,7 +56,13 @@ export function reportWeekFor(now: Date, tz: string): ReportWeek {
     weekEnd,
     fromUtc: civilDateToInstant(weekStart, tz),
     toUtc: civilDateToInstant(thisSunday, tz),
-    isSundayEvening:
-      weekday === 0 && civilHourInTz(now, tz) === WEEKLY_REPORT_LOCAL_HOUR,
+    isReportDue: weekday === 0 && isInReportWindow(civilHourInTz(now, tz)),
   };
+}
+
+function isInReportWindow(hour: number): boolean {
+  return (
+    hour >= WEEKLY_REPORT_LOCAL_HOUR &&
+    hour < WEEKLY_REPORT_LOCAL_HOUR + WEEKLY_REPORT_CATCH_UP_HOURS
+  );
 }

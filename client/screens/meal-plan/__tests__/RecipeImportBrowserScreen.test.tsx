@@ -3,7 +3,7 @@ import React, { useImperativeHandle } from "react";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import * as RN from "react-native";
 
-import { ApiError } from "@/lib/api-error";
+import { ApiError, OfflineError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { renderComponent } from "../../../../test/utils/render-component";
 import RecipeImportBrowserScreen from "../RecipeImportBrowserScreen";
@@ -55,6 +55,9 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
 vi.mock("@/lib/import-browser/ImportWebView", () => ({
   ImportWebView: (props: Record<string, any>) => {
     webViewProps.current = props;
+    React.useEffect(() => {
+      webViewMounts += 1;
+    }, []);
     useImperativeHandle(props.ref, () => ({
       extract: mockExtract,
       reload: mockReload,
@@ -68,6 +71,10 @@ const RECIPE_BLOCK = JSON.stringify({ "@type": "Recipe", name: "Soup" });
 const OTHER_BLOCK = JSON.stringify({ "@type": "WebSite" });
 const NO_RECIPE_MESSAGE =
   "No recipe on this page yet — sign in or open the recipe, then try again.";
+const LOAD_FAILED_MESSAGE =
+  "This page didn't load. Check your connection, then tap Reload.";
+
+let webViewMounts = 0;
 
 function sendBlocks(blocks: string[], url: string) {
   act(() => {
@@ -76,6 +83,7 @@ function sendBlocks(blocks: string[], url: string) {
 }
 
 beforeEach(() => {
+  webViewMounts = 0;
   vi.clearAllMocks();
   webViewProps.current = null;
   mockGetState.mockReturnValue({ index: 1, routes: [{}, {}] });
@@ -183,6 +191,72 @@ describe("RecipeImportBrowserScreen", () => {
         ldJson: [RECIPE_BLOCK],
       }),
     );
+  });
+
+  // L-crel-1: a page that never loaded is not "no recipe on this page".
+  it("after a failed load, Import says the page didn't load and asks for Reload", async () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    act(() => {
+      webViewProps.current!.onLoadFailed();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(await screen.findByText(LOAD_FAILED_MESSAGE)).toBeTruthy();
+    expect(screen.queryByText(NO_RECIPE_MESSAGE)).toBeNull();
+    expect(mockExtract).not.toHaveBeenCalled();
+  });
+
+  it("Reload after a failed load remounts the page and clears the message", async () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    act(() => {
+      webViewProps.current!.onLoadFailed();
+    });
+    expect(await screen.findByText(LOAD_FAILED_MESSAGE)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reload page" }));
+    await waitFor(() =>
+      expect(screen.queryByText(LOAD_FAILED_MESSAGE)).toBeNull(),
+    );
+    // A dead Android renderer can't reload in place: a new WebView mounts.
+    expect(mockReload).not.toHaveBeenCalled();
+    expect(webViewMounts).toBe(2);
+  });
+
+  it("a page that loads after a failure (Back, a link) clears the failure", async () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    act(() => {
+      webViewProps.current!.onLoadFailed();
+    });
+    expect(await screen.findByText(LOAD_FAILED_MESSAGE)).toBeTruthy();
+    // The extractor answers only from a page that loaded.
+    sendBlocks([OTHER_BLOCK], "https://a.test/other");
+    expect(screen.queryByText(LOAD_FAILED_MESSAGE)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(mockExtract).toHaveBeenCalledOnce();
+  });
+
+  it("a navigation event after the failure does not erase its message", async () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    act(() => {
+      webViewProps.current!.onLoadFailed();
+      webViewProps.current!.onNavigationChange("https://a.test/broken", false);
+    });
+    expect(await screen.findByText(LOAD_FAILED_MESSAGE)).toBeTruthy();
+  });
+
+  it("Reload on a page that loaded reloads in place (control)", () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Reload page" }));
+    expect(mockReload).toHaveBeenCalledOnce();
+    expect(webViewMounts).toBe(1);
+  });
+
+  it("an offline import says so (L-crel-2)", async () => {
+    mockParsePage.mockRejectedValue(new OfflineError());
+    renderComponent(<RecipeImportBrowserScreen />);
+    sendBlocks([RECIPE_BLOCK], "https://a.test/soup");
+    fireEvent.click(screen.getByRole("button", { name: "Import this recipe" }));
+    expect(
+      await screen.findByText("You're offline. Connect, then try again."),
+    ).toBeTruthy();
   });
 
   it("manual Import with no reply shows the message after the timeout", async () => {

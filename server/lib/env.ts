@@ -8,6 +8,11 @@
 import { z } from "zod";
 import { logger } from "./logger";
 import { isR2Configured } from "./image-store";
+import {
+  hasAiChatRoute,
+  missingVertexVars,
+  VERTEX_ENV_VARS,
+} from "./ai-config";
 
 const envSchema = z.object({
   // Required — server will not start without these
@@ -259,6 +264,24 @@ export function validateEnv(): Env {
   if (!validated.USDA_API_KEY) {
     warnings.push(
       "USDA_API_KEY not set — using DEMO_KEY with severe rate limits",
+    );
+  }
+  // Reliability audit 2026-11-19 M-rel-3: without either route every AI
+  // endpoint answers 503, and a partial Vertex set turned the route off silently.
+  const missingVertex = missingVertexVars(validated);
+  if (!hasAiChatRoute(validated)) {
+    warnings.push(
+      "No AI route configured — set OPENROUTER_API_KEY and/or GOOGLE_VERTEX_* " +
+        "(every AI endpoint answers 503 AI_NOT_CONFIGURED)",
+    );
+  }
+  if (
+    missingVertex.length > 0 &&
+    missingVertex.length < VERTEX_ENV_VARS.length
+  ) {
+    warnings.push(
+      `GOOGLE_VERTEX_* is only partly set (missing ${missingVertex.join(", ")}) — ` +
+        "the Vertex route is off",
     );
   }
   if (!validated.RUNWARE_API_KEY) {

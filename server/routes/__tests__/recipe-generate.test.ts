@@ -14,6 +14,13 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+// The route's AI gate, pinned so the result does not depend on whether the
+// machine running the tests has an AI route configured (CI has none).
+vi.mock("../../lib/openai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/openai")>()),
+  isAiConfigured: true,
+}));
+
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),

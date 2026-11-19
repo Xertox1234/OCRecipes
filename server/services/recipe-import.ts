@@ -117,26 +117,47 @@ export function normalizeInstructions(
   return steps.length > 0 ? steps : null;
 }
 
+const FRACTION_CHARS = "\\u00BC-\\u00BE\\u2150-\\u215E";
+/** One number: "1 1/2", "1/2", "1.5", "1,5", "1½", "½". */
+const NUM = `(?:\\d+\\s+\\d+/\\d+|\\d+/\\d+|\\d+(?:[.,]\\d+)?\\s*[${FRACTION_CHARS}]?|[${FRACTION_CHARS}])`;
+/** A number or a range of two ("2-3", "2 to 3", "1-1/2"). */
+const QTY = `${NUM}(?:\\s*(?:-|–|—|to\\b)\\s*${NUM})?`;
+const UNITS =
+  "tablespoons?|teaspoons?|ounces?|pounds?|gallons?|liters?|litres?|quarts?|pints?|grams?|slices?|pieces?|cloves?|stalks?|sprigs?|heads?|medium|large|small|cups?|tbsp|tsp|bunch|pinch|dash|cans?|tins?|lbs?|oz|lb|kg|ml|g|l";
+/**
+ * quantity, then an optional "x" multiplier ("3 x 400g …"), an optional size
+ * in brackets before or after the unit ("1 (14 oz) can …", "2 cans (15 oz
+ * each) …"), and a unit that must end at a word
+ * boundary (space, comma, semicolon, slash or end) — so "3 lemons" is not 3 l
+ * "emons" — with an optional period
+ * ("1 tsp. salt").
+ */
+const INGREDIENT_RE = new RegExp(
+  `^(${QTY})?\\s*(?:x\\s+)?(\\([^)]*\\))?\\s*(?:(${UNITS})\\.?(?=[\\s,;/]|$))?\\s*(\\([^)]*\\))?\\s*(?:of\\s+)?(.+)`,
+  "i",
+);
+
 /**
  * Parse a recipe ingredient string into structured parts.
- * Handles patterns like "2 cups flour", "1/2 tsp salt", "3 large eggs".
+ * Handles patterns like "2 cups flour", "1/2 tsp salt", "3 large eggs",
+ * "2-3 cloves garlic", "1 (14 oz) can tomatoes". The quantity is kept as
+ * written ("2-3", "1,5"); `parseQuantityForSum` reads ranges and commas
+ * (reliability audit 2026-11-19, M-xc-2).
  */
 export function parseIngredientString(raw: string): ParsedIngredient {
   const trimmed = raw.trim();
+  const match = trimmed.match(INGREDIENT_RE);
 
-  // Match: optional quantity (including fractions like 1/2 or unicode fractions)
-  // followed by optional unit, followed by name
-  const match = trimmed.match(
-    /^([\d\s./\u00BC-\u00BE\u2150-\u215E]+)?\s*(tablespoons?|teaspoons?|ounces?|pounds?|gallons?|liters?|quarts?|pints?|grams?|slices?|pieces?|cloves?|stalks?|sprigs?|heads?|medium|large|small|cups?|tbsp|tsp|bunch|pinch|dash|cans?|lbs?|oz|lb|kg|ml|g|l)?\s*(?:of\s+)?(.+)/i,
-  );
-
-  if (!match || !match[3]) {
+  if (!match || !match[5]) {
     return { name: trimmed, quantity: null, unit: null };
   }
 
   const quantity = match[1]?.trim() || null;
-  const unit = match[2]?.trim() || null;
-  const name = match[3].trim();
+  const size = (match[2] ?? match[4])?.trim();
+  const unit = match[3]?.trim() || null;
+  // A unit may be followed by "," ";" or "/" ("1 cup, packed sugar").
+  const bare = match[5].replace(/^[\s,;/]+/, "").trim() || match[5].trim();
+  const name = size ? `${bare} ${size}` : bare;
 
   return { name, quantity, unit };
 }

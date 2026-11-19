@@ -1,3 +1,4 @@
+import { GroceryListNotFoundError } from "../../storage/grocery-list-errors";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
@@ -484,6 +485,23 @@ describe("Grocery Routes", () => {
         .send({ name: "Bread" });
 
       expect(res.status).toBe(201);
+    });
+
+    // L-obs-2: a list deleted between the route's ownership check and the
+    // locked recheck is a 404, not a 500 + Sentry event.
+    it("answers 404 when the list is gone by the time the item is inserted", async () => {
+      vi.mocked(storage.verifyGroceryListOwnership).mockResolvedValue(true);
+      vi.mocked(storage.insertGroceryListItemsUnderCap).mockRejectedValue(
+        new GroceryListNotFoundError(),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists/1/items")
+        .set("Authorization", "Bearer token")
+        .send({ name: "Bread" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("NOT_FOUND");
     });
 
     it("refuses an item when the list is full", async () => {

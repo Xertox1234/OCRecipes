@@ -6,7 +6,10 @@ import {
   useMealPlanRecipeDetail,
   useCreateMealPlanRecipe,
   useImportRecipeFromUrl,
+  useParseRecipeFromPage,
+  useParseRecipeFromUrl,
 } from "../useMealPlanRecipes";
+import { onlineManager } from "@tanstack/react-query";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({
@@ -255,6 +258,51 @@ describe("useMealPlanRecipes", () => {
       expect(invalidateSpy).toHaveBeenCalledWith({
         queryKey: ["/api/recipes/browse"],
       });
+    });
+  });
+
+  // Reliability audit 2026-11-19 L-crel-2: with the default networkMode
+  // "online", an offline import paused forever (spinner stuck, no timeout)
+  // and then fired on reconnect for a screen already gone. Fail fast instead.
+  describe("recipe parse while offline", () => {
+    afterEach(() => {
+      onlineManager.setOnline(true);
+    });
+
+    async function offlineRejection(
+      run: () => Promise<unknown>,
+    ): Promise<unknown> {
+      let caught: unknown;
+      await act(async () => {
+        caught = await run().catch((e: unknown) => e);
+      });
+      return caught;
+    }
+
+    it("useParseRecipeFromPage rejects with an OfflineError and sends nothing", async () => {
+      onlineManager.setOnline(false);
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useParseRecipeFromPage(), {
+        wrapper,
+      });
+      const caught = await offlineRejection(() =>
+        result.current.mutateAsync({ url: "https://a.test", ldJson: ["{}"] }),
+      );
+      expect(caught).toMatchObject({ name: "OfflineError" });
+      expect(mockApiRequest).not.toHaveBeenCalled();
+    });
+
+    it("useParseRecipeFromUrl rejects with an OfflineError and sends nothing", async () => {
+      onlineManager.setOnline(false);
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useParseRecipeFromUrl(), {
+        wrapper,
+      });
+      const caught = await offlineRejection(() =>
+        result.current.mutateAsync("https://a.test"),
+      );
+      expect(caught).toMatchObject({ name: "OfflineError" });
+      expect(mockApiRequest).not.toHaveBeenCalled();
     });
   });
 });

@@ -1389,13 +1389,36 @@ function getSubstituteModifierPattern(keyword: string): RegExp {
     //     treating it as a joiner could suppress real milk. Left out on purpose
     //     — safety beats fixing the "almond/milk" over-flag.
     //   - parentheses are ambiguous too; over-flagging is the safe default.
+    //
+    // Global, and the trailing boundary is a lookahead, so `replace` strips
+    // every substitute phrase in the line ("almond milk or oat milk") without
+    // consuming the separator the next phrase needs as its leading boundary.
     pattern = new RegExp(
-      `(?:^|[\\s,;/()\\-])(?:${mods})[\\s\\-]${escaped}(?:$|[\\s,;/()\\-])`,
-      "i",
+      `(^|[\\s,;/()\\-])(?:${mods})[\\s\\-]${escaped}(?=$|[\\s,;/()\\-])`,
+      "gi",
     );
     substituteModifierPatternCache.set(keyword, pattern);
   }
   return pattern;
+}
+
+/**
+ * True when the keyword still appears once every plant-substitute phrase is
+ * removed, i.e. at least one mention is the real dairy/wheat item. A line that
+ * holds a substitute AND the real thing ("1 cup milk or almond milk", "flour or
+ * rice flour") must still flag: suppressing the whole line because one
+ * substitute appears is the dangerous direction (reliability audit
+ * 2026-11-19, H-xc-1).
+ */
+function hasNonSubstituteMention(
+  lowerIngredient: string,
+  keyword: string,
+): boolean {
+  const withoutSubstitutes = lowerIngredient.replace(
+    getSubstituteModifierPattern(keyword),
+    "$1 ",
+  );
+  return getKeywordPattern(keyword).test(withoutSubstitutes);
 }
 
 /**
@@ -1426,11 +1449,8 @@ export function ingredientContainsKeyword(
   // Single-word keyword — use pre-compiled word boundary pattern
   if (!getKeywordPattern(keyword).test(lowerIngredient)) return false;
 
-  if (
-    MODIFIER_SENSITIVE_KEYWORDS.has(keyword) &&
-    getSubstituteModifierPattern(keyword).test(lowerIngredient)
-  ) {
-    return false;
+  if (MODIFIER_SENSITIVE_KEYWORDS.has(keyword)) {
+    return hasNonSubstituteMention(lowerIngredient, keyword);
   }
 
   return true;

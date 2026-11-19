@@ -79,6 +79,13 @@ vi.mock("../../services/recipe-generation", () => ({
   generateRecipeImage: vi.fn().mockResolvedValue(null),
 }));
 
+// The generate-from-pantry AI gate, pinned so the result does not depend on
+// whether the machine running the tests has an AI route configured (CI has none).
+vi.mock("../../lib/openai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/openai")>()),
+  isAiConfigured: true,
+}));
+
 function createApp() {
   const app = express();
   app.use(express.json());

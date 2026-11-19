@@ -302,3 +302,35 @@ describe("dev/test no-op contract", () => {
     expect(Sentry.captureException).toHaveBeenCalledOnce();
   });
 });
+
+describe("request id tag (reliability audit L-obs-3)", () => {
+  afterEach(() => {
+    vi.resetModules();
+    delete process.env.EXPO_PUBLIC_SENTRY_DSN;
+    (globalThis as Record<string, unknown>).__DEV__ = true;
+  });
+
+  it("tags a failed API call's report with the server's request id", async () => {
+    const { reporter, Sentry } = await loadReporter({
+      dsn: "https://key@example.ingest.sentry.io/1",
+      dev: false,
+    });
+    const { ApiError } = await import("../api-error");
+    const err = new ApiError("500: boom", undefined, 500);
+    err.requestId = "3f2b9c1e-8a4d-4e7f-9b6a-1c2d3e4f5a6b";
+    reporter.reportError(err);
+    expect(Sentry.captureException).toHaveBeenCalledWith(err, {
+      tags: { request_id: "3f2b9c1e-8a4d-4e7f-9b6a-1c2d3e4f5a6b" },
+    });
+  });
+
+  it("adds no tag for an error without a request id", async () => {
+    const { reporter, Sentry } = await loadReporter({
+      dsn: "https://key@example.ingest.sentry.io/1",
+      dev: false,
+    });
+    const err = new Error("boom");
+    reporter.reportError(err);
+    expect(Sentry.captureException).toHaveBeenCalledWith(err, undefined);
+  });
+});

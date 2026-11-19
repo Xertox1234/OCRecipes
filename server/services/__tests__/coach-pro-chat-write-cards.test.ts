@@ -16,6 +16,7 @@ import {
 } from "../write-cards";
 import { extractNotebookEntries } from "../notebook-extraction";
 import type { WriteCardProposal } from "../write-cards";
+import { WriteCardEditError } from "../write-cards/errors";
 import {
   createMockChatMessage,
   createMockCoachWriteCard,
@@ -71,13 +72,11 @@ vi.mock("../notebook-extraction", () => ({
   extractNotebookEntries: vi.fn().mockResolvedValue([]),
 }));
 
+const { svcLog } = vi.hoisted(() => ({
+  svcLog: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
 vi.mock("../../lib/logger", () => ({
-  createServiceLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createServiceLogger: () => svcLog,
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   toError: (e: unknown) => (e instanceof Error ? e : new Error(String(e))),
 }));
@@ -239,6 +238,52 @@ describe("handleCoachChat with write cards", () => {
     expect(vi.mocked(storage.createChatMessage).mock.calls[0][4]).toEqual({
       blocks: [block],
     });
+  });
+
+  // Reliability audit 2026-11-19 M-obs-2: a card that fails to build leaves a
+  // reply promising a card that never appears. An unexpected throw (a storage
+  // or migration break) must reach Sentry (error level); a card the builder
+  // refuses on purpose (WriteCardEditError) stays a warning. The payload is
+  // never logged.
+  it("an unexpected card build failure is logged at error level, without the payload", async () => {
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposing({ kind: "food", args: foodArgs }),
+    );
+    vi.mocked(storage.createWriteCard).mockRejectedValueOnce(
+      new Error('relation "coach_write_cards" does not exist'),
+    );
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true })),
+    );
+
+    expect(blocksEvent(events)?.blocks ?? []).toEqual([]);
+    expect(svcLog.error).toHaveBeenCalledWith(
+      { err: expect.any(Error), kind: "food" },
+      "coach write card not built",
+    );
+    expect(svcLog.warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "coach write card not built",
+    );
+  });
+
+  it("a card the builder refuses on purpose stays a warning", async () => {
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposing({ kind: "food", args: foodArgs }),
+    );
+    vi.mocked(buildWriteCardPayload).mockRejectedValueOnce(
+      new WriteCardEditError("Nothing to log."),
+    );
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+
+    expect(svcLog.warn).toHaveBeenCalledWith(
+      { err: expect.any(WriteCardEditError), kind: "food" },
+      "coach write card not built",
+    );
+    expect(svcLog.error).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "coach write card not built",
+    );
   });
 
   it("tells notebook extraction the turn was answered with a card", async () => {

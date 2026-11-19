@@ -362,6 +362,58 @@ describe("plant-substitute guard invariant", () => {
 // DETECT ALLERGENS
 // ============================================================================
 
+describe("plant-substitute guard: a real mention beside a substitute still flags", () => {
+  // Reliability audit 2026-11-19 H-xc-1: the guard used to drop the keyword for
+  // the WHOLE line when any "<plant> <keyword>" phrase appeared, so
+  // "1 cup milk or almond milk" lost its milk flag. Generated, not hand-picked:
+  // every keyword × separator × order.
+  const pairs: [keyword: string, substitute: string][] = [
+    ["milk", "almond milk"],
+    ["cream", "coconut cream"],
+    ["butter", "cashew butter"],
+    ["flour", "rice flour"],
+  ];
+  const separators = [" or ", " and ", ", ", "; ", " / ", " (or ", " - "];
+
+  for (const [keyword, substitute] of pairs) {
+    for (const sep of separators) {
+      const realFirst = `1 cup ${keyword}${sep}${substitute}`;
+      const substituteFirst = `1 cup ${substitute}${sep}${keyword}`;
+      it(`flags "${realFirst}" and "${substituteFirst}" for ${keyword}`, () => {
+        expect(ingredientContainsKeyword(realFirst, keyword)).toBe(true);
+        expect(ingredientContainsKeyword(substituteFirst, keyword)).toBe(true);
+      });
+    }
+
+    it(`keeps a lone substitute unflagged: "${substitute}"`, () => {
+      expect(ingredientContainsKeyword(`1 cup ${substitute}`, keyword)).toBe(
+        false,
+      );
+    });
+
+    it(`keeps two substitutes together unflagged for ${keyword}`, () => {
+      const [mod] = substitute.split(" ");
+      const other = mod === "oat" ? "soy" : "oat";
+      for (const sep of separators) {
+        expect(
+          ingredientContainsKeyword(
+            `${substitute}${sep}${other} ${keyword}`,
+            keyword,
+          ),
+        ).toBe(false);
+      }
+    });
+  }
+
+  it("reaches detectAllergens: a severe milk allergy is warned on 'milk or almond milk'", () => {
+    const matches = detectAllergens(
+      ["1 cup milk or almond milk"],
+      [{ name: "milk", severity: "severe" }],
+    );
+    expect(matches.map((m) => m.allergenId)).toContain("milk");
+  });
+});
+
 describe("detectAllergens", () => {
   const peanutSevere: { name: string; severity: AllergySeverity } = {
     name: "peanuts",

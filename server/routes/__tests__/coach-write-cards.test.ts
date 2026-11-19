@@ -1,3 +1,4 @@
+import { GroceryListNotFoundError } from "../../storage/grocery-list-errors";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
@@ -154,6 +155,43 @@ describe("coach write-card routes", () => {
       );
       await request(app).post(`/api/coach/cards/${CARD_ID}/save`).send({});
       expect(lost).not.toHaveBeenCalled();
+    });
+
+    // L-obs-1: one failing after-commit step (a search-index write) must not
+    // skip the rest or turn a saved card into a 500 the app would retry.
+    it("a failing after-commit step does not stop the others or the response", async () => {
+      const ran = vi.fn();
+      vi.mocked(performWriteCardSave).mockImplementationOnce(
+        async (_tx, _card, _edits, ctx) => {
+          ctx.afterCommit?.(() => {
+            throw new Error("index down");
+          });
+          ctx.afterCommit?.(ran);
+          return {};
+        },
+      );
+      vi.mocked(storage.saveWriteCard).mockImplementationOnce(
+        async (_id, _u, perform) => {
+          await perform(tx, { ...foodCard, status: "live" });
+          return { status: "saved", card: foodCard };
+        },
+      );
+      const res = await request(app)
+        .post(`/api/coach/cards/${CARD_ID}/save`)
+        .send({});
+      expect(res.status).toBe(201);
+      expect(ran).toHaveBeenCalledOnce();
+    });
+
+    it("a grocery list deleted mid-save answers 404, not 500 (L-obs-2)", async () => {
+      vi.mocked(storage.saveWriteCard).mockRejectedValueOnce(
+        new GroceryListNotFoundError(),
+      );
+      const res = await request(app)
+        .post(`/api/coach/cards/${CARD_ID}/save`)
+        .send({});
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("NOT_FOUND");
     });
 
     it("save without edits uses the card's stored edits", async () => {

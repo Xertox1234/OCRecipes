@@ -20,6 +20,13 @@ interface ImportWebViewProps {
   hidden?: boolean;
   onBlocks: (blocks: string[], currentUrl: string) => void;
   onLoadEnd?: () => void;
+  /**
+   * The page failed to load (offline, DNS, TLS) or its renderer died (iOS
+   * content process, Android render process). Without this the screen reads
+   * a page that never loaded as "no recipe" (reliability audit 2026-11-19,
+   * L-crel-1). Note `onLoadEnd` fires on a failed load too.
+   */
+  onLoadFailed?: () => void;
   onNavigationChange?: (url: string, canGoBack: boolean) => void;
   ref?: Ref<ImportWebViewHandle>;
 }
@@ -48,6 +55,7 @@ export function ImportWebView({
   hidden = false,
   onBlocks,
   onLoadEnd,
+  onLoadFailed,
   onNavigationChange,
   ref,
 }: ImportWebViewProps) {
@@ -89,6 +97,9 @@ export function ImportWebView({
       injectedJavaScript={EXTRACT_LD_JSON_SCRIPT}
       onMessage={handleMessage}
       onLoadEnd={onLoadEnd}
+      onError={() => onLoadFailed?.()}
+      onContentProcessDidTerminate={() => onLoadFailed?.()}
+      onRenderProcessGone={() => onLoadFailed?.()}
       onNavigationStateChange={(nav) => {
         currentUrl.current = nav.url;
         onNavigationChange?.(nav.url, nav.canGoBack);

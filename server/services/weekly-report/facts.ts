@@ -109,6 +109,11 @@ export function buildWeeklyFacts(
     const calories = sumOrNull(ls.map((l) => l.calories));
     const protein = sumOrNull(ls.map((l) => l.protein));
     const carbs = sumOrNull(ls.map((l) => l.carbs));
+    // Meals logged but none recorded this nutrient: unknown, not a missed
+    // target (reliability audit 2026-11-19, L-xc-7). A day with no meals
+    // stays "not met".
+    const met = <T>(value: number | null, check: T): T | null =>
+      ls.length > 0 && value === null ? null : check;
     return {
       date,
       meals: ls.length,
@@ -116,9 +121,9 @@ export function buildWeeklyFacts(
       protein,
       carbs,
       fullyLogged: ls.length >= FULL_DAY_MEALS,
-      proteinMet: proteinMet(protein, goals.protein),
-      caloriesMet: inRange(calories, goals.calories),
-      carbsMet: inRange(carbs, goals.carbs),
+      proteinMet: met(protein, proteinMet(protein, goals.protein)),
+      caloriesMet: met(calories, inRange(calories, goals.calories)),
+      carbsMet: met(carbs, inRange(carbs, goals.carbs)),
     };
   });
 

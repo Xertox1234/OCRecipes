@@ -4,6 +4,7 @@ import {
   writeCardMealTypeSchema,
 } from "@shared/schemas/coach-write-cards";
 import { containsUnsafeCoachAdvice } from "../../lib/ai-safety";
+import { isValidCalendarDate } from "../../utils/date-validation";
 
 /**
  * Write-tool argument schemas (spec 2026-11-09). DB-FREE on purpose:
@@ -70,7 +71,12 @@ export const addMealPlanCardArgsSchema = z.object({
   rows: z
     .array(
       z.object({
-        plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        // A real calendar date: a regex alone let "2026-02-30" reach
+        // Postgres (reliability audit 2026-11-19, L-xc-4).
+        plannedDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .refine(isValidCalendarDate),
         mealType: writeCardMealTypeSchema,
         recipe: recipeRefArgSchema,
         alternatives: z.array(recipeRefArgSchema).max(3).default([]),

@@ -57,6 +57,34 @@ async function deleteStaleToken(userId: string, token: string): Promise<void> {
 }
 
 /**
+ * Expo error codes that mean OUR setup is broken (APNs/FCM credentials, a bad
+ * project or payload): every send fails, and callers read a failed send as
+ * "no device" — so log at error level, which reaches Sentry. Other codes
+ * (rate limits, size, a provider hiccup) are per-message and stay warnings.
+ */
+const SETUP_ERROR_CODES = new Set(["InvalidCredentials", "DeveloperError"]);
+
+/**
+ * Log a ticket or receipt error by its code only. The ticket/receipt itself is
+ * never logged: its `message` and `details.expoPushToken` carry the device
+ * push token (reliability audit 2026-11-19, M-obs-3).
+ */
+function logPushError(
+  code: string | undefined,
+  userId: string,
+  msg:
+    | "push-notifications: delivery error"
+    | "push-notifications: receipt error",
+): void {
+  if (code && SETUP_ERROR_CODES.has(code)) {
+    // No userId: a setup fault is not about one user.
+    logger.error({ err: new Error(`Expo push ${code}`), code }, msg);
+    return;
+  }
+  logger.warn({ code: code ?? "unknown", userId }, msg);
+}
+
+/**
  * Pair one chunk's tickets with that chunk's own messages (Expo returns one
  * ticket per message, in order). Prunes tokens the platform reports as
  * unregistered, logs other errors, and records receipt ids of accepted tickets.
@@ -85,7 +113,11 @@ async function handleChunkTickets(
     if (ticket.details?.error === "DeviceNotRegistered") {
       if (token) await deleteStaleToken(userId, token);
     } else {
-      logger.warn({ ticket, userId }, "push-notifications: delivery error");
+      logPushError(
+        ticket.details?.error,
+        userId,
+        "push-notifications: delivery error",
+      );
     }
   }
 }
@@ -115,7 +147,11 @@ async function checkReceipts(
         if (receipt.details?.error === "DeviceNotRegistered") {
           if (token) await deleteStaleToken(userId, token);
         } else {
-          logger.warn({ receipt, userId }, "push-notifications: receipt error");
+          logPushError(
+            receipt.details?.error,
+            userId,
+            "push-notifications: receipt error",
+          );
         }
       }
     }

@@ -23,7 +23,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 import { useParseRecipeFromPage } from "@/hooks/useMealPlanRecipes";
-import { ApiError } from "@/lib/api-error";
+import { ApiError, OfflineError } from "@/lib/api-error";
+import { OFFLINE_IMPORT_MESSAGE } from "./recipe-import-utils";
 import { ImportWebView } from "@/lib/import-browser/ImportWebView";
 import type { ImportWebViewHandle } from "@/lib/import-browser/ImportWebView";
 import {
@@ -48,6 +49,8 @@ const NO_RECIPE_MESSAGE =
   "No recipe on this page yet — sign in or open the recipe, then try again.";
 const ON_ACCENT = "#FFFFFF"; // hardcoded — white on the accent button
 const FAILED_MESSAGE = "Couldn't import this page. Please try again.";
+const LOAD_FAILED_MESSAGE =
+  "This page didn't load. Check your connection, then tap Reload.";
 
 interface PageBlocks {
   blocks: string[];
@@ -82,6 +85,10 @@ export default function RecipeImportBrowserScreen() {
   const [message, setMessage] = useState("");
   const [importing, setImporting] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
+  // The page failed to load or its renderer died; Reload then remounts the
+  // WebView (a dead Android renderer can't reload in place).
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [webKey, setWebKey] = useState(0);
   const isFocused = useIsFocused();
 
   // One parse-page in flight; a late result after unmount must not navigate.
@@ -161,6 +168,10 @@ export default function RecipeImportBrowserScreen() {
         return;
       }
       haptics.notification(NotificationFeedbackType.Error);
+      if (outcome.error instanceof OfflineError) {
+        setMessage(OFFLINE_IMPORT_MESSAGE);
+        return;
+      }
       const code =
         outcome.error instanceof ApiError ? outcome.error.code : undefined;
       setMessage(
@@ -180,6 +191,10 @@ export default function RecipeImportBrowserScreen() {
   );
 
   const handleBlocks = useCallback((blocks: string[], url: string) => {
+    // The extractor answers only from a page that loaded (after a failed one,
+    // Back or a link can succeed), so this clears an earlier load failure.
+    setLoadFailed(false);
+    setMessage((m) => (m === LOAD_FAILED_MESSAGE ? "" : m));
     const page = { blocks, currentUrl: url };
     latestRef.current = page;
     setCurrentUrl(url);
@@ -189,6 +204,13 @@ export default function RecipeImportBrowserScreen() {
     waiter?.(page);
   }, []);
 
+  const handleLoadFailed = useCallback(() => {
+    latestRef.current = null;
+    setRecipeFound(false);
+    setLoadFailed(true);
+    setMessage(LOAD_FAILED_MESSAGE);
+  }, []);
+
   const handleNavigationChange = useCallback((url: string, back: boolean) => {
     setCurrentUrl(url);
     setCanGoBack(back);
@@ -196,7 +218,9 @@ export default function RecipeImportBrowserScreen() {
     if (url !== latestRef.current?.currentUrl) {
       latestRef.current = null;
       setRecipeFound(false);
-      setMessage("");
+      // The failed URL's own navigation event can arrive after onError (iOS);
+      // keep the failure message until a page actually loads.
+      setMessage((m) => (m === LOAD_FAILED_MESSAGE ? m : ""));
     }
   }, []);
 
@@ -208,6 +232,10 @@ export default function RecipeImportBrowserScreen() {
   const handleManualImport = useCallback(async () => {
     if (inFlightRef.current || waiterRef.current) return;
     haptics.selection();
+    if (loadFailed) {
+      setMessage(LOAD_FAILED_MESSAGE);
+      return;
+    }
     setMessage("");
     const page = await new Promise<PageBlocks | null>((resolve) => {
       const timer = setTimeout(() => {
@@ -226,7 +254,7 @@ export default function RecipeImportBrowserScreen() {
       return;
     }
     await runImport(page);
-  }, [haptics, runImport]);
+  }, [haptics, runImport, loadFailed]);
 
   const handleClose = useCallback(() => {
     haptics.selection();
@@ -235,8 +263,14 @@ export default function RecipeImportBrowserScreen() {
 
   const handleReload = useCallback(() => {
     haptics.selection();
+    if (loadFailed) {
+      setLoadFailed(false);
+      setMessage("");
+      setWebKey((k) => k + 1);
+      return;
+    }
     webRef.current?.reload();
-  }, [haptics]);
+  }, [haptics, loadFailed]);
 
   const domain = hostOf(currentUrl) || hostOf(startUrl);
   const secure = currentUrl.toLowerCase().startsWith("https://");
@@ -304,9 +338,11 @@ export default function RecipeImportBrowserScreen() {
 
       <View style={styles.webWrap}>
         <ImportWebView
+          key={webKey}
           ref={webRef}
           url={startUrl}
           onBlocks={handleBlocks}
+          onLoadFailed={handleLoadFailed}
           onNavigationChange={handleNavigationChange}
         />
       </View>

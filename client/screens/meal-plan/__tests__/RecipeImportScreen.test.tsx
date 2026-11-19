@@ -287,6 +287,19 @@ describe("RecipeImportScreen — on-device fallback", () => {
     }
   });
 
+  // L-crel-1: a hidden page that fails to load moves on at once instead of
+  // waiting out the 15 s timer.
+  it("a failed hidden page load shows the sign-in sheet without waiting", async () => {
+    mockParse.mockRejectedValue(failWith(ErrorCode.FETCH_FAILED));
+    await startImport();
+    await screen.findByTestId("import-webview");
+    act(() => {
+      (webViewProps.current!.onLoadFailed as () => void)();
+    });
+    await screen.findByText("We couldn't read this recipe");
+    expect(mockParsePage).not.toHaveBeenCalled();
+  });
+
   it("RATE_LIMITED shows the existing error state, no WebView", async () => {
     mockParse.mockRejectedValue(failWith(ErrorCode.RATE_LIMITED));
     await startImport();

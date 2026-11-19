@@ -272,6 +272,22 @@ function parseLeadingQuantity(raw: string): number | null {
   return normalized !== null ? Number(normalized) : null;
 }
 
+/** "1,000" or "12,345,678": a leading non-zero group, then groups of three. */
+const THOUSANDS_GROUPED_RE = /(?<![\d.,])([1-9]\d{0,2}(?:,\d{3})+)(?![\d,])/g;
+const DECIMAL_COMMA_RE = /(\d),(\d+)/g;
+
+/**
+ * The one comma rule for quantities (reliability audit 2026-11-19, L-xc-6): a
+ * number written in well-formed thousands groups with a non-zero first digit
+ * ("1,000", "1,000,000") drops its commas; any other comma is a decimal comma
+ * ("1,5", "1,25", "0,125"). Bare parseFloat read all of these as 1 or 0.
+ */
+function normalizeQuantityCommas(text: string): string {
+  return text
+    .replace(THOUSANDS_GROUPED_RE, (group) => group.replace(/,/g, ""))
+    .replace(DECIMAL_COMMA_RE, "$1.$2");
+}
+
 /**
  * Parse an ingredient quantity string to a number for summing. Handles
  * integers, decimals, fractions ("1/2"), mixed numbers ("1 1/2", "1-1/2") and
@@ -288,7 +304,10 @@ export function parseQuantityForSum(
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  const text = trimmed.replace(HYPHEN_MIXED_RE, "$1 $2");
+  const text = normalizeQuantityCommas(trimmed).replace(
+    HYPHEN_MIXED_RE,
+    "$1 $2",
+  );
   const single = parseLeadingQuantity(text);
 
   const range = text.match(RANGE_RE);

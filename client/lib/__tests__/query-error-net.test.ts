@@ -1,10 +1,18 @@
 import { ApiError } from "../api-error";
+
+import { requestAbortedError } from "../fetch-timeout";
 import {
   shouldSurfaceQueryError,
   shouldSurfaceMutationError,
   subscribeToQueryErrors,
   queryClient,
 } from "../query-client";
+
+const { mockReportError } = vi.hoisted(() => ({ mockReportError: vi.fn() }));
+vi.mock("../reporter", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../reporter")>()),
+  reportError: (...args: unknown[]) => mockReportError(...args),
+}));
 
 describe("shouldSurfaceQueryError", () => {
   it("surfaces a generic/transient error (no meta)", () => {
@@ -130,6 +138,23 @@ describe("shouldSurfaceMutationError", () => {
       shouldSurfaceMutationError(new Error("Network request failed"), {
         someOtherFlag: true,
       }),
+    ).toBe(true);
+  });
+
+  it("surfaces a request timeout but not a deliberate cancel (M-obs-1)", () => {
+    const timeout = new Error("Request timed out after 60000 ms");
+    timeout.name = "TimeoutError";
+    expect(shouldSurfaceMutationError(timeout, undefined)).toBe(true);
+    expect(shouldSurfaceMutationError(requestAbortedError(), undefined)).toBe(
+      false,
+    );
+    // expo/fetch's own abort rejection is a plain Error: it surfaces, which is
+    // why code that aborts must rethrow requestAbortedError().
+    expect(
+      shouldSurfaceMutationError(
+        new Error("fetch failed: Fetch request has been canceled"),
+        undefined,
+      ),
     ).toBe(true);
   });
 
@@ -305,5 +330,78 @@ describe("global mutation error net (MutationCache.onError → emitter)", () => 
     await runFailingMutation({ error: controller.signal.reason });
     unsubscribe();
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe("silentError hides the toast but not the report (M-obs-4)", () => {
+  // Reliability audit 2026-11-19: `silentError` used to skip reportError too,
+  // so network, timeout, parse and select failures on 82 opted-out call sites
+  // never reached Sentry. It now suppresses only the toast; the report follows
+  // the same rule as a non-silent call (no 4xx, no deliberate cancel).
+  beforeEach(() => mockReportError.mockClear());
+
+  async function failQuery(key: string, error: unknown) {
+    try {
+      await queryClient.fetchQuery({
+        queryKey: [`__test__/report/${key}`],
+        queryFn: async () => {
+          throw error;
+        },
+        retry: false,
+        meta: { silentError: true },
+      });
+    } catch {
+      // Expected.
+    }
+  }
+
+  async function failMutation(error: unknown) {
+    const mutation = queryClient.getMutationCache().build(queryClient, {
+      mutationFn: async () => {
+        throw error;
+      },
+      meta: { silentError: true },
+    });
+    try {
+      await mutation.execute(undefined);
+    } catch {
+      // Expected.
+    }
+  }
+
+  it("reports a silent query's 5xx without a toast", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToQueryErrors(listener);
+    await failQuery("silent-5xx", new ApiError("500: boom"));
+    unsubscribe();
+    expect(listener).not.toHaveBeenCalled();
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a silent mutation's network failure without a toast", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToQueryErrors(listener);
+    await failMutation(new TypeError("Network request failed"));
+    unsubscribe();
+    expect(listener).not.toHaveBeenCalled();
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+  });
+
+  it("still does not report a silent 4xx or a deliberate cancel", async () => {
+    await failQuery("silent-4xx", new ApiError("404: Not Found"));
+    await failMutation(new ApiError("409: Conflict", "CONFLICT"));
+    await failMutation(requestAbortedError());
+    expect(mockReportError).not.toHaveBeenCalled();
+  });
+});
+
+describe("an offline fail-fast is not reported (L-crel-2)", () => {
+  it("shouldSurfaceMutationError drops an OfflineError, with or without meta", async () => {
+    const { OfflineError } = await import("../api-error");
+    const { shouldSurfaceMutationError } = await import("../query-client");
+    expect(shouldSurfaceMutationError(new OfflineError(), undefined)).toBe(
+      false,
+    );
+    expect(shouldSurfaceMutationError(new Error("boom"), undefined)).toBe(true);
   });
 });

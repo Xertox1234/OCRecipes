@@ -38,7 +38,8 @@ export const SOFT_FAILURE_COPY =
 
 /**
  * Run `run` with an AbortSignal that fires after `ms`. `AbortController` +
- * `setTimeout` rather than `AbortSignal.timeout`, which Hermes lacks.
+ * `setTimeout` rather than `AbortSignal.timeout`, so the timer is cleared as
+ * soon as `run` settles instead of staying pending for the full deadline.
  */
 export async function withDeadline<T>(
   run: (signal: AbortSignal) => Promise<T>,

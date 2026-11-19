@@ -11,6 +11,7 @@ import type { Request, Response } from "express";
 import type { AuthenticatedRequest } from "../middleware/auth";
 import { ZodError } from "zod";
 import { storage } from "../storage";
+import { GroceryListNotFoundError } from "../storage/grocery-list-errors";
 import { sendError } from "../lib/api-errors";
 import {
   AI_DAILY_CAPS,
@@ -19,7 +20,7 @@ import {
   type PremiumFeatures,
 } from "@shared/types/premium";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { isAiConfigured } from "../lib/openai";
+import { isAiConfigured, isOpenAIDirectConfigured } from "../lib/openai";
 import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
@@ -48,11 +49,21 @@ export async function getPremiumFeatures(
 }
 
 /**
- * Guard that returns false (and sends 503) if AI features are not configured.
- * Use at the top of route handlers that depend on OpenAI.
+ * Guard that returns false (and sends 503) if AI features are not configured:
+ * aiChat has no OpenRouter or Vertex route. Use at the top of route handlers
+ * that call aiChat.
  */
 export function checkAiConfigured(res: Response): boolean {
-  if (!isAiConfigured) {
+  return sendUnlessConfigured(res, isAiConfigured);
+}
+
+/** The same guard for the OpenAI-direct key (voice transcription). */
+export function checkOpenAIDirectConfigured(res: Response): boolean {
+  return sendUnlessConfigured(res, isOpenAIDirectConfigured);
+}
+
+function sendUnlessConfigured(res: Response, configured: boolean): boolean {
+  if (!configured) {
     sendError(
       res,
       503,
@@ -285,6 +296,12 @@ export function handleRouteError(
   }
   if (error instanceof AiSharingRequiredError) {
     sendAiSharingRequired(res, extra);
+    return;
+  }
+  // A list deleted mid-request (reliability audit 2026-11-19, L-obs-2): the
+  // user's own race, not a server fault — 404, no Sentry event.
+  if (error instanceof GroceryListNotFoundError) {
+    sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND, extra);
     return;
   }
   logger.error({ err: toError(error) }, `${context} error`);
