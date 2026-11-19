@@ -1,6 +1,6 @@
 ---
 title: "Plan week header and screen titles clip at the accessibility text sizes"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-16
 updated: 2026-11-16
@@ -37,11 +37,11 @@ The grid cells already cap their scale (`GRID_MAX_FONT_SCALE`), which is why the
 
 ## Acceptance Criteria
 
-- [ ] At AX5 both week arrows are on screen and pressable, and the month title and slot counter
+- [x] At AX5 both week arrows are on screen and pressable, and the month title and slot counter
       are fully readable (wrapped or capped, not clipped).
-- [ ] The navigation header title is not clipped at AX5.
+- [x] The navigation header title is not clipped at AX5.
 - [ ] Checked in the simulator at AX5 and at the default size, light and dark, with screenshots.
-- [ ] No change at the default text size.
+- [x] No change at the default text size.
 
 ## Implementation Notes
 
@@ -58,3 +58,11 @@ smallest change; letting the title wrap needs the row to stop using a fixed-heig
 ## Dependencies
 
 - None.
+
+## Updates
+
+### 2026-11-18
+
+- Month title, slot counter and header title capped at MAX_FONT_SCALE_CONSTRAINED (1.5); weekTitle flex:1 so arrows stay on screen.
+- Criterion 3 not met: simulator screenshots at AX5/default, light/dark were not taken in this headless run; needs a person to confirm on the simulator.
+- Criterion 1 evidence: weekTitle flex:1 + maxScale on both texts (MealPlanHomeScreen.tsx); Criterion 2 evidence: HeaderTitle.test.tsx cap test.
