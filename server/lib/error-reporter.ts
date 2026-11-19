@@ -15,20 +15,21 @@
  * SDK queues events to an async transport); nothing here blocks the
  * error-response path.
  *
- * PII posture (verified against the installed @sentry/node source: first at
- * 10.65.0, again at 10.78.0 on 2026-11-12 — privacy audit L8):
- * `sendDefaultPii: false` only withholds IP/user data — including, as an
- * SDK-internal side effect (not a documented contract — see
- * SENSITIVE_HEADER_SNIPPETS below), a fixed 12-name exact-match set of
- * IP-adjacent headers the default `requestDataIntegration` strips from
- * `event.request.headers` when that flag is off. Everything else — the
- * rest of the request headers, cookies, and query strings — still attaches
- * raw to error events, and the default httpIntegration buffers up to 10KB
- * of every incoming request body onto events regardless of that flag. The
- * REAL controls here are `maxIncomingRequestBodySize: "none"` (bodies are
- * never even buffered) and the `beforeSend` scrub below (headers/cookies/
- * query stripped) — never the `sendDefaultPii` side effect above.
+ * PII posture (@sentry/node 11.14.0, read in the installed source and
+ * measured with an egress probe on 2026-11-18; first written for 10.65.0,
+ * privacy audit L8): two layers, and neither relies on an SDK default.
+ * `buildSentryOptions` turns every `dataCollection` field off except request
+ * headers, never buffers a request body, and sends no Sentry Logs. Then the
+ * `beforeSend` scrub below strips sensitive headers, cookies, bodies, query
+ * strings and the `user` block from whatever still reaches an event, so
+ * those stay off even if a later SDK release renames or re-defaults a
+ * collection control. It cannot cover a key the SDK renames (v11 renamed the
+ * breadcrumb query keys; both names are stripped now), and it never sees
+ * Sentry Logs, which is why logs have two switches of their own.
  */
+/* eslint-disable import/namespace -- eslint-plugin-import cannot read the
+   exports of @sentry/node 11's bundled CJS entry ("No exported names found"),
+   so it flags every `Sentry.x`. TypeScript checks these members. */
 import * as Sentry from "@sentry/node";
 import type { Application } from "express";
 import { getRequestContext } from "./request-context";
@@ -71,40 +72,25 @@ function underRateCap(): boolean {
 
 /**
  * Header names are scrubbed when they CONTAIN any of these snippets
- * (case-insensitive) — an exact-name check is not enough because in
- * @sentry/node v10 ALL headers attach raw to error events (the SDK's own
- * sensitive-key filtering applies only to span attributes, which we never
- * emit). This must cover `authorization` (bearer JWTs), `x-api-key` (the
- * B2B partner credential read by server/middleware/api-key-auth.ts), and
- * `cookie`.
+ * (case-insensitive). This must cover `authorization` (bearer JWTs),
+ * `x-api-key` (the B2B partner credential read by
+ * server/middleware/api-key-auth.ts), and `cookie`.
  *
- * The credential-oriented entries below (through `"cookie"`) are a verified
- * reconciliation with the installed SDK's own deny-list — read directly from
- * `build/cjs/utils/data-collection/filtering-snippets.js` in the @sentry/core
- * copy that @sentry/node resolves, `SENSITIVE_KEY_SNIPPETS` (@sentry/core
- * 10.65.0 on 2026-07-12; unchanged at 10.78.0, 2026-11-12), not from docs.
- * Do NOT assume future parity: the drift-guard tests in
+ * The credential-oriented entries below (through `"cookie"`) mirror the
+ * installed SDK's own deny-list, `SENSITIVE_KEY_SNIPPETS` in @sentry/core
+ * (19 entries; read at 10.65.0 on 2026-07-12, unchanged at 11.14.0 on
+ * 2026-11-18). Do NOT assume future parity: the drift-guard tests in
  * `__tests__/error-reporter.test.ts` re-read that list, and the client-IP
  * names below, from the installed SDK on every run.
  *
  * The client-IP entries after that are an OCRecipes-specific addition and
- * are NOT part of Sentry's SENSITIVE_KEY_SNIPPETS. Two OTHER SDK mechanisms
- * touch IP-adjacent headers when `sendDefaultPii: false`, but neither is a
- * substitute for this list: `PII_HEADER_SNIPPETS` scrubs span attributes
- * only (we never emit spans — tracesSampleRate is never set); the default
- * `requestDataIntegration` (merged into every `Sentry.init` call here —
- * array-form `integrations` ADDS to the SDK's defaults, per
- * `getIntegrationsToSetup` in @sentry/core, it does not replace them)
- * exact-name-strips a fixed 12-entry `ipHeaderNames` list
- * (`x-forwarded-for`, `cf-connecting-ip`, `x-real-ip`, `true-client-ip`,
- * etc. — see @sentry/core `vendor/getIpAddress.js`) from
- * `event.request.headers` directly, but only as a side effect of
- * `sendDefaultPii: false` gating its internal `include.ip` flag — an SDK
- * implementation detail, not a documented contract, so it is NOT relied on
- * here. This list is verified to be a case-insensitive substring superset
- * of those 12 exact names, so IP headers stay scrubbed even if that
- * internal SDK behavior ever changes or that integration is ever excluded.
- * IPs are GDPR/CCPA PII regardless of which mechanism catches them.
+ * are NOT part of Sentry's SENSITIVE_KEY_SNIPPETS. They are a
+ * case-insensitive substring superset of the SDK's 12-entry `ipHeaderNames`
+ * list (`x-forwarded-for`, `cf-connecting-ip`, `x-real-ip`,
+ * `true-client-ip`, etc.). With SDK defaults those headers DO attach to
+ * events in v11 (the 2026-11-18 probe's control run showed
+ * `x-forwarded-for` on the event), so this list, not an SDK side effect, is
+ * what keeps them off. IPs are GDPR/CCPA PII.
  *
  * Referer/Origin header VALUES are deliberately NOT scrubbed today — see the
  * DECISION note below.
@@ -173,7 +159,7 @@ const SENSITIVE_HEADER_SNIPPETS = [
  * fields), so it is allowlisted rather than denylisted: anything not named
  * here never leaves the box. The requestId alone correlates an event back to
  * the full pino line in the log stream. `userId` is dropped on purpose,
- * matching `sendDefaultPii: false`.
+ * matching `dataCollection.userInfo: false`.
  */
 const PINO_CONTEXT_ALLOWLIST = new Set([
   "msg",
@@ -195,8 +181,8 @@ function scrubbedRequestUrl(url: string): string {
 
 /**
  * PII scrubber for outbound events — the load-bearing control on this
- * external trust boundary (see the module doc: `sendDefaultPii: false`
- * does NOT withhold headers/cookies/query on the error-event path in v10).
+ * external trust boundary (see the module doc: it holds even if an SDK
+ * collection default changes).
  *
  * Strips sensitive headers, cookies, request bodies, and query strings
  * (token-bearing URLs like GET /verify-email?token=… must never reach an
@@ -207,6 +193,10 @@ function scrubbedRequestUrl(url: string): string {
  * Exported so it can be unit-tested without initializing Sentry.
  */
 export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
+  // The SDK fills `user` with the inferred client IP (and any id set on the
+  // scope) when `dataCollection.userInfo` is on. It is off, and nothing here
+  // sets a user, so anything present is unwanted.
+  delete event.user;
   const request = event.request;
   if (request) {
     const headers = request.headers;
@@ -270,8 +260,11 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   for (const crumb of event.breadcrumbs ?? []) {
     const data = crumb.data;
     if (!data) continue;
+    // v10 key names, then the names v11 renamed them to.
     if ("http.query" in data) delete data["http.query"];
     if ("http.fragment" in data) delete data["http.fragment"];
+    if ("url.query" in data) delete data["url.query"];
+    if ("url.fragment" in data) delete data["url.fragment"];
     if (typeof data.url === "string") {
       const queryStart = data.url.indexOf("?");
       if (queryStart !== -1) {
@@ -304,27 +297,59 @@ export function beforeSendHandler(
 }
 
 /**
- * Initialize Sentry. Safe to call unconditionally — no-op unless SENTRY_DSN
- * is set and NODE_ENV=production (see module doc). Reads process.env at call
- * time, after env-boot has loaded dotenv. Called from error-reporter-boot.ts
- * so it runs before express/db/routes are imported.
+ * Everything Sentry is told at init, in one exported place so
+ * `__tests__/error-reporter.test.ts` can pin each privacy control and an
+ * egress probe can run the real SDK on the real options.
+ *
+ * @sentry/node 11 changed three things that matter here (each read in the
+ * installed 11.14.0 source on 2026-11-18, not taken from the docs):
+ *
+ * 1. `sendDefaultPii` is gone. `dataCollection` replaces it, and every field
+ *    left unset defaults to COLLECT (`DEFAULTS` in @sentry/core: cookies, all
+ *    four HTTP body directions, query params, DB query data, stack-frame
+ *    local variables, gen-AI inputs and outputs). So every field is set here.
+ * 2. `pinoIntegration` sends every pino line, at every level and with all its
+ *    fields, as a Sentry LOG unless `log.levels` is emptied. v10 gated that
+ *    behind `enableLogs`, but 10.78.0 defaulted that option to TRUE
+ *    (@sentry/core client.js: `enableLogs ?? ... ?? true`), so the config
+ *    this replaced was already shipping log lines; v11 has no gate at all.
+ *    Logs never pass through `beforeSend`, so `beforeSendLog` also drops
+ *    them as a second lock.
+ * 3. The body-buffer switch was renamed `maxRequestBodySize`. The v10 name
+ *    is ignored and the default falls back to `dataCollection.httpBodies`.
  */
-export function initErrorReporter(): void {
-  const dsn = process.env.SENTRY_DSN;
-  if (!dsn || process.env.NODE_ENV !== "production") return;
-  Sentry.init({
+export function buildSentryOptions(dsn: string): Sentry.NodeOptions {
+  return {
     dsn,
     environment: process.env.NODE_ENV,
-    // Withholds IP/user data (its actual v10 scope — headers/bodies are
-    // handled by the integration option + beforeSend scrub, see module doc).
-    // Already the SDK default; set explicitly so it cannot silently flip.
-    sendDefaultPii: false,
+    dataCollection: {
+      // No user id, email, username or inferred IP.
+      userInfo: false,
+      cookies: false,
+      // Request headers still attach (as in v10) and go through the
+      // `beforeSend` scrub. Response headers are not needed for debugging.
+      httpHeaders: { request: true, response: false },
+      // NEVER collect bodies, in any direction: auth routes carry plaintext
+      // passwords, coach/profile routes carry health data, and outgoing AI
+      // calls carry both plus API keys.
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: { document: false, variables: false },
+      genAI: { inputs: false, outputs: false },
+      mcp: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      // Local variables of a throwing frame hold passwords and health text.
+      stackFrameVariables: false,
+      // Source context lines only (code, not data); 7 was the v10 value.
+      frameContextLines: 7,
+    },
     beforeSend: beforeSendHandler,
+    // Sentry Logs are not used. See point 2 above.
+    beforeSendLog: () => null,
     integrations: [
-      // NEVER buffer incoming request bodies onto events — auth routes carry
-      // plaintext passwords and coach/profile routes carry user health data.
-      // Not gated by sendDefaultPii in v10; this option is the only off switch.
-      Sentry.httpIntegration({ maxIncomingRequestBodySize: "none" }),
+      // NEVER buffer incoming request bodies onto events. See point 3 above.
+      Sentry.httpIntegration({ maxRequestBodySize: "none" }),
       // Sentry captures uncaught exceptions but must NOT exit the process —
       // the uncaughtException handler in server/index.ts owns the
       // log/flush/exit sequence.
@@ -335,18 +360,34 @@ export function initErrorReporter(): void {
       // never reach Sentry otherwise: the cron/interval catches and the SSE
       // chat-turn catch log and swallow, and onUnhandledRejection only sees
       // UNhandled rejections. (fireAndForget also calls reportError with the
-      // same Error it logs, so that capture is deduped, not doubled.) Error level
-      // only (warn stays log-only); `log` levels are inert because
-      // enableLogs is never set. Events still pass through beforeSend (rate
-      // cap + scrub — scrubEvent allowlists the attached pino context). An
-      // Error object logged here AND passed to reportError (handleRouteError)
-      // is captured once: the SDK marks a captured Error and skips repeats.
-      Sentry.pinoIntegration({ error: { levels: ["error"] } }),
+      // same Error it logs, so that capture is deduped, not doubled.) Error
+      // level only (warn stays log-only). `log.levels: []` turns off the
+      // log-line capture described in point 2. Events still pass through
+      // beforeSend (rate cap + scrub — scrubEvent allowlists the attached
+      // pino context). An Error object logged here AND passed to reportError
+      // (handleRouteError) is captured once: the SDK marks a captured Error
+      // and skips repeats.
+      Sentry.pinoIntegration({
+        error: { levels: ["error"] },
+        log: { levels: [] },
+      }),
       // The default onUnhandledRejection integration (mode: "warn") stays:
       // it captures without exiting, matching the project convention that
       // unhandledRejection never exits.
     ],
-  });
+  };
+}
+
+/**
+ * Initialize Sentry. Safe to call unconditionally — no-op unless SENTRY_DSN
+ * is set and NODE_ENV=production (see module doc). Reads process.env at call
+ * time, after env-boot has loaded dotenv. Called from error-reporter-boot.ts
+ * so it runs before express/db/routes are imported.
+ */
+export function initErrorReporter(): void {
+  const dsn = process.env.SENTRY_DSN;
+  if (!dsn || process.env.NODE_ENV !== "production") return;
+  Sentry.init(buildSentryOptions(dsn));
   active = true;
   // Positive signal that error tracking is live (never log the DSN itself) —
   // a malformed DSN makes Sentry.init fail silently, so absence of this line
@@ -370,6 +411,12 @@ export function reportError(error: unknown, context?: string): void {
  * Register Sentry's Express error handler. Must be called after all routes
  * and before the app's own JSON error handler; captures only 5xx by default
  * and always forwards to the next error handler. No-op when inactive.
+ *
+ * v11 marks `setupExpressErrorHandler` deprecated in favour of automatic
+ * capture by its Express integration. It is kept: the 2026-11-18 probe (a
+ * server bundled like production, no `--import` preload) got exactly one
+ * event for an error passed to `next()` with this call in place. Removing it
+ * needs the same probe to show the automatic path fires on its own.
  */
 export function attachExpressErrorReporter(app: Application): void {
   if (!active) return;
