@@ -32,6 +32,8 @@ const {
   performPantrySave,
   revertPantrySave,
   pantryReceipt,
+  pantryRowLine,
+  describePantry,
   updatePantryCardArgsSchema,
 } = await import("../pantry");
 const { WriteCardEditError } = await import("../errors");
@@ -577,4 +579,360 @@ describe("pantry write card", () => {
       expect(await pantryOf()).toHaveLength(MAX_PANTRY_ITEMS);
     });
   });
+
+  // Each of these fails for a mutant the tests above let through
+  // (Stryker run on pantry.ts, 2026-11-19).
+  describe("building the card: the edges", () => {
+    it("the largest amount the column holds is kept", async () => {
+      const plan = await planPantryCard(
+        args([{ action: "add", name: "Eggs", quantity: "99999999.99" }]),
+        user.id,
+      );
+      expect(plan.payload?.rows[0].quantity).toBe("99999999.99");
+    });
+
+    it("a top-up may land exactly on the column's limit", async () => {
+      const rice = await stock("Rice", { quantity: "99999999", unit: "g" });
+      const plan = await planPantryCard(
+        args([{ action: "add", name: "Rice", quantity: "0.99", unit: "g" }]),
+        user.id,
+      );
+      expect(plan.payload?.rows[0].itemId).toBe(rice.id);
+    });
+
+    it("an add with no amount is a new row, never a top-up", async () => {
+      await stock("Milk", { quantity: "1", unit: "L" });
+      const plan = await planPantryCard(
+        args([{ action: "add", name: "Milk", unit: "L" }]),
+        user.id,
+      );
+      expect(plan.payload?.rows[0]).toMatchObject({ itemId: null, held: null });
+    });
+
+    it("a top-up needs the same item and the same unit", async () => {
+      await stock("Milk", { quantity: "1", unit: "L" });
+      const plan = await planPantryCard(
+        args([
+          { action: "add", name: "Juice", quantity: "2", unit: "L" },
+          { action: "add", name: "Milk", quantity: "2", unit: "cups" },
+        ]),
+        user.id,
+      );
+      expect(plan.payload?.rows.map((r) => [r.name, r.itemId])).toEqual([
+        ["Juice", null],
+        ["Milk", null],
+      ]);
+    });
+
+    it("a second add of the same item is its own row", async () => {
+      const milk = await stock("Milk", { quantity: "1", unit: "L" });
+      const plan = await planPantryCard(
+        args([
+          { action: "add", name: "Milk", quantity: "1", unit: "L" },
+          { action: "add", name: "Milk", quantity: "1", unit: "L" },
+        ]),
+        user.id,
+      );
+      expect(plan.payload?.rows.map((r) => r.itemId)).toEqual([milk.id, null]);
+    });
+
+    it("a remove row says exactly what the card shows", async () => {
+      const spinach = await stock("Spinach", { quantity: "1", unit: "bag" });
+      const plan = await planPantryCard(
+        args([{ action: "remove", itemId: spinach.id }]),
+        user.id,
+      );
+      expect(plan.payload?.rows).toEqual([
+        {
+          action: "remove",
+          name: "Spinach",
+          quantity: null,
+          unit: "bag",
+          itemId: spinach.id,
+          held: "1.00",
+          all: false,
+          expiresInDays: null,
+        },
+      ]);
+    });
+
+    it("a use that could not be read leaves the row free for a later change", async () => {
+      const milk = await stock("Milk", { quantity: "2", unit: "L" });
+      const plan = await planPantryCard(
+        args([
+          { action: "use", itemId: milk.id, quantity: "half" },
+          { action: "use", itemId: milk.id, quantity: "1" },
+        ]),
+        user.id,
+      );
+      expect(plan.dropped).toBe(1);
+      expect(plan.payload?.rows).toMatchObject([
+        { action: "use", itemId: milk.id, quantity: "1", all: false },
+      ]);
+    });
+
+    it("all: true uses the row up whatever amount comes with it, and so does using exactly what it holds", async () => {
+      const milk = await stock("Milk", { quantity: "2", unit: "L" });
+      const rice = await stock("Rice", { quantity: "500", unit: "g" });
+      const plan = await planPantryCard(
+        args([
+          { action: "use", itemId: milk.id, quantity: "1", all: true },
+          { action: "use", itemId: rice.id, quantity: "500" },
+        ]),
+        user.id,
+      );
+      expect(
+        plan.payload?.rows.map((r) => [r.name, r.all, r.quantity]),
+      ).toEqual([
+        ["Milk", true, null],
+        ["Rice", true, null],
+      ]);
+    });
+
+    it("a name longer than the card allows is cut, and the save still finds the row", async () => {
+      const long = await stock("x".repeat(250), { quantity: "1" });
+      const payload = await buildPantryPayload(
+        args([{ action: "remove", itemId: long.id }]),
+        user.id,
+      );
+      expect(payload.rows[0].name).toBe("x".repeat(200));
+      const refs = await performPantrySave(tx, card(payload), {}, ctx());
+      expect(refs.pantryCounts).toMatchObject({ removed: 1, skipped: 0 });
+    });
+
+    it("a top-up of a long-named row shows the cut name", async () => {
+      // The pantry holds the plural; the names match once the "s" is dropped.
+      const long = await stock(`${"x".repeat(200)}s`, { quantity: "1" });
+      const plan = await planPantryCard(
+        args([{ action: "add", name: "x".repeat(200), quantity: "1" }]),
+        user.id,
+      );
+      expect(plan.payload?.rows[0]).toMatchObject({
+        itemId: long.id,
+        name: "x".repeat(200),
+      });
+    });
+
+    it("says why there is no card", async () => {
+      await refused(
+        buildPantryPayload(
+          args([{ action: "remove", itemId: 999_999_999 }]),
+          user.id,
+        ),
+        "None of those pantry items could be found.",
+      );
+    });
+  });
+
+  describe("the card as words", () => {
+    const row = (
+      more: Partial<PantryCardPayload["rows"][number]>,
+    ): PantryCardPayload["rows"][number] => ({
+      action: "use",
+      name: "Milk",
+      quantity: null,
+      unit: null,
+      itemId: 1,
+      held: null,
+      all: false,
+      expiresInDays: null,
+      ...more,
+    });
+    const payload: PantryCardPayload = {
+      rows: [
+        row({ quantity: "1", unit: "L", held: "2.00" }),
+        row({ action: "add", name: "Salt", itemId: null }),
+        row({ action: "remove", name: "Spinach", unit: "bag", held: "1.00" }),
+      ],
+    };
+
+    it("one row is its action, name and amount, with no gap when there is no amount", () => {
+      expect(payload.rows.map(pantryRowLine)).toEqual([
+        "Use Milk 1 L of 2 L",
+        "Add Salt",
+        "Remove Spinach 1 bag",
+      ]);
+    });
+
+    it("the prompt line lists every row and whether it is ticked", () => {
+      expect(describePantry(payload, { ticked: [true, true, false] })).toBe(
+        "Use Milk 1 L of 2 L — ticked; Add Salt — ticked; Remove Spinach 1 bag — unticked",
+      );
+    });
+
+    it("a card that was never saved has the plain receipt", () => {
+      expect(pantryReceipt(card(payload))).toBe("✓ Pantry updated");
+    });
+  });
+
+  describe("saving: the edges", () => {
+    const removeRow = (
+      item: schema.PantryItem,
+      held: string | null,
+    ): PantryCardPayload["rows"][number] => ({
+      action: "remove",
+      name: item.name,
+      quantity: null,
+      unit: item.unit,
+      itemId: item.id,
+      held,
+      all: false,
+      expiresInDays: null,
+    });
+    const saveOne = async (row: PantryCardPayload["rows"][number]) =>
+      (await performPantrySave(tx, card({ rows: [row] }), {}, ctx()))
+        .pantryCounts;
+
+    it.each([
+      ["a tick list of the wrong length", { ticked: [true] }],
+      ["a field the card does not have", { extra: 1 }],
+    ])("refuses %s, and says so", async (_label, edits) => {
+      const milk = await stock("Milk", { quantity: "2" });
+      await refused(
+        performPantrySave(
+          tx,
+          card({ rows: [removeRow(milk, "2.00"), removeRow(milk, "2.00")] }),
+          edits,
+          ctx(),
+        ),
+        "These changes can't be saved.",
+      );
+      expect(await names()).toEqual(["Milk"]);
+    });
+
+    it("refuses a save with nothing ticked, and says so", async () => {
+      const milk = await stock("Milk", { quantity: "2" });
+      await refused(
+        performPantrySave(
+          tx,
+          card({ rows: [removeRow(milk, "2.00")] }),
+          { ticked: [false] },
+          ctx(),
+        ),
+        "Nothing to change.",
+      );
+    });
+
+    it("refuses a save on a plan without the pantry, and says so", async () => {
+      const milk = await stock("Milk", { quantity: "2" });
+      await tx
+        .update(schema.users)
+        .set({ subscriptionTier: "free" })
+        .where(eq(schema.users.id, user.id));
+      await refused(
+        performPantrySave(
+          tx,
+          card({ rows: [removeRow(milk, "2.00")] }),
+          {},
+          ctx(),
+        ),
+        "Your plan no longer includes the pantry.",
+      );
+      expect(await names()).toEqual(["Milk"]);
+    });
+
+    it("a save that only adds records nothing to restore", async () => {
+      const payload = await buildPantryPayload(
+        args([{ action: "add", name: "Eggs", quantity: "12" }]),
+        user.id,
+      );
+      const refs = await performPantrySave(tx, card(payload), {}, ctx());
+      const [eggs] = await pantryOf();
+      expect(refs).toEqual({
+        pantryAddedIds: [eggs.id],
+        pantryRestore: [],
+        pantryCounts: { added: 1, used: 0, removed: 0, skipped: 0 },
+      });
+    });
+
+    it("a row with no amount, shown with no amount, is still the same row", async () => {
+      const salt = await stock("Salt");
+      expect(await saveOne(removeRow(salt, null))).toMatchObject({
+        removed: 1,
+        skipped: 0,
+      });
+    });
+
+    it("an amount that differs only past two decimals is the same amount", async () => {
+      const milk = await stock("Milk", { quantity: "2" });
+      expect(await saveOne(removeRow(milk, "2.001"))).toMatchObject({
+        removed: 1,
+        skipped: 0,
+      });
+    });
+
+    it.each<[string, string | null, string | null]>([
+      ["gained an amount", "2", null],
+      ["lost its amount", null, "2.00"],
+      ["lost an amount of zero", null, "0"],
+      ["gained an amount of zero", "0", null],
+    ])(
+      "a row that %s since the card was built is skipped",
+      async (_label, nowHolds, cardShowed) => {
+        const salt = await stock("Salt", { quantity: nowHolds });
+        expect(await saveOne(removeRow(salt, cardShowed))).toMatchObject({
+          removed: 0,
+          skipped: 1,
+        });
+        expect(await names()).toEqual(["Salt"]);
+      },
+    );
+
+    it("an add row is a top-up even if the card marks it 'all'", async () => {
+      const milk = await stock("Milk", { quantity: "2", unit: "L" });
+      const counts = await saveOne({
+        action: "add",
+        name: "Milk",
+        quantity: "1",
+        unit: "L",
+        itemId: milk.id,
+        held: "2.00",
+        all: true,
+        expiresInDays: null,
+      });
+      expect(counts).toMatchObject({ added: 1, used: 0 });
+      expect((await pantryOf()).map((r) => r.quantity)).toEqual(["3.00"]);
+    });
+  });
+
+  describe("undo with nothing to take back", () => {
+    it("a card that was never saved", async () => {
+      await stock("Milk", { quantity: "2" });
+      const payload = await buildPantryPayload(
+        args([{ action: "add", name: "Eggs" }]),
+        user.id,
+      );
+      await expect(
+        revertPantrySave(tx, card(payload)),
+      ).resolves.toBeUndefined();
+      expect(await names()).toEqual(["Milk"]);
+    });
+
+    it("a save that recorded counts and nothing else", async () => {
+      await stock("Milk", { quantity: "2" });
+      const payload = await buildPantryPayload(
+        args([{ action: "add", name: "Eggs" }]),
+        user.id,
+      );
+      await expect(
+        revertPantrySave(
+          tx,
+          card(payload, {
+            pantryCounts: { added: 0, used: 0, removed: 0, skipped: 1 },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+      expect(await names()).toEqual(["Milk"]);
+    });
+  });
 });
+
+/** A refusal the user is shown: the right error type and its exact words. */
+async function refused(attempt: Promise<unknown>, message: string) {
+  const err: unknown = await attempt.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(WriteCardEditError);
+  expect((err as Error).message).toBe(message);
+}

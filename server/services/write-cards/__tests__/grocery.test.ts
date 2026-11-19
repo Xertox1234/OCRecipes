@@ -60,7 +60,23 @@ const itemsOf = (listId: number) =>
     .from(schema.groceryListItems)
     .where(eq(schema.groceryListItems.groceryListId, listId));
 
+const listsOf = () =>
+  tx
+    .select()
+    .from(schema.groceryLists)
+    .where(eq(schema.groceryLists.userId, user.id));
+
 const ctx = () => ({ userId: user.id, tz: "UTC", now: new Date() });
+
+/** A refusal the user is shown: the right error type and its exact words. */
+async function refused(attempt: Promise<unknown>, message: string) {
+  const err: unknown = await attempt.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(WriteCardEditError);
+  expect((err as Error).message).toBe(message);
+}
 
 describe("grocery write card", () => {
   beforeEach(async () => {
@@ -434,5 +450,274 @@ describe("grocery write card", () => {
         ctx(),
       ),
     ).rejects.toBeInstanceOf(WriteCardEditError);
+  });
+
+  // Each of these fails for a mutant the tests above let through
+  // (Stryker run on grocery.ts, 2026-11-19).
+  describe("refusals say why", () => {
+    it("with everything in the pantry", async () => {
+      await pantry("Spinach");
+      await refused(
+        buildGroceryPayload(
+          addGroceryCardArgsSchema.parse({ items: [{ name: "spinach" }] }),
+          user.id,
+        ),
+        "Everything is already in the pantry.",
+      );
+    });
+
+    it.each([
+      ["a tick list of the wrong length", { ticked: [true] }],
+      ["ticks that are not a list", { ticked: "yes" }],
+      ["a field the card does not have", { extra: 1 }],
+    ])("with %s", async (_label, edits) => {
+      const list = await makeList("Weekly shop", new Date("2026-11-08"));
+      const p = await buildGroceryPayload(args, user.id);
+      await refused(
+        performGrocerySave(tx, card(p), edits, ctx()),
+        "These changes can't be saved.",
+      );
+      expect(await itemsOf(list.id)).toHaveLength(0);
+    });
+
+    it("with nothing ticked", async () => {
+      const p = await buildGroceryPayload(args, user.id);
+      await refused(
+        performGrocerySave(
+          tx,
+          card(p),
+          { ticked: p.items.map(() => false) },
+          ctx(),
+        ),
+        "Nothing to add.",
+      );
+    });
+
+    it("with fifty lists already, and no list is created", async () => {
+      await tx.insert(schema.groceryLists).values(
+        Array.from({ length: 50 }, (_, i) => ({
+          userId: user.id,
+          title: `List ${i}`,
+          dateRangeStart: "2026-11-01",
+          dateRangeEnd: "2026-11-07",
+        })),
+      );
+      const p = await buildGroceryPayload(args, user.id);
+      await refused(
+        performGrocerySave(tx, card(p), { listId: "new" }, ctx()),
+        "You have too many grocery lists.",
+      );
+      expect(await listsOf()).toHaveLength(50);
+    });
+
+    it("with a list the card offered that is no longer the user's", async () => {
+      const list = await makeList("Weekly shop", new Date("2026-11-08"));
+      const p = await buildGroceryPayload(args, user.id);
+      const other = await createTestUser(tx);
+      await tx
+        .update(schema.groceryLists)
+        .set({ userId: other.id })
+        .where(eq(schema.groceryLists.id, list.id));
+      await refused(
+        performGrocerySave(tx, card(p), {}, ctx()),
+        "That list isn't available.",
+      );
+      expect(await itemsOf(list.id)).toHaveLength(0);
+    });
+
+    it("with one of the user's lists that the card did not offer", async () => {
+      await makeList("Weekly shop", new Date("2026-11-08"));
+      const p = await buildGroceryPayload(args, user.id);
+      const later = await makeList("Party", new Date("2026-11-09"));
+      await refused(
+        performGrocerySave(tx, card(p), { listId: later.id }, ctx()),
+        "That list isn't available.",
+      );
+      expect(await itemsOf(later.id)).toHaveLength(0);
+    });
+  });
+
+  it("a card with no list name offers the default name", async () => {
+    const p = await buildGroceryPayload(one({ name: "Milk" }), user.id);
+    expect(p.newListName).toBe("Coach list");
+  });
+
+  it("saves only the items the user left ticked", async () => {
+    const list = await makeList("Weekly shop", new Date("2026-11-08"));
+    const p = await buildGroceryPayload(args, user.id);
+    await performGrocerySave(
+      tx,
+      card(p),
+      { ticked: [true, false, false, false] },
+      ctx(),
+    );
+    expect((await itemsOf(list.id)).map((r) => r.name)).toEqual([
+      "Red lentils",
+    ]);
+  });
+
+  it("the largest amount the column holds is saved as it is", async () => {
+    const list = await makeList("Weekly shop", new Date("2026-11-08"));
+    const p = await buildGroceryPayload(
+      addGroceryCardArgsSchema.parse({
+        items: [{ name: "Rice", quantity: "99999999.99", unit: "g" }],
+      }),
+      user.id,
+    );
+    await performGrocerySave(tx, card(p), {}, ctx());
+    expect(await itemsOf(list.id)).toMatchObject([
+      { name: "Rice", quantity: "99999999.99" },
+    ]);
+  });
+
+  it("with no list to offer, a plain save makes a new one and names what it added", async () => {
+    const p = await buildGroceryPayload(args, user.id);
+    const refs = await performGrocerySave(tx, card(p), {}, ctx());
+    const [created] = await listsOf();
+    expect(created.title).toBe("Lentil stew");
+    const ids = (await itemsOf(created.id)).map((r) => r.id);
+    expect(ids).toHaveLength(3);
+    // Exactly these keys: no "list full" count when everything fitted.
+    expect({
+      ...refs,
+      groceryItemIds: [...(refs.groceryItemIds ?? [])].sort(),
+    }).toEqual({
+      createdListId: created.id,
+      listId: created.id,
+      groceryItemIds: [...ids].sort(),
+    });
+    expect(groceryReceipt(saved(p, refs))).toBe(
+      "✓ Added 3 items to Lentil stew",
+    );
+  });
+
+  it("a new list takes what fits and records how many did not", async () => {
+    const p: GroceryCardPayload = {
+      items: Array.from({ length: MAX_GROCERY_LIST_ITEMS + 1 }, (_, i) => ({
+        name: `Item ${i}`,
+        quantity: null,
+        unit: null,
+        ticked: true,
+      })),
+      lists: [],
+      defaultListId: null,
+      newListName: "Big shop",
+    };
+    const refs = await performGrocerySave(tx, card(p), {}, ctx());
+    expect(refs.groceryItemIds).toHaveLength(MAX_GROCERY_LIST_ITEMS);
+    expect(refs.groceryListFull).toBe(1);
+  });
+
+  it("with two lists offered, the save goes to the one chosen", async () => {
+    const old = await makeList("Old", new Date("2026-10-01"));
+    const recent = await makeList("Weekly shop", new Date("2026-11-08"));
+    const p = await buildGroceryPayload(args, user.id);
+    const refs = await performGrocerySave(
+      tx,
+      card(p),
+      { listId: old.id },
+      ctx(),
+    );
+    expect(await itemsOf(old.id)).toHaveLength(3);
+    expect(await itemsOf(recent.id)).toHaveLength(0);
+    expect(groceryReceipt(saved(p, refs))).toBe("✓ Added 3 items to Old");
+  });
+
+  describe("undo with nothing to take back", () => {
+    it("a card that was never saved", async () => {
+      const list = await makeList("Weekly shop", new Date("2026-11-08"));
+      const p = await buildGroceryPayload(args, user.id);
+      await expect(revertGrocerySave(tx, card(p))).resolves.toBeUndefined();
+      expect(await listsOf()).toHaveLength(1);
+      expect(list.id).toBeGreaterThan(0);
+    });
+
+    it("a save that recorded a list but no items", async () => {
+      const list = await makeList("Weekly shop", new Date("2026-11-08"));
+      await tx
+        .insert(schema.groceryListItems)
+        .values({ groceryListId: list.id, name: "Bread" });
+      const p = await buildGroceryPayload(args, user.id);
+      await expect(
+        revertGrocerySave(tx, saved(p, { listId: list.id })),
+      ).resolves.toBeUndefined();
+      expect(await itemsOf(list.id)).toHaveLength(1);
+    });
+  });
+
+  describe("the receipt, from what the save recorded", () => {
+    const three: GroceryCardPayload = {
+      items: ["Apples", "Bread", "Cheese"].map((name) => ({
+        name,
+        quantity: null,
+        unit: null,
+        ticked: true,
+      })),
+      lists: [
+        { id: 7, title: "Weekly shop" },
+        { id: 9, title: "Party" },
+      ],
+      defaultListId: 7,
+      newListName: "Coach list",
+    };
+
+    it("a card that was never saved", () => {
+      expect(groceryReceipt(card(three))).toBe("✓ Added 3 items");
+    });
+
+    it.each<[string, schema.CoachWriteCardSavedRefs, string]>([
+      [
+        "a list and no item ids",
+        { listId: 7 },
+        "✓ Added 3 items to Weekly shop",
+      ],
+      [
+        "the second list offered",
+        { listId: 9, groceryItemIds: [1, 2, 3] },
+        "✓ Added 3 items to Party",
+      ],
+      [
+        "a list the card did not offer",
+        { listId: 99, groceryItemIds: [1, 2, 3] },
+        "✓ Added 3 items",
+      ],
+      [
+        "a list the save created",
+        { listId: 8, createdListId: 8, groceryItemIds: [1, 2, 3] },
+        "✓ Added 3 items to Coach list",
+      ],
+      [
+        "a full list",
+        { listId: 7, groceryItemIds: [], groceryListFull: 3 },
+        "✓ Weekly shop is full",
+      ],
+      [
+        "a full list with no title",
+        { groceryItemIds: [], groceryListFull: 3 },
+        "✓ Your list is full",
+      ],
+      [
+        "everything already there, no title",
+        { groceryItemIds: [] },
+        "✓ Already on your list",
+      ],
+      [
+        "some already there and the rest did not fit",
+        { listId: 7, groceryItemIds: [], groceryListFull: 1 },
+        "✓ Already on Weekly shop · 1 didn't fit (list full)",
+      ],
+      [
+        "a partial add with no title",
+        { groceryItemIds: [1], groceryListFull: 2 },
+        "✓ Added 1 item · 2 didn't fit (list full)",
+      ],
+      [
+        "one added, one already there, one did not fit",
+        { listId: 7, groceryItemIds: [1], groceryListFull: 1 },
+        "✓ Added 1 item to Weekly shop · 1 already there · 1 didn't fit (list full)",
+      ],
+    ])("%s", (_label, refs, line) => {
+      expect(groceryReceipt(saved(three, refs))).toBe(line);
+    });
   });
 });

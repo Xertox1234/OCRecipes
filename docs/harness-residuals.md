@@ -468,3 +468,27 @@ are left open on purpose:
 3. **The record is an unprotected file** under the review-stamp directory, like the reviewers'
    records (review-stamp-writer.sh header): a fabricated record passes. It closes the honest
    failure (a verifier that never ran, or a misread verdict), not a deliberate forgery.
+
+### HIT IN REAL USE 2026-11-16 — the advisory Mutation-on-diff check cannot mutate a module whose co-located test needs Postgres, and a green run can leave a module out (#1892, #1895, #1897)
+
+Found 2026-11-19 while reading the runs for the coach grocery and pantry card PRs. The check is
+advisory, so nothing was blocked; what it cost is that `server/services/write-cards/grocery.ts` and
+`pantry.ts` were never mutated in CI across three PRs that changed them.
+
+1. **A module whose co-located test opens a real database transaction gets no score.**
+   `mutation-on-diff.yml` has no Postgres service on purpose (its own comment: a set `DATABASE_URL`
+   is enough to import `server/db.ts`, and a test that does query "fails fast with ECONNREFUSED").
+   For such a module Stryker's initial test run fails (`connect ECONNREFUSED ::1:5432`), the row
+   reads `⚠️ explore exited 1`, and the job goes red as a harness failure. Runs `43960275874`
+   (#1892, `grocery.ts`) and `43978622572` (#1897, `grocery.ts` and `pantry.ts`). The red job reads
+   like "mutants survived" unless the summary table is opened.
+2. **A green run does not mean every changed module ran.** Selection is alphabetical and stops at
+   `MAX_FILES = 6`. On #1895 (run `43974398073`) six `client/lib` and `server/services/*.ts` modules
+   filled the cap; `write-cards/grocery.ts`, `index.ts`, `pantry.ts`, `tool-args.ts` and
+   `shared/lib/coach-write-card-math.ts` are listed under "Over the cap, not run", and the job was
+   green.
+
+Not changed here. The two files were mutated locally instead, where Postgres exists
+(`npm run mutation:explore -- <module> <test>`, about a minute each). If reopened: give the job a
+Postgres service, or select DB-backed tests out with their own summary note instead of a red row;
+and order the cap by something other than path so one directory is not always the one left out.
