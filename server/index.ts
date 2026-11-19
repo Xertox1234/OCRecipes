@@ -25,7 +25,7 @@ import {
   stopNotificationScheduler,
 } from "./services/notification-scheduler";
 import { logger, rootLogger, toError } from "./lib/logger";
-import { loggedPath, requestLogFields } from "./lib/log-url";
+import { httpLogSerializers, loggedPath } from "./lib/log-url";
 import {
   attachExpressErrorReporter,
   flushErrorReporter,
@@ -198,14 +198,7 @@ function setupRequestLogging(app: express.Application) {
         ignore: (req) =>
           !req.url?.startsWith("/api") || req.url === "/api/health",
       },
-      serializers: {
-        // Path only, barcode replaced, and genReqId's id rather than the
-        // client's header (privacy audit M12; security audit 2026-11-12, L12).
-        req: requestLogFields,
-        res(res) {
-          return { statusCode: res.statusCode };
-        },
-      },
+      serializers: httpLogSerializers,
       customSuccessMessage: (req) => `${req.method} ${loggedPath(req.url)}`,
       customErrorMessage: (req) => `${req.method} ${loggedPath(req.url)}`,
     }),

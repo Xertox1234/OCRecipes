@@ -148,6 +148,87 @@ describe("logger + AsyncLocalStorage integration", () => {
       expect(await serialize(err)).not.toContain("ZZMARKER-allergy");
     });
 
+    it("a wrapper whose cause is a failed statement is redacted through the chain", async () => {
+      const wrapper = new Error("saving the profile failed", {
+        cause: await failedQuery(),
+      });
+      const out = await serialize(wrapper);
+      expect(out).not.toContain("ZZMARKER-allergy");
+      expect(out).toContain("saving the profile failed");
+      expect(out).toContain('insert into \\"user_profiles\\"');
+
+      const { toError } = await import("../logger");
+      const safe = toError(wrapper);
+      const cause = safe.cause as Error;
+      expect(
+        JSON.stringify([safe.message, safe.stack, cause.message, cause.stack]),
+      ).not.toContain("ZZMARKER-allergy");
+    });
+
+    it("an AggregateError holding a failed statement is redacted", async () => {
+      const out = await serialize(
+        new AggregateError([await failedQuery()], "all attempts failed"),
+      );
+      expect(out).not.toContain("ZZMARKER-allergy");
+      expect(out).toContain("all attempts failed");
+    });
+
+    it("a bare pg error loses detail and where, keeps its code", async () => {
+      const pgError = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "users_email_key"',
+        ),
+        {
+          severity: "ERROR",
+          code: "23505",
+          detail: "Key (email)=(ZZMARKER-allergy) already exists.",
+          where: "COPY users, line 1: ZZMARKER-allergy",
+        },
+      );
+      const out = await serialize(pgError);
+      expect(out).not.toContain("ZZMARKER-allergy");
+      expect(out).toContain("23505");
+      expect(out).toContain("users_email_key");
+    });
+
+    it("an ordinary wrapper of an ordinary error is returned untouched", async () => {
+      const { toError } = await import("../logger");
+      const wrapper = new Error("outer", { cause: new Error('inner: "x"') });
+      expect(toError(wrapper)).toBe(wrapper);
+    });
+
+    describe("the request logger (pino-http installs its own err serializer)", () => {
+      async function httpErrSerializer(
+        serializers?: import("pino-http").Options["serializers"],
+      ) {
+        const pino = (await import("pino")).default;
+        const pinoHttp = (await import("pino-http")).default;
+        const { rootLogger } = await import("../logger");
+        const middleware = pinoHttp({ logger: rootLogger, serializers });
+        return (
+          middleware.logger as unknown as Record<
+            symbol,
+            Record<string, (e: unknown) => unknown>
+          >
+        )[pino.symbols.serializersSym].err;
+      }
+
+      it("control: without our serializers it exposes the marker", async () => {
+        const err = await httpErrSerializer();
+        expect(JSON.stringify(err(await failedQuery()))).toContain(
+          "ZZMARKER-allergy",
+        );
+      });
+
+      it("with the app's request-log serializers it does not", async () => {
+        const { httpLogSerializers } = await import("../log-url");
+        const err = await httpErrSerializer(httpLogSerializers);
+        expect(JSON.stringify(err(await failedQuery()))).not.toContain(
+          "ZZMARKER-allergy",
+        );
+      });
+    });
+
     it("toError redacts too, and leaves ordinary errors untouched", async () => {
       const { toError } = await import("../logger");
       const safe = toError(await failedQuery());
