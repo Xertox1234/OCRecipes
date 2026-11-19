@@ -1,6 +1,6 @@
 ---
 title: "Server log lines for a failed query carry every bound value, including health data"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-16
 updated: 2026-11-16
@@ -37,14 +37,14 @@ nothing across users; the exposure is to whoever can read the server logs.
 
 ## Acceptance Criteria
 
-- [ ] A failed Drizzle statement logged through `logger.error` (any route, service or
+- [x] A failed Drizzle statement logged through `logger.error` (any route, service or
       background job) never includes the `\nparams:` tail.
-- [ ] The pg cause's quoted inputs are redacted in the log the same way `scrubEvent` redacts
+- [x] The pg cause's quoted inputs are redacted in the log the same way `scrubEvent` redacts
       them for Sentry, from one shared function so the two cannot drift.
-- [ ] The log line still says which statement failed and keeps the pg error code.
-- [ ] A test builds a real `DrizzleQueryError`, runs it through the real logger serializer, and
+- [x] The log line still says which statement failed and keeps the pg error code.
+- [x] A test builds a real `DrizzleQueryError`, runs it through the real logger serializer, and
       asserts a marker value is absent; with a control that the marker is present before the fix.
-- [ ] `withoutBoundValues` in `server/routes/family.ts` is removed once the logger covers it,
+- [x] `withoutBoundValues` in `server/routes/family.ts` is removed once the logger covers it,
       and `server/routes/__tests__/family.log-redaction.test.ts` still passes.
 
 ## Implementation Notes
@@ -62,3 +62,11 @@ Fix it once at the logger: a pino `err` serializer in `server/lib/logger.ts`, or
 ## Dependencies
 
 - None. PR 1890 need not merge first; if it has not, skip the last acceptance criterion.
+
+## Updates
+
+### 2026-11-18
+
+- Fixed once at the logger: `redactBoundValues` (server/lib/logger.ts) is the shared redaction; pino `err` serializer and `toError` apply it to Drizzle errors; `scrubEvent` uses the same function.
+- Criterion 3 evidence: server/lib/**tests**/logger.test.ts (statement text and pg code 22P02 kept; code hoisted from the cause).
+- Criterion 4 evidence: server/lib/**tests**/logger.test.ts, control test plus serializer test with a real DrizzleQueryError.

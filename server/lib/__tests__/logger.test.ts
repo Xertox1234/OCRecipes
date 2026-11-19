@@ -98,4 +98,56 @@ describe("logger + AsyncLocalStorage integration", () => {
     expect(toError(null)).toBeInstanceOf(Error);
     expect(toError(undefined)).toBeInstanceOf(Error);
   });
+
+  describe("failed Drizzle statements keep bound values out of the log", () => {
+    async function serialize(err: unknown): Promise<string> {
+      const pino = (await import("pino")).default;
+      const { rootLogger } = await import("../logger");
+      const serializers = (
+        rootLogger as unknown as Record<
+          symbol,
+          Record<string, (e: unknown) => unknown>
+        >
+      )[pino.symbols.serializersSym];
+      return JSON.stringify(serializers.err(err));
+    }
+
+    async function failedQuery() {
+      const { DrizzleQueryError } = await import("drizzle-orm");
+      const pgError = Object.assign(
+        new Error('invalid input syntax for type json: "ZZMARKER-allergy"'),
+        { code: "22P02" },
+      );
+      return new DrizzleQueryError(
+        'insert into "user_profiles" ("allergies") values ($1)',
+        ["ZZMARKER-allergy"],
+        pgError,
+      );
+    }
+
+    it("control: the default pino serializer exposes the marker", async () => {
+      const pino = (await import("pino")).default;
+      expect(
+        JSON.stringify(pino.stdSerializers.err(await failedQuery())),
+      ).toContain("ZZMARKER-allergy");
+    });
+
+    it("the logger's err serializer drops the values, keeps statement and pg code", async () => {
+      const out = await serialize(await failedQuery());
+      expect(out).not.toContain("ZZMARKER-allergy");
+      expect(out).not.toContain("params:");
+      expect(out).toContain('insert into \\"user_profiles\\"');
+      expect(out).toContain("22P02");
+    });
+
+    it("toError redacts too, and leaves ordinary errors untouched", async () => {
+      const { toError } = await import("../logger");
+      const safe = toError(await failedQuery());
+      expect(JSON.stringify([safe.message, safe.stack])).not.toContain(
+        "ZZMARKER-allergy",
+      );
+      const plain = new Error('Unexpected token: "x"');
+      expect(toError(plain)).toBe(plain);
+    });
+  });
 });

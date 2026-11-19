@@ -43,7 +43,8 @@ const loggerMocks = vi.hoisted(() => ({
   mockInfo: vi.fn(),
 }));
 
-vi.mock("../logger", () => ({
+vi.mock("../logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../logger")>()),
   logger: { warn: loggerMocks.mockWarn, info: loggerMocks.mockInfo },
 }));
 
