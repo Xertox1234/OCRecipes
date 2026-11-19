@@ -16,6 +16,7 @@ import * as identities from "./identities";
 import * as mfa from "./mfa";
 import * as mfaEmail from "./mfa-email";
 import * as accountImages from "./account-images";
+import * as dishImagesStorage from "./dish-images";
 import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
 import * as groceryLists from "./grocery-lists";
@@ -128,6 +129,8 @@ export const storage = {
   forgetTrustedDevices: mfa.forgetTrustedDevices,
   collectUserImageUrls: accountImages.collectUserImageUrls,
   filterUnreferencedImageUrls: accountImages.filterUnreferencedImageUrls,
+  getDishImageUrl: dishImagesStorage.getDishImageUrl,
+  recordDishImage: dishImagesStorage.recordDishImage,
   createUser: users.createUser,
   updateUser: users.updateUser,
   setUserTimezoneIfUnset: users.setUserTimezoneIfUnset,
