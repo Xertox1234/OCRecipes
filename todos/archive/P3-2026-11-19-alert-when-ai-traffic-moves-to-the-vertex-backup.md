@@ -1,6 +1,6 @@
 ---
 title: "Report once to Sentry when the OpenRouter breaker opens and AI traffic moves to Vertex"
-status: backlog
+status: done
 priority: low
 created: 2026-11-19
 updated: 2026-11-19
@@ -21,8 +21,8 @@ Reliability audit 2026-11-19, finding L-obs-4 (`docs/audits/2026-11-18-reliabili
 
 ## Acceptance Criteria
 
-- [ ] One throttled `deps.report` when the OpenRouter breaker opens, naming the failure kind only (no prompt or user data).
-- [ ] Test: breaker opening reports once per throttle window; per-call fallbacks still only log.
+- [x] One throttled `deps.report` when the OpenRouter breaker opens, naming the failure kind only (no prompt or user data).
+- [x] Test: breaker opening reports once per throttle window; per-call fallbacks still only log.
 
 ## Implementation Notes
 
@@ -45,3 +45,6 @@ Reliability audit 2026-11-19, finding L-obs-4 (`docs/audits/2026-11-18-reliabili
 ### 2026-11-19
 
 - Filed from the reliability audit (L-obs-4).
+
+- Done. `recordOpenRouterFailure` in `server/lib/ai-client.ts` reports through `throttledReport` (one key, 10 minutes) when a counted failure takes the OpenRouter breaker from closed to open, at both OpenRouter failure sites (OpenRouter-first rows and the OpenRouter leg of Vertex-first rows). The message carries the failure kind only.
+- Not reported: a breaker opened by fallback-off eval calls (no traffic moves), and the Vertex breaker (both routes failing already reports "AI unavailable").
