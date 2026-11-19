@@ -65,6 +65,7 @@ import {
 import {
   BorderRadius,
   FontFamily,
+  MAX_FONT_SCALE_CONSTRAINED,
   Spacing,
   withOpacity,
 } from "@/constants/theme";
@@ -499,9 +500,15 @@ export default function MealPlanHomeScreen() {
             <Feather name="chevron-left" size={20} color={theme.text} />
           </Pressable>
           <View style={styles.weekTitle}>
-            <ThemedText style={styles.monthTitle}>{monthYear}</ThemedText>
+            <ThemedText
+              maxScale={MAX_FONT_SCALE_CONSTRAINED}
+              style={styles.monthTitle}
+            >
+              {monthYear}
+            </ThemedText>
             {!isLoading && !isLoadingError && (
               <ThemedText
+                maxScale={MAX_FONT_SCALE_CONSTRAINED}
                 style={[styles.slotCount, { color: theme.textSecondary }]}
               >
                 {`${plannedSlots} of ${SLOTS_PER_WEEK} planned`}
@@ -717,6 +724,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   weekTitle: {
+    flex: 1,
     alignItems: "center",
     gap: 2,
   },

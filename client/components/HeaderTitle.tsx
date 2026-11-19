@@ -2,7 +2,7 @@ import React from "react";
 import { View, StyleSheet, Image } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
-import { Spacing } from "@/constants/theme";
+import { MAX_FONT_SCALE_CONSTRAINED, Spacing } from "@/constants/theme";
 
 interface HeaderTitleProps {
   title: string;
@@ -20,7 +20,9 @@ export function HeaderTitle({ title, showIcon = true }: HeaderTitleProps) {
           accessible={false}
         />
       ) : null}
-      <ThemedText style={styles.title}>{title}</ThemedText>
+      <ThemedText maxScale={MAX_FONT_SCALE_CONSTRAINED} style={styles.title}>
+        {title}
+      </ThemedText>
     </View>
   );
 }
