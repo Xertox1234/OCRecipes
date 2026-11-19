@@ -22,6 +22,8 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { PressableScale } from "@/components/PressableScale";
+import { InlineError } from "@/components/InlineError";
+import { groceryGenerateErrorMessage } from "./grocery-generate-utils";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
@@ -194,6 +196,7 @@ export default function GroceryListsScreen() {
     streakUnlocks.includes("extendedPlanRange");
 
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   // Dates are held as local `Date`s and become `YYYY-MM-DD` only in the
   // request payload — never parse such a string with `new Date(str)` (UTC).
   // Every date in state is anchored at local noon (see localNoon), so
@@ -209,6 +212,7 @@ export default function GroceryListsScreen() {
 
   const handleDateChange = (which: "start" | "end", raw: Date) => {
     const picked = localNoon(raw);
+    setGenerateError(null);
     if (which === "start") {
       setStartDate(picked);
       if (picked > endDate) setEndDate(picked);
@@ -261,6 +265,7 @@ export default function GroceryListsScreen() {
 
   const handleGenerate = useCallback(() => {
     haptics.impact();
+    setGenerateError(null);
     createListMutate(
       {
         startDate: toLocalDateString(startDate),
@@ -272,6 +277,9 @@ export default function GroceryListsScreen() {
           setOpenPicker(null);
           navigation.navigate("GroceryList", { listId: list.id });
         },
+        // A refusal (too many items from #1930, too many days, too many lists) skips the
+        // global error toast, so the sheet says why it made nothing.
+        onError: (err) => setGenerateError(groceryGenerateErrorMessage(err)),
       },
     );
   }, [haptics, createListMutate, startDate, endDate, navigation]);
@@ -470,11 +478,13 @@ export default function GroceryListsScreen() {
                   }
                 />
               ) : null}
+              <InlineError message={generateError} />
               <View style={styles.datePickerActions}>
                 <PressableScale
                   onPress={() => {
                     setShowDatePicker(false);
                     setOpenPicker(null);
+                    setGenerateError(null);
                   }}
                   style={[styles.cancelButton, { borderColor: theme.border }]}
                   accessibilityRole="button"

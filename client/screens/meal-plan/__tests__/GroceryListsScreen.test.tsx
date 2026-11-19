@@ -21,6 +21,7 @@ import { Platform } from "react-native";
 import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { toLocalDateString } from "@shared/lib/date";
+import { ApiError } from "@/lib/api-error";
 import GroceryListsScreen from "../GroceryListsScreen";
 
 const { createMutate, pickerProps, androidOpen } = vi.hoisted(() => ({
@@ -214,6 +215,23 @@ describe("GroceryListsScreen — date picker", () => {
     fireEvent.click(screen.getByLabelText("Generate grocery list"));
     fireEvent.click(screen.getByLabelText("Generate new grocery list"));
     expect(screen.queryByTestId("date-picker-stub")).toBeNull();
+    createMutate.mockReset();
+  });
+
+  it("says why when the server refuses to make the list, and clears it on Cancel", () => {
+    createMutate.mockImplementation((_p, opts) =>
+      opts.onError(new ApiError("400: too many", "LIMIT_REACHED", 400)),
+    );
+    open();
+    fireEvent.click(screen.getByLabelText("Generate grocery list"));
+    expect(
+      screen.getByText("Too many items for one list. Choose fewer days."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getAllByLabelText("Cancel")[0]);
+    fireEvent.click(screen.getByLabelText("Generate new grocery list"));
+    expect(
+      screen.queryByText("Too many items for one list. Choose fewer days."),
+    ).toBeNull();
     createMutate.mockReset();
   });
 
