@@ -1,6 +1,6 @@
 ---
 title: "Clear the dev-tooling npm audit alerts (drizzle-kit's esbuild chain, @expo/ngrok's uuid)"
-status: backlog
+status: done
 priority: low
 created: 2026-11-18
 updated: 2026-11-18
@@ -21,9 +21,9 @@ Security audit 2026-11-18 (`docs/audits/2026-11-18-security.md`, rows SCAN-NPMA-
 
 ## Acceptance Criteria
 
-- [ ] `npm audit --json` shows none of: `@esbuild-kit/core-utils`, `@esbuild-kit/esm-loader`, `drizzle-kit`, `esbuild` (<=0.24.2), `@expo/ngrok`, `uuid` (<11.1.1) — or each remaining one is recorded here with why it can't move yet.
-- [ ] `npm run db:push` / drizzle-kit commands still work after the change.
-- [ ] No runtime dependency changes (check `git diff package-lock.json` touches only the dev chains).
+- [x] `npm audit --json` shows none of: `@esbuild-kit/core-utils`, `@esbuild-kit/esm-loader`, `drizzle-kit`, `esbuild` (<=0.24.2), `@expo/ngrok`, `uuid` (<11.1.1) — or each remaining one is recorded here with why it can't move yet.
+- [x] `npm run db:push` / drizzle-kit commands still work after the change.
+- [x] No runtime dependency changes (check `git diff package-lock.json` touches only the dev chains).
 
 ## Implementation Notes
 
@@ -50,3 +50,10 @@ Security audit 2026-11-18 (`docs/audits/2026-11-18-security.md`, rows SCAN-NPMA-
 ### 2026-11-18
 
 - Initial creation from the 2026-11-18 security audit.
+
+### 2026-11-18 (done)
+
+- No drizzle-kit release drops `@esbuild-kit/*` (latest stable is 0.31.11, already installed), so both fixes are nested `overrides`:
+  - `@esbuild-kit/core-utils` → `esbuild ^0.25.12`. drizzle-kit only declares `@esbuild-kit/esm-loader`; no file in the package except its `package.json` names it (it loads TS through its own `tsx`/`esbuild`), so this code never runs and `db:push` is unaffected.
+  - `@expo/ngrok` → `uuid ^11.1.1`, the newest line that still ships CommonJS. ngrok's only use is `require("uuid").v4()` (`index.js:28`), checked working on 11.1.1.
+- `npm audit`: 6 moderate → 0. Every changed lockfile entry is `dev: true` (the nested esbuild + platform binaries, and uuid).
