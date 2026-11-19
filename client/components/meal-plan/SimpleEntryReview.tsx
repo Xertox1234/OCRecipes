@@ -31,7 +31,8 @@ import {
   type EntryTotals,
 } from "@/components/meal-plan/simple-entry-utils";
 
-const STEPPER_BUTTON = 36;
+// The button is the whole tap target: hitSlop would be clipped by the pill.
+const STEPPER_BUTTON = 44;
 const ROW_ENTER_MS = 200;
 const ROW_EXIT_MS = 150;
 
@@ -55,8 +56,6 @@ function StepperButton({ icon, label, onPress, disabled }: StepperButtonProps) {
       onPressIn={onPressIn}
       onPressOut={onPressOut}
       disabled={disabled}
-      // 36pt visual, 44pt target.
-      hitSlop={4}
       style={[styles.stepperButton, animatedStyle]}
       accessibilityRole="button"
       accessibilityLabel={label}

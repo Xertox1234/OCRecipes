@@ -207,9 +207,13 @@ function SimpleEntrySheetContentInner(
   }, [speechError, showError]);
 
   const handleServingsChange = (delta: 1 | -1) => {
+    const next = Math.max(1, Math.min(MAX_ROW_QUANTITY, servings + delta));
+    if (next === servings) return;
     haptics.selection();
-    setServings((prev) =>
-      Math.max(1, Math.min(MAX_ROW_QUANTITY, prev + delta)),
+    setServings(next);
+    // The count itself is not a screen-reader stop, so say the new value.
+    AccessibilityInfo.announceForAccessibility(
+      `${next} ${next === 1 ? "serving" : "servings"} on the plan`,
     );
   };
 

@@ -5,6 +5,7 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import { SimpleEntrySheetContent } from "../SimpleEntrySheet";
 import { ApiError } from "@/lib/api-error";
 import * as Haptics from "expo-haptics";
+import { AccessibilityInfo } from "react-native";
 
 const mockParseFoodText = vi.fn();
 const mockCreateRecipe = vi.fn();
@@ -305,6 +306,12 @@ describe("SimpleEntrySheet", () => {
       fireEvent.click(screen.getByLabelText("Increase servings"));
       fireEvent.click(screen.getByLabelText("Increase servings"));
       fireEvent.click(screen.getByLabelText("Decrease servings"));
+      const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+      fireEvent.click(screen.getByLabelText("Increase servings"));
+      fireEvent.click(screen.getByLabelText("Decrease servings"));
+      expect(announce).toHaveBeenNthCalledWith(1, "3 servings on the plan");
+      expect(announce).toHaveBeenNthCalledWith(2, "2 servings on the plan");
+      announce.mockRestore();
       expect(screen.getByTestId("servings-value").textContent).toBe("2");
 
       pressAdd();
