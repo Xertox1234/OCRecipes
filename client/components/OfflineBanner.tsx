@@ -113,11 +113,17 @@ export function OfflineBanner() {
       </ThemedText>
       <Pressable
         onPress={() => setHidden(true)}
-        hitSlop={14}
+        style={styles.dismiss}
         accessibilityRole="button"
         accessibilityLabel="Hide offline message"
       >
-        <Feather name="x" size={16} color={theme.backgroundDefault} />
+        <Feather
+          name="x"
+          size={16}
+          color={theme.backgroundDefault}
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+        />
       </Pressable>
     </Animated.View>
   );
@@ -135,6 +141,16 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.card,
     zIndex: 9998,
+  },
+  // A real 44pt box, not hitSlop: the banner row is shorter than 44pt and
+  // would clip the slop. Negative margins keep the banner's own height.
+  dismiss: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -Spacing.sm,
+    marginRight: -Spacing.md,
   },
   message: {
     flex: 1,
