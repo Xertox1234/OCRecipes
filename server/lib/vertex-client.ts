@@ -6,7 +6,7 @@
  * every request via the async apiKey setter.
  */
 import OpenAI from "openai";
-import { GoogleAuth } from "google-auth-library";
+import { GoogleAuth, JWT } from "google-auth-library";
 import type { AiChatClient } from "./ai-client";
 import { VertexAuthError } from "./ai-failure";
 
@@ -24,12 +24,15 @@ export function createVertexClient(
   const key = env.GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY?.trim();
   if (!project || !email || !key) return null;
 
+  // A ready JWT client, not GoogleAuth's `credentials` option (deprecated,
+  // warns since google-auth-library 11.3.2). GoogleAuth keeps the
+  // string-returning getAccessToken the setter below relies on.
   const auth = new GoogleAuth({
-    credentials: {
-      client_email: email,
-      private_key: key.replace(/\\n/g, "\n"),
-    },
-    scopes: [VERTEX_SCOPE],
+    authClient: new JWT({
+      email,
+      key: key.replace(/\\n/g, "\n"),
+      scopes: [VERTEX_SCOPE],
+    }),
   });
   const loginFailed = (cause?: unknown) =>
     new VertexAuthError(

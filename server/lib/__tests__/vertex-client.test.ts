@@ -10,10 +10,16 @@ import { VertexAuthError } from "../ai-failure";
 
 const getAccessToken = vi.fn();
 const GoogleAuthCtor = vi.fn();
+const JWTCtor = vi.fn();
+const jwtClient = { kind: "jwt-client" };
 vi.mock("google-auth-library", () => ({
   GoogleAuth: vi.fn().mockImplementation(function (opts: unknown) {
     GoogleAuthCtor(opts);
     return { getAccessToken };
+  }),
+  JWT: vi.fn().mockImplementation(function (opts: unknown) {
+    JWTCtor(opts);
+    return jwtClient;
   }),
 }));
 
@@ -80,14 +86,19 @@ describe("createVertexClient", () => {
         apiKey: expect.any(Function),
       }),
     );
-    expect(GoogleAuthCtor).toHaveBeenCalledWith({
-      credentials: {
-        client_email: FULL.GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL,
-        private_key:
-          "-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n",
-      },
+    expect(JWTCtor).toHaveBeenCalledWith({
+      email: FULL.GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL,
+      key: "-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n",
       scopes: [VERTEX_SCOPE],
     });
+  });
+
+  it("hands GoogleAuth a ready JWT client, not the deprecated `credentials` option", () => {
+    createVertexClient(FULL);
+    // google-auth-library >= 11.3.2 warns on `credentials` (todo
+    // P3-2026-11-18-vertex-client-uses-the-deprecated-googleauth-credentials-option).
+    expect(GoogleAuthCtor).toHaveBeenCalledWith({ authClient: jwtClient });
+    expect(GoogleAuthCtor.mock.calls[0][0]).not.toHaveProperty("credentials");
   });
 
   it("apiKey setter returns the access token", async () => {
