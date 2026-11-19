@@ -30,6 +30,8 @@ export interface EntryRow {
   portionKnown: boolean;
   /** Added as a drink or side, not part of the dish the person typed. */
   isExtra: boolean;
+  /** The suggestion or typed text an extra row came from; null for the dish. */
+  source: string | null;
 }
 
 export interface EntryTotals {
@@ -87,7 +89,7 @@ function isUnknownPortion(servingSize: string | null): boolean {
 
 export function toEntryRows(
   items: ParsedFoodItem[],
-  opts: { isExtra: boolean; idPrefix: string },
+  opts: { isExtra: boolean; idPrefix: string; source?: string },
 ): EntryRow[] {
   return items.map((item, index) => {
     const base: RowNutrition = {
@@ -101,6 +103,7 @@ export function toEntryRows(
       name: item.name,
       base,
       isExtra: opts.isExtra,
+      source: opts.source ?? null,
     };
     // The nutrition is for 100 g, whatever amount was typed, so the row is
     // shown and adjusted as a weight: that is the only honest handle on it.
@@ -220,10 +223,32 @@ const SUGGESTIONS: Record<MealType, string[]> = {
   snack: ["Coffee", "Tea", "Fruit"],
 };
 
-/** Drinks and sides to offer for a meal, minus any already in the entry. */
+/**
+ * Drinks and sides to offer for a meal, minus any already in the entry. A
+ * suggestion counts as present by the name the estimate gave it or by the
+ * chip it came from (the estimate may call "Side salad" just "salad"), so
+ * removing its rows brings the chip back.
+ */
 export function suggestionsFor(mealType: MealType, rows: EntryRow[]): string[] {
-  const present = new Set(rows.map((row) => row.name.trim().toLowerCase()));
+  const present = new Set(
+    rows
+      .flatMap((row) => [row.name, row.source ?? ""])
+      .map((text) => text.trim().toLowerCase()),
+  );
   return SUGGESTIONS[mealType].filter(
     (name) => !present.has(name.toLowerCase()),
+  );
+}
+
+/** True when a total is more than one saved serving may hold. */
+export function exceedsCaps(
+  totals: EntryTotals,
+  caps: { calories: number; grams: number },
+): boolean {
+  return (
+    totals.calories > caps.calories ||
+    totals.protein > caps.grams ||
+    totals.carbs > caps.grams ||
+    totals.fat > caps.grams
   );
 }

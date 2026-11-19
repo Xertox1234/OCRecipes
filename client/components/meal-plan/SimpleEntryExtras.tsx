@@ -26,6 +26,8 @@ interface SimpleEntryExtrasProps {
   error: string | null;
   /** Resolves true once the food is in the entry. */
   onAdd: (text: string) => Promise<boolean>;
+  /** The "something else" field has just opened. */
+  onFieldShown?: () => void;
 }
 
 /**
@@ -38,6 +40,7 @@ export function SimpleEntryExtras({
   pendingName,
   error,
   onAdd,
+  onFieldShown,
 }: SimpleEntryExtrasProps) {
   const { theme } = useTheme();
   const fieldFocus = useFieldFocus();
@@ -88,7 +91,10 @@ export function SimpleEntryExtras({
           variant="outline"
           selected={showField}
           accessibilityLabel="Add something else"
-          onPress={() => setShowField((shown) => !shown)}
+          onPress={() => {
+            if (!showField) onFieldShown?.();
+            setShowField(!showField);
+          }}
         />
       </View>
 

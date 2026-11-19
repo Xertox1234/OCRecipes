@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
 import Animated, {
   FadeInDown,
@@ -41,11 +41,19 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 interface StepperButtonProps {
   icon: "minus" | "plus" | "trash-2";
   label: string;
+  /** The current amount, read after the label by screen readers. */
+  valueText: string;
   onPress: () => void;
   disabled?: boolean;
 }
 
-function StepperButton({ icon, label, onPress, disabled }: StepperButtonProps) {
+function StepperButton({
+  icon,
+  label,
+  valueText,
+  onPress,
+  disabled,
+}: StepperButtonProps) {
   const { theme } = useTheme();
   const { animatedStyle, onPressIn, onPressOut } = usePressScale(0.9, {
     enabled: !disabled,
@@ -59,6 +67,7 @@ function StepperButton({ icon, label, onPress, disabled }: StepperButtonProps) {
       style={[styles.stepperButton, animatedStyle]}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityValue={{ text: valueText }}
     >
       <Feather
         name={icon}
@@ -72,6 +81,8 @@ function StepperButton({ icon, label, onPress, disabled }: StepperButtonProps) {
 
 interface AmountStepperProps {
   value: string;
+  /** The amount in words for screen readers ("3 slices"); defaults to value. */
+  valueText?: string;
   valueTestID?: string;
   decreaseLabel: string;
   increaseLabel: string;
@@ -86,6 +97,7 @@ interface AmountStepperProps {
 /** One pill holding minus, the amount and plus. */
 function AmountStepper({
   value,
+  valueText = value,
   valueTestID,
   decreaseLabel,
   increaseLabel,
@@ -106,13 +118,14 @@ function AmountStepper({
       <StepperButton
         icon={decreaseRemoves ? "trash-2" : "minus"}
         label={decreaseLabel}
+        valueText={valueText}
         onPress={onDecrease}
         disabled={decreaseDisabled}
       />
       <ThemedText
         testID={valueTestID}
         style={[styles.stepperValue, { color: theme.text }]}
-        // The buttons carry the meaning; the row's own text reads the amount.
+        // The buttons read the amount as their value.
         accessible={false}
         importantForAccessibility="no"
       >
@@ -121,6 +134,7 @@ function AmountStepper({
       <StepperButton
         icon="plus"
         label={increaseLabel}
+        valueText={valueText}
         onPress={onIncrease}
         disabled={increaseDisabled}
       />
@@ -171,6 +185,7 @@ function FoodRow({ row, isLast, onStep }: FoodRowProps) {
       </View>
       <AmountStepper
         value={formatAmount(row.quantity)}
+        valueText={rowAmountLabel(row)}
         decreaseLabel={removes ? `Remove ${row.name}` : `Less ${row.name}`}
         increaseLabel={`More ${row.name}`}
         decreaseRemoves={removes}
@@ -189,6 +204,8 @@ interface SimpleEntryReviewProps {
   servings: number;
   isAdding: boolean;
   error: string | null;
+  /** Changes when something was just added below the fold. */
+  revealKey?: number;
   onStep: (id: string, direction: 1 | -1) => void;
   onServingsChange: (delta: 1 | -1) => void;
   onEditTitle: () => void;
@@ -210,6 +227,7 @@ export function SimpleEntryReview({
   servings,
   isAdding,
   error,
+  revealKey = 0,
   onStep,
   onServingsChange,
   onEditTitle,
@@ -218,17 +236,23 @@ export function SimpleEntryReview({
 }: SimpleEntryReviewProps) {
   const { theme } = useTheme();
   const isEmpty = rows.length === 0;
-  // When the list grows (a drink is added, the "something else" field opens)
-  // bring the new thing into view. The first layout is not growth.
+  // When something is added below the fold (a drink, the "something else"
+  // field) bring it into view once its layout lands. Other height changes,
+  // such as a caption wrapping while its amount is stepped, leave the scroll
+  // where the person put it.
   const scrollRef =
     useRef<React.ComponentRef<typeof BottomSheetScrollView>>(null);
-  const contentHeightRef = useRef<number | null>(null);
-  const handleContentSizeChange = (_width: number, height: number) => {
-    const previous = contentHeightRef.current;
-    contentHeightRef.current = height;
-    if (previous != null && height > previous) {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }
+  const revealPendingRef = useRef(false);
+  const seenRevealKeyRef = useRef(revealKey);
+  useEffect(() => {
+    if (seenRevealKeyRef.current === revealKey) return;
+    seenRevealKeyRef.current = revealKey;
+    revealPendingRef.current = true;
+  }, [revealKey]);
+  const handleContentSizeChange = () => {
+    if (!revealPendingRef.current) return;
+    revealPendingRef.current = false;
+    scrollRef.current?.scrollToEnd({ animated: true });
   };
 
   return (

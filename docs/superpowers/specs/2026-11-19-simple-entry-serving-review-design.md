@@ -124,8 +124,8 @@ Details for the builder:
   it on title plus totals so a retry after an edit does not reuse a recipe
   saved with old numbers.
 - Follow the `crafting-ui` and `interaction-feel` skills; restyle within
-  `theme.ts` only. Steppers need the adjustable accessibility role and
-  44-point targets, like the existing one.
+  `theme.ts` only. Stepper buttons are 44-point targets that read the current
+  amount as their value, and each change is announced.
 
 ### Part 2 — shared picture (server only)
 

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
+import { useBottomSheet } from "@gorhom/bottom-sheet";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { SimpleEntrySheetContent } from "../SimpleEntrySheet";
 import { ApiError } from "@/lib/api-error";
@@ -340,6 +341,64 @@ describe("SimpleEntrySheet", () => {
     });
   });
 
+  describe("review step edge cases", () => {
+    it("opens the taller sheet for the review and the short one again on Edit", async () => {
+      const snap = vi.spyOn(useBottomSheet(), "snapToIndex");
+      mockParseFoodText.mockResolvedValue({ items: [food()] });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+      expect(snap).toHaveBeenLastCalledWith(1);
+
+      fireEvent.click(screen.getByLabelText("Edit dish name"));
+      expect(snap).toHaveBeenLastCalledWith(0);
+      snap.mockRestore();
+    });
+
+    it("drops an estimate that arrives after the sheet was closed and reopened", async () => {
+      let resolveParse: (value: unknown) => void = () => {};
+      mockParseFoodText.mockReturnValue(
+        new Promise((resolve) => {
+          resolveParse = resolve;
+        }),
+      );
+      const { rerender } = renderComponent(
+        <SimpleEntrySheetContent {...defaultProps} />,
+      );
+      typeDish("soup");
+      fireEvent.click(screen.getByText("Estimate"));
+
+      rerender(<SimpleEntrySheetContent {...defaultProps} mealType={null} />);
+      rerender(<SimpleEntrySheetContent {...defaultProps} mealType="dinner" />);
+      await act(async () => {
+        resolveParse({ items: [food()] });
+      });
+
+      expect(screen.queryByText("Add to Dinner")).toBeNull();
+      // The new opening is usable: its Estimate is not stuck busy.
+      typeDish("stew");
+      expect(screen.getByText("Estimate").closest("button")).toHaveProperty(
+        "disabled",
+        false,
+      );
+    });
+
+    it("explains a total too large to save instead of failing the add", async () => {
+      mockParseFoodText.mockResolvedValue({
+        items: [food({ unit: "serving", calories: 60000 })],
+      });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("a very big soup");
+      pressAdd();
+
+      expect(
+        screen.getByText(
+          "That's more than one entry can hold. Lower an amount and try again.",
+        ),
+      ).toBeDefined();
+      expect(mockCreateRecipe).not.toHaveBeenCalled();
+    });
+  });
+
   describe("drinks and sides", () => {
     it("offers suggestions for the meal", async () => {
       mockParseFoodText.mockResolvedValue({ items: [food()] });
@@ -374,6 +433,25 @@ describe("SimpleEntrySheet", () => {
       expect(mockParseFoodText).toHaveBeenLastCalledWith("Bread");
       expect(screen.queryByLabelText("Add Bread")).toBeNull();
       expect(screen.getByTestId("total-calories").textContent).toBe("180");
+    });
+
+    it("removing an added suggestion brings its chip back", async () => {
+      mockParseFoodText.mockResolvedValueOnce({ items: [food()] });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      // The estimate names it differently from the chip.
+      mockParseFoodText.mockResolvedValueOnce({
+        items: [food({ name: "garden salad", unit: "serving", calories: 40 })],
+      });
+      fireEvent.click(screen.getByLabelText("Add Side salad"));
+      await waitFor(() => {
+        expect(screen.getByText("garden salad")).toBeDefined();
+      });
+      expect(screen.queryByLabelText("Add Side salad")).toBeNull();
+
+      fireEvent.click(screen.getByLabelText("Remove garden salad"));
+      expect(screen.getByLabelText("Add Side salad")).toBeDefined();
     });
 
     it("a suggestion that can't be estimated says so and keeps the entry", async () => {

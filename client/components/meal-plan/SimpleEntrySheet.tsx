@@ -54,8 +54,10 @@ import {
 } from "@/components/meal-plan/meal-plan-utils";
 import { SimpleEntryReview } from "@/components/meal-plan/SimpleEntryReview";
 import { SimpleEntryExtras } from "@/components/meal-plan/SimpleEntryExtras";
+import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 import {
   entryTotals,
+  exceedsCaps,
   retryKey,
   rowAmountLabel,
   stepRow,
@@ -74,6 +76,8 @@ const ESTIMATE_ERROR =
   "Couldn't estimate nutrition. Try a simpler description.";
 const ADD_ERROR = "Couldn't add it to your plan. Please try again.";
 const EXTRA_ERROR = "Couldn't estimate that one. Try another.";
+const TOO_BIG_ERROR =
+  "That's more than one entry can hold. Lower an amount and try again.";
 
 const DISH_LABEL = "Dish name";
 const DISH_ICON_SIZE = 16;
@@ -114,12 +118,15 @@ function SimpleEntrySheetContentInner(
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
-  // Drinks and sides: the one being estimated, its error, and the suggestions
-  // already taken (the estimate may name a food differently from its chip).
+  // Drinks and sides: the one being estimated, and its error.
   const [pendingExtra, setPendingExtra] = useState<string | null>(null);
   const [extraError, setExtraError] = useState<string | null>(null);
-  const [usedSuggestions, setUsedSuggestions] = useState<string[]>([]);
+  // Bumped to ask the review list to bring newly added content into view.
+  const [revealKey, setRevealKey] = useState(0);
   const isBusyRef = useRef(false);
+  // Changes whenever the sheet opens or closes, so a reply that arrives for
+  // an earlier opening is dropped instead of landing in this one.
+  const sessionRef = useRef(0);
   const extraCountRef = useRef(0);
   // The recipe a failed add already created, keyed by its name and numbers, so
   // a retry adds that recipe instead of creating a second copy, and an edited
@@ -158,6 +165,7 @@ function SimpleEntrySheetContentInner(
   // Reset state when the sheet opens for a meal type. Keyed on mealType
   // alone: listening changes must not wipe the form mid-entry.
   useEffect(() => {
+    sessionRef.current += 1;
     if (mealType) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset also clears two refs, which cannot run during render; stays an effect declared before the transcript effects so it runs before them, as before
       setDishName("");
@@ -169,7 +177,6 @@ function SimpleEntrySheetContentInner(
       setShowUpgrade(false);
       setPendingExtra(null);
       setExtraError(null);
-      setUsedSuggestions([]);
       isBusyRef.current = false;
       createdRecipeRef.current = null;
     }
@@ -236,8 +243,10 @@ function SimpleEntrySheetContentInner(
     setError(null);
     // Let the keyboard go now, so the sheet is settled when the foods arrive.
     inputRef.current?.blur();
+    const session = sessionRef.current;
     try {
       const result = await parseFoodText.mutateAsync(title);
+      if (session !== sessionRef.current) return;
       const items = result?.items;
       if (!items?.length) {
         showError(ESTIMATE_ERROR);
@@ -245,17 +254,20 @@ function SimpleEntrySheetContentInner(
       }
       setRows(toEntryRows(items, { isExtra: false, idPrefix: "dish" }));
       setExtraError(null);
-      setUsedSuggestions([]);
       snapToIndex(REVIEW_STEP_SNAP);
     } catch (err) {
+      if (session !== sessionRef.current) return;
       if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
         setShowUpgrade(true);
       } else {
         showError(ESTIMATE_ERROR);
       }
     } finally {
-      isBusyRef.current = false;
-      setIsEstimating(false);
+      // A later opening has already reset these for itself.
+      if (session === sessionRef.current) {
+        isBusyRef.current = false;
+        setIsEstimating(false);
+      }
     }
   };
 
@@ -294,8 +306,10 @@ function SimpleEntrySheetContentInner(
     isBusyRef.current = true;
     setPendingExtra(text);
     setExtraError(null);
+    const session = sessionRef.current;
     try {
       const result = await parseFoodText.mutateAsync(text);
+      if (session !== sessionRef.current) return false;
       const items = result?.items;
       if (!items?.length) {
         setExtraError(EXTRA_ERROR);
@@ -306,13 +320,15 @@ function SimpleEntrySheetContentInner(
       const added = toEntryRows(items, {
         isExtra: true,
         idPrefix: `extra-${extraCountRef.current}`,
+        source: text,
       });
       setRows((prev) => (prev ? [...prev, ...added] : prev));
-      setUsedSuggestions((prev) => [...prev, text]);
+      setRevealKey((key) => key + 1);
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       AccessibilityInfo.announceForAccessibility(`Added ${text}`);
       return true;
     } catch (err) {
+      if (session !== sessionRef.current) return false;
       if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
         setShowUpgrade(true);
       } else {
@@ -321,19 +337,26 @@ function SimpleEntrySheetContentInner(
       }
       return false;
     } finally {
-      isBusyRef.current = false;
-      setPendingExtra(null);
+      if (session === sessionRef.current) {
+        isBusyRef.current = false;
+        setPendingExtra(null);
+      }
     }
   };
 
   const handleAdd = async () => {
     const title = dishName.trim();
     if (!mealType || !title || !rows?.length || isBusyRef.current) return;
+    const totals = entryTotals(rows);
+    // The server refuses a serving past these; say why instead of failing.
+    if (exceedsCaps(totals, NUTRITION_CAPS)) {
+      showError(TOO_BIG_ERROR);
+      return;
+    }
     isBusyRef.current = true;
     setIsAdding(true);
     setError(null);
 
-    const totals = entryTotals(rows);
     const key = retryKey(title, totals);
     try {
       let recipeId: number;
@@ -382,12 +405,7 @@ function SimpleEntrySheetContentInner(
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
   const canEstimate =
     dishName.trim().length > 0 && !isEstimating && !isListening;
-  const suggestions =
-    mealType && rows
-      ? suggestionsFor(mealType, rows).filter(
-          (name) => !usedSuggestions.includes(name),
-        )
-      : [];
+  const suggestions = mealType && rows ? suggestionsFor(mealType, rows) : [];
 
   return (
     // accessibilityViewIsModal must live on this inner View — BottomSheetModal
@@ -409,6 +427,7 @@ function SimpleEntrySheetContentInner(
           servings={servings}
           isAdding={isAdding}
           error={error}
+          revealKey={revealKey}
           onStep={handleStep}
           onServingsChange={handleServingsChange}
           onEditTitle={handleEditTitle}
@@ -419,6 +438,7 @@ function SimpleEntrySheetContentInner(
             pendingName={pendingExtra}
             error={extraError}
             onAdd={handleAddExtra}
+            onFieldShown={() => setRevealKey((key) => key + 1)}
           />
         </SimpleEntryReview>
       ) : (

@@ -1,6 +1,7 @@
 import type { ParsedFoodItem } from "@/hooks/useFoodParse";
 import {
   entryTotals,
+  exceedsCaps,
   formatAmount,
   retryKey,
   rowAmountLabel,
@@ -195,5 +196,25 @@ describe("suggestionsFor", () => {
   it("leaves out what is already in the entry", () => {
     const coffee = row({ name: "coffee" });
     expect(suggestionsFor("breakfast", [coffee])).not.toContain("Coffee");
+  });
+});
+
+describe("exceedsCaps", () => {
+  const caps = { calories: 50_000, grams: 5_000 };
+  it("is true when any total passes its cap", () => {
+    expect(
+      exceedsCaps({ calories: 50_001, protein: 0, carbs: 0, fat: 0 }, caps),
+    ).toBe(true);
+    expect(
+      exceedsCaps({ calories: 10, protein: 0, carbs: 5_001, fat: 0 }, caps),
+    ).toBe(true);
+  });
+  it("is false at the cap", () => {
+    expect(
+      exceedsCaps(
+        { calories: 50_000, protein: 5_000, carbs: 5_000, fat: 5_000 },
+        caps,
+      ),
+    ).toBe(false);
   });
 });
