@@ -2,6 +2,11 @@ export interface RecipeQualityInput {
   title: string;
   instructions?: string[] | null;
   ingredients?: { name: string }[] | null;
+  /**
+   * How the recipe was made. A `quick_entry` is a dish name plus a nutrition
+   * estimate by design, so it needs no ingredient or instruction step.
+   */
+  sourceType?: string | null;
 }
 
 export interface RecipeQualityResult {
@@ -20,6 +25,10 @@ export function validateRecipeQuality(
       valid: false,
       reason: `Recipe title must be at least ${MIN_TITLE_LENGTH} characters`,
     };
+  }
+
+  if (input.sourceType === "quick_entry") {
+    return { valid: true };
   }
 
   const validInstructions = (input.instructions ?? []).filter(
