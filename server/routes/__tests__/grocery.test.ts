@@ -170,7 +170,9 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.createGroceryListWithLimitCheck).mockImplementationOnce(
         () =>
           new Promise((resolve) => {
-            pending.push(() => resolve({ list: mockList, items: [] }));
+            pending.push(() =>
+              resolve({ list: mockList, items: [], skipped: 0 }),
+            );
           }),
       );
       const send = () =>
