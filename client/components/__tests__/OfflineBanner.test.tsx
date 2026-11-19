@@ -134,11 +134,16 @@ describe("OfflineBanner", () => {
       expect(screen.queryByText(OFFLINE_TEXT)).toBeNull();
     });
 
-    it("hides at once when tapped", () => {
+    it("hides at once when its dismiss button is tapped", () => {
       mockUseNetworkStatus.mockReturnValue(offline);
       renderComponent(<OfflineBanner />);
 
-      fireEvent.click(screen.getByText(OFFLINE_TEXT));
+      // The button is its own accessibility node, outside the alert text.
+      const button = screen.getByRole("button", {
+        name: "Hide offline message",
+      });
+      expect(screen.getByRole("alert").contains(button)).toBe(false);
+      fireEvent.click(button);
       expect(screen.queryByText(OFFLINE_TEXT)).toBeNull();
     });
 

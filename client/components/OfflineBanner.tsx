@@ -90,35 +90,34 @@ export function OfflineBanner() {
           backgroundColor: withOpacity(theme.text, 0.9),
         },
       ]}
-      accessible
-      accessibilityRole="alert"
-      accessibilityLabel={OFFLINE_MESSAGE}
-      accessibilityHint="Double-tap to hide"
-      accessibilityLiveRegion="assertive"
     >
-      {/* The alert semantics stay on the grouped parent (react-native-web's
-          Pressable drops accessibilityLiveRegion); a screen-reader double-tap
-          activates the group's centre, which lands on this Pressable. */}
+      {/* The wrapper is NOT accessible: it holds a dismiss button, and a
+          grouped wrapper would hide that button from screen readers. The
+          alert role and live region sit on the message text instead. */}
+      <Feather
+        name="wifi-off"
+        size={16}
+        color={theme.backgroundDefault}
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+      />
+      <ThemedText
+        type="small"
+        maxScale={MAX_FONT_SCALE_CONSTRAINED}
+        style={[styles.message, { color: theme.backgroundDefault }]}
+        numberOfLines={1}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive"
+      >
+        {OFFLINE_MESSAGE}
+      </ThemedText>
       <Pressable
         onPress={() => setHidden(true)}
-        style={styles.content}
-        accessible={false}
+        hitSlop={14}
+        accessibilityRole="button"
         accessibilityLabel="Hide offline message"
       >
-        <Feather
-          name="wifi-off"
-          size={16}
-          color={theme.backgroundDefault}
-          accessible={false}
-        />
-        <ThemedText
-          type="small"
-          maxScale={MAX_FONT_SCALE_CONSTRAINED}
-          style={[styles.message, { color: theme.backgroundDefault }]}
-          numberOfLines={1}
-        >
-          {OFFLINE_MESSAGE}
-        </ThemedText>
+        <Feather name="x" size={16} color={theme.backgroundDefault} />
       </Pressable>
     </Animated.View>
   );
@@ -129,15 +128,13 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: Spacing.lg,
     right: Spacing.lg,
-    borderRadius: BorderRadius.card,
-    zIndex: 9998,
-  },
-  content: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.card,
+    zIndex: 9998,
   },
   message: {
     flex: 1,
