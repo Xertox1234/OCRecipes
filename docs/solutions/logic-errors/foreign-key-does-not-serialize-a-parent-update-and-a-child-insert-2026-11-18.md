@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [database, drizzle, postgres, concurrency, security, family-profiles]
 module: server
-applies_to: ["server/storage/meal-plan-items.ts", "server/storage/**/*.ts", "server/routes/**/*.ts"]
+applies_to: ["server/storage/meal-plan-items.ts", "server/storage/**/*.ts"]
 symptoms: ["a route checks a child table (\"is there a log for this item?\") and then updates the parent in a separate statement", "another route reads a parent column (\"is this item a profile's?\") and then inserts a child row in a separate statement", "a proposed fix adds NOT EXISTS / INSERT … SELECT WHERE EXISTS and calls the race closed"]
 created: 2026-11-18
 severity: low
