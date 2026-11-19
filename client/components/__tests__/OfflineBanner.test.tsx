@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
-import { OfflineBanner } from "../OfflineBanner";
+import { OfflineBanner, OFFLINE_BANNER_VISIBLE_MS } from "../OfflineBanner";
 
 const { mockUseNetworkStatus, mockToast, mockUseAccessibility } = vi.hoisted(
   () => ({
@@ -101,6 +101,66 @@ describe("OfflineBanner", () => {
     expect(
       screen.getByText("You're offline. Some features may be unavailable."),
     ).toBeDefined();
+  });
+
+  describe("does not stay over the screen's top controls", () => {
+    const OFFLINE_TEXT = "You're offline. Some features may be unavailable.";
+    const offline = {
+      isOffline: true,
+      wasOffline: false,
+      clearWasOffline: vi.fn(),
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("hides itself a few seconds after going offline", () => {
+      mockUseNetworkStatus.mockReturnValue(offline);
+      renderComponent(<OfflineBanner />);
+      expect(screen.getByText(OFFLINE_TEXT)).toBeDefined();
+
+      act(() => {
+        vi.advanceTimersByTime(OFFLINE_BANNER_VISIBLE_MS - 1);
+      });
+      expect(screen.queryByText(OFFLINE_TEXT)).not.toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.queryByText(OFFLINE_TEXT)).toBeNull();
+    });
+
+    it("hides at once when its dismiss button is tapped", () => {
+      mockUseNetworkStatus.mockReturnValue(offline);
+      renderComponent(<OfflineBanner />);
+
+      // The button is its own accessibility node, outside the alert text.
+      const button = screen.getByRole("button", {
+        name: "Hide offline message",
+      });
+      expect(screen.getByRole("alert").contains(button)).toBe(false);
+      fireEvent.click(button);
+      expect(screen.queryByText(OFFLINE_TEXT)).toBeNull();
+    });
+
+    it("shows again the next time the device goes offline", () => {
+      mockUseNetworkStatus.mockReturnValue(offline);
+      const { rerender } = renderComponent(<OfflineBanner />);
+      act(() => {
+        vi.advanceTimersByTime(OFFLINE_BANNER_VISIBLE_MS);
+      });
+      expect(screen.queryByText(OFFLINE_TEXT)).toBeNull();
+
+      mockUseNetworkStatus.mockReturnValue({ ...offline, isOffline: false });
+      rerender(<OfflineBanner />);
+      mockUseNetworkStatus.mockReturnValue(offline);
+      rerender(<OfflineBanner />);
+      expect(screen.getByText(OFFLINE_TEXT)).toBeDefined();
+    });
   });
 
   it("calls clearWasOffline after showing toast", () => {
