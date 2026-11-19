@@ -118,7 +118,7 @@ export function toEntryRows(
       Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
     return {
       ...shared,
-      unit: item.unit,
+      unit: item.unit ?? "",
       baseQuantity: quantity,
       quantity,
       baseGrams: gramsFrom(item.servingSize),

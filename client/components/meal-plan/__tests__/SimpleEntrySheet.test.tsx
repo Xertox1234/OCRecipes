@@ -79,6 +79,47 @@ vi.mock("@/components/UpgradeModal", () => ({
 
 const ADD_ERROR = "Couldn't add it to your plan. Please try again.";
 
+const PARSE_ERROR = "Couldn't estimate nutrition. Try a simpler description.";
+
+function food(overrides: Record<string, unknown> = {}) {
+  return {
+    name: "soup",
+    quantity: 1,
+    unit: "bowl",
+    calories: 100,
+    protein: 5,
+    carbs: 10,
+    fat: 3,
+    servingSize: "1 bowl (250 g)",
+    ...overrides,
+  };
+}
+
+const BACON_AND_EGGS = {
+  items: [
+    food({
+      name: "bacon",
+      quantity: 3,
+      unit: "slices",
+      calories: 129,
+      protein: 9,
+      carbs: 0,
+      fat: 10,
+      servingSize: "3 slices (24 g)",
+    }),
+    food({
+      name: "egg",
+      quantity: 2,
+      unit: "large",
+      calories: 143,
+      protein: 13,
+      carbs: 1,
+      fat: 10,
+      servingSize: "2 large (100 g)",
+    }),
+  ],
+};
+
 describe("SimpleEntrySheet", () => {
   const defaultProps = {
     mealType: "lunch" as const,
@@ -96,6 +137,30 @@ describe("SimpleEntrySheet", () => {
     mockHasVoiceLogging = true;
   });
 
+  function typeDish(name: string) {
+    fireEvent.change(screen.getByLabelText("Dish name"), {
+      target: { value: name },
+    });
+  }
+
+  /** Step 1 → step 2: type a dish, estimate, wait for the review. */
+  async function estimate(name: string) {
+    typeDish(name);
+    fireEvent.click(screen.getByText("Estimate"));
+    await waitFor(() => {
+      expect(screen.getByText("Add to Lunch")).toBeDefined();
+    });
+  }
+
+  function pressAdd() {
+    fireEvent.click(screen.getByText("Add to Lunch"));
+  }
+
+  async function submitDish(name: string) {
+    await estimate(name);
+    pressAdd();
+  }
+
   it("renders header with meal label", () => {
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     expect(screen.getByText("Quick add to Lunch")).toBeDefined();
@@ -106,38 +171,11 @@ describe("SimpleEntrySheet", () => {
     expect(screen.getByLabelText("Dish name")).toBeDefined();
   });
 
-  it("renders servings stepper", () => {
+  it("starts with an Estimate button and no review", () => {
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    expect(screen.getByText("Servings")).toBeDefined();
-    expect(screen.getByLabelText("Decrease servings")).toBeDefined();
-    expect(screen.getByLabelText("Increase servings")).toBeDefined();
-  });
-
-  it("renders Add button", () => {
-    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    expect(screen.getByText("Add")).toBeDefined();
-  });
-
-  it("increments servings on plus press", () => {
-    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    const increaseBtn = screen.getByLabelText("Increase servings");
-    fireEvent.click(increaseBtn);
-    expect(screen.getByText("2")).toBeDefined();
-  });
-
-  it("decrements servings on minus press", () => {
-    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    // First increase to 2
-    fireEvent.click(screen.getByLabelText("Increase servings"));
-    // Then decrease back to 1
-    fireEvent.click(screen.getByLabelText("Decrease servings"));
-    expect(screen.getByText("1")).toBeDefined();
-  });
-
-  it("disables decrease button at minimum (1)", () => {
-    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    const decreaseBtn = screen.getByLabelText("Decrease servings");
-    expect(decreaseBtn).toHaveProperty("disabled", true);
+    expect(screen.getByText("Estimate")).toBeDefined();
+    expect(screen.queryByText("Add to Lunch")).toBeNull();
+    expect(screen.queryByText("Servings on the plan")).toBeNull();
   });
 
   it("calls onDismiss when Done is pressed", () => {
@@ -153,32 +191,239 @@ describe("SimpleEntrySheet", () => {
     ).not.toBeNull();
   });
 
-  it("calls parse, create recipe, and add item on submit", async () => {
+  describe("review step", () => {
+    it("shows each food the estimate found, with its amount and the total", async () => {
+      mockParseFoodText.mockResolvedValue(BACON_AND_EGGS);
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("bacon and eggs");
+
+      expect(mockParseFoodText).toHaveBeenCalledWith("bacon and eggs");
+      expect(screen.getByText("bacon")).toBeDefined();
+      expect(screen.getByText("egg")).toBeDefined();
+      expect(screen.getByText("3 slices · 24 g · 129 kcal")).toBeDefined();
+      expect(screen.getByTestId("total-calories").textContent).toBe("272");
+      // Nothing is saved until Add.
+      expect(mockCreateRecipe).not.toHaveBeenCalled();
+    });
+
+    it("keeps the review inside the sheet's scroll container, with Add outside it", async () => {
+      mockParseFoodText.mockResolvedValue(BACON_AND_EGGS);
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("bacon and eggs");
+
+      const scroll = screen.getByTestId("simple-entry-review-scroll");
+      expect(scroll.contains(screen.getByText("egg"))).toBe(true);
+      expect(scroll.contains(screen.getByText("Add to Lunch"))).toBe(false);
+    });
+
+    it("changing an amount changes the total and what is saved", async () => {
+      mockParseFoodText.mockResolvedValue(BACON_AND_EGGS);
+      mockCreateRecipe.mockResolvedValue({ id: 42 });
+      mockAddItem.mockResolvedValue({ id: 1 });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("bacon and eggs");
+
+      fireEvent.click(screen.getByLabelText("More bacon"));
+      // 4 slices: 129 * 4/3 = 172, plus 143.
+      expect(screen.getByText("4 slices · 32 g · 172 kcal")).toBeDefined();
+      expect(screen.getByTestId("total-calories").textContent).toBe("315");
+
+      pressAdd();
+      await waitFor(() => {
+        expect(mockCreateRecipe).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "bacon and eggs",
+            sourceType: "quick_entry",
+            caloriesPerServing: "315",
+            proteinPerServing: "25",
+            carbsPerServing: "1",
+            fatPerServing: "23",
+            servings: 1,
+          }),
+        );
+      });
+    });
+
+    it("stepping a food below its smallest amount removes it", async () => {
+      mockParseFoodText.mockResolvedValue({
+        items: [food({ name: "soup" }), food({ name: "bread", unit: "slice" })],
+      });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup and bread");
+
+      fireEvent.click(screen.getByLabelText("Remove bread"));
+      expect(screen.queryByText("bread")).toBeNull();
+      expect(screen.getByTestId("total-calories").textContent).toBe("100");
+    });
+
+    it("cannot add an entry with every food removed", async () => {
+      mockParseFoodText.mockResolvedValue({
+        items: [food({ unit: "serving" })],
+      });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      fireEvent.click(screen.getByLabelText("Remove soup"));
+      pressAdd();
+      expect(mockCreateRecipe).not.toHaveBeenCalled();
+    });
+
+    it("says so when a food has no estimate, and leaves it out of the total", async () => {
+      mockParseFoodText.mockResolvedValue({
+        items: [
+          food(),
+          food({
+            name: "mystery sauce",
+            calories: null,
+            protein: null,
+            carbs: null,
+            fat: null,
+            servingSize: "1 tablespoon",
+            unit: "tablespoon",
+          }),
+        ],
+      });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup with sauce");
+
+      expect(screen.getByText("1 tablespoon · No estimate")).toBeDefined();
+      expect(screen.getByTestId("total-calories").textContent).toBe("100");
+    });
+
+    it("servings on the plan steps between 1 and up, and is sent with the plan item", async () => {
+      mockParseFoodText.mockResolvedValue({ items: [food()] });
+      mockCreateRecipe.mockResolvedValue({ id: 42 });
+      mockAddItem.mockResolvedValue({ id: 1 });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      expect(screen.getByText("Servings on the plan")).toBeDefined();
+      expect(screen.getByLabelText("Decrease servings")).toHaveProperty(
+        "disabled",
+        true,
+      );
+      fireEvent.click(screen.getByLabelText("Increase servings"));
+      fireEvent.click(screen.getByLabelText("Increase servings"));
+      fireEvent.click(screen.getByLabelText("Decrease servings"));
+      expect(screen.getByTestId("servings-value").textContent).toBe("2");
+
+      pressAdd();
+      await waitFor(() => {
+        expect(mockAddItem).toHaveBeenCalledWith(
+          expect.objectContaining({
+            recipeId: 42,
+            plannedDate: "2025-06-01",
+            mealType: "lunch",
+            servings: 2,
+          }),
+        );
+      });
+    });
+
+    it("Edit goes back to the dish name, keeps it, and drops the foods", async () => {
+      mockParseFoodText.mockResolvedValue({ items: [food()] });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      fireEvent.click(screen.getByLabelText("Edit dish name"));
+      expect(screen.queryByText("Add to Lunch")).toBeNull();
+      expect(
+        (screen.getByLabelText("Dish name") as HTMLInputElement).value,
+      ).toBe("soup");
+    });
+  });
+
+  describe("drinks and sides", () => {
+    it("offers suggestions for the meal", async () => {
+      mockParseFoodText.mockResolvedValue({ items: [food()] });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      expect(screen.getByText("Add a drink or side")).toBeDefined();
+      expect(screen.getByLabelText("Add Side salad")).toBeDefined();
+      expect(screen.getByLabelText("Add something else")).toBeDefined();
+    });
+
+    it("tapping a suggestion estimates it, adds it to the entry and drops the chip", async () => {
+      mockParseFoodText.mockResolvedValueOnce({ items: [food()] });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      mockParseFoodText.mockResolvedValueOnce({
+        items: [
+          food({
+            name: "Bread",
+            unit: "slice",
+            calories: 80,
+            servingSize: "1 slice (30 g)",
+          }),
+        ],
+      });
+      fireEvent.click(screen.getByLabelText("Add Bread"));
+
+      await waitFor(() => {
+        expect(screen.getByText("1 slice · 30 g · 80 kcal")).toBeDefined();
+      });
+      expect(mockParseFoodText).toHaveBeenLastCalledWith("Bread");
+      expect(screen.queryByLabelText("Add Bread")).toBeNull();
+      expect(screen.getByTestId("total-calories").textContent).toBe("180");
+    });
+
+    it("a suggestion that can't be estimated says so and keeps the entry", async () => {
+      mockParseFoodText.mockResolvedValueOnce({ items: [food()] });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      mockParseFoodText.mockRejectedValueOnce(new Error("500"));
+      fireEvent.click(screen.getByLabelText("Add Rice"));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("Couldn't estimate that one. Try another."),
+        ).toBeDefined();
+      });
+      expect(screen.getByLabelText("More soup")).toBeDefined();
+      expect(screen.getByTestId("total-calories").textContent).toBe("100");
+    });
+
+    it("something else takes typed text", async () => {
+      mockParseFoodText.mockResolvedValueOnce({ items: [food()] });
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+      await estimate("soup");
+
+      fireEvent.click(screen.getByLabelText("Add something else"));
+      fireEvent.change(screen.getByLabelText("Drink or side"), {
+        target: { value: "iced tea" },
+      });
+      mockParseFoodText.mockResolvedValueOnce({
+        items: [food({ name: "iced tea", unit: "glass", calories: 90 })],
+      });
+      fireEvent.click(screen.getByLabelText("Add drink or side"));
+
+      await waitFor(() => {
+        expect(screen.getByText("iced tea")).toBeDefined();
+      });
+      expect(mockParseFoodText).toHaveBeenLastCalledWith("iced tea");
+    });
+  });
+
+  it("calls parse, create recipe, and add item", async () => {
     mockParseFoodText.mockResolvedValue({
       items: [
-        {
+        food({
           name: "chicken stir fry",
-          quantity: 1,
           calories: 350,
           protein: 30,
           carbs: 20,
           fat: 12,
-        },
+        }),
       ],
     });
     mockCreateRecipe.mockResolvedValue({ id: 42 });
     mockAddItem.mockResolvedValue({ id: 1 });
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-
-    const input = screen.getByLabelText("Dish name");
-    fireEvent.change(input, { target: { value: "chicken stir fry" } });
-
-    fireEvent.click(screen.getByText("Add"));
-
-    await waitFor(() => {
-      expect(mockParseFoodText).toHaveBeenCalledWith("chicken stir fry");
-    });
+    await submitDish("chicken stir fry");
 
     await waitFor(() => {
       expect(mockCreateRecipe).toHaveBeenCalledWith(
@@ -192,7 +437,6 @@ describe("SimpleEntrySheet", () => {
         }),
       );
     });
-
     await waitFor(() => {
       expect(mockAddItem).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -208,28 +452,14 @@ describe("SimpleEntrySheet", () => {
   // The sheet closes on add, so the confirmation is a toast (it fires its own
   // Success haptic — no second buzz).
   it("a successful add toasts the day and meal, with no extra Success haptic", async () => {
-    mockParseFoodText.mockResolvedValue({
-      items: [
-        {
-          name: "chicken stir fry",
-          quantity: 1,
-          calories: 350,
-          protein: 30,
-          carbs: 20,
-          fat: 12,
-        },
-      ],
-    });
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
     mockCreateRecipe.mockResolvedValue({ id: 42 });
     mockAddItem.mockResolvedValue({ id: 1 });
 
     renderComponent(
       <SimpleEntrySheetContent {...defaultProps} plannedDate="2026-09-02" />,
     );
-    fireEvent.change(screen.getByLabelText("Dish name"), {
-      target: { value: "chicken stir fry" },
-    });
-    fireEvent.click(screen.getByText("Add"));
+    await submitDish("soup");
 
     await waitFor(() => {
       expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
@@ -240,22 +470,13 @@ describe("SimpleEntrySheet", () => {
     expect(mockNotification).not.toHaveBeenCalled();
   });
 
-  function submitDish(name: string) {
-    fireEvent.change(screen.getByLabelText("Dish name"), {
-      target: { value: name },
-    });
-    fireEvent.click(screen.getByText("Add"));
-  }
-
   it("a failed add says it couldn't add to the plan, with no success toast", async () => {
-    mockParseFoodText.mockResolvedValue({
-      items: [{ name: "soup", quantity: 1, calories: 100 }],
-    });
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
     mockCreateRecipe.mockResolvedValue({ id: 42 });
     mockAddItem.mockRejectedValue(new Error("500"));
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    submitDish("soup");
+    await submitDish("soup");
 
     await waitFor(() => {
       expect(screen.getByText(ADD_ERROR)).toBeTruthy();
@@ -270,24 +491,22 @@ describe("SimpleEntrySheet", () => {
     );
   });
 
-  // The recipe was already created, so a retry must reuse it, not parse and
-  // create a second copy.
+  // The recipe was already created, so a retry must reuse it, not create a
+  // second copy.
   it("retrying after a failed add reuses the created recipe", async () => {
-    mockParseFoodText.mockResolvedValue({
-      items: [{ name: "soup", quantity: 1, calories: 100 }],
-    });
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
     mockCreateRecipe.mockResolvedValue({ id: 42 });
     mockAddItem
       .mockRejectedValueOnce(new Error("500"))
       .mockResolvedValueOnce({ id: 1 });
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    submitDish("soup");
+    await submitDish("soup");
     await waitFor(() => {
       expect(screen.getByText(ADD_ERROR)).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Add"));
+    pressAdd();
 
     await waitFor(() => {
       expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
@@ -301,10 +520,9 @@ describe("SimpleEntrySheet", () => {
     expect(mockToastSuccess).toHaveBeenCalledOnce();
   });
 
-  it("a changed dish name after a failed add creates a fresh recipe", async () => {
-    mockParseFoodText.mockResolvedValue({
-      items: [{ name: "soup", quantity: 1, calories: 100 }],
-    });
+  // The saved recipe carries the old numbers, so it must not be reused.
+  it("changing an amount after a failed add saves a fresh recipe", async () => {
+    mockParseFoodText.mockResolvedValue({ items: [food({ quantity: 2 })] });
     mockCreateRecipe
       .mockResolvedValueOnce({ id: 42 })
       .mockResolvedValueOnce({ id: 43 });
@@ -313,12 +531,43 @@ describe("SimpleEntrySheet", () => {
       .mockResolvedValueOnce({ id: 1 });
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    submitDish("soup");
+    await submitDish("soup");
     await waitFor(() => {
       expect(screen.getByText(ADD_ERROR)).toBeTruthy();
     });
 
-    submitDish("tomato soup");
+    fireEvent.click(screen.getByLabelText("More soup"));
+    pressAdd();
+
+    await waitFor(() => {
+      expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
+    });
+    expect(mockCreateRecipe).toHaveBeenCalledTimes(2);
+    expect(mockCreateRecipe).toHaveBeenLastCalledWith(
+      expect.objectContaining({ caloriesPerServing: "125" }),
+    );
+    expect(mockAddItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recipeId: 43 }),
+    );
+  });
+
+  it("a changed dish name after a failed add creates a fresh recipe", async () => {
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
+    mockCreateRecipe
+      .mockResolvedValueOnce({ id: 42 })
+      .mockResolvedValueOnce({ id: 43 });
+    mockAddItem
+      .mockRejectedValueOnce(new Error("500"))
+      .mockResolvedValueOnce({ id: 1 });
+
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    await submitDish("soup");
+    await waitFor(() => {
+      expect(screen.getByText(ADD_ERROR)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText("Edit dish name"));
+    await submitDish("tomato soup");
 
     await waitFor(() => {
       expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
@@ -333,35 +582,24 @@ describe("SimpleEntrySheet", () => {
     mockParseFoodText.mockResolvedValue({ items: [] });
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-
-    const input = screen.getByLabelText("Dish name");
-    fireEvent.change(input, { target: { value: "asdfghjkl" } });
-    fireEvent.click(screen.getByText("Add"));
+    typeDish("asdfghjkl");
+    fireEvent.click(screen.getByText("Estimate"));
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Couldn't estimate nutrition. Try a simpler description.",
-        ),
-      ).toBeDefined();
+      expect(screen.getByText(PARSE_ERROR)).toBeDefined();
     });
+    expect(screen.queryByText("Add to Lunch")).toBeNull();
   });
 
   it("shows error when parse throws", async () => {
     mockParseFoodText.mockRejectedValue(new Error("API error"));
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-
-    const input = screen.getByLabelText("Dish name");
-    fireEvent.change(input, { target: { value: "something" } });
-    fireEvent.click(screen.getByText("Add"));
+    typeDish("something");
+    fireEvent.click(screen.getByText("Estimate"));
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Couldn't estimate nutrition. Try a simpler description.",
-        ),
-      ).toBeDefined();
+      expect(screen.getByText(PARSE_ERROR)).toBeDefined();
     });
   });
 
@@ -371,67 +609,16 @@ describe("SimpleEntrySheet", () => {
     );
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-
-    const input = screen.getByLabelText("Dish name");
-    fireEvent.change(input, { target: { value: "something" } });
-    fireEvent.click(screen.getByText("Add"));
+    typeDish("something");
+    fireEvent.click(screen.getByText("Estimate"));
 
     await waitFor(() => {
       expect(screen.getByText("UPGRADE_MODAL_SHOWN")).toBeDefined();
     });
     // The generic parse-failure message must not appear for a premium block.
-    expect(
-      screen.queryByText(
-        "Couldn't estimate nutrition. Try a simpler description.",
-      ),
-    ).toBeNull();
+    expect(screen.queryByText(PARSE_ERROR)).toBeNull();
     // A premium block is an offer, not a failure: no Error buzz.
     expect(mockNotification).not.toHaveBeenCalled();
-  });
-
-  it("sums nutrition across multiple parsed items", async () => {
-    mockParseFoodText.mockResolvedValue({
-      items: [
-        {
-          name: "eggs",
-          quantity: 2,
-          calories: 70,
-          protein: 6,
-          carbs: 1,
-          fat: 5,
-        },
-        {
-          name: "toast",
-          quantity: 1,
-          calories: 120,
-          protein: 4,
-          carbs: 22,
-          fat: 2,
-        },
-      ],
-    });
-    mockCreateRecipe.mockResolvedValue({ id: 10 });
-    mockAddItem.mockResolvedValue({ id: 1 });
-
-    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-
-    const input = screen.getByLabelText("Dish name");
-    fireEvent.change(input, { target: { value: "eggs and toast" } });
-    fireEvent.click(screen.getByText("Add"));
-
-    await waitFor(() => {
-      // Sum nutrition as-is (quantity already accounted for in lookup)
-      // 70 + 120 = 190 cal, 6 + 4 = 10 protein, etc.
-      expect(mockCreateRecipe).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "eggs and toast",
-          caloriesPerServing: "190",
-          proteinPerServing: "10",
-          carbsPerServing: "23",
-          fatPerServing: "7",
-        }),
-      );
-    });
   });
 
   describe("voice dictation", () => {
@@ -476,21 +663,16 @@ describe("SimpleEntrySheet", () => {
       });
     });
 
-    it("starting and stopping dictation while open keeps servings, error and dish name", async () => {
+    it("starting and stopping dictation while open keeps the error and dish name", async () => {
       mockParseFoodText.mockResolvedValue({ items: [] });
       const { rerender } = renderComponent(
         <SimpleEntrySheetContent {...defaultProps} />,
       );
 
-      fireEvent.click(screen.getByLabelText("Increase servings"));
-      fireEvent.change(screen.getByLabelText("Dish name"), {
-        target: { value: "mystery stew" },
-      });
-      fireEvent.click(screen.getByText("Add"));
-      const parseError =
-        "Couldn't estimate nutrition. Try a simpler description.";
+      typeDish("mystery stew");
+      fireEvent.click(screen.getByText("Estimate"));
       await waitFor(() => {
-        expect(screen.getByText(parseError)).toBeDefined();
+        expect(screen.getByText(PARSE_ERROR)).toBeDefined();
       });
 
       // Dictation starts (no transcript yet), then stops. The content is
@@ -505,8 +687,7 @@ describe("SimpleEntrySheet", () => {
         <SimpleEntrySheetContent {...defaultProps} onDismiss={vi.fn()} />,
       );
 
-      expect(screen.getByText("2")).toBeDefined();
-      expect(screen.getByText(parseError)).toBeDefined();
+      expect(screen.getByText(PARSE_ERROR)).toBeDefined();
       expect(
         (screen.getByLabelText("Dish name") as HTMLInputElement).value,
       ).toBe("mystery stew");
@@ -524,19 +705,17 @@ describe("SimpleEntrySheet", () => {
       expect(mockStopListening).toHaveBeenCalledOnce();
     });
 
-    it("reopening the sheet resets servings and dish name", () => {
+    it("reopening the sheet starts over: no review, empty dish name", async () => {
+      mockParseFoodText.mockResolvedValue({ items: [food()] });
       const { rerender } = renderComponent(
         <SimpleEntrySheetContent {...defaultProps} />,
       );
-      fireEvent.click(screen.getByLabelText("Increase servings"));
-      fireEvent.change(screen.getByLabelText("Dish name"), {
-        target: { value: "mystery stew" },
-      });
+      await estimate("soup");
 
       rerender(<SimpleEntrySheetContent {...defaultProps} mealType={null} />);
       rerender(<SimpleEntrySheetContent {...defaultProps} />);
 
-      expect(screen.getByText("1")).toBeDefined();
+      expect(screen.queryByText("Add to Lunch")).toBeNull();
       expect(
         (screen.getByLabelText("Dish name") as HTMLInputElement).value,
       ).toBe("");

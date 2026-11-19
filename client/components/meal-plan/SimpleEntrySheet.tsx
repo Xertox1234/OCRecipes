@@ -6,12 +6,12 @@ import React, {
   useState,
 } from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
-  Pressable,
-  ActivityIndicator,
   type TextInputInstance,
 } from "react-native";
+import { useBottomSheet } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
@@ -24,7 +24,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { ThemedText } from "@/components/ThemedText";
+import { Button } from "@/components/Button";
 import { SheetHeader } from "@/components/sheet/SheetChrome";
 import { InlineError } from "@/components/InlineError";
 import { InlineMicButton } from "@/components/InlineMicButton";
@@ -52,8 +52,28 @@ import {
   MEAL_LABELS,
   type MealType,
 } from "@/components/meal-plan/meal-plan-utils";
+import { SimpleEntryReview } from "@/components/meal-plan/SimpleEntryReview";
+import { SimpleEntryExtras } from "@/components/meal-plan/SimpleEntryExtras";
+import {
+  entryTotals,
+  retryKey,
+  rowAmountLabel,
+  stepRow,
+  suggestionsFor,
+  toEntryRows,
+  MAX_ROW_QUANTITY,
+  type EntryRow,
+} from "@/components/meal-plan/simple-entry-utils";
 
-export const SIMPLE_ENTRY_SNAP_POINTS = ["45%"];
+/** Index 0 fits the dish-name step; index 1 opens up for the review list. */
+export const SIMPLE_ENTRY_SNAP_POINTS = ["45%", "88%"];
+const NAME_STEP_SNAP = 0;
+const REVIEW_STEP_SNAP = 1;
+
+const ESTIMATE_ERROR =
+  "Couldn't estimate nutrition. Try a simpler description.";
+const ADD_ERROR = "Couldn't add it to your plan. Please try again.";
+const EXTRA_ERROR = "Couldn't estimate that one. Try another.";
 
 const DISH_LABEL = "Dish name";
 const DISH_ICON_SIZE = 16;
@@ -87,14 +107,25 @@ function SimpleEntrySheetContentInner(
   }));
 
   const [dishName, setDishName] = useState("");
+  // The foods the estimate found. Null means the dish-name step.
+  const [rows, setRows] = useState<EntryRow[] | null>(null);
   const [servings, setServings] = useState(1);
+  const [isEstimating, setIsEstimating] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
-  const isAddingRef = useRef(false);
-  // The recipe a failed add already created, keyed by the dish name that built
-  // it, so a retry adds that recipe instead of creating a second copy.
-  const createdRecipeRef = useRef<{ title: string; id: number } | null>(null);
+  // Drinks and sides: the one being estimated, its error, and the suggestions
+  // already taken (the estimate may name a food differently from its chip).
+  const [pendingExtra, setPendingExtra] = useState<string | null>(null);
+  const [extraError, setExtraError] = useState<string | null>(null);
+  const [usedSuggestions, setUsedSuggestions] = useState<string[]>([]);
+  const isBusyRef = useRef(false);
+  const extraCountRef = useRef(0);
+  // The recipe a failed add already created, keyed by its name and numbers, so
+  // a retry adds that recipe instead of creating a second copy, and an edited
+  // amount saves a fresh one.
+  const createdRecipeRef = useRef<{ key: string; id: number } | null>(null);
+  const { snapToIndex } = useBottomSheet();
 
   const parseFoodText = useParseFoodText();
   const createRecipe = useCreateMealPlanRecipe();
@@ -130,11 +161,16 @@ function SimpleEntrySheetContentInner(
     if (mealType) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset also clears two refs, which cannot run during render; stays an effect declared before the transcript effects so it runs before them, as before
       setDishName("");
+      setRows(null);
       setServings(1);
       setError(null);
+      setIsEstimating(false);
       setIsAdding(false);
       setShowUpgrade(false);
-      isAddingRef.current = false;
+      setPendingExtra(null);
+      setExtraError(null);
+      setUsedSuggestions([]);
+      isBusyRef.current = false;
       createdRecipeRef.current = null;
     }
   }, [mealType]);
@@ -170,13 +206,12 @@ function SimpleEntrySheetContentInner(
     }
   }, [speechError, showError]);
 
-  const handleServingsChange = useCallback(
-    (delta: number) => {
-      haptics.selection();
-      setServings((prev) => Math.max(1, Math.min(99, prev + delta)));
-    },
-    [haptics],
-  );
+  const handleServingsChange = (delta: 1 | -1) => {
+    haptics.selection();
+    setServings((prev) =>
+      Math.max(1, Math.min(MAX_ROW_QUANTITY, prev + delta)),
+    );
+  };
 
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
@@ -187,61 +222,135 @@ function SimpleEntrySheetContentInner(
     }
   }, [isListening, startListening, stopListening, haptics]);
 
-  const handleAdd = useCallback(async () => {
-    if (!mealType || !dishName.trim() || isAddingRef.current) return;
-    isAddingRef.current = true;
+  // Step 1 → 2: estimate the dish and show what was counted. Nothing is
+  // saved until Add.
+  const handleEstimate = async () => {
+    const title = dishName.trim();
+    if (!mealType || !title || isBusyRef.current) return;
+    isBusyRef.current = true;
+    setIsEstimating(true);
+    setError(null);
+    // Let the keyboard go now, so the sheet is settled when the foods arrive.
+    inputRef.current?.blur();
+    try {
+      const result = await parseFoodText.mutateAsync(title);
+      const items = result?.items;
+      if (!items?.length) {
+        showError(ESTIMATE_ERROR);
+        return;
+      }
+      setRows(toEntryRows(items, { isExtra: false, idPrefix: "dish" }));
+      setExtraError(null);
+      setUsedSuggestions([]);
+      snapToIndex(REVIEW_STEP_SNAP);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
+        setShowUpgrade(true);
+      } else {
+        showError(ESTIMATE_ERROR);
+      }
+    } finally {
+      isBusyRef.current = false;
+      setIsEstimating(false);
+    }
+  };
+
+  const handleEditTitle = () => {
+    setRows(null);
+    setError(null);
+    snapToIndex(NAME_STEP_SNAP);
+  };
+
+  const handleStep = (id: string, direction: 1 | -1) => {
+    const row = rows?.find((r) => r.id === id);
+    if (!row) return;
+    const next = stepRow(row, direction);
+    // At the top of the range nothing changes, so nothing answers.
+    if (next?.quantity === row.quantity) return;
+    if (next) {
+      haptics.selection();
+      AccessibilityInfo.announceForAccessibility(
+        `${row.name}, ${rowAmountLabel(next)}`,
+      );
+    } else {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      AccessibilityInfo.announceForAccessibility(`Removed ${row.name}`);
+    }
+    setRows((prev) =>
+      prev
+        ? prev.flatMap((r) => (r.id !== id ? [r] : next ? [next] : []))
+        : prev,
+    );
+    if (error) setError(null);
+  };
+
+  // A drink or side: estimated like the dish, then added to the same entry.
+  const handleAddExtra = async (text: string): Promise<boolean> => {
+    if (isBusyRef.current || !rows) return false;
+    isBusyRef.current = true;
+    setPendingExtra(text);
+    setExtraError(null);
+    try {
+      const result = await parseFoodText.mutateAsync(text);
+      const items = result?.items;
+      if (!items?.length) {
+        setExtraError(EXTRA_ERROR);
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        return false;
+      }
+      extraCountRef.current += 1;
+      const added = toEntryRows(items, {
+        isExtra: true,
+        idPrefix: `extra-${extraCountRef.current}`,
+      });
+      setRows((prev) => (prev ? [...prev, ...added] : prev));
+      setUsedSuggestions((prev) => [...prev, text]);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      AccessibilityInfo.announceForAccessibility(`Added ${text}`);
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
+        setShowUpgrade(true);
+      } else {
+        setExtraError(EXTRA_ERROR);
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+      }
+      return false;
+    } finally {
+      isBusyRef.current = false;
+      setPendingExtra(null);
+    }
+  };
+
+  const handleAdd = async () => {
+    const title = dishName.trim();
+    if (!mealType || !title || !rows?.length || isBusyRef.current) return;
+    isBusyRef.current = true;
     setIsAdding(true);
     setError(null);
 
-    const title = dishName.trim();
-    let step: "estimate" | "add" = "estimate";
+    const totals = entryTotals(rows);
+    const key = retryKey(title, totals);
     try {
       let recipeId: number;
-      if (createdRecipeRef.current?.title === title) {
+      if (createdRecipeRef.current?.key === key) {
         recipeId = createdRecipeRef.current.id;
-        step = "add";
       } else {
         createdRecipeRef.current = null;
-
-        // 1. Parse food text to get nutrition estimate
-        const result = await parseFoodText.mutateAsync(title);
-        const items = result?.items;
-
-        if (!items?.length) {
-          showError("Couldn't estimate nutrition. Try a simpler description.");
-          isAddingRef.current = false;
-          setIsAdding(false);
-          return;
-        }
-
-        // 2. Sum nutrition across all parsed items into per-serving values
-        let totalCal = 0;
-        let totalProtein = 0;
-        let totalCarbs = 0;
-        let totalFat = 0;
-        for (const item of items) {
-          totalCal += item.calories ?? 0;
-          totalProtein += item.protein ?? 0;
-          totalCarbs += item.carbs ?? 0;
-          totalFat += item.fat ?? 0;
-        }
-
-        // 3. Create a slim meal plan recipe
-        step = "add";
+        // A slim recipe: the dish name and one serving's adjusted totals.
         const recipe = await createRecipe.mutateAsync({
           title,
           sourceType: "quick_entry",
-          caloriesPerServing: Math.round(totalCal).toString(),
-          proteinPerServing: Math.round(totalProtein).toString(),
-          carbsPerServing: Math.round(totalCarbs).toString(),
-          fatPerServing: Math.round(totalFat).toString(),
+          caloriesPerServing: totals.calories.toString(),
+          proteinPerServing: totals.protein.toString(),
+          carbsPerServing: totals.carbs.toString(),
+          fatPerServing: totals.fat.toString(),
           servings: 1,
         });
-        createdRecipeRef.current = { title, id: recipe.id };
+        createdRecipeRef.current = { key, id: recipe.id };
         recipeId = recipe.id;
       }
 
-      // 4. Add to meal plan
       await addItem.mutateAsync({
         recipeId,
         plannedDate,
@@ -257,31 +366,24 @@ function SimpleEntrySheetContentInner(
     } catch (err) {
       if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
         setShowUpgrade(true);
-      } else if (step === "add") {
-        showError("Couldn't add it to your plan. Please try again.");
       } else {
-        showError("Couldn't estimate nutrition. Try a simpler description.");
+        showError(ADD_ERROR);
       }
     } finally {
-      isAddingRef.current = false;
+      isBusyRef.current = false;
       setIsAdding(false);
     }
-  }, [
-    mealType,
-    dishName,
-    servings,
-    plannedDate,
-    parseFoodText,
-    createRecipe,
-    addItem,
-    queryClient,
-    toast,
-    showError,
-    onDismiss,
-  ]);
+  };
 
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
-  const canAdd = dishName.trim().length > 0 && !isAdding && !isListening;
+  const canEstimate =
+    dishName.trim().length > 0 && !isEstimating && !isListening;
+  const suggestions =
+    mealType && rows
+      ? suggestionsFor(mealType, rows).filter(
+          (name) => !usedSuggestions.includes(name),
+        )
+      : [];
 
   return (
     // accessibilityViewIsModal must live on this inner View — BottomSheetModal
@@ -294,148 +396,99 @@ function SimpleEntrySheetContentInner(
       {/* Header */}
       <SheetHeader title={`Quick add to ${label}`} onDone={onDismiss} />
 
-      {/* Dish name input */}
-      <View style={styles.inputContainer}>
-        <FocusField
-          focus={inputBoxFocus}
-          label={DISH_LABEL}
-          // Listening floats the label too, so "Listening..." can show.
-          hasValue={dishName.length > 0 || isListening}
-          labelLeft={DISH_LABEL_LEFT}
-          style={[
-            styles.inputBox,
-            { backgroundColor: withOpacity(theme.text, 0.05) },
-          ]}
+      {rows ? (
+        <SimpleEntryReview
+          title={dishName.trim()}
+          mealLabel={label}
+          rows={rows}
+          totals={entryTotals(rows)}
+          servings={servings}
+          isAdding={isAdding}
+          error={error}
+          onStep={handleStep}
+          onServingsChange={handleServingsChange}
+          onEditTitle={handleEditTitle}
+          onAdd={() => void handleAdd()}
         >
-          <Feather
-            name="edit-3"
-            size={DISH_ICON_SIZE}
-            color={theme.textSecondary}
+          <SimpleEntryExtras
+            suggestions={suggestions}
+            pendingName={pendingExtra}
+            error={extraError}
+            onAdd={handleAddExtra}
           />
-          <FocusBottomSheetTextInput
-            ref={inputRef}
-            focusRing={false}
-            onFocus={inputBoxFocus.onFocus}
-            onBlur={inputBoxFocus.onBlur}
-            style={[styles.input, { color: theme.text }]}
-            // The label rests where the placeholder would; it shows once floated.
-            placeholder={resolvePlaceholder(
-              DISH_LABEL,
-              isListening ? "Listening..." : "e.g. chicken stir fry",
-              shouldFloatLabel(inputBoxFocus.focused || isListening, dishName),
-            )}
-            placeholderTextColor={theme.textSecondary}
-            value={dishName}
-            onChangeText={(text) => {
-              setDishName(text);
-              if (error) setError(null);
-            }}
-            returnKeyType="done"
-            accessibilityLabel={DISH_LABEL}
-            aria-invalid={!!error}
-          />
-          {hasVoiceLogging && (
-            <InlineMicButton
-              isListening={isListening}
-              volume={volume}
-              onPress={handleVoicePress}
-              disabled={isAdding}
-            />
-          )}
-        </FocusField>
-      </View>
+        </SimpleEntryReview>
+      ) : (
+        <>
+          {/* Dish name input */}
+          <View style={styles.inputContainer}>
+            <FocusField
+              focus={inputBoxFocus}
+              label={DISH_LABEL}
+              // Listening floats the label too, so "Listening..." can show.
+              hasValue={dishName.length > 0 || isListening}
+              labelLeft={DISH_LABEL_LEFT}
+              style={[
+                styles.inputBox,
+                { backgroundColor: withOpacity(theme.text, 0.05) },
+              ]}
+            >
+              <Feather
+                name="edit-3"
+                size={DISH_ICON_SIZE}
+                color={theme.textSecondary}
+              />
+              <FocusBottomSheetTextInput
+                ref={inputRef}
+                focusRing={false}
+                onFocus={inputBoxFocus.onFocus}
+                onBlur={inputBoxFocus.onBlur}
+                style={[styles.input, { color: theme.text }]}
+                // The label rests where the placeholder would; it shows once floated.
+                placeholder={resolvePlaceholder(
+                  DISH_LABEL,
+                  isListening ? "Listening..." : "e.g. chicken stir fry",
+                  shouldFloatLabel(
+                    inputBoxFocus.focused || isListening,
+                    dishName,
+                  ),
+                )}
+                placeholderTextColor={theme.textSecondary}
+                value={dishName}
+                onChangeText={(text) => {
+                  setDishName(text);
+                  if (error) setError(null);
+                }}
+                returnKeyType="done"
+                editable={!isEstimating}
+                onSubmitEditing={() => void handleEstimate()}
+                accessibilityLabel={DISH_LABEL}
+                aria-invalid={!!error}
+              />
+              {hasVoiceLogging && (
+                <InlineMicButton
+                  isListening={isListening}
+                  volume={volume}
+                  onPress={handleVoicePress}
+                  disabled={isEstimating}
+                />
+              )}
+            </FocusField>
+          </View>
 
-      {/* Error text */}
-      <InlineError message={error} style={styles.errorBox} />
+          <InlineError message={error} style={styles.errorBox} />
 
-      {/* Servings stepper */}
-      <View style={styles.servingsRow}>
-        <ThemedText
-          style={[styles.servingsLabel, { color: theme.textSecondary }]}
-        >
-          Servings
-        </ThemedText>
-        <View style={styles.stepper}>
-          <Pressable
-            onPress={() => handleServingsChange(-1)}
-            style={[
-              styles.stepperButton,
-              { borderColor: withOpacity(theme.text, 0.1) },
-            ]}
-            hitSlop={4}
-            disabled={servings <= 1}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: servings <= 1 }}
-            accessibilityLabel="Decrease servings"
+          <Button
+            onPress={() => void handleEstimate()}
+            disabled={!canEstimate}
+            loading={isEstimating}
+            loadingText="Estimating…"
+            style={styles.estimateButton}
+            accessibilityHint="Shows what we count as one serving, so you can adjust it"
           >
-            <Feather
-              name="minus"
-              size={18}
-              color={servings <= 1 ? withOpacity(theme.text, 0.2) : theme.text}
-            />
-          </Pressable>
-          <ThemedText
-            style={[styles.stepperValue, { color: theme.text }]}
-            accessibilityRole="adjustable"
-            accessibilityValue={{
-              min: 1,
-              max: 99,
-              now: servings,
-              text: `${servings} servings`,
-            }}
-          >
-            {servings}
-          </ThemedText>
-          <Pressable
-            onPress={() => handleServingsChange(1)}
-            style={[
-              styles.stepperButton,
-              { borderColor: withOpacity(theme.text, 0.1) },
-            ]}
-            hitSlop={4}
-            disabled={servings >= 99}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: servings >= 99 }}
-            accessibilityLabel="Increase servings"
-          >
-            <Feather
-              name="plus"
-              size={18}
-              color={servings >= 99 ? withOpacity(theme.text, 0.2) : theme.text}
-            />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Add button */}
-      <Pressable
-        onPress={handleAdd}
-        disabled={!canAdd}
-        style={[
-          styles.addButton,
-          {
-            backgroundColor: canAdd
-              ? theme.accentSolid
-              : withOpacity(theme.text, 0.1),
-          },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`Add ${dishName || "item"} to ${label}`}
-        accessibilityState={{ disabled: !canAdd }}
-      >
-        {isAdding ? (
-          <ActivityIndicator size="small" color={theme.buttonText} />
-        ) : (
-          <ThemedText
-            style={[
-              styles.addButtonText,
-              { color: canAdd ? theme.buttonText : theme.textSecondary },
-            ]}
-          >
-            Add
-          </ThemedText>
-        )}
-      </Pressable>
+            Estimate
+          </Button>
+        </>
+      )}
 
       <UpgradeModal
         visible={showUpgrade}
@@ -451,6 +504,7 @@ export const SimpleEntrySheetContent = React.memo(
 
 const styles = StyleSheet.create({
   content: {
+    flex: 1,
     paddingBottom: Spacing.lg,
   },
   inputContainer: {
@@ -475,48 +529,8 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.sm,
   },
-  servingsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-  },
-  servingsLabel: {
-    fontSize: 13,
-    fontFamily: FontFamily.semiBold,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  stepper: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-  },
-  stepperButton: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.xs,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepperValue: {
-    fontSize: 18,
-    fontFamily: FontFamily.semiBold,
-    minWidth: 32,
-    textAlign: "center",
-  },
-  addButton: {
+  estimateButton: {
     marginHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.card,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 48,
-  },
-  addButtonText: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
+    marginTop: Spacing.sm,
   },
 });
