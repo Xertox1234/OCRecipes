@@ -30,6 +30,7 @@
  */
 import "dotenv/config";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
@@ -128,7 +129,7 @@ const isMain = (() => {
 
 if (isMain) {
   main().catch((err) => {
-    console.error("Backfill failed:", err);
+    console.error("Backfill failed:", toError(err));
     void pool.end().then(() => process.exit(1));
   });
 }

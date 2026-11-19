@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { db } from "../server/db";
+import { toError } from "../server/lib/logger";
 import {
   mealPlanRecipes,
   mealPlanItems,
@@ -109,7 +110,7 @@ const isMain = (() => {
 })();
 if (isMain) {
   main().catch((err) => {
-    console.error("Cleanup failed:", err);
+    console.error("Cleanup failed:", toError(err));
     process.exit(1);
   });
 }

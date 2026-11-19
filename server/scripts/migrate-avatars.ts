@@ -16,6 +16,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { users } from "@shared/schema";
 import { eq, like } from "drizzle-orm";
 
@@ -132,7 +133,7 @@ async function main() {
         console.log(`  [${row.id}] -> ${newUrl} (${buffer.length} bytes)`);
       } catch (err) {
         skipped++;
-        console.error(`  [${row.id}] FAILED:`, err);
+        console.error(`  [${row.id}] FAILED:`, toError(err));
       }
     }
   }
@@ -144,6 +145,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  console.error("Fatal error:", toError(err));
   void pool.end().then(() => process.exit(1));
 });

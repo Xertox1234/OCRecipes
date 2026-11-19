@@ -1,6 +1,6 @@
 ---
 title: "Scripts print a failed query's raw message, bound values included, to the console"
-status: backlog
+status: done
 priority: low
 created: 2026-11-19
 updated: 2026-11-19
@@ -40,12 +40,12 @@ found.
 
 ## Acceptance Criteria
 
-- [ ] `server/scripts/cleanup-retention.ts` prints a redacted message (through `toError` or
+- [x] `server/scripts/cleanup-retention.ts` prints a redacted message (through `toError` or
       `redactBoundValues` from `server/lib/logger.ts`), covered by a test written to fail first.
-- [ ] Every script under `server/scripts/` that runs database statements and prints a caught
+- [x] Every script under `server/scripts/` that runs database statements and prints a caught
       error does the same; the PR lists which scripts were changed and which were read and
       left alone.
-- [ ] No new redaction logic: the scripts reuse the functions in `server/lib/logger.ts`.
+- [x] No new redaction logic: the scripts reuse the functions in `server/lib/logger.ts`.
 
 ## Implementation Notes
 
@@ -69,3 +69,22 @@ found.
 ### 2026-11-19
 
 - Filed from the security review of PR 1932.
+- Done. `cleanup-retention.ts` prints `toError(err).message`; test
+  `server/scripts/__tests__/cleanup-retention-console.test.ts` failed first with
+  `params: ZZMARKER-allergy` in the output.
+- Changed (print the caught error through `toError`): backfill-barcode-nutrition,
+  backfill-community-meal-types, backfill-community-nutrition (fatal handler),
+  backfill-email-verified, backfill-meal-types, backfill-recipe-allergens,
+  backfill-recipe-images, backfill-recipe-spice-level (fatal handler), cleanup-seed-recipes
+  (fatal handler), delete-account, migrate-avatars, migrate-images-to-r2,
+  migrate-recipe-images, seed-recipes.
+- Read and left alone: `cleanup-retention.ts` execution-guard print (its own fixed message);
+  the AI-call catches in backfill-community-nutrition and backfill-recipe-spice-level and
+  the file-delete catch in cleanup-seed-recipes (no database statement in the try);
+  preview-art-direction (no database); purge-inspired-suggestions (already logs through
+  `toError`); backfill-ai-rows and the five `-utils` files (print no caught error).
+- Also changed, at the owner's request (2026-11-19), beyond this todo's scope: the nine
+  scripts under top-level `scripts/` that open a database connection and print a caught error
+  now print it through `toError` (migrate-instructions, export-community-catalog-fixture,
+  mfa-reset, migrate-recipe-ingredients, cleanup-junk-mealplan-recipes, cleanup-junk-recipes,
+  check-timestamptz-migration, canonicalize-recipe, pg-lab/symbol-graph).

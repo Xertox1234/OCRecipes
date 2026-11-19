@@ -8,6 +8,7 @@
  */
 import "dotenv/config";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { scannedItems, barcodeNutrition } from "@shared/schema";
 import { isNotNull } from "drizzle-orm";
 
@@ -73,7 +74,7 @@ async function main() {
         .onConflictDoNothing();
       inserted++;
     } catch (err) {
-      console.error(`Failed to insert barcode ${row.barcode}:`, err);
+      console.error(`Failed to insert barcode ${row.barcode}:`, toError(err));
     }
   }
 
@@ -84,6 +85,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Backfill failed:", err);
+  console.error("Backfill failed:", toError(err));
   process.exit(1);
 });

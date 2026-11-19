@@ -479,8 +479,11 @@ async function main() {
     }
     console.log("=== Cleanup complete ===");
   } catch (err) {
-    log.error({ err: toError(err) }, "retention cleanup failed");
-    console.error("Retention cleanup failed:", (err as Error).message);
+    // toError strips a failed statement's bound values; the console is
+    // outside pino, so the logger's serializer does not cover this line.
+    const safe = toError(err);
+    log.error({ err: safe }, "retention cleanup failed");
+    console.error("Retention cleanup failed:", safe.message);
     process.exitCode = 1;
   } finally {
     await pool.end();

@@ -35,6 +35,7 @@
  */
 
 import pg from "pg";
+import { toError } from "../server/lib/logger";
 import {
   parseTextToSteps,
   evaluateRerunGuard,
@@ -226,7 +227,7 @@ async function migrate() {
 
     console.log("\nMigration complete!");
   } catch (err) {
-    console.error("Migration failed:", err);
+    console.error("Migration failed:", toError(err));
     console.error("Backup tables exist for rollback.");
     process.exit(1);
   } finally {

@@ -15,6 +15,7 @@
  */
 import "dotenv/config";
 import pg from "pg";
+import { toError } from "../server/lib/logger";
 
 const MIGRATION = "migrations/0002_timestamps_to_timestamptz.sql";
 
@@ -75,6 +76,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error("[db:push guard] Failed to verify database state:", err);
+  console.error(
+    "[db:push guard] Failed to verify database state:",
+    toError(err),
+  );
   process.exit(1);
 });

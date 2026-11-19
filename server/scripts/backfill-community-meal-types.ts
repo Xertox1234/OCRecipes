@@ -13,6 +13,7 @@ import "dotenv/config";
 import { inferMealTypes } from "../lib/meal-type-inference";
 import { storage } from "../storage";
 import { pool } from "../db";
+import { toError } from "../lib/logger";
 
 async function main() {
   const recipes = await storage.getCommunityRecipesWithEmptyMealTypes();
@@ -37,6 +38,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Backfill failed:", err);
+  console.error("Backfill failed:", toError(err));
   process.exit(1);
 });
