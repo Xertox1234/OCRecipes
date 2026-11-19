@@ -52,6 +52,8 @@ export function createServiceLogger(service: string): pino.Logger {
   return logger.child({ service });
 }
 
+const REDACTED_MESSAGE_MAX = 10_000;
+
 /**
  * Strip user values from a failed database statement's message. Drizzle ends
  * the message with "\nparams: <every bound value>" (password hashes, health
@@ -67,7 +69,11 @@ export function createServiceLogger(service: string): pino.Logger {
  */
 export function redactBoundValues(message: string): string {
   const paramsStart = message.indexOf("\nparams:");
-  const head = paramsStart === -1 ? message : message.slice(0, paramsStart);
+  // Capped: the greedy rules below are quadratic on a message that repeats
+  // their opening token, and a log line has no use for more.
+  const head = (
+    paramsStart === -1 ? message : message.slice(0, paramsStart)
+  ).slice(0, REDACTED_MESSAGE_MAX);
   // The mid-message rules run FIRST: an input containing ': "' would
   // otherwise let the tail cut eat the fixed suffix they match on.
   return (
@@ -145,30 +151,25 @@ function needsRedaction(error: Error, seen: Set<Error>): boolean {
 function redactedError(value: unknown): unknown {
   if (!(value instanceof Error)) return value;
   if (!needsRedaction(value, new Set())) return value;
-  return redactChain(value, new Set(), false);
+  return redactChain(value, new Set());
 }
 
-function redactChain(
-  error: ErrorFields,
-  seen: Set<unknown>,
-  underFailedStatement: boolean,
-): Error {
+function redactChain(error: ErrorFields, seen: Set<unknown>): Error {
   seen.add(error);
-  // Everything under a failed statement is redacted (the pg error beneath a
-  // Drizzle one need not look like one). A wrapper above it carries no values
-  // itself and keeps its own message as written.
-  const redact = underFailedStatement || carriesBoundValues(error);
-  const message = redact ? redactBoundValues(error.message) : error.message;
+  // Every message in the tree is redacted, not only the failed statement's:
+  // the pg error beneath a Drizzle one need not look like one, and a wrapper
+  // above it may repeat its message.
+  const message = redactBoundValues(error.message);
   const safe: ErrorFields = new Error(message);
   safe.name = error.name;
   safe.stack = error.stack?.replace(error.message, () => message);
   if (error.cause instanceof Error && !seen.has(error.cause)) {
-    safe.cause = redactChain(error.cause, seen, redact);
+    safe.cause = redactChain(error.cause, seen);
   }
   if (Array.isArray(error.errors)) {
     safe.errors = error.errors
       .filter((item): item is Error => item instanceof Error && !seen.has(item))
-      .map((item) => redactChain(item, seen, redact));
+      .map((item) => redactChain(item, seen));
   }
   // Drizzle's own error has no code; the pg error under it does. Hoist it so
   // pino's serializer (which only copies the top error's own fields) keeps it.

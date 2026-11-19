@@ -191,6 +191,27 @@ describe("logger + AsyncLocalStorage integration", () => {
       expect(out).toContain("users_email_key");
     });
 
+    it("a wrapper that repeats its cause's message is redacted too", async () => {
+      const pgError = Object.assign(
+        new Error('invalid input syntax for type json: "ZZMARKER-allergy"'),
+        { severity: "ERROR", code: "22P02" },
+      );
+      const wrapper = new Error(`saving failed: ${pgError.message}`, {
+        cause: pgError,
+      });
+      const out = await serialize(wrapper);
+      expect(out).not.toContain("ZZMARKER-allergy");
+      expect(out).toContain("saving failed");
+    });
+
+    it("redactBoundValues caps the length it works on", async () => {
+      const { redactBoundValues } = await import("../logger");
+      // Unbounded, the greedy mid-message rules are quadratic on a message
+      // that repeats their opening token.
+      const out = redactBoundValues('value "'.repeat(20_000));
+      expect(out.length).toBeLessThanOrEqual(10_000);
+    });
+
     it("an ordinary wrapper of an ordinary error is returned untouched", async () => {
       const { toError } = await import("../logger");
       const wrapper = new Error("outer", { cause: new Error('inner: "x"') });
