@@ -28,7 +28,8 @@ The audit (manifest `docs/audits/2026-11-08-architecture.md`, findings L6 and th
 - [x] `usePurchase` lives in `client/hooks/` (pure IAP helpers may stay in `client/lib/iap/`); every importer and test mock path updated.
 - [x] `deleteProofMode` lives outside `client/screens/` (e.g. `client/lib/` or beside `DeleteAccountModal`), with its tests; `SignInMethodsScreen` imports it from there.
 - [x] `grep -rnE "from ['\"]@/screens/" client/components client/hooks client/camera client/lib client/context` returns no production hits.
-- [ ] Pure moves only: no behaviour change; purchase and delete-account flows checked on a device afterwards.
+- [ ] Pure moves only: no behaviour change; delete-account flow checked on a device afterwards.
+- [ ] Purchase and restore flows checked on a device. Waits until purchases can be made at all (store setup, launch-gated).
 
 ## Implementation Notes
 
@@ -57,3 +58,5 @@ Pure `git mv` moves plus import rewiring, the same way the audit did M1. Check `
 - `deleteProofMode` could not move alone: it calls `toMethodList` (same screen file) and `connectPromptMode` (`ConnectAccountScreen-utils`). All three, with the `ConnectPromptMode` and `DeleteProofMode` types and their tests, moved into the existing `client/lib/social-auth-utils.ts`. `SignInMethodsScreen` never imported `deleteProofMode`, so it needed no change; `ConnectAccountScreen` now imports `connectPromptMode` from lib.
 - The auto-merge guard held `usePurchase.ts` only through its `iap/` folder. `usePurchase` is now named in `SENSITIVE_OVERRIDE`, with a test.
 - Open: the fourth criterion's device check of purchase and delete-account (owner).
+- PR #1947 merged as `91cb25f73`.
+- Owner: purchases cannot be made yet. The device check is split: delete-account can be checked once the change reaches a phone; purchase and restore wait for the store setup. Until then the moved hook is covered only by its unit tests (`client/hooks/__tests__/usePurchase.test.ts`).
