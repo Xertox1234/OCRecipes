@@ -1,9 +1,9 @@
 ---
 title: "Read the advisory mutation results from the Coach grocery and pantry card PRs"
-status: backlog
+status: done
 priority: low
 created: 2026-11-16
-updated: 2026-11-16
+updated: 2026-11-19
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -29,12 +29,12 @@ so a weak test there is worth finding.
 
 ## Acceptance Criteria
 
-- [ ] The mutation reports for PRs 1892, 1894, 1895 and 1897 are read; the PR records, per
+- [x] The mutation reports for PRs 1892, 1894, 1895 and 1897 are read; the PR records, per
       file, how many mutants survived in lines those PRs added or changed.
-- [ ] Each survivor in `server/services/write-cards/grocery.ts` and
+- [x] Each survivor in `server/services/write-cards/grocery.ts` and
       `server/services/write-cards/pantry.ts` is either killed by a new test or listed with
       the reason it is equivalent.
-- [ ] If the check failed for a reason other than survivors (time limit, set-up error), that
+- [x] If the check failed for a reason other than survivors (time limit, set-up error), that
       is recorded instead, in `docs/harness-residuals.md` if it is a harness defect.
 
 ## Implementation Notes
@@ -64,3 +64,25 @@ so a weak test there is worth finding.
 ### 2026-11-16
 
 - Initial creation
+
+### 2026-11-19
+
+- Read all four runs. `grocery.ts` and `pantry.ts` were never mutated in CI: on PR 1892 and
+  PR 1897 their tests need Postgres and the advisory job has none (`ECONNREFUSED`, "explore
+  exited 1"); on PR 1895 both were past the six-file cap in a green run; PR 1894 did not touch
+  them. Recorded in `docs/harness-residuals.md`.
+- Ran Stryker locally on both files. Before: `grocery.ts` 47 undetected of 203 mutants,
+  `pantry.ts` 62 of 310. After the new tests: 1 and 8.
+- The 9 left, none killable by a test of behaviour:
+  - `grocery.ts:153` the placeholder for "no amount" in the duplicate key: any fixed text gives
+    the same keys, because an amount is a number and never equals it.
+  - `pantry.ts:62` `n === null`: `null > MAX_AMOUNT` is false, so null is returned either way.
+  - `pantry.ts:157` `held === null` and `amount === null`: with no held amount `amount >= null`
+    is already true for any amount (amounts are never negative), and an unread amount only
+    reaches this line when `all` is true.
+  - `pantry.ts:290` and `:342` (two each) the `length > 0` guards: the storage call with an empty
+    list changes nothing, so the guard only saves a query.
+  - `pantry.ts:317` the fallback for a save with no restore list: the mutant does one extra read
+    that finds no row. Not equivalent in the strict sense; nothing a caller can observe.
+- Survivors on lines the four PRs changed in the other files (counts only, tests for them are
+  outside this todo's scope) are in the PR description.
