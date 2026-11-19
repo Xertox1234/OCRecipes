@@ -368,6 +368,20 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       });
     };
 
+    // Every route to the Vertex backup makes this same call; only the
+    // OpenRouter error (none when the backup was chosen up front) and the
+    // reason differ.
+    const backup = (cause: unknown, reason: FallbackReason | "forced") =>
+      callVertexBackup(
+        feature,
+        row,
+        params,
+        backupOptions,
+        cause,
+        reason,
+        record,
+      );
+
     // Eval/smoke switch (ai-call-context.ts); beats `fallback: "off"`, and comes
     // before the Vertex-first dispatch so it is never silently ignored.
     const force = ctx?.forceBackup;
@@ -380,15 +394,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           `aiChat(${feature}): forceBackup on a row with no vertexBackup`,
         );
       }
-      return callVertexBackup(
-        feature,
-        row,
-        params,
-        backupOptions,
-        undefined,
-        "forced",
-        record,
-      );
+      return backup(undefined, "forced");
     }
 
     // Before the OpenRouter path below — incl. the no-OpenRouter-key early return.
@@ -415,27 +421,11 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           `aiChat(${feature}): no AI route — set OPENROUTER_API_KEY and/or GOOGLE_VERTEX_*`,
         );
       }
-      return callVertexBackup(
-        feature,
-        row,
-        params,
-        backupOptions,
-        undefined,
-        "config",
-        record,
-      );
+      return backup(undefined, "config");
     }
 
     if (fallbackAllowed && deps.breaker.isOpen()) {
-      return callVertexBackup(
-        feature,
-        row,
-        params,
-        backupOptions,
-        undefined,
-        "circuit-open",
-        record,
-      );
+      return backup(undefined, "circuit-open");
     }
 
     const host = hostForModel(requestedModel);
@@ -522,15 +512,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         });
         throw err;
       }
-      return callVertexBackup(
-        feature,
-        row,
-        params,
-        backupOptions,
-        err,
-        kind,
-        record,
-      );
+      return backup(err, kind);
     }
   }
 

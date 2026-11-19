@@ -184,6 +184,17 @@ cosmetic notes.
   route-reachability and sheet-provider guards, so a registration helper blinds
   both — share the options instead. See
   `docs/solutions/conventions/share-navigator-screen-options-not-registrations-2026-11-05.md`.
+- **A claim about a second file needs that file read, not inferred**
+  (learned 2026-11-19). "X duplicates Y" needs both sides diffed; "X drifted
+  from Y" needs the callee traced. Three of that run's claims failed this:
+  CoachChat was said to share ChatScreen's error-once/voice refs (it has
+  neither); meal-plan `/recipes` was said to skip normalization (storage
+  normalizes, `meal-plan-recipes-crud.ts:136`); an interruption filter was
+  called iOS-only (`diff` showed both platforms identical). The diff also
+  showed the duplicate was wider than claimed — `CameraUnavailable` rode along.
+- **After an extraction, re-run jscpd and expect a newly aligned pair.**
+  Removing one duplicated block can line up the surrounding code into a new
+  clone; record it as a leftover todo rather than widening the approved fix.
 - **Owner directive (2026-11-05): "unused" is not "remove".** An unreferenced
   export or component may be unfinished work. Report it as "built but not
   connected — confirm intent", never as a deletion; code-judo deletes

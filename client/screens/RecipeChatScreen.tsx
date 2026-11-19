@@ -49,7 +49,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { TypingDots } from "@/components/TypingDots";
 import { SendButton } from "@/components/SendButton";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useVoiceField } from "@/hooks/useVoiceField";
+import { useAppendVoiceInput } from "@/hooks/useAppendVoiceInput";
 import { MarkdownText } from "@/components/MarkdownText";
 import { spokenMarkdown } from "@/components/markdown-text-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -473,40 +473,19 @@ export default function RecipeChatScreen() {
   const { planUnknown, recheckPlan } = usePlanCheck();
   const [showUpgrade, setShowUpgrade] = useState(false);
 
-  // Voice input APPENDS to whatever was typed before the mic was tapped and
-  // never sends — the user reviews the dictation and taps Send themselves.
-  // The base is what was typed when the mic was tapped; useVoiceField decides
-  // whether a transcript may be written at all.
-  const voiceBaseRef = useRef("");
+  // Voice input appends to what was typed and never sends. A reply that
+  // starts streaming locks the composer, so it ends any capture too.
   const {
     isListening,
     volume,
-    error: speechError,
-    toggle: toggleVoice,
+    onPress: handleVoicePress,
     release: releaseVoice,
-  } = useVoiceField({
-    onTranscript: (transcript) => {
-      const base = voiceBaseRef.current;
-      setInputText(
-        (base ? `${base} ${transcript}` : transcript).slice(
-          0,
-          CHAT_MESSAGE_MAX_LENGTH,
-        ),
-      );
-    },
+  } = useAppendVoiceInput({
+    text: inputText,
+    setText: setInputText,
+    maxLength: CHAT_MESSAGE_MAX_LENGTH,
+    stopWhen: isStreaming,
   });
-  useEffect(() => {
-    if (speechError) toast.error(speechError);
-  }, [speechError, toast]);
-  // A reply that starts streaming locks the composer; end any capture too.
-  useEffect(() => {
-    if (isStreaming) releaseVoice();
-  }, [isStreaming, releaseVoice]);
-  const handleVoicePress = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (!isListening) voiceBaseRef.current = inputText.trim();
-    toggleVoice();
-  }, [haptics, isListening, inputText, toggleVoice]);
 
   const handleSend = useCallback(
     async (text?: string) => {

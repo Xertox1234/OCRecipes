@@ -31,7 +31,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { Button } from "@/components/Button";
 import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
-import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
+import { usePlanSuggestFlow } from "@/hooks/usePlanSuggestFlow";
 import { ADD_ITEM_MENU_WITH_SUGGEST_SNAP_POINTS } from "@/components/meal-plan/AddItemMenuSheet";
 import { IMPORT_RECIPE_SNAP_POINTS } from "@/components/meal-plan/ImportRecipeSheet";
 import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
@@ -48,10 +48,7 @@ import {
   CELL_HEIGHT,
   DAY_HEADER_HEIGHT,
 } from "@/components/meal-plan/WeekGridCell";
-import {
-  type MealType,
-  suggestionToPlanItem,
-} from "@/components/meal-plan/meal-plan-utils";
+import { type MealType } from "@/components/meal-plan/meal-plan-utils";
 import {
   SLOTS_PER_WEEK,
   addDays,
@@ -73,12 +70,7 @@ import { usePremiumContext } from "@/context/PremiumContext";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
-import {
-  invalidateMealPlanItems,
-  useAddMealPlanItem,
-  useMealPlanItems,
-} from "@/hooks/useMealPlan";
-import { useToast } from "@/context/ToastContext";
+import { invalidateMealPlanItems, useMealPlanItems } from "@/hooks/useMealPlan";
 import { useMealPlanSheets } from "@/hooks/useMealPlanSheets";
 import { usePlanFamily } from "@/hooks/useFamily";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
@@ -88,7 +80,6 @@ import { useTheme } from "@/hooks/useTheme";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
 // Device-LOCAL basis: `planned_date` is the day of the cell the user tapped.
 import { toLocalDateString } from "@shared/lib/date";
-import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 interface TopAction {
   id: string;
@@ -121,7 +112,6 @@ export default function MealPlanHomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const toast = useToast();
   const queryClient = useQueryClient();
   const { features, isPremium } = usePremiumContext();
   const { planUnknown, recheckPlan } = usePlanCheck();
@@ -160,27 +150,21 @@ export default function MealPlanHomeScreen() {
   const [sheetDateStr, setSheetDateStr] = useState(() =>
     toLocalDateString(today),
   );
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [suggestModalVisible, setSuggestModalVisible] = useState(false);
-  const [suggestMealType, setSuggestMealType] = useState<MealType>("dinner");
-
-  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
-
   // The add menu's "Suggest a meal" row. Runs after the menu has closed, for
   // the meal of the cell that opened it; the day is `sheetDateStr`.
-  const handleSuggest = useCallback(
-    (mealType: MealType) => {
-      if (!features.aiMealSuggestions) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
-        setShowUpgradeModal(true);
-        return;
-      }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      setSuggestMealType(mealType);
-      setSuggestModalVisible(true);
-    },
-    [features.aiMealSuggestions, haptics],
-  );
+  const {
+    suggestModalVisible,
+    suggestMealType,
+    handleSuggest,
+    handleSelectSuggestion,
+    closeSuggest,
+    showUpgradeModal,
+    setShowUpgradeModal,
+  } = usePlanSuggestFlow({
+    dateStr: sheetDateStr,
+    initialMealType: "dinner",
+    canSuggest: features.aiMealSuggestions,
+  });
 
   // BottomSheetModal must be declared directly in this screen component —
   // declaring it inside an imported child silently breaks .present(). The
@@ -292,7 +276,15 @@ export default function MealPlanHomeScreen() {
     }
     haptics.selection();
     setWeekAnchor(nextAnchor);
-  }, [haptics, weekAnchor, today, maxDaysForward, planUnknown, recheckPlan]);
+  }, [
+    haptics,
+    weekAnchor,
+    today,
+    maxDaysForward,
+    planUnknown,
+    recheckPlan,
+    setShowUpgradeModal,
+  ]);
 
   const handleAddPress = useCallback(
     (dateStr: string, mealType: MealType) => {
@@ -336,24 +328,6 @@ export default function MealPlanHomeScreen() {
     haptics.selection();
     navigation.navigate("CookbookList");
   }, [haptics, navigation]);
-
-  const handleSelectSuggestion = useCallback(
-    async (suggestion: MealSuggestion) => {
-      try {
-        await addMealPlanItem(
-          suggestionToPlanItem(suggestion, sheetDateStr, suggestMealType),
-        );
-        // The modal closes, so confirm with a toast (fires its own Success).
-        toast.success(formatPlanAddSuccess(sheetDateStr, suggestMealType));
-        setSuggestModalVisible(false);
-      } catch {
-        toast.error(
-          "Couldn't add the suggestion to your plan. Please try again.",
-        );
-      }
-    },
-    [addMealPlanItem, sheetDateStr, suggestMealType, toast],
-  );
 
   const handlePlanFromPantry = useCallback(() => {
     haptics.selection();
@@ -608,7 +582,7 @@ export default function MealPlanHomeScreen() {
         visible={suggestModalVisible}
         date={sheetDateStr}
         mealType={suggestMealType}
-        onClose={() => setSuggestModalVisible(false)}
+        onClose={closeSuggest}
         onSelectSuggestion={handleSelectSuggestion}
       />
       <UpgradeModal

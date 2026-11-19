@@ -6,13 +6,10 @@ import React, {
   useMemo,
 } from "react";
 import { StyleSheet, View } from "react-native";
-import { Feather } from "@expo/vector-icons";
 import {
   GestureDetector,
   useSimultaneousGestures,
 } from "react-native-gesture-handler";
-import { ThemedText } from "@/components/ThemedText";
-import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   Camera,
@@ -25,9 +22,10 @@ import {
   type ScannedObjectType,
 } from "react-native-vision-camera";
 import type { ExpoBarcodeType } from "@shared/types/camera";
-import { AbsoluteFill, Spacing } from "@/constants/theme";
 import { logger } from "@/lib/logger";
 import { useCameraFocusAndZoom } from "../hooks/useCameraFocusAndZoom";
+import { useCameraSessionReporting } from "../hooks/useCameraSessionReporting";
+import { CameraUnavailable } from "./CameraUnavailable";
 import { FocusRing } from "./FocusRing";
 import { ZoomLabel } from "./ZoomLabel";
 import type {
@@ -136,15 +134,8 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     // (js-rendered-feedback-not-evidence-native-call-succeeded-2026-07-25.md),
     // not a high-frequency gesture callback where re-arming matters.
     const captureFailureReportedRef = useRef(false);
-    const cameraErrorReportedRef = useRef(false);
-    // Interruptions latch PER REASON: iOS forwards every
-    // AVCaptureSession interruption, and a shared latch would let the first
-    // (often routine) reason hide a later, diagnostic one for the whole mount.
-    const reportedInterruptionReasonsRef = useRef(new Set<string>());
-    // True from a reported start until its end: each reported interruption
-    // gets exactly one end report, and a background interruption arriving
-    // mid-episode doesn't swallow it.
-    const awaitingInterruptionEndRef = useRef(false);
+    // Camera error + interruption reporting, shared with CameraView.tsx.
+    const sessionReporting = useCameraSessionReporting();
 
     const { reducedMotion } = useAccessibility();
     const { focusPoint, zoomLabel, tapGesture, pinchGesture } =
@@ -232,28 +223,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             torchMode={
               device.hasTorch ? (enableTorch ? "on" : "off") : undefined
             }
-            onError={(error) => {
-              if (cameraErrorReportedRef.current) return;
-              cameraErrorReportedRef.current = true;
-              logger.error("[CameraView] Camera error", error);
-            }}
-            onInterruptionStarted={(reason) => {
-              // Backgrounding the app mid-scan fires this reason; it is
-              // routine, not a failure, so it never reaches error tracking.
-              if (reason === "video-device-not-available-in-background") return;
-              const reported = reportedInterruptionReasonsRef.current;
-              if (reported.has(reason)) return;
-              reported.add(reason);
-              awaitingInterruptionEndRef.current = true;
-              logger.error(
-                `[CameraView] Camera session interrupted (${reason})`,
-              );
-            }}
-            onInterruptionEnded={() => {
-              if (!awaitingInterruptionEndRef.current) return;
-              awaitingInterruptionEndRef.current = false;
-              logger.error("[CameraView] Camera session interruption ended");
-            }}
+            {...sessionReporting}
           />
           <FocusRing point={focusPoint} reducedMotion={reducedMotion} />
           <ZoomLabel label={zoomLabel} />
@@ -264,44 +234,3 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
 );
 
 CameraView.displayName = "CameraView";
-
-export function CameraUnavailable() {
-  const { theme } = useTheme();
-  return (
-    <View
-      style={[styles.unavailable, { backgroundColor: theme.backgroundDefault }]}
-    >
-      <Feather
-        name="camera-off"
-        size={48}
-        color={theme.textSecondary}
-        accessible={false}
-      />
-      <ThemedText type="h4" style={styles.unavailableTitle}>
-        Camera unavailable
-      </ThemedText>
-      <ThemedText
-        type="body"
-        style={[styles.unavailableSubtitle, { color: theme.textSecondary }]}
-      >
-        Camera is not available on this device
-      </ThemedText>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  unavailable: {
-    ...AbsoluteFill,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing.md,
-    paddingHorizontal: Spacing["3xl"],
-  },
-  unavailableTitle: {
-    marginTop: Spacing.sm,
-  },
-  unavailableSubtitle: {
-    textAlign: "center",
-  },
-});

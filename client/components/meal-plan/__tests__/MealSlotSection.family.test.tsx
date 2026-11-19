@@ -5,7 +5,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
 import { renderComponent } from "../../../../test/utils/render-component";
-import { MealSlotItem, getItemAccessibilityActions } from "../MealSlotSection";
+import { MealSlotItem, getItemAccessibilityActions } from "../MealSlotItem";
 
 function makeItem(
   overrides: Record<string, unknown> = {},

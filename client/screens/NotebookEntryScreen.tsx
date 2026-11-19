@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Pressable,
@@ -12,7 +12,7 @@ import {
 import * as Haptics from "expo-haptics";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useVoiceField } from "@/hooks/useVoiceField";
+import { useAppendVoiceInput } from "@/hooks/useAppendVoiceInput";
 import { FieldCounter } from "@/components/FieldCounter";
 import { InlineError } from "@/components/InlineError";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -126,31 +126,17 @@ export default function NotebookEntryScreen() {
   const haptics = useHaptics();
   const [contentFocused, setContentFocused] = useState(false);
 
-  // Voice input APPENDS to the note as it stood when the mic was tapped;
-  // useVoiceField decides whether a transcript may be written at all.
-  const voiceBaseRef = useRef("");
+  // Voice input appends to the note as it stood when the mic was tapped.
   const {
     isListening,
     volume,
-    error: speechError,
-    toggle: toggleVoice,
+    onPress: handleVoicePress,
     release: releaseVoice,
-  } = useVoiceField({
-    onTranscript: (transcript) => {
-      const base = voiceBaseRef.current;
-      setContent(
-        (base ? `${base} ${transcript}` : transcript).slice(0, NOTE_MAX_LENGTH),
-      );
-    },
+  } = useAppendVoiceInput({
+    text: content,
+    setText: setContent,
+    maxLength: NOTE_MAX_LENGTH,
   });
-  useEffect(() => {
-    if (speechError) toast.error(speechError);
-  }, [speechError, toast]);
-  const handleVoicePress = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (!isListening) voiceBaseRef.current = content.trim();
-    toggleVoice();
-  }, [haptics, isListening, content, toggleVoice]);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
     entry?.followUpDate
       ? toLocalDateString(new Date(entry.followUpDate))
