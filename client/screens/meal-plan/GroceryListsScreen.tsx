@@ -277,7 +277,7 @@ export default function GroceryListsScreen() {
           setOpenPicker(null);
           navigation.navigate("GroceryList", { listId: list.id });
         },
-        // A refusal (too many items, too many days, too many lists) skips the
+        // A refusal (too many items from #1930, too many days, too many lists) skips the
         // global error toast, so the sheet says why it made nothing.
         onError: (err) => setGenerateError(groceryGenerateErrorMessage(err)),
       },

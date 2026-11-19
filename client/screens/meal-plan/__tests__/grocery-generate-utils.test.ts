@@ -17,9 +17,10 @@ describe("groceryGenerateErrorMessage", () => {
     );
   });
 
-  it("gives a plain message for any other refusal (e.g. too many lists)", () => {
+  it("for any other refusal names the list limit instead of promising a retry", () => {
+    // The 50-list cap comes back as VALIDATION_ERROR: a retry cannot work.
     expect(groceryGenerateErrorMessage(refusal("VALIDATION_ERROR"))).toBe(
-      "Couldn't make that list. Please try again.",
+      "Couldn't make that list. If you have 50 lists, delete one first.",
     );
   });
 

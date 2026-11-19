@@ -1,3 +1,4 @@
+import { ErrorCode } from "@shared/constants/error-codes";
 import { ApiError, isDuplicateInFlight } from "@/lib/api-error";
 
 /**
@@ -10,11 +11,15 @@ import { ApiError, isDuplicateInFlight } from "@/lib/api-error";
 export function groceryGenerateErrorMessage(err: unknown): string | null {
   if (!(err instanceof ApiError) || isDuplicateInFlight(err)) return null;
   if (err.status === undefined || err.status >= 500) return null;
-  if (err.code === "LIMIT_REACHED") {
+  // The range's items would not fit on one list (the per-list item cap the
+  // generate route checks since #1930).
+  if (err.code === ErrorCode.LIMIT_REACHED) {
     return "Too many items for one list. Choose fewer days.";
   }
-  if (err.code === "DATE_RANGE_LIMIT") {
+  if (err.code === ErrorCode.DATE_RANGE_LIMIT) {
     return "That's more days than your plan allows. Choose fewer days.";
   }
-  return "Couldn't make that list. Please try again.";
+  // The 50-list cap arrives as a plain VALIDATION_ERROR, shared with other
+  // bad-input refusals, so name it here rather than promise a retry helps.
+  return "Couldn't make that list. If you have 50 lists, delete one first.";
 }
