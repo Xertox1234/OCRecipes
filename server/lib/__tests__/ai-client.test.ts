@@ -1970,3 +1970,130 @@ describe("call records carry finish_reason and usage", () => {
     expect(c.calls[0].finishReason).toBeNull();
   });
 });
+
+/**
+ * Reliability audit 2026-11-19, L-obs-4: a sustained OpenRouter outage moved
+ * every call to Vertex with only warn logs to show for it. The breaker opening
+ * is the "all traffic has moved" moment, so that is what gets reported.
+ */
+describe("the OpenRouter breaker opening is reported", () => {
+  const PROMPT = "ZZPROMPT-peanut-allergy";
+  const PROVIDER_TEXT = "ZZPROVIDER-upstream-said";
+  const ask = {
+    ...params,
+    messages: [{ role: "user" as const, content: PROMPT }],
+  };
+  let clock: number;
+  let deps: AiChatDeps;
+  const openReports = () =>
+    vi
+      .mocked(deps.report)
+      .mock.calls.map(([e]) => e.message)
+      .filter((m) => /breaker opened/i.test(m));
+
+  beforeEach(() => {
+    clock = 0;
+    deps = makeDeps({
+      now: () => clock,
+      breaker: new CircuitBreaker({ now: () => clock }),
+    });
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503, PROVIDER_TEXT),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion("gpt-4o-mini"),
+    );
+  });
+
+  it("failures below the threshold only log", async () => {
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 4; i++) await aiChat(F, ask);
+    expect(deps.breaker.isOpen()).toBe(false);
+    expect(deps.report).not.toHaveBeenCalled();
+    expect(deps.log.warn).toHaveBeenCalledTimes(4);
+  });
+
+  it("the failure that opens it reports once, naming the failure kind only", async () => {
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 5; i++) await aiChat(F, ask);
+    expect(deps.breaker.isOpen()).toBe(true);
+    expect(deps.report).toHaveBeenCalledTimes(1);
+    const [error, context] = vi.mocked(deps.report).mock.calls[0];
+    expect(context).toBe("ai-client");
+    expect(error.message).toMatch(/breaker opened/i);
+    expect(error.message).toContain("transport");
+    expect(error.message).not.toContain(PROMPT);
+    expect(error.message).not.toContain(PROVIDER_TEXT);
+    expect(error.message).not.toContain(String(F));
+  });
+
+  it("calls that skip OpenRouter while it is open do not report again", async () => {
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 8; i++) await aiChat(F, ask);
+    expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledTimes(5);
+    expect(openReports()).toHaveLength(1);
+    expect(deps.log.warn).toHaveBeenCalledTimes(8);
+  });
+
+  it("a failed trial after the cooldown re-opens it without a second report inside the window", async () => {
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 5; i++) await aiChat(F, ask);
+    clock = 61_000; // cooldown over: the next call tries OpenRouter and fails
+    await aiChat(F, ask);
+    expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledTimes(6);
+    expect(deps.breaker.isOpen()).toBe(true);
+    expect(openReports()).toHaveLength(1);
+  });
+
+  it("an outage still running after the throttle window is reported again", async () => {
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 5; i++) await aiChat(F, ask);
+    clock = 10 * 60_000;
+    await aiChat(F, ask);
+    expect(openReports()).toHaveLength(2);
+  });
+
+  it("the report is one per outage, not one per feature", async () => {
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 4; i++) await aiChat(F, ask);
+    await aiChat(F2, ask);
+    clock = 61_000;
+    await aiChat(F, ask);
+    expect(openReports()).toHaveLength(1);
+  });
+
+  it("a config error never opens the breaker, so it never sends this report", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(400, "unknown model"),
+    );
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 6; i++) await aiChat(F, ask);
+    expect(openReports()).toHaveLength(0);
+  });
+
+  it("fallback off (an eval run): the breaker opens but no traffic moved, so no report", async () => {
+    const aiChat = createAiChat(deps);
+    const evalCtx: AiCallContext = {
+      overrides: {},
+      fallback: "off",
+      calls: [],
+    };
+    for (let i = 0; i < 5; i++)
+      await expect(
+        withAiCallContext(evalCtx, () => aiChat(F, ask)),
+      ).rejects.toThrow();
+    expect(deps.breaker.isOpen()).toBe(true);
+    expect(openReports()).toHaveLength(0);
+  });
+
+  it("a Vertex-first row whose OpenRouter leg opens the breaker reports it too", async () => {
+    const V = "test-vertex-row" as unknown as AiFeature;
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 5; i++) await expect(aiChat(V, ask)).rejects.toThrow();
+    expect(deps.breaker.isOpen()).toBe(true);
+    expect(openReports()).toHaveLength(1);
+  });
+});

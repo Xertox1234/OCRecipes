@@ -306,6 +306,30 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     deps.report(error, "ai-client");
   }
 
+  /**
+   * Count an OpenRouter failure, and report when that failure opens the
+   * breaker: from then on every call skips OpenRouter, which a warn log per
+   * call does not make visible. One key for all features (it is one outage),
+   * and throttled because a failed trial after each cooldown re-opens it.
+   * The message names the failure kind only: never the provider's text, the
+   * feature or anything from the request.
+   */
+  function recordOpenRouterFailure(
+    kind: AiFailureKind,
+    trafficMoves: boolean,
+  ): void {
+    if (!countsTowardBreaker(kind)) return;
+    const wasOpen = deps.breaker.isOpen();
+    deps.breaker.recordFailure();
+    if (trafficMoves && !wasOpen && deps.breaker.isOpen())
+      throttledReport(
+        "openrouter-breaker-open",
+        new Error(
+          `OpenRouter circuit breaker opened (last failure: ${kind}) — AI calls skip OpenRouter until it recovers`,
+        ),
+      );
+  }
+
   async function run(
     feature: AiFeature,
     params: AiChatParams | AiChatStreamParams,
@@ -462,7 +486,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     } catch (err) {
       if (isAbort(err, options)) throw err;
       const kind = classifyAiFailure(err);
-      if (countsTowardBreaker(kind)) deps.breaker.recordFailure();
+      recordOpenRouterFailure(kind, fallbackAllowed);
       const message = err instanceof Error ? err.message : String(err);
       if (kind === "balance") {
         deps.report(
@@ -800,7 +824,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       } catch (err) {
         if (isAbort(err, options)) throw err;
         const kind = classifyAiFailure(err);
-        if (countsTowardBreaker(kind)) deps.breaker.recordFailure();
+        recordOpenRouterFailure(kind, !evalMode);
         if (kind === "balance") {
           deps.report(
             new Error(
