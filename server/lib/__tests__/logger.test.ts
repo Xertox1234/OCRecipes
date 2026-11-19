@@ -140,6 +140,14 @@ describe("logger + AsyncLocalStorage integration", () => {
       expect(out).toContain("22P02");
     });
 
+    it("a statement containing replacement patterns ($&) does not bring the values back through the stack", async () => {
+      const { DrizzleQueryError } = await import("drizzle-orm");
+      const err = new DrizzleQueryError("select $& $' from t", [
+        "ZZMARKER-allergy",
+      ]);
+      expect(await serialize(err)).not.toContain("ZZMARKER-allergy");
+    });
+
     it("toError redacts too, and leaves ordinary errors untouched", async () => {
       const { toError } = await import("../logger");
       const safe = toError(await failedQuery());

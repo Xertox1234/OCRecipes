@@ -112,7 +112,7 @@ function redactChain(error: Error, seen: Set<unknown>): Error {
   const message = redactBoundValues(error.message);
   const safe = new Error(message);
   safe.name = error.name;
-  safe.stack = error.stack?.replace(error.message, message);
+  safe.stack = error.stack?.replace(error.message, () => message);
   seen.add(error);
   if (error.cause instanceof Error && !seen.has(error.cause)) {
     safe.cause = redactChain(error.cause, seen);
