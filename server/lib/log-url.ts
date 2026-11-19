@@ -1,3 +1,5 @@
+import { errSerializer } from "./logger";
+
 /**
  * The path of a request URL, without its query string or fragment.
  *
@@ -59,3 +61,24 @@ export function requestLogFields(req: LoggedRequest) {
     },
   };
 }
+
+/**
+ * The request logger's serializers. `req` keeps the path only, with the
+ * barcode replaced, and genReqId's id rather than the client's header (privacy
+ * audit M12; security audit 2026-11-12, L12). `err` is the root logger's
+ * redacting serializer: pino-http installs the standard one on its child
+ * logger unless it is given here, and that one prints a failed statement's
+ * bound values.
+ */
+export const httpLogSerializers = {
+  // pino-http runs pino's own serializer first and hands over its output; the
+  // error as thrown is on `raw`.
+  err(serialized: unknown) {
+    const raw = (serialized as { raw?: unknown } | null)?.raw;
+    return errSerializer(raw instanceof Error ? raw : serialized);
+  },
+  req: requestLogFields,
+  res(res: { statusCode: number }) {
+    return { statusCode: res.statusCode };
+  },
+};

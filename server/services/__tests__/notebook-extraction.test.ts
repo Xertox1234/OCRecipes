@@ -36,7 +36,8 @@ vi.mock("../../storage", () => ({
   },
 }));
 
-vi.mock("../../lib/logger", () => ({
+vi.mock("../../lib/logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/logger")>()),
   logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
@@ -576,6 +577,33 @@ describe("Notebook Extraction", () => {
       { tz: "UTC" },
     );
     expect(entries).toEqual([]);
+  });
+
+  it("a failed database statement is logged without its bound values", async () => {
+    const { DrizzleQueryError } = await import("drizzle-orm");
+    const { logger } = await import("../../lib/logger");
+    vi.mocked(storage.getNotebookEntryCount).mockRejectedValueOnce(
+      new DrizzleQueryError(
+        'select count(*) from "coach_notebook" where "user_id" = $1',
+        ["ZZMARKER-user"],
+      ),
+    );
+
+    const result = await extractNotebookEntries(
+      [{ role: "user" as const, content: "I want to eat more protein" }],
+      "user-1",
+      1,
+      { now: new Date("2026-10-29T12:00:00Z"), tz: "UTC" },
+    );
+
+    expect(result).toEqual([]);
+    const fields = vi.mocked(logger.error).mock.calls[0]?.[0] as {
+      err?: Error;
+    };
+    expect(fields.err?.message).toContain('from "coach_notebook"');
+    expect(
+      JSON.stringify([fields, fields.err?.message, fields.err?.stack]),
+    ).not.toContain("ZZMARKER-user");
   });
 
   it("shouldUpdateStrategy returns true for count=0 and every multiple of 5 (M9 — 2026-04-18)", () => {
