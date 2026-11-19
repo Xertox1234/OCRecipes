@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -35,25 +35,6 @@ const familyLimitMessage = {
 };
 
 const familyPlanningSchema = z.object({ enabled: z.boolean() });
-
-/**
- * A failed Drizzle statement's message ends with "\nparams:" followed by every
- * bound value, and its `cause` (the pg error) can quote a rejected input. For a
- * profile write those values are another person's name, allergies and note, and
- * the log line carries the user id beside them. Keep which statement failed;
- * drop the values and the cause before the error reaches the logger. Sentry is
- * scrubbed separately (`scrubEvent`); this covers the server log.
- */
-function withoutBoundValues(error: unknown): unknown {
-  if (!(error instanceof Error) || error instanceof ZodError) return error;
-  const paramsStart = error.message.indexOf("\nparams:");
-  if (paramsStart === -1 && error.cause === undefined) return error;
-  const safe = new Error(
-    paramsStart === -1 ? error.message : error.message.slice(0, paramsStart),
-  );
-  safe.name = error.name;
-  return safe;
-}
 
 /** Allergies and a note are health details: they need the health-data consent. */
 function hasHealthDetails(input: FamilyProfileInput): boolean {
@@ -144,11 +125,7 @@ export function register(app: Express): void {
         }
         res.status(201).json(created);
       } catch (error) {
-        handleRouteError(
-          res,
-          withoutBoundValues(error),
-          "create family profile",
-        );
+        handleRouteError(res, error, "create family profile");
       }
     },
   );
@@ -213,11 +190,7 @@ export function register(app: Express): void {
         }
         res.json(updated);
       } catch (error) {
-        handleRouteError(
-          res,
-          withoutBoundValues(error),
-          "update family profile",
-        );
+        handleRouteError(res, error, "update family profile");
       }
     },
   );

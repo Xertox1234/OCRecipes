@@ -7,7 +7,7 @@ import {
   type NotebookEntryType,
 } from "@shared/schemas/coach-notebook";
 import { storage } from "../storage";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import {
   containsUnsafeCoachAdvice,
   sanitizeContextField,
@@ -275,7 +275,10 @@ export async function extractNotebookEntries(
       })
       .filter((entry) => !containsUnsafeCoachAdvice(entry.content));
   } catch (error) {
-    logger.error({ error, conversationId }, "Notebook extraction failed");
+    logger.error(
+      { err: toError(error), conversationId },
+      "Notebook extraction failed",
+    );
     return [];
   }
 }

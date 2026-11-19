@@ -33,7 +33,7 @@
 import * as Sentry from "@sentry/node";
 import type { Application } from "express";
 import { getRequestContext } from "./request-context";
-import { logger } from "./logger";
+import { logger, redactBoundValues } from "./logger";
 import { loggedPath } from "./log-url";
 
 /**
@@ -227,29 +227,7 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   // other messages (`relation "users" does not exist`) are kept.
   for (const exception of event.exception?.values ?? []) {
     if (typeof exception.value !== "string") continue;
-    const paramsStart = exception.value.indexOf("\nparams:");
-    if (paramsStart !== -1) {
-      exception.value = exception.value.slice(0, paramsStart);
-    }
-    // The mid-message rules run FIRST: an input containing ': "' would
-    // otherwise let the tail cut eat the fixed suffix they match on.
-    exception.value = exception.value
-      // 22003: value "<input>" is out of range for type integer
-      .replace(
-        /\bvalue "[\s\S]*" is out of range for type\b/,
-        'value "[redacted]" is out of range for type',
-      )
-      // 22023: time zone "<input>" not recognized
-      .replace(
-        /\btime zone "[\s\S]*" not recognized/,
-        'time zone "[redacted]" not recognized',
-      )
-      // 22007 (to_date / to_timestamp): invalid value "<input>" for "<fmt>"
-      .replace(
-        /\binvalid value "[\s\S]*" for "/,
-        'invalid value "[redacted]" for "',
-      )
-      .replace(/: "[\s\S]*$/, ': "[redacted]"');
+    exception.value = redactBoundValues(exception.value);
   }
   const pinoContext = event.contexts?.pino;
   if (pinoContext) {
