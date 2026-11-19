@@ -1,33 +1,4 @@
-import type { SignInMethod, SocialProvider } from "@shared/types/auth";
 import { ApiError } from "@/lib/api-error";
-
-export type ConnectPromptMode =
-  | { kind: "password" }
-  | { kind: "provider"; provider: SocialProvider }
-  | { kind: "reset_only" };
-
-/**
- * How the Connect prompt asks the person to prove they own the existing
- * account: its password if it has one, else a provider it is already linked
- * to that this device can open (Apple is iOS-only; Google needs its SDK in
- * this build), else only "Forgot password?" remains.
- */
-export function connectPromptMode(
-  methods: SignInMethod[],
-  platform: "ios" | "android" | "web",
-  nativeProviders: Readonly<Record<SocialProvider, boolean>>,
-): ConnectPromptMode {
-  if (methods.includes("password")) return { kind: "password" };
-  const usable = methods.filter(
-    (m): m is SocialProvider =>
-      m !== "password" &&
-      nativeProviders[m] &&
-      (m !== "apple" || platform === "ios"),
-  );
-  return usable[0]
-    ? { kind: "provider", provider: usable[0] }
-    : { kind: "reset_only" };
-}
 
 /** What a failed submit on ChooseUsername / ConnectAccount should do. */
 export type ScreenErrorOutcome =

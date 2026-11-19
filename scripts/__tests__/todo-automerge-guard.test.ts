@@ -489,6 +489,17 @@ describe("todo-automerge-guard.sh (xhigh review: known Bearer-token/health-PII/m
     },
   );
 
+  it.each([
+    "client/hooks/usePurchase.ts",
+    "client/hooks/__tests__/usePurchase.test.ts",
+  ])(
+    "HOLDs %s (the purchase and restore hook; it left client/lib/iap/, which the (^|/)iap[./-] pattern covered)",
+    (file) => {
+      const { status } = runGuard([file], GENERIC_LOW_TODO);
+      expect(status).toBe(1);
+    },
+  );
+
   it("HOLDs server/storage/export.ts (CCPA/PIPEDA data-export PII-redaction allowlist)", () => {
     const { status } = runGuard(["server/storage/export.ts"], GENERIC_LOW_TODO);
     expect(status).toBe(1);

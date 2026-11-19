@@ -336,7 +336,7 @@ if (
 
 **When NOT to use:** Simple boolean loading/error states where `useState<boolean>` or TanStack Query's built-in `isLoading`/`isError` suffice.
 
-**Reference:** `shared/types/subscription.ts`, `client/lib/subscription/type-guards.ts`, `client/lib/iap/usePurchase.ts`
+**Reference:** `shared/types/subscription.ts`, `client/lib/subscription/type-guards.ts`, `client/hooks/usePurchase.ts`
 
 ### Extend Express Types Properly
 

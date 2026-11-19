@@ -3,6 +3,9 @@ import {
   visibleProviders,
   canDisconnect,
   socialSignInErrorMessage,
+  connectPromptMode,
+  toMethodList,
+  deleteProofMode,
 } from "../social-auth-utils";
 import { ApiError } from "@/lib/api-error";
 
@@ -80,5 +83,69 @@ describe("socialSignInErrorMessage", () => {
 
   it("falls back to generic copy for unknown errors", () => {
     expect(socialSignInErrorMessage(new Error("x"))).toMatch(/try again/i);
+  });
+});
+
+const both = { apple: true, google: true };
+const appleOnlyBuild = { apple: true, google: false };
+
+describe("connectPromptMode", () => {
+  it("password when the account has one", () => {
+    expect(connectPromptMode(["password", "apple"], "ios", both)).toEqual({
+      kind: "password",
+    });
+  });
+  it("the linked provider for a provider-only account", () => {
+    expect(connectPromptMode(["apple"], "ios", both)).toEqual({
+      kind: "provider",
+      provider: "apple",
+    });
+  });
+  it("Apple-only account on Android can only reset", () => {
+    expect(connectPromptMode(["apple"], "android", both)).toEqual({
+      kind: "reset_only",
+    });
+  });
+  it("Google-only account in a build without the Google SDK can only reset", () => {
+    expect(connectPromptMode(["google"], "ios", appleOnlyBuild)).toEqual({
+      kind: "reset_only",
+    });
+  });
+});
+
+const APPLE_ONLY = { apple: true, google: false } as const;
+const relay = { email: "x@privaterelay.appleid.com", isPrivateRelay: true };
+
+describe("toMethodList", () => {
+  it("lists what is set up, password first", () => {
+    expect(
+      toMethodList({ password: true, google: null, apple: relay }),
+    ).toEqual(["password", "apple"]);
+  });
+});
+
+describe("deleteProofMode", () => {
+  it("loading until the methods arrive", () => {
+    expect(deleteProofMode(undefined, "ios", APPLE_ONLY)).toEqual({
+      kind: "loading",
+    });
+  });
+  it("password when one is set", () => {
+    expect(
+      deleteProofMode(
+        { password: true, google: null, apple: relay },
+        "ios",
+        APPLE_ONLY,
+      ),
+    ).toEqual({ kind: "password" });
+  });
+  it("Apple when it is the only way in", () => {
+    expect(
+      deleteProofMode(
+        { password: false, google: null, apple: relay },
+        "ios",
+        APPLE_ONLY,
+      ),
+    ).toEqual({ kind: "provider", provider: "apple" });
   });
 });

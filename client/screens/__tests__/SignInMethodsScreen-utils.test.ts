@@ -4,10 +4,8 @@ import { ApiError } from "@/lib/api-error";
 import {
   reauthProviders,
   methodSubtitle,
-  toMethodList,
   providerRowState,
   identityErrorMessage,
-  deleteProofMode,
   twoStepSubtitle,
 } from "../SignInMethodsScreen-utils";
 
@@ -26,14 +24,6 @@ describe("methodSubtitle", () => {
   });
   it("not connected", () => {
     expect(methodSubtitle(null)).toBe("Not connected");
-  });
-});
-
-describe("toMethodList", () => {
-  it("lists what is set up, password first", () => {
-    expect(
-      toMethodList({ password: true, google: null, apple: relay }),
-    ).toEqual(["password", "apple"]);
   });
 });
 
@@ -110,32 +100,6 @@ describe("identityErrorMessage", () => {
     expect(identityErrorMessage(new ApiError("secret", "X", 500))).not.toMatch(
       /secret/,
     );
-  });
-});
-
-describe("deleteProofMode", () => {
-  it("loading until the methods arrive", () => {
-    expect(deleteProofMode(undefined, "ios", APPLE_ONLY)).toEqual({
-      kind: "loading",
-    });
-  });
-  it("password when one is set", () => {
-    expect(
-      deleteProofMode(
-        { password: true, google: null, apple: relay },
-        "ios",
-        APPLE_ONLY,
-      ),
-    ).toEqual({ kind: "password" });
-  });
-  it("Apple when it is the only way in", () => {
-    expect(
-      deleteProofMode(
-        { password: false, google: null, apple: relay },
-        "ios",
-        APPLE_ONLY,
-      ),
-    ).toEqual({ kind: "provider", provider: "apple" });
   });
 });
 

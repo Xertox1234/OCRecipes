@@ -1,4 +1,8 @@
-import type { SignInMethods, SocialProvider } from "@shared/types/auth";
+import type {
+  SignInMethod,
+  SignInMethods,
+  SocialProvider,
+} from "@shared/types/auth";
 import { ApiError } from "@/lib/api-error";
 
 /** Apple is iOS-only; on iOS Google never appears without Apple (App Store 4.8). */
@@ -44,4 +48,52 @@ export function socialSignInErrorMessage(error: unknown): string {
     default:
       return "Sign-in didn't work. Please try again.";
   }
+}
+
+export type ConnectPromptMode =
+  | { kind: "password" }
+  | { kind: "provider"; provider: SocialProvider }
+  | { kind: "reset_only" };
+
+/**
+ * How the Connect prompt asks the person to prove they own the existing
+ * account: its password if it has one, else a provider it is already linked
+ * to that this device can open (Apple is iOS-only; Google needs its SDK in
+ * this build), else only "Forgot password?" remains.
+ */
+export function connectPromptMode(
+  methods: SignInMethod[],
+  platform: "ios" | "android" | "web",
+  nativeProviders: Readonly<Record<SocialProvider, boolean>>,
+): ConnectPromptMode {
+  if (methods.includes("password")) return { kind: "password" };
+  const usable = methods.filter(
+    (m): m is SocialProvider =>
+      m !== "password" &&
+      nativeProviders[m] &&
+      (m !== "apple" || platform === "ios"),
+  );
+  return usable[0]
+    ? { kind: "provider", provider: usable[0] }
+    : { kind: "reset_only" };
+}
+
+export function toMethodList(methods: SignInMethods): SignInMethod[] {
+  const list: SignInMethod[] = [];
+  if (methods.password) list.push("password");
+  if (methods.google) list.push("google");
+  if (methods.apple) list.push("apple");
+  return list;
+}
+
+/** How the delete-account modal asks the person to prove it's them. */
+export type DeleteProofMode = { kind: "loading" } | ConnectPromptMode;
+
+export function deleteProofMode(
+  methods: SignInMethods | undefined,
+  platform: "ios" | "android" | "web",
+  nativeProviders: Readonly<Record<SocialProvider, boolean>>,
+): DeleteProofMode {
+  if (!methods) return { kind: "loading" };
+  return connectPromptMode(toMethodList(methods), platform, nativeProviders);
 }

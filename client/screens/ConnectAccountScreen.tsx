@@ -17,12 +17,10 @@ import { useAuthContext } from "@/context/AuthContext";
 import { twoStepCodeParams } from "@/lib/second-factor-utils";
 import { useToast } from "@/context/ToastContext";
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { connectPromptMode } from "@/lib/social-auth-utils";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-import {
-  connectErrorOutcome,
-  connectPromptMode,
-} from "./ConnectAccountScreen-utils";
+import { connectErrorOutcome } from "./ConnectAccountScreen-utils";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ConnectAccount">;
 

@@ -26,7 +26,7 @@ const { holder, purchase, refreshProduct } = vi.hoisted(() => ({
   refreshProduct: vi.fn(),
 }));
 
-vi.mock("@/lib/iap/usePurchase", () => ({
+vi.mock("@/hooks/usePurchase", () => ({
   usePurchase: () => ({
     state: { status: "idle" },
     purchase,

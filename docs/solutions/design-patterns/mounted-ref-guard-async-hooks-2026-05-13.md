@@ -73,7 +73,7 @@ For single-step async flows that already have an `AbortController` (a single `fe
 
 ## Related Files
 
-- `client/lib/iap/usePurchase.ts` — original implementation
+- `client/hooks/usePurchase.ts` — original implementation
 
 ## See Also
 
