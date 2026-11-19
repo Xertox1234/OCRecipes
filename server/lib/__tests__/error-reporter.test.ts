@@ -91,13 +91,30 @@ describe("error-reporter", () => {
       expect(sentryMocks.init).not.toHaveBeenCalled();
     });
 
-    it("initializes with sendDefaultPii: false and no tracing when DSN + production", async () => {
+    it("initializes with every dataCollection field off and no tracing when DSN + production", async () => {
       await importActiveReporter();
 
       expect(sentryMocks.init).toHaveBeenCalledTimes(1);
       const options = sentryMocks.init.mock.calls[0][0];
       expect(options.dsn).toBe(PROD_DSN);
-      expect(options.sendDefaultPii).toBe(false);
+      // v11 removed sendDefaultPii; an unset dataCollection field defaults to
+      // COLLECT, so every field is pinned here. A new SDK field would need a
+      // row added (the egress probe in the PR is the check for that).
+      expect(options).not.toHaveProperty("sendDefaultPii");
+      expect(options.dataCollection).toEqual({
+        userInfo: false,
+        cookies: false,
+        httpHeaders: { request: true, response: false },
+        httpBodies: [],
+        urlQueryParams: false,
+        graphQL: { document: false, variables: false },
+        genAI: { inputs: false, outputs: false },
+        mcp: { inputs: false, outputs: false },
+        databaseQueryData: false,
+        queues: false,
+        stackFrameVariables: false,
+        frameContextLines: 7,
+      });
       expect(options.beforeSend).toBeTypeOf("function");
       // Error tracking only — never enable performance tracing (cost).
       expect(options.tracesSampleRate).toBeUndefined();
@@ -105,10 +122,12 @@ describe("error-reporter", () => {
       expect(loggerMocks.mockInfo).toHaveBeenCalledTimes(1);
     });
 
-    it("disables incoming request-body capture (not gated by sendDefaultPii in v10)", async () => {
+    it("disables incoming request-body capture (v11 option name: maxRequestBodySize)", async () => {
       await importActiveReporter();
+      // Exact-match on purpose: v11 ignores the v10 name
+      // (maxIncomingRequestBodySize) and then buffers bodies by default.
       expect(sentryMocks.httpIntegration).toHaveBeenCalledWith({
-        maxIncomingRequestBodySize: "none",
+        maxRequestBodySize: "none",
       });
       const options = sentryMocks.init.mock.calls[0][0];
       expect(options.integrations).toContainEqual({ name: "Http" });
@@ -130,13 +149,26 @@ describe("error-reporter", () => {
       // logger.error and never throw — without this integration none of them
       // reach Sentry (onUnhandledRejection only sees UNhandled rejections).
       await importActiveReporter();
+      // `log.levels: []` is load-bearing: in v11 the integration otherwise
+      // sends every pino line, at every level, as a Sentry log.
       expect(sentryMocks.pinoIntegration).toHaveBeenCalledWith({
         error: { levels: ["error"] },
+        log: { levels: [] },
       });
       const options = sentryMocks.init.mock.calls[0][0];
       expect(options.integrations).toContainEqual({ name: "Pino" });
-      // Error tracking only — never ship the log stream to Sentry Logs.
-      expect(options.enableLogs).toBeUndefined();
+    });
+
+    it("drops every Sentry log in beforeSendLog (logs bypass beforeSend)", async () => {
+      await importActiveReporter();
+      const options = sentryMocks.init.mock.calls[0][0];
+      expect(
+        options.beforeSendLog({
+          level: "info",
+          message: "user 42 logged 300 kcal",
+          attributes: { to: "victim@example.com" },
+        }),
+      ).toBeNull();
     });
   });
 
@@ -270,6 +302,49 @@ describe("error-reporter", () => {
         category: "console",
         message: "no data crumb",
       });
+    });
+
+    it("strips the v11 breadcrumb query keys (url.query / url.fragment)", async () => {
+      // @sentry/node 11 renamed the outbound-request breadcrumb keys from
+      // `http.query` / `http.fragment` to the semantic-convention names. The
+      // crumb below is the shape the 11.14.0 SDK emitted in the security
+      // review's probe for PR 1920.
+      const { scrubEvent } = await importReporter();
+      const event = {
+        type: undefined,
+        breadcrumbs: [
+          {
+            category: "http",
+            data: {
+              status_code: 200,
+              url: "http://127.0.0.1:47835/upstream-fetch",
+              "http.request.method": "POST",
+              "url.query": "barcode=0123456789012",
+              "url.fragment": "section",
+            },
+          },
+        ],
+      };
+      const scrubbed = scrubEvent(event as ErrorEvent);
+      expect(scrubbed.breadcrumbs?.[0]?.data).toEqual({
+        status_code: 200,
+        url: "http://127.0.0.1:47835/upstream-fetch",
+        "http.request.method": "POST",
+      });
+    });
+
+    it("drops event.user (inferred client IP, user id) whatever the SDK attached", async () => {
+      // `dataCollection.userInfo: false` already keeps the SDK from filling
+      // this in; the scrub must hold on its own if that default ever moves.
+      const { scrubEvent } = await importReporter();
+      const event = {
+        type: undefined,
+        user: { ip_address: "203.0.113.77", id: "user-42" },
+        message: "boom",
+      };
+      const scrubbed = scrubEvent(event as ErrorEvent);
+      expect(scrubbed).not.toHaveProperty("user");
+      expect(scrubbed.message).toBe("boom");
     });
 
     it("returns events without request or breadcrumbs unchanged", async () => {
@@ -415,44 +490,62 @@ describe("error-reporter", () => {
     });
   });
 
+  /**
+   * Finds `const <name> = [...]` in the built CJS output of the @sentry/core
+   * copy that @sentry/node resolves, and returns the regex match (group 1 is
+   * the array body). Searches every file rather than one path: v11 bundles
+   * core into generated chunk files (`chunks/cacheOrigin.js`, `chunks/fetch.js`)
+   * whose names are a build detail. Resolved through Node module resolution
+   * (not a path relative to this file) so it works from an agent worktree
+   * whose node_modules is a symlink. Null when no file declares the list;
+   * throws when more than one does, since the guard would then be ambiguous.
+   */
+  async function readInstalledSdkList(
+    name: string,
+  ): Promise<RegExpMatchArray | null> {
+    const { readFile, readdir } = await import("node:fs/promises");
+    const { createRequire } = await import("node:module");
+    const { dirname, join } = await import("node:path");
+    const nodePkgPath = createRequire(import.meta.url).resolve(
+      "@sentry/node/package.json",
+    );
+    const corePkgPath = createRequire(nodePkgPath).resolve(
+      "@sentry/core/package.json",
+    );
+    const root = join(dirname(corePkgPath), "build/cjs");
+    const pattern = new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`);
+    const matches: RegExpMatchArray[] = [];
+    for (const entry of await readdir(root, {
+      recursive: true,
+      withFileTypes: true,
+    })) {
+      if (!entry.isFile() || !entry.name.endsWith(".js")) continue;
+      const source = await readFile(join(entry.parentPath, entry.name), "utf8");
+      const match = source.match(pattern);
+      if (match) matches.push(match);
+    }
+    if (matches.length > 1) {
+      throw new Error(`${name} is declared in ${matches.length} SDK files`);
+    }
+    return matches[0] ?? null;
+  }
+
   describe("SENSITIVE_HEADER_SNIPPETS drift guard", () => {
     it("strips a header for every credential snippet in the INSTALLED @sentry/core SENSITIVE_KEY_SNIPPETS", async () => {
       // Reads the installed SDK's real deny-list off disk (same static-read
       // technique as the boot-ordering tests below) instead of importing
       // "@sentry/node" — that specifier is aliased to test/mocks/sentry-node.ts
       // in vitest.config.mts, so a live import here would resolve to the stub,
-      // not the real SDK. The file is the one cited in error-reporter.ts's
-      // own doc comment: the @sentry/core copy that @sentry/node itself
-      // resolves (found below through module resolution, never a fixed
-      // path — other packages can install a different @sentry/core).
+      // not the real SDK. `readInstalledSdkList` searches the @sentry/core copy
+      // that @sentry/node itself resolves (other packages can install a
+      // different @sentry/core).
       //
-      // Still loud: if the SDK moves the file, readFile throws and forces a
-      // re-verification, rather than silently
+      // Still loud: if the SDK renames or drops the list, the lookup returns
+      // null and the assertion below fails, rather than silently
       // drifting the way SENSITIVE_HEADER_SNIPPETS itself already did once
       // (PR #589 shipped only 6 of the SDK's 19 real entries despite a
       // docstring already claiming parity — see the docs/solutions writeup).
-      const { readFile } = await import("node:fs/promises");
-      const { createRequire } = await import("node:module");
-      const { dirname, join } = await import("node:path");
-      // Resolve through Node module resolution (not a path relative to this
-      // file) so it works from an agent worktree whose node_modules is a
-      // symlink/near-empty. Resolving @sentry/core FROM @sentry/node's
-      // package.json picks the copy @sentry/node actually uses (the nested
-      // one when present), so the drift guard keeps its meaning.
-      const nodePkgPath = createRequire(import.meta.url).resolve(
-        "@sentry/node/package.json",
-      );
-      const corePkgPath = createRequire(nodePkgPath).resolve(
-        "@sentry/core/package.json",
-      );
-      const snippetsPath = join(
-        dirname(corePkgPath),
-        "build/cjs/utils/data-collection/filtering-snippets.js",
-      );
-      const source = await readFile(snippetsPath, "utf8");
-      const match = source.match(
-        /const SENSITIVE_KEY_SNIPPETS = \[([\s\S]*?)\];/,
-      );
+      const match = await readInstalledSdkList("SENSITIVE_KEY_SNIPPETS");
       expect(match).not.toBeNull();
       const sdkSnippets = [...match![1].matchAll(/"([^"]+)"/g)].map(
         (m) => m[1],
@@ -479,20 +572,7 @@ describe("error-reporter", () => {
     // it — an SDK bump that adds a name would leave that header on events
     // the day the SDK's own (undocumented) strip stops applying.
     it("strips every client-IP header name in the INSTALLED @sentry/core ipHeaderNames", async () => {
-      const { readFile } = await import("node:fs/promises");
-      const { createRequire } = await import("node:module");
-      const { dirname, join } = await import("node:path");
-      const nodePkgPath = createRequire(import.meta.url).resolve(
-        "@sentry/node/package.json",
-      );
-      const corePkgPath = createRequire(nodePkgPath).resolve(
-        "@sentry/core/package.json",
-      );
-      const source = await readFile(
-        join(dirname(corePkgPath), "build/cjs/vendor/getIpAddress.js"),
-        "utf8",
-      );
-      const match = source.match(/const ipHeaderNames = \[([\s\S]*?)\];/);
+      const match = await readInstalledSdkList("ipHeaderNames");
       expect(match).not.toBeNull();
       const sdkIpHeaders = [...match![1].matchAll(/"([^"]+)"/g)].map(
         (m) => m[1],
