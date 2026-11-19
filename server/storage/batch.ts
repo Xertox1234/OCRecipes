@@ -6,12 +6,8 @@ import { eq, and, sql } from "drizzle-orm";
 import { civilDateString } from "../lib/civil-date";
 import { db } from "../db";
 import { insertPantryItemsUnderCap } from "./pantry";
-import {
-  scannedItems,
-  dailyLogs,
-  groceryLists,
-  groceryListItems,
-} from "@shared/schema";
+import { insertGroceryListItemsUnderCap } from "./grocery-lists";
+import { scannedItems, dailyLogs, groceryLists } from "@shared/schema";
 import type { ResolvedBatchItem } from "@shared/types/batch-scan";
 
 export class BatchStorageError extends Error {
@@ -109,7 +105,7 @@ export async function batchCreateGroceryItems(
   userId: string,
   tz: string,
   groceryListId?: number,
-): Promise<{ count: number; groceryListId: number }> {
+): Promise<{ count: number; skipped: number; groceryListId: number }> {
   return db.transaction(async (tx) => {
     let listId = groceryListId;
 
@@ -155,21 +151,20 @@ export async function batchCreateGroceryItems(
       listId = newList.id;
     }
 
-    // Batch insert grocery items
-    const rows = await tx
-      .insert(groceryListItems)
-      .values(
-        items.map((item) => ({
-          groceryListId: listId!,
-          name: item.productName,
-          quantity: item.quantity.toString(),
-          unit: item.servingSize ?? null,
-          category: "other" as const,
-          isManual: false,
-        })),
-      )
-      .returning({ id: groceryListItems.id });
+    // Under the per-list item cap: what does not fit is reported, not added.
+    const { created, skipped } = await insertGroceryListItemsUnderCap(
+      listId,
+      userId,
+      items.map((item) => ({
+        name: item.productName,
+        quantity: item.quantity.toString(),
+        unit: item.servingSize ?? null,
+        category: "other" as const,
+        isManual: false,
+      })),
+      tx,
+    );
 
-    return { count: rows.length, groceryListId: listId! };
+    return { count: created.length, skipped, groceryListId: listId };
   });
 }

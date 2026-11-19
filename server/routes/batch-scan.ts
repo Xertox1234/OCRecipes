@@ -88,6 +88,7 @@ export function register(app: Express): void {
                 success: true,
                 destination,
                 created: result.count,
+                skipped: result.skipped,
                 groceryListId: result.groceryListId,
               });
             } catch (error) {

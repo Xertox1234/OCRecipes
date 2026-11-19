@@ -140,6 +140,7 @@ describe("Batch Scan Routes", () => {
     it("saves to grocery_list destination", async () => {
       vi.mocked(storage.batchCreateGroceryItems).mockResolvedValue({
         count: 3,
+        skipped: 1,
         groceryListId: 42,
       });
 
@@ -157,6 +158,7 @@ describe("Batch Scan Routes", () => {
         success: true,
         destination: "grocery_list",
         created: 3,
+        skipped: 1,
         groceryListId: 42,
       });
       expect(storage.batchCreateGroceryItems).toHaveBeenCalledWith(
@@ -170,6 +172,7 @@ describe("Batch Scan Routes", () => {
     it("threads the X-Timezone header to batchCreateGroceryItems", async () => {
       vi.mocked(storage.batchCreateGroceryItems).mockResolvedValue({
         count: 1,
+        skipped: 0,
         groceryListId: 7,
       });
 

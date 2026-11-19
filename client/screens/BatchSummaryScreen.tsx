@@ -28,10 +28,7 @@ import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import {
-  formatBatchSaveSuccess,
-  formatPantryFullSkipped,
-} from "@/lib/log-success";
+import { formatBatchSaveSuccess, formatBatchSkipped } from "@/lib/log-success";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -201,7 +198,7 @@ export default function BatchSummaryScreen() {
       // The toast is the announcer (iOS announce + Android live region) and
       // fires the Success haptic — no separate announceForAccessibility.
       if (result.skipped && result.skipped > 0) {
-        toast.info(formatPantryFullSkipped(result.skipped));
+        toast.info(formatBatchSkipped(destination, result.skipped));
       } else {
         toast.success(
           formatBatchSaveSuccess(

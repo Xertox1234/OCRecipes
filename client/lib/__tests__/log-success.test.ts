@@ -4,6 +4,8 @@ import {
   formatBatchSaveSuccess,
   formatLogSuccess,
   formatPantryFullSkipped,
+  formatGroceryListFullSkipped,
+  formatBatchSkipped,
 } from "../log-success";
 
 describe("formatLogSuccess", () => {
@@ -58,5 +60,33 @@ describe("formatPantryFullSkipped", () => {
 
   it("uses the singular for one item", () => {
     expect(formatPantryFullSkipped(1)).toBe("Pantry full: 1 item wasn't added");
+  });
+});
+
+describe("formatGroceryListFullSkipped", () => {
+  it("says how many items were left out", () => {
+    expect(formatGroceryListFullSkipped(3)).toBe(
+      "List full: 3 items weren't added",
+    );
+  });
+
+  it("uses the singular for one item", () => {
+    expect(formatGroceryListFullSkipped(1)).toBe(
+      "List full: 1 item wasn't added",
+    );
+  });
+});
+
+describe("formatBatchSkipped", () => {
+  it("names the grocery list for a grocery batch", () => {
+    expect(formatBatchSkipped("grocery_list", 2)).toBe(
+      "List full: 2 items weren't added",
+    );
+  });
+
+  it("names the pantry for a pantry batch", () => {
+    expect(formatBatchSkipped("pantry", 2)).toBe(
+      "Pantry full: 2 items weren't added",
+    );
   });
 });

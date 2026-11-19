@@ -1568,6 +1568,8 @@ export interface CoachWriteCardSavedRefs {
   createdListId?: number;
   /** The list the grocery items went to (receipt + undo). */
   listId?: number;
+  /** Grocery and plan cards: items the list had no room for. */
+  groceryListFull?: number;
   mealPlanItemIds?: number[];
   copiedRecipeIds?: number[];
   /** Pantry card: the rows this save inserted (Undo deletes them). */

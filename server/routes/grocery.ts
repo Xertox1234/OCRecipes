@@ -5,6 +5,7 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { MAX_GROCERY_LIST_ITEMS } from "@shared/constants/grocery";
 import { TIER_FEATURES, applyStreakUnlocks } from "@shared/types/premium";
 import { resolveVerificationStreak } from "../services/verification-streak-cache";
 import { isValidCalendarDate } from "../utils/date-validation";
@@ -148,6 +149,18 @@ export function register(app: Express): void {
             const userPantry = await storage.getPantryItems(req.userId);
             aggregated = deductPantryFromGrocery(aggregated, userPantry);
           }
+        }
+
+        // Refused rather than cut short: a list missing some of the range's
+        // ingredients would look complete.
+        if (aggregated.length > MAX_GROCERY_LIST_ITEMS) {
+          sendError(
+            res,
+            400,
+            `These days need more than ${MAX_GROCERY_LIST_ITEMS} items. Choose fewer days.`,
+            ErrorCode.LIMIT_REACHED,
+          );
+          return;
         }
 
         // Default title
@@ -448,14 +461,26 @@ export function register(app: Express): void {
           return;
         }
 
-        const item = await storage.addGroceryListItem({
-          groceryListId: listId,
-          name: parsed.data.name,
-          quantity: parsed.data.quantity,
-          unit: parsed.data.unit || null,
-          category: parsed.data.category || "other",
-          isManual: true,
-        });
+        const {
+          created: [item],
+        } = await storage.insertGroceryListItemsUnderCap(listId, req.userId, [
+          {
+            name: parsed.data.name,
+            quantity: parsed.data.quantity,
+            unit: parsed.data.unit || null,
+            category: parsed.data.category || "other",
+            isManual: true,
+          },
+        ]);
+        if (!item) {
+          sendError(
+            res,
+            400,
+            `This list is full (${MAX_GROCERY_LIST_ITEMS} items)`,
+            ErrorCode.LIMIT_REACHED,
+          );
+          return;
+        }
 
         res.status(201).json(item);
       } catch (error) {

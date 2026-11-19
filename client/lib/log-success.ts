@@ -45,3 +45,22 @@ export function formatPantryFullSkipped(skipped: number): string {
   if (skipped === 1) return "Pantry full: 1 item wasn't added";
   return `Pantry full: ${skipped} items weren't added`;
 }
+
+/**
+ * Copy for the "grocery list is full" toast: the server adds what fits under
+ * the per-list item cap and reports how many it left out.
+ */
+export function formatGroceryListFullSkipped(skipped: number): string {
+  if (skipped === 1) return "List full: 1 item wasn't added";
+  return `List full: ${skipped} items weren't added`;
+}
+
+/** The left-out toast for a batch save, named for where the batch went. */
+export function formatBatchSkipped(
+  destination: BatchDestination,
+  skipped: number,
+): string {
+  return destination === "grocery_list"
+    ? formatGroceryListFullSkipped(skipped)
+    : formatPantryFullSkipped(skipped);
+}

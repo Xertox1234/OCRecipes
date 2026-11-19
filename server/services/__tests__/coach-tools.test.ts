@@ -30,7 +30,9 @@ vi.mock("../../storage", () => ({
     getMealPlanItemSummaries: vi.fn().mockResolvedValue([]),
     getMealPlanItems: vi.fn(),
     addMealPlanItem: vi.fn().mockResolvedValue({ id: 1 }),
-    addGroceryListItems: vi.fn().mockResolvedValue([{ id: 1 }]),
+    insertGroceryListItemsUnderCap: vi
+      .fn()
+      .mockResolvedValue({ created: [{ id: 1 }], skipped: 0 }),
     createGroceryListWithLimitCheck: vi
       .fn()
       .mockResolvedValue({ list: { id: 1 }, items: [{ id: 1 }] }),
@@ -981,7 +983,7 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(onWriteCardProposal).toHaveBeenCalledTimes(3);
     expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
     expect(storage.addMealPlanItem).not.toHaveBeenCalled();
-    expect(storage.addGroceryListItems).not.toHaveBeenCalled();
+    expect(storage.insertGroceryListItemsUnderCap).not.toHaveBeenCalled();
   });
 
   it("the grocery tool tells the coach what the pantry changed on the card", async () => {
