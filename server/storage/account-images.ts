@@ -4,6 +4,7 @@ import {
   communityRecipes,
   cookbookCoverCandidates,
   cookbooks,
+  dishImages,
   mealPlanRecipes,
 } from "@shared/schema";
 import { db } from "../db";
@@ -17,8 +18,10 @@ import { eq, inArray, sql, type AnyColumn, type SQL } from "drizzle-orm";
 // someone else. That is what keeps a crafted meal-plan imageUrl pointing at
 // another user's image from deleting it, and keeps a shared copy's picture.
 // "Any remaining reference" covers every column that can hold a recipe-images/
-// URL, including featured recipes' canonical_images gallery. Every path that
-// deletes a client-suppliable image URL runs it through
+// URL, including featured recipes' canonical_images gallery and the shared
+// dish_images table: a shared quick-entry picture belongs to no account, so
+// its row keeps it when an entry or account that used it is deleted. Every
+// path that deletes a client-suppliable image URL runs it through
 // filterUnreferencedImageUrls first: account deletion calls it directly (the
 // avatar is deleted separately), and the meal-plan update and delete paths use
 // deleteImagesIfUnreferenced, which filters and then deletes.
@@ -112,7 +115,7 @@ export async function filterUnreferencedImageUrls(
   };
 
   if (recipeKeys.length > 0) {
-    const [community, planned, chat] = await Promise.all([
+    const [community, planned, chat, shared] = await Promise.all([
       db
         .select({ key: withoutQuery(communityRecipes.imageUrl) })
         .from(communityRecipes)
@@ -125,6 +128,10 @@ export async function filterUnreferencedImageUrls(
         .select({ key: withoutQuery(chatImageUrl) })
         .from(chatMessages)
         .where(inArray(withoutQuery(chatImageUrl), recipeKeys)),
+      db
+        .select({ key: withoutQuery(dishImages.imageUrl) })
+        .from(dishImages)
+        .where(inArray(withoutQuery(dishImages.imageUrl), recipeKeys)),
     ]);
     const gallery = await db.execute<{ key: string }>(
       sql`select split_part(e, '?', 1) as key
@@ -135,7 +142,10 @@ export async function filterUnreferencedImageUrls(
             sql`, `,
           )})`,
     );
-    collect([...community, ...planned, ...chat, ...gallery.rows], "recipe");
+    collect(
+      [...community, ...planned, ...chat, ...shared, ...gallery.rows],
+      "recipe",
+    );
   }
 
   if (coverKeys.length > 0) {

@@ -21,6 +21,7 @@ import {
   chatMessages,
   communityRecipes,
   cookbooks,
+  dishImages,
   mealPlanRecipes,
   users,
   cookbookCoverCandidates,
@@ -233,6 +234,25 @@ describe("account image cleanup storage", () => {
       ]);
 
       expect(result).toEqual([]);
+    });
+
+    // The shared quick-entry picture: its dish_images row is a reference of
+    // its own, so it outlives the entry and the account that first made it.
+    it("drops a shared dish picture even when no recipe uses it any more", async () => {
+      await tx.insert(dishImages).values({
+        nameHash: "a".repeat(64),
+        imageUrl: `${CDN}/recipe-images/dish.jpg`,
+      });
+
+      const result = await filterUnreferencedImageUrls([
+        { url: `${CDN}/recipe-images/dish.jpg`, kind: "recipe" },
+        { url: `${CDN}/recipe-images/dish.jpg?v=2`, kind: "recipe" },
+        { url: `${CDN}/recipe-images/not-shared.jpg`, kind: "recipe" },
+      ]);
+
+      expect(result).toEqual([
+        { url: `${CDN}/recipe-images/not-shared.jpg`, kind: "recipe" },
+      ]);
     });
 
     it("end to end: after deleteUser, the owner's own images come back as deletable", async () => {
