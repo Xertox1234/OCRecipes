@@ -1270,6 +1270,20 @@ export const mealPlanRecipes = pgTable(
   ],
 );
 
+// One generated picture per dish name, shared by everyone's quick entries.
+// `nameHash` is `dishImageKey(title)` (server/lib/dish-image-key.ts): a hash,
+// so typed text never sits in a table that outlives the account that typed it.
+// Only pictures the server generated are recorded here — never a supplied one.
+// No user column on purpose: a row is a reference that keeps the stored image
+// alive after its first entry or account is deleted (account-images.ts).
+export const dishImages = pgTable("dish_images", {
+  nameHash: text("name_hash").primaryKey(),
+  imageUrl: text("image_url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const recipeIngredients = pgTable(
   "recipe_ingredients",
   {
