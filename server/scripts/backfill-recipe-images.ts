@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import { generateImage, isRunwareConfigured } from "../lib/runware";
 import { saveRecipeImage } from "../lib/image-store";
@@ -167,7 +168,7 @@ async function main() {
           } else counts.failed++;
         } catch (e) {
           counts.failed++;
-          console.error(`community ${r.id} hero FAILED:`, e);
+          console.error(`community ${r.id} hero FAILED:`, toError(e));
         }
       }
     } else if (cls === "ours") counts.skipped++;
@@ -211,7 +212,10 @@ async function main() {
           } else counts.failed++;
         } catch (e) {
           counts.failed++;
-          console.error(`community ${r.id} canonical[${i}] FAILED:`, e);
+          console.error(
+            `community ${r.id} canonical[${i}] FAILED:`,
+            toError(e),
+          );
         }
       }
     }
@@ -255,7 +259,7 @@ async function main() {
           } else counts.failed++;
         } catch (e) {
           counts.failed++;
-          console.error(`mealplan ${r.id} FAILED:`, e);
+          console.error(`mealplan ${r.id} FAILED:`, toError(e));
         }
       }
     } else if (cls === "ours") counts.skipped++;
@@ -275,6 +279,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  console.error("Fatal error:", toError(err));
   void pool.end().then(() => process.exit(1));
 });

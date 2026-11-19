@@ -16,6 +16,7 @@
 import "dotenv/config";
 import { aiChat } from "../lib/ai-client";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { communityRecipes } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -150,7 +151,7 @@ if (
   /backfill-community-nutrition\.(ts|js)$/.test(process.argv[1])
 ) {
   main().catch((err) => {
-    console.error("Fatal error:", err);
+    console.error("Fatal error:", toError(err));
     process.exit(1);
   });
 }

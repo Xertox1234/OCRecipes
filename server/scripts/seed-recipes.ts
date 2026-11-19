@@ -36,6 +36,7 @@ import { hashPassword } from "../lib/password-hash";
 import crypto from "node:crypto";
 import pLimit from "p-limit";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { users, userProfiles, communityRecipes } from "@shared/schema";
 import { eq, ilike } from "drizzle-orm";
 import { z } from "zod";
@@ -528,7 +529,7 @@ async function seedOneRecipe(
     console.log(`${prefix}: ✓ inserted`);
     return "inserted";
   } catch (error) {
-    console.error(`${prefix}: FAILED —`, error);
+    console.error(`${prefix}: FAILED —`, toError(error));
     return "skipped";
   }
 }
@@ -622,7 +623,7 @@ async function main() {
 // Run only as a script: scripts/ai-backup-gate.ts imports the AI call above.
 if (process.argv[1] && /seed-recipes\.(ts|js)$/.test(process.argv[1])) {
   main().catch((err) => {
-    console.error("Fatal error:", err);
+    console.error("Fatal error:", toError(err));
     void pool.end().then(() => process.exit(1));
   });
 }

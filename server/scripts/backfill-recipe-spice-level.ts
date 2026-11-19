@@ -29,6 +29,7 @@ import "dotenv/config";
 import { and, eq, isNull } from "drizzle-orm";
 import { aiChat } from "../lib/ai-client";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import type { SpiceLevel } from "@shared/schemas/recipe-finder";
 import { storage } from "../storage";
@@ -167,7 +168,7 @@ if (
   /backfill-recipe-spice-level\.(ts|js)$/.test(process.argv[1])
 ) {
   main().catch((err) => {
-    console.error("Backfill failed:", err);
+    console.error("Backfill failed:", toError(err));
     process.exit(1);
   });
 }

@@ -22,6 +22,7 @@
  */
 import "dotenv/config";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import {
@@ -146,6 +147,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Backfill failed:", err);
+  console.error("Backfill failed:", toError(err));
   process.exit(1);
 });

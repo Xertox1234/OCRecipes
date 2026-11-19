@@ -37,6 +37,7 @@
  */
 import "dotenv/config";
 import { pool } from "../db";
+import { toError } from "../lib/logger";
 import { storage } from "../storage";
 import { deleteAccount } from "../services/account-deletion";
 import { isR2Configured } from "../lib/image-store";
@@ -221,7 +222,7 @@ async function main() {
 // Run only when started directly, never when a test imports this file.
 if (process.argv[1]?.includes("delete-account")) {
   main().catch((err) => {
-    console.error("delete-account failed:", err);
+    console.error("delete-account failed:", toError(err));
     void pool.end().then(() => process.exit(1));
   });
 }

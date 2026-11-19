@@ -7,6 +7,7 @@
 import "dotenv/config";
 import { backfillMealTypes } from "../services/meal-type-inference";
 import { pool } from "../db";
+import { toError } from "../lib/logger";
 
 async function main() {
   const updated = await backfillMealTypes();
@@ -15,6 +16,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Backfill failed:", err);
+  console.error("Backfill failed:", toError(err));
   process.exit(1);
 });

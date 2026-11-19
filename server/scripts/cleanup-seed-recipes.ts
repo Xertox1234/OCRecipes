@@ -32,6 +32,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import {
   communityRecipes,
   recipeGenerationLog,
@@ -374,7 +375,7 @@ const isMain = (() => {
 })();
 if (isMain) {
   main().catch((err) => {
-    console.error("Fatal error:", err);
+    console.error("Fatal error:", toError(err));
     void pool.end().then(() => process.exit(1));
   });
 }

@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import pLimit from "p-limit";
 import { db, pool } from "../db";
+import { toError } from "../lib/logger";
 import { communityRecipes, mealPlanRecipes, users } from "@shared/schema";
 import { eq, like } from "drizzle-orm";
 import {
@@ -170,7 +171,7 @@ async function migrateRecipeTable(
           }
           return result.status === "wouldMigrate" ? "wouldMigrate" : "missing";
         } catch (err) {
-          console.error(`  [${row.id}] FAILED:`, err);
+          console.error(`  [${row.id}] FAILED:`, toError(err));
           return "failed";
         }
       }),
@@ -215,7 +216,7 @@ async function migrateAvatars() {
           }
           return result.status === "wouldMigrate" ? "wouldMigrate" : "missing";
         } catch (err) {
-          console.error(`  [${row.id}] FAILED:`, err);
+          console.error(`  [${row.id}] FAILED:`, toError(err));
           return "failed";
         }
       }),
@@ -266,6 +267,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  console.error("Fatal error:", toError(err));
   void pool.end().then(() => process.exit(1));
 });
