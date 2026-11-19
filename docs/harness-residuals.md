@@ -443,7 +443,7 @@ If reopened: cap the title length the hook prints per solution line (or the numb
 per domain), so the payload size no longer depends on how long a new title is; and run
 `test-inject-patterns.sh` in the pre-push gate when `docs/solutions/**` changes.
 
-Hit again 2026-11-19 (#1933): a 190-character title put the same path at 9032 B; shortened to 125
+Hit again 2026-11-19 (#1933): a 184-character title put the same path at 9032 B; shortened to 129
 characters it passes at 8976 B (24 bytes of headroom).
 
 ### Constructed 2026-11-17 — the todo-verifier record is enforced at the auto-merge guard, not at the merge hook (verifier Phase 2)
