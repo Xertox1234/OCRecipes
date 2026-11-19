@@ -7,7 +7,7 @@ import {
   afterAll,
   vi,
 } from "vitest";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   setupTestTransaction,
   rollbackTestTransaction,
@@ -19,6 +19,7 @@ import {
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 import type { PlanCardPayload } from "@shared/schemas/coach-write-cards";
+import { MAX_GROCERY_LIST_ITEMS } from "@shared/constants/grocery";
 import { createMockCoachWriteCard } from "../../../__tests__/factories";
 
 vi.mock("../../../db", () => ({
@@ -566,6 +567,52 @@ describe("plan write card", () => {
       .from(schema.groceryListItems)
       .where(eq(schema.groceryListItems.groceryListId, list.id));
     expect(after).toHaveLength(0);
+  });
+
+  it("addShopping on a full list still plans the meal and adds nothing", async () => {
+    const [list] = await tx
+      .insert(schema.groceryLists)
+      .values({
+        userId: user.id,
+        title: "Weekly shop",
+        dateRangeStart: "2026-11-01",
+        dateRangeEnd: "2026-11-07",
+      })
+      .returning();
+    await tx.insert(schema.groceryListItems).values(
+      Array.from({ length: MAX_GROCERY_LIST_ITEMS }, (_, i) => ({
+        groceryListId: list.id,
+        name: `Seed ${i}`,
+      })),
+    );
+    const shawarma = await community("Chicken shawarma bowl");
+    const p = await buildPlanPayload(
+      addMealPlanCardArgsSchema.parse({
+        rows: [
+          {
+            plannedDate: "2026-11-09",
+            mealType: "dinner",
+            recipe: { source: "community", id: shawarma.id },
+            alternatives: [],
+          },
+        ],
+      }),
+      user.id,
+    );
+    const refs = await performPlanSave(
+      tx,
+      card(p),
+      { addShopping: true },
+      { userId: user.id },
+    );
+    expect(refs.mealPlanItemIds).toHaveLength(1);
+    expect(refs.groceryItemIds).toEqual([]);
+    expect(refs.groceryListFull).toBeGreaterThan(0);
+    const [{ count }] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.groceryListItems)
+      .where(eq(schema.groceryListItems.groceryListId, list.id));
+    expect(count).toBe(MAX_GROCERY_LIST_ITEMS);
   });
 
   it("addShopping answers like the grocery card for the same pantry and items", async () => {

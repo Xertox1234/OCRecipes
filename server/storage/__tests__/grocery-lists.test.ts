@@ -16,6 +16,8 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
+import { groceryLists as groceryListsTable } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Mock the db import so the storage functions use our test transaction
 vi.mock("../../db", () => ({
@@ -31,11 +33,29 @@ const {
   getGroceryListWithItems,
   getGroceryListItemForUser,
   deleteGroceryList,
-  addGroceryListItem,
+  insertGroceryListItemsUnderCap,
   updateGroceryListItemChecked,
   deleteGroceryListItem,
   updateGroceryListItemPantryFlag,
 } = await import("../grocery-lists");
+
+/** One item through the capped insert every add path uses. */
+async function addGroceryListItem({
+  groceryListId,
+  ...item
+}: schema.InsertGroceryListItem): Promise<schema.GroceryListItem> {
+  const tx = getTestTx();
+  const [owner] = await tx
+    .select({ userId: groceryListsTable.userId })
+    .from(groceryListsTable)
+    .where(eq(groceryListsTable.id, groceryListId));
+  const { created } = await insertGroceryListItemsUnderCap(
+    groceryListId,
+    owner.userId,
+    [item],
+  );
+  return created[0];
+}
 
 // Widen the insert type to allow passing `createdAt` for ordering tests.
 const createGroceryList = _createGroceryList as (
@@ -230,7 +250,7 @@ describe("grocery-lists storage", () => {
     });
   });
 
-  describe("addGroceryListItem", () => {
+  describe("insertGroceryListItemsUnderCap", () => {
     it("creates a grocery list item and returns it", async () => {
       const list = await createGroceryList({
         userId: testUser.id,

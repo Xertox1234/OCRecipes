@@ -7,6 +7,7 @@ import {
   groceryListItems,
 } from "@shared/schema";
 import { db } from "../db";
+import { MAX_GROCERY_LIST_ITEMS } from "@shared/constants/grocery";
 import {
   eq,
   desc,
@@ -176,19 +177,55 @@ export async function deleteGroceryList(
   return result.length > 0;
 }
 
-export async function addGroceryListItem(
-  item: InsertGroceryListItem,
-): Promise<GroceryListItem> {
-  const [created] = await db.insert(groceryListItems).values(item).returning();
-  return created;
-}
+export { MAX_GROCERY_LIST_ITEMS };
 
-export async function addGroceryListItems(
-  items: InsertGroceryListItem[],
+/**
+ * Insert items onto one list under the cap. Adds as many as fit (in order)
+ * and reports how many were left out. The single cap check behind every
+ * grocery item insert: manual add, generated lists, batch scan and the
+ * Coach grocery and plan cards all go through it. Callers check the list is
+ * the user's first (for their own 404); the check is repeated here under the
+ * lock so no path can add to another user's list.
+ */
+export async function insertGroceryListItemsUnderCap(
+  groceryListId: number,
+  userId: string,
+  items: Omit<InsertGroceryListItem, "groceryListId">[],
   executor: Executor = db,
-): Promise<GroceryListItem[]> {
-  if (items.length === 0) return [];
-  return executor.insert(groceryListItems).values(items).returning();
+): Promise<{ created: GroceryListItem[]; skipped: number }> {
+  if (items.length === 0) return { created: [], skipped: 0 };
+  return executor.transaction(async (tx) => {
+    // Per-list lock (released at commit) before the count: READ COMMITTED
+    // alone lets two parallel adds both see room and both insert. A
+    // feature-scoped key, so it never queues behind the per-user list lock.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${"grocery-list-items:" + groceryListId}, 0))`,
+    );
+    const [owned] = await tx
+      .select({ id: groceryLists.id })
+      .from(groceryLists)
+      .where(
+        and(
+          eq(groceryLists.id, groceryListId),
+          eq(groceryLists.userId, userId),
+        ),
+      );
+    if (!owned) throw new Error("Grocery list not found for this user");
+    const [countRow] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(groceryListItems)
+      .where(eq(groceryListItems.groceryListId, groceryListId));
+    const room = Math.max(0, MAX_GROCERY_LIST_ITEMS - (countRow?.count ?? 0));
+    const fitting = items.slice(0, room);
+    const created =
+      fitting.length > 0
+        ? await tx
+            .insert(groceryListItems)
+            .values(fitting.map((item) => ({ ...item, groceryListId })))
+            .returning()
+        : [];
+    return { created, skipped: items.length - created.length };
+  });
 }
 
 /** The lines still to buy on one of the user's lists (none for another's). */
@@ -226,7 +263,11 @@ export async function createGroceryListWithLimitCheck(
   items: Omit<InsertGroceryListItem, "groceryListId">[],
   maxLists: number,
   executor: Executor = db,
-): Promise<{ list: GroceryList; items: GroceryListItem[] } | null> {
+): Promise<{
+  list: GroceryList;
+  items: GroceryListItem[];
+  skipped: number;
+} | null> {
   return executor.transaction(async (tx) => {
     // Feature-scoped key so this lock never queues behind unrelated per-user
     // locks (pantry, nutrition, ...). Must precede the count.
@@ -245,20 +286,16 @@ export async function createGroceryListWithLimitCheck(
       .values(list)
       .returning();
 
-    const createdItems =
-      items.length > 0
-        ? await tx
-            .insert(groceryListItems)
-            .values(
-              items.map((item) => ({
-                ...item,
-                groceryListId: createdList.id,
-              })),
-            )
-            .returning()
-        : [];
+    // A new list is empty, so only an over-long `items` is cut; callers that
+    // can produce one check its length first (the generate route).
+    const { created, skipped } = await insertGroceryListItemsUnderCap(
+      createdList.id,
+      list.userId,
+      items,
+      tx,
+    );
 
-    return { list: createdList, items: createdItems };
+    return { list: createdList, items: created, skipped };
   });
 }
 

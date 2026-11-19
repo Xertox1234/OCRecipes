@@ -19,6 +19,7 @@ import {
 } from "@/components/PickerSheet";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { ApiError } from "@/lib/api-error";
 import { Spacing, FontFamily, withOpacity } from "@/constants/theme";
 import {
   useGroceryLists,
@@ -77,9 +78,16 @@ export function GroceryListPickerModal({
             setAddingToListId(null);
             onClose();
           },
-          onError: () => {
+          onError: (err) => {
             haptics.notification(Haptics.NotificationFeedbackType.Error);
             setAddingToListId(null);
+            if (err instanceof ApiError && err.code === "LIMIT_REACHED") {
+              Alert.alert(
+                "List full",
+                "That list has no room for more items. Choose another list or make a new one.",
+              );
+              return;
+            }
             Alert.alert(
               "Error",
               "Failed to add item to list. Please try again.",

@@ -27,8 +27,7 @@ vi.mock("../../storage", () => ({
     getGroceryLists: vi.fn(),
     getMealPlanIngredientsForDateRange: vi.fn(),
     createGroceryList: vi.fn(),
-    addGroceryListItem: vi.fn(),
-    addGroceryListItems: vi.fn(),
+    insertGroceryListItemsUnderCap: vi.fn(),
     getGroceryListWithItems: vi.fn(),
     getGroceryListItemForUser: vi.fn(),
     verifyGroceryListOwnership: vi.fn(),
@@ -116,6 +115,7 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.createGroceryListWithLimitCheck).mockResolvedValue({
         list: mockList,
         items: [],
+        skipped: 0,
       });
 
       const res = await request(app)
@@ -130,6 +130,32 @@ describe("Grocery Routes", () => {
         "2025-01-07",
         { active: true, profileCount: 3 },
       );
+    });
+
+    it("refuses a range with more items than one list holds", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ subscriptionTier: "premium" }),
+      );
+      vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
+        [],
+      );
+      vi.mocked(generateGroceryItems).mockReturnValue(
+        Array.from({ length: 501 }, (_, i) => ({
+          name: `Item ${i}`,
+          quantity: 1,
+          unit: null,
+          category: "other",
+        })) as ReturnType<typeof generateGroceryItems>,
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists")
+        .set("Authorization", "Bearer token")
+        .send({ startDate: "2025-01-01", endDate: "2025-01-07" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("LIMIT_REACHED");
+      expect(storage.createGroceryListWithLimitCheck).not.toHaveBeenCalled();
     });
 
     it("creates one list when a double tap sends two overlapping requests", async () => {
@@ -177,6 +203,7 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.createGroceryListWithLimitCheck).mockResolvedValue({
         list: mockList,
         items: [createMockGroceryListItem({ name: "Milk" })],
+        skipped: 0,
       });
 
       const res = await request(app)
@@ -444,9 +471,10 @@ describe("Grocery Routes", () => {
   describe("POST /api/meal-plan/grocery-lists/:id/items", () => {
     it("adds manual item to list", async () => {
       vi.mocked(storage.verifyGroceryListOwnership).mockResolvedValue(true);
-      vi.mocked(storage.addGroceryListItem).mockResolvedValue(
-        createMockGroceryListItem({ id: 2, name: "Bread" }),
-      );
+      vi.mocked(storage.insertGroceryListItemsUnderCap).mockResolvedValue({
+        created: [createMockGroceryListItem({ id: 2, name: "Bread" })],
+        skipped: 0,
+      });
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/1/items")
@@ -454,6 +482,27 @@ describe("Grocery Routes", () => {
         .send({ name: "Bread" });
 
       expect(res.status).toBe(201);
+    });
+
+    it("refuses an item when the list is full", async () => {
+      vi.mocked(storage.verifyGroceryListOwnership).mockResolvedValue(true);
+      vi.mocked(storage.insertGroceryListItemsUnderCap).mockResolvedValue({
+        created: [],
+        skipped: 1,
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists/1/items")
+        .set("Authorization", "Bearer token")
+        .send({ name: "Bread" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("LIMIT_REACHED");
+      expect(storage.insertGroceryListItemsUnderCap).toHaveBeenCalledWith(
+        1,
+        "1",
+        [expect.objectContaining({ name: "Bread", isManual: true })],
+      );
     });
 
     it("returns 404 for unknown list", async () => {
@@ -597,7 +646,7 @@ describe("Grocery Routes", () => {
         ...mockList,
         items: [],
       });
-      vi.mocked(storage.addGroceryListItem).mockRejectedValue(
+      vi.mocked(storage.insertGroceryListItemsUnderCap).mockRejectedValue(
         new Error("DB error"),
       );
 
@@ -665,6 +714,7 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.createGroceryListWithLimitCheck).mockResolvedValue({
         list: mockList,
         items: [],
+        skipped: 0,
       });
 
       const res = await request(app)

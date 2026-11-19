@@ -25,6 +25,7 @@ import {
 } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
 import type { ResolvedBatchItem } from "@shared/types/batch-scan";
+import { MAX_GROCERY_LIST_ITEMS } from "@shared/constants/grocery";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -177,7 +178,33 @@ describe("batch storage", () => {
         "UTC",
         list.id,
       );
-      expect(result).toEqual({ count: 2, groceryListId: list.id });
+      expect(result).toEqual({ count: 2, skipped: 0, groceryListId: list.id });
+    });
+
+    it("fills an existing list up to the item cap and reports the rest", async () => {
+      const [list] = await tx
+        .insert(groceryLists)
+        .values({
+          userId: testUser.id,
+          title: uniqueName("Nearly full"),
+          dateRangeStart: "2026-05-15",
+          dateRangeEnd: "2026-05-22",
+        })
+        .returning();
+      await tx.insert(groceryListItems).values(
+        Array.from({ length: MAX_GROCERY_LIST_ITEMS - 1 }, (_, i) => ({
+          groceryListId: list.id,
+          name: `Seed ${i}`,
+        })),
+      );
+
+      const result = await batchCreateGroceryItems(
+        [makeItem(), makeItem()],
+        testUser.id,
+        "UTC",
+        list.id,
+      );
+      expect(result).toEqual({ count: 1, skipped: 1, groceryListId: list.id });
     });
 
     it("throws NOT_FOUND when groceryListId belongs to another user (IDOR guard)", async () => {

@@ -39,7 +39,10 @@ import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { ApiError } from "@/lib/api-error";
 import { useToast } from "@/context/ToastContext";
-import { formatPantryFullSkipped } from "@/lib/log-success";
+import {
+  formatGroceryListFullSkipped,
+  formatPantryFullSkipped,
+} from "@/lib/log-success";
 import { formatGroceryListTitle } from "@/lib/format";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
@@ -296,9 +299,17 @@ export default function GroceryListScreen() {
     releaseVoice();
     addItemMutation.mutate(
       { listId, name },
-      { onSuccess: () => setNewItemName("") },
+      {
+        onSuccess: () => setNewItemName(""),
+        // A 4xx skips the global error toast, so a full list says so here.
+        onError: (err) => {
+          if (err instanceof ApiError && err.code === "LIMIT_REACHED") {
+            toast.info(formatGroceryListFullSkipped(1));
+          }
+        },
+      },
     );
-  }, [haptics, addItemMutation, listId, newItemName, releaseVoice]);
+  }, [haptics, addItemMutation, listId, newItemName, releaseVoice, toast]);
 
   const handleItemChecked = useCallback(
     (item: GroceryListItem) => {

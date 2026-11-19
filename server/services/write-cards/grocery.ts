@@ -9,7 +9,7 @@ import {
   writeCardReceipt,
 } from "@shared/lib/coach-write-card-math";
 import {
-  addGroceryListItems,
+  insertGroceryListItemsUnderCap,
   createGroceryListWithLimitCheck,
   deleteGroceryList,
   deleteGroceryListItem,
@@ -182,6 +182,7 @@ export async function performGrocerySave(
       createdListId: created.list.id,
       listId: created.list.id,
       groceryItemIds: created.items.map((i) => i.id),
+      ...(created.skipped > 0 && { groceryListFull: created.skipped }),
     };
   }
 
@@ -199,14 +200,17 @@ export async function performGrocerySave(
   const waiting = new Set(
     (await getUncheckedGroceryListItems(choice, ctx.userId, tx)).map(lineKey),
   );
-  const rows = await addGroceryListItems(
-    kept
-      .map(toRow)
-      .filter((row) => !waiting.has(lineKey(row)))
-      .map((row) => ({ ...row, groceryListId: choice })),
+  const { created, skipped } = await insertGroceryListItemsUnderCap(
+    choice,
+    ctx.userId,
+    kept.map(toRow).filter((row) => !waiting.has(lineKey(row))),
     tx,
   );
-  return { listId: choice, groceryItemIds: rows.map((r) => r.id) };
+  return {
+    listId: choice,
+    groceryItemIds: created.map((r) => r.id),
+    ...(skipped > 0 && { groceryListFull: skipped }),
+  };
 }
 
 export async function revertGrocerySave(
@@ -245,9 +249,18 @@ export function groceryReceipt(
   const listTitle = groceryReceiptListTitle(card);
   const kept = groceryKept(payload, edits).length;
   const added = card.savedRefs?.groceryItemIds?.length ?? kept;
+  const full = card.savedRefs?.groceryListFull ?? 0;
+  const already = Math.max(0, kept - added - full);
   const base = writeCardReceipt("grocery", payload, edits, listTitle);
   if (added >= kept) return base;
-  if (added === 0) return `✓ Already on ${listTitle ?? "your list"}`;
+  const fullNote = full > 0 ? `${full} didn't fit (list full)` : "";
+  if (added === 0) {
+    if (already === 0) return `✓ ${listTitle ?? "Your list"} is full`;
+    return `✓ Already on ${listTitle ?? "your list"}${fullNote && ` · ${fullNote}`}`;
+  }
   const to = listTitle ? ` to ${listTitle}` : "";
-  return `✓ Added ${added} ${added === 1 ? "item" : "items"}${to} · ${kept - added} already there`;
+  const notes = [already > 0 && `${already} already there`, fullNote]
+    .filter(Boolean)
+    .join(" · ");
+  return `✓ Added ${added} ${added === 1 ? "item" : "items"}${to} · ${notes}`;
 }

@@ -2,6 +2,8 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { Alert } from "react-native";
+import { ApiError } from "@/lib/api-error";
 import { GroceryListPickerModal } from "../GroceryListPickerModal";
 
 const mockLists = [
@@ -86,6 +88,40 @@ describe("GroceryListPickerModal", () => {
     );
     expect(screen.getByText("Weekly Groceries")).toBeDefined();
     expect(screen.getByText("Party Prep")).toBeDefined();
+  });
+
+  it("says the list is full when the server refuses the item", () => {
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    mockAddItem.mockImplementation((_vars, opts) =>
+      opts.onError(
+        new ApiError("400: This list is full", "LIMIT_REACHED", 400),
+      ),
+    );
+    renderComponent(
+      <GroceryListPickerModal
+        visible={true}
+        onClose={() => {}}
+        itemName="Eggs"
+      />,
+    );
+    fireEvent.click(screen.getByText("Weekly Groceries"));
+    expect(alertSpy).toHaveBeenCalledWith("List full", expect.any(String));
+  });
+
+  it("keeps the generic alert for other add failures", () => {
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    mockAddItem.mockImplementation((_vars, opts) =>
+      opts.onError(new Error("500: boom")),
+    );
+    renderComponent(
+      <GroceryListPickerModal
+        visible={true}
+        onClose={() => {}}
+        itemName="Eggs"
+      />,
+    );
+    fireEvent.click(screen.getByText("Weekly Groceries"));
+    expect(alertSpy).toHaveBeenCalledWith("Error", expect.any(String));
   });
 
   it("shows empty state when no lists", () => {

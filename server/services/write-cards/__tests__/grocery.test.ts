@@ -18,6 +18,7 @@ import {
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 import type { GroceryCardPayload } from "@shared/schemas/coach-write-cards";
+import { MAX_GROCERY_LIST_ITEMS } from "@shared/constants/grocery";
 import { createMockCoachWriteCard } from "../../../__tests__/factories";
 
 vi.mock("../../../db", () => ({
@@ -359,6 +360,24 @@ describe("grocery write card", () => {
     expect(refs).toEqual({ listId: list.id, groceryItemIds: [] });
     expect(await itemsOf(list.id)).toHaveLength(1);
     expect(groceryReceipt(saved(p, refs))).toBe("✓ Already on Weekly shop");
+  });
+
+  it("a nearly full list takes what fits and the receipt says the rest didn't fit", async () => {
+    const list = await makeList("Weekly shop", new Date("2026-11-08"));
+    await tx.insert(schema.groceryListItems).values(
+      Array.from({ length: MAX_GROCERY_LIST_ITEMS - 1 }, (_, i) => ({
+        groceryListId: list.id,
+        name: `Seed ${i}`,
+      })),
+    );
+    const p = await buildGroceryPayload(args, user.id);
+    const refs = await performGrocerySave(tx, card(p), {}, ctx());
+    expect(refs.groceryItemIds).toHaveLength(1);
+    expect(refs.groceryListFull).toBe(2);
+    expect(await itemsOf(list.id)).toHaveLength(MAX_GROCERY_LIST_ITEMS);
+    expect(groceryReceipt(saved(p, refs))).toBe(
+      "✓ Added 1 item to Weekly shop · 2 didn't fit (list full)",
+    );
   });
 
   it("the receipt counts what a plain save added", async () => {

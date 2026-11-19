@@ -28,7 +28,7 @@ import {
   removeMealPlanItem,
 } from "../../storage/meal-plan-items";
 import {
-  addGroceryListItems,
+  insertGroceryListItemsUnderCap,
   deleteGroceryListItem,
   getGroceryLists,
   verifyGroceryListOwnership,
@@ -354,9 +354,11 @@ export async function performPlanSave(
           byKey.get(matchKey(i.name)) ?? [],
         ) !== "covered",
     );
-    const rows = await addGroceryListItems(
+    // A full list takes what fits; the meals are still planned.
+    const { created, skipped } = await insertGroceryListItemsUnderCap(
+      listId,
+      ctx.userId,
       items.map((i) => ({
-        groceryListId: listId,
         name: i.name,
         quantity: i.quantity === null ? null : String(i.quantity),
         unit: i.unit,
@@ -365,7 +367,8 @@ export async function performPlanSave(
       tx,
     );
     refs.listId = listId;
-    refs.groceryItemIds = rows.map((r) => r.id);
+    refs.groceryItemIds = created.map((r) => r.id);
+    if (skipped > 0) refs.groceryListFull = skipped;
   }
   return refs;
 }
