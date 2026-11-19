@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [client-state, security, iap, subscription, react-native]
 module: client
-applies_to: ["client/lib/iap/usePurchase.ts", "client/lib/iap/purchase-utils.ts", "client/components/upgrade-modal-utils.ts", "server/routes/subscription.ts"]
+applies_to: ["client/hooks/usePurchase.ts", "client/lib/iap/purchase-utils.ts", "client/components/upgrade-modal-utils.ts", "server/routes/subscription.ts"]
 symptoms: ["A purchase during a Play/App Store API outage charges the user, shows no Premium, and Restore finds nothing to claim", "Android purchase auto-refunded or iOS transaction gone from the queue after the server answered {success:false}", "A refunded/expired receipt replayed on restore shows retryable 'Please try again' copy forever"]
 created: 2026-10-30
 severity: high
@@ -42,10 +42,10 @@ The client treated transport success as business success. The `apiRequest` contr
 
 ## Related Files
 
-- `client/lib/iap/usePurchase.ts`: purchase and restore flows.
+- `client/hooks/usePurchase.ts`: purchase and restore flows.
 - `client/lib/iap/purchase-utils.ts`: `entitlementError`, `PERMANENT_DECLINE_CODES`.
 - `client/components/upgrade-modal-utils.ts`: `PURCHASE_DECLINED` copy.
-- `client/lib/iap/__tests__/usePurchase.hook.test.ts`, `client/lib/iap/__tests__/purchase-utils.test.ts`.
+- `client/hooks/__tests__/usePurchase.test.ts`, `client/lib/iap/__tests__/purchase-utils.test.ts`.
 - `server/routes/subscription.ts`: 200 + `success:false` decline shape.
 
 ## See Also

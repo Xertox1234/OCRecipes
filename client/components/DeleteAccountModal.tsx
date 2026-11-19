@@ -21,7 +21,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import type { DeleteAccountProof } from "@/hooks/useAuth";
 import { ApiError } from "@/lib/api-error";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
-import { deleteProofMode } from "@/screens/SignInMethodsScreen-utils";
+import { deleteProofMode } from "@/lib/social-auth-utils";
 import type { SecondFactorInput, SignInMethods } from "@shared/types/auth";
 import { mapReauthError } from "@/lib/second-factor-utils";
 import {

@@ -63,7 +63,7 @@ If both branches _can_ coexist (no native dependency, no Expo Go crash), prefer 
 
 - `client/lib/iap/index.ts` — the conditional require
 - `client/lib/iap/mock-iap.ts` — the dev stub
-- `client/lib/iap/usePurchase.ts` — consumer
+- `client/hooks/usePurchase.ts` — consumer
 
 ## See Also
 

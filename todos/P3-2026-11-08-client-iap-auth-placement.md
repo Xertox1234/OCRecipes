@@ -1,9 +1,9 @@
 ---
 title: "Client placement: move usePurchase out of lib/iap and deleteProofMode out of screens/"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-19
 assignee:
 labels: [architecture, client, iap, auth]
 github_issue:
@@ -25,9 +25,9 @@ The audit (manifest `docs/audits/2026-11-08-architecture.md`, findings L6 and th
 
 ## Acceptance Criteria
 
-- [ ] `usePurchase` lives in `client/hooks/` (pure IAP helpers may stay in `client/lib/iap/`); every importer and test mock path updated.
-- [ ] `deleteProofMode` lives outside `client/screens/` (e.g. `client/lib/` or beside `DeleteAccountModal`), with its tests; `SignInMethodsScreen` imports it from there.
-- [ ] `grep -rnE "from ['\"]@/screens/" client/components client/hooks client/camera client/lib client/context` returns no production hits.
+- [x] `usePurchase` lives in `client/hooks/` (pure IAP helpers may stay in `client/lib/iap/`); every importer and test mock path updated.
+- [x] `deleteProofMode` lives outside `client/screens/` (e.g. `client/lib/` or beside `DeleteAccountModal`), with its tests; `SignInMethodsScreen` imports it from there.
+- [x] `grep -rnE "from ['\"]@/screens/" client/components client/hooks client/camera client/lib client/context` returns no production hits.
 - [ ] Pure moves only: no behaviour change; purchase and delete-account flows checked on a device afterwards.
 
 ## Implementation Notes
@@ -49,3 +49,11 @@ Pure `git mv` moves plus import rewiring, the same way the audit did M1. Check `
 ### 2026-11-08
 
 - Filed from the client architecture audit (L6 + M1 auth part), deferred by the owner at triage.
+
+### 2026-11-19
+
+- Owner lifted the `human_led` gate for this run: the agent makes the moves, the owner reviews and merges.
+- `usePurchase` and its test moved to `client/hooks/`; `UpgradeModal` and three `vi.mock` paths updated.
+- `deleteProofMode` could not move alone: it calls `toMethodList` (same screen file) and `connectPromptMode` (`ConnectAccountScreen-utils`). All three, with the `ConnectPromptMode` and `DeleteProofMode` types and their tests, moved into the existing `client/lib/social-auth-utils.ts`. `SignInMethodsScreen` never imported `deleteProofMode`, so it needed no change; `ConnectAccountScreen` now imports `connectPromptMode` from lib.
+- The auto-merge guard held `usePurchase.ts` only through its `iap/` folder. `usePurchase` is now named in `SENSITIVE_OVERRIDE`, with a test.
+- Open: the fourth criterion's device check of purchase and delete-account (owner).

@@ -4,14 +4,14 @@ import type { PurchaseState } from "@shared/types/subscription";
 import { canInitiatePurchase } from "@/lib/subscription/type-guards";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { apiRequest } from "@/lib/query-client";
-import { useIAP, PRODUCT_IDS } from "./index";
+import { useIAP, PRODUCT_IDS } from "@/lib/iap/index";
 import {
   mapIAPError,
   buildReceiptPayload,
   buildRestorePayload,
   entitlementError,
   isSupportedPlatform,
-} from "./purchase-utils";
+} from "@/lib/iap/purchase-utils";
 
 export function usePurchase() {
   const [state, setState] = useState<PurchaseState>({ status: "idle" });

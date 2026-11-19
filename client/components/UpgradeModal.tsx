@@ -19,7 +19,7 @@ import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { usePurchase } from "@/lib/iap/usePurchase";
+import { usePurchase } from "@/hooks/usePurchase";
 import { isPurchaseInProgress } from "@/lib/subscription/type-guards";
 import { logger } from "@/lib/logger";
 import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";

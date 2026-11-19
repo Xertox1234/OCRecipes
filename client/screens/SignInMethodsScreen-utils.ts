@@ -1,14 +1,6 @@
-import type {
-  SignInMethod,
-  SignInMethods,
-  SocialProvider,
-} from "@shared/types/auth";
+import type { SignInMethods, SocialProvider } from "@shared/types/auth";
 import { ApiError } from "@/lib/api-error";
 import { canDisconnect } from "@/lib/social-auth-utils";
-import {
-  connectPromptMode,
-  type ConnectPromptMode,
-} from "./ConnectAccountScreen-utils";
 
 type Platform = "ios" | "android" | "web";
 type NativeProviders = Readonly<Record<SocialProvider, boolean>>;
@@ -20,14 +12,6 @@ export function methodSubtitle(
   if (!identity) return "Not connected";
   if (identity.isPrivateRelay) return "Hidden by Apple";
   return identity.email ?? "Connected";
-}
-
-export function toMethodList(methods: SignInMethods): SignInMethod[] {
-  const list: SignInMethod[] = [];
-  if (methods.password) list.push("password");
-  if (methods.google) list.push("google");
-  if (methods.apple) list.push("apple");
-  return list;
 }
 
 export type ProviderRowState =
@@ -90,18 +74,6 @@ export function identityErrorMessage(err: unknown): string {
   }
   if (code === "UNAUTHORIZED") return "Incorrect password. Please try again.";
   return "Something went wrong. Please try again.";
-}
-
-/** How the delete-account modal asks the person to prove it's them. */
-export type DeleteProofMode = { kind: "loading" } | ConnectPromptMode;
-
-export function deleteProofMode(
-  methods: SignInMethods | undefined,
-  platform: Platform,
-  nativeProviders: NativeProviders,
-): DeleteProofMode {
-  if (!methods) return { kind: "loading" };
-  return connectPromptMode(toMethodList(methods), platform, nativeProviders);
 }
 
 /**

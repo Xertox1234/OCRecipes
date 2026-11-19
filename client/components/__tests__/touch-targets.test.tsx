@@ -26,7 +26,7 @@ const { captured } = vi.hoisted(() => ({
   captured: {} as Record<string, Record<string, unknown>>,
 }));
 
-vi.mock("@/lib/iap/usePurchase", () => ({
+vi.mock("@/hooks/usePurchase", () => ({
   usePurchase: () => ({
     state: { status: "idle" },
     purchase: vi.fn(),

@@ -1,37 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  connectPromptMode,
   connectErrorOutcome,
   chooseUsernameErrorOutcome,
 } from "../ConnectAccountScreen-utils";
 import { ApiError } from "@/lib/api-error";
-
-const both = { apple: true, google: true };
-const appleOnlyBuild = { apple: true, google: false };
-
-describe("connectPromptMode", () => {
-  it("password when the account has one", () => {
-    expect(connectPromptMode(["password", "apple"], "ios", both)).toEqual({
-      kind: "password",
-    });
-  });
-  it("the linked provider for a provider-only account", () => {
-    expect(connectPromptMode(["apple"], "ios", both)).toEqual({
-      kind: "provider",
-      provider: "apple",
-    });
-  });
-  it("Apple-only account on Android can only reset", () => {
-    expect(connectPromptMode(["apple"], "android", both)).toEqual({
-      kind: "reset_only",
-    });
-  });
-  it("Google-only account in a build without the Google SDK can only reset", () => {
-    expect(connectPromptMode(["google"], "ios", appleOnlyBuild)).toEqual({
-      kind: "reset_only",
-    });
-  });
-});
 
 describe("connectErrorOutcome", () => {
   it.each([
