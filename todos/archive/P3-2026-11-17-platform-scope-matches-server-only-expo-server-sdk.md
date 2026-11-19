@@ -1,9 +1,9 @@
 ---
 title: "Platform-check scope treats the server-only expo-server-sdk as an app SDK bump"
-status: backlog
+status: done
 priority: low
 created: 2026-11-17
-updated: 2026-11-17
+updated: 2026-11-19
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -35,13 +35,13 @@ Left alone at the time because changing a merge guard was outside a dependency-u
 
 ## Acceptance Criteria
 
-- [ ] A `package.json` diff that changes only `expo-server-sdk` exits 1 (not in scope) from
+- [x] A `package.json` diff that changes only `expo-server-sdk` exits 1 (not in scope) from
       `scripts/harness/platform-scope.sh`.
-- [ ] A diff that changes `expo`, `expo-file-system`, `react-native` or an `@expo/*` package
+- [x] A diff that changes `expo`, `expo-file-system`, `react-native` or an `@expo/*` package
       still exits 0 with an `sdk package.json` line.
-- [ ] A diff that changes `expo-server-sdk` together with a real app SDK package still exits 0.
-- [ ] Both cases are covered by a test, written to fail first.
-- [ ] `docs/AI_WORKFLOW.md` → Review Policy → Real-platform check names the exclusion if it
+- [x] A diff that changes `expo-server-sdk` together with a real app SDK package still exits 0.
+- [x] Both cases are covered by a test, written to fail first.
+- [x] `docs/AI_WORKFLOW.md` → Review Policy → Real-platform check names the exclusion if it
       lists what counts as an SDK bump.
 
 ## Implementation Notes
@@ -76,3 +76,9 @@ Left alone at the time because changing a merge guard was outside a dependency-u
 ### 2026-11-17
 
 - Initial creation
+
+### 2026-11-19
+
+- Done: `server_only()` in the awk `sdk` rule skips `expo-server-sdk` by exact name.
+- Criteria 1-4 evidence: `scripts/__tests__/platform-scope.test.ts` (13 cases; the exclusion case failed before the fix, the other 12 passed).
+- Criterion 5: the Real-platform check paragraph in `docs/AI_WORKFLOW.md` says "an SDK or native dependency" and names no packages, so it was left unchanged; the script's header comment names the exclusion.

@@ -8,7 +8,8 @@
 #   native    a path (old or new side) under patches/, plugins/, modules/, or app.json, app.config.*,
 #             eas.json: what changes the native build
 #   sdk       a package.json line adding or removing an expo*, react-native*, @expo/* or
-#             @react-native* version: an SDK or native-module bump
+#             @react-native* version: an SDK or native-module bump. Server-only packages listed
+#             by exact name in server_only() are skipped (today: expo-server-sdk, push delivery).
 #   upload    an added or removed line in client/** (tests excluded) naming FormData, uploadAsync,
 #             ExpoFile or FileSystemUploadType: how a file leaves the phone. Matched by content, not
 #             by a file list, so a moved upload hook stays in scope.
@@ -28,6 +29,14 @@ awk '
   function client_code(p) {
     return p ~ /^client\// && p !~ /(^|\/)__tests__\// && p !~ /\.(test|spec)\.[jt]sx?$/
   }
+  # Never in the app bundle, so no platform check. Exact names only: widening this to a pattern
+  # could let a real app SDK bump through.
+  function server_only(line,   name) {
+    name = line
+    sub(/^[+-][ \t]*"/, "", name)
+    sub(/".*$/, "", name)
+    return name == "expo-server-sdk"
+  }
   function hit(kind, p) {
     key = kind " " p
     if (!(key in seen)) { seen[key] = 1; print key }
@@ -44,9 +53,9 @@ awk '
   }
   /^(\+\+\+|---) / { next }
   /^[+-]/ {
-    if (file == "package.json" && $0 ~ /^[+-][ \t]*"(expo[^"]*|react-native[^"]*|@expo\/[^"]*|@react-native[^"]*)"[ \t]*:[ \t]*"/)
-      hit("sdk", file)
-    else if (client_code(file) && $0 ~ /FormData|uploadAsync|ExpoFile|FileSystemUploadType/)
+    if (file == "package.json" && $0 ~ /^[+-][ \t]*"(expo[^"]*|react-native[^"]*|@expo\/[^"]*|@react-native[^"]*)"[ \t]*:[ \t]*"/) {
+      if (!server_only($0)) hit("sdk", file)
+    } else if (client_code(file) && $0 ~ /FormData|uploadAsync|ExpoFile|FileSystemUploadType/)
       hit("upload", file)
   }
   END {
