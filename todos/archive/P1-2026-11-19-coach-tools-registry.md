@@ -1,6 +1,6 @@
 ---
 title: "Turn coach-tools into a tool registry so 'offered' and 'executable' are one rule"
-status: backlog
+status: done
 priority: high
 created: 2026-11-19
 updated: 2026-11-19
@@ -23,11 +23,11 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ## Acceptance Criteria
 
-- [ ] Each tool is one registry entry `{ name, definition, argsSchema, available(opts), run(args, ctx) }`
-- [ ] `getToolDefinitions` = `entries.filter(available).map(definition)`; `executeToolCall` = find → `available` → `safeParse` → `run` — the availability rule exists once
-- [ ] Entries split across `server/services/coach-tools/{nutrition,recipes,pantry,grocery,plan}.ts`; `coach-tools.ts` under 600 lines
-- [ ] `groceryCardResult` / `pantryCardResult` (`:876-930`) live beside `server/services/write-cards/`
-- [ ] Tool names, wire JSON schemas, error copy and `Unknown tool` messages unchanged (existing tests stay green unmodified)
+- [x] Each tool is one registry entry `{ name, definition, argsSchema, available(opts), run(args, ctx) }`
+- [x] `getToolDefinitions` = `entries.filter(available).map(definition)`; `executeToolCall` = find → `available` → `safeParse` → `run` — the availability rule exists once
+- [x] Entries split across `server/services/coach-tools/{nutrition,recipes,pantry,grocery,plan}.ts`; `coach-tools.ts` under 600 lines
+- [x] `groceryCardResult` / `pantryCardResult` (`:876-930`) live beside `server/services/write-cards/`
+- [x] Tool names, wire JSON schemas, error copy and `Unknown tool` messages unchanged (existing tests stay green unmodified)
 
 ## Implementation Notes
 
@@ -51,3 +51,9 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 ### 2026-11-19
 
 - Filed from the 2026-11-19 maintainability audit (deferred at triage).
+
+### 2026-11-19 (implemented)
+
+- Registry in `server/services/coach-tools/{types,nutrition,recipes,pantry,grocery,plan}.ts`; `coach-tools.ts` is 145 lines; card results in `server/services/write-cards/results.ts`.
+- Not done: converting `executeToolCall`'s positional args to an options object (the Implementation Notes' separate commit). It touches `nutrition-coach.ts` callers and index-pinned tests, outside the Scope Contract and the acceptance criteria; left as a follow-up.
+- Criterion 5 evidence: `getToolDefinitions` JSON compared to the pre-refactor output for all four `{writeCards, pantryCard}` combinations (identical); existing tests pass unmodified; `server/services/__tests__/coach-tools-registry.test.ts` pins offered == executable.
