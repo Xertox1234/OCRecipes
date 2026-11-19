@@ -1,5 +1,5 @@
 ---
-title: A redacting pino `err` serializer covers one key on one logger — an error under another key, pino-http's child logger, and a wrapped cause all still print a failed query's bound values
+title: A redacting pino `err` serializer covers one key on one logger — other keys, pino-http and wrapped causes still leak query values
 track: bug
 category: logic-errors
 module: server
