@@ -6,7 +6,7 @@ module: server
 tags: [mutation-testing, stryker, vitest, testing, expo, react-native, ci]
 applies_to: [stryker.conf.mjs, stryker.targets.mjs, stryker.explore.conf.mjs, vitest.mutation.config.mts, scripts/ci/mutation-on-diff.mjs]
 created: '2026-06-05'
-last_updated: 2026-10-02
+last_updated: 2026-11-18
 ---
 
 # Stryker + Vitest 4 mutation-testing harness (Expo/RN repo gotchas)
@@ -120,6 +120,28 @@ path is `STRYKER_EXPLORE_JSON_FILE`, default `reports/mutation/explore.json` (gi
 - With `coverageAnalysis: "perTest"` each mutant has `coveredBy`/`killedBy` test ids,
   mapped to names by `testFiles`. See
   [pick-mutation-replay-assertion-from-stryker-report-2026-10-01.md](pick-mutation-replay-assertion-from-stryker-report-2026-10-01.md).
+
+## Upgrading Vitest: bump Stryker in the same PR and run the suite by hand (2026-11-18)
+
+Stryker 9.6.1 on Vitest 5.1 still runs and still exits 0, but its per-test
+coverage no longer lines up with the runner: it ran about 1.14 tests per mutant
+and a target with a 100% floor scored 24.39%. Nothing errors; the score just
+collapses. Stryker 10.1.1 restored every target above its floor (#1918).
+
+CI does not catch this. `mutation-non-excluded.yml` and
+`mutation-goal-safety.yml` scope themselves to success unless a mutation target,
+a `stryker.*.mjs` file or `vitest.mutation.config.mts` changes, so a PR that
+only moves `package.json` and the lockfile is never exercised by them.
+
+So, on any Vitest or Stryker major bump:
+
+1. Move `vitest`, `@vitest/coverage-v8`, `@stryker-mutator/core` and
+   `@stryker-mutator/vitest-runner` together.
+2. Run every target locally (`MUTATION_TARGET=<name> npm run test:mutation` for
+   each entry in `stryker.targets.mjs`) and compare against
+   `docs/mutation-testing/baselines.md`.
+3. Treat a low "tests per mutant" figure as the tell: a score that falls with
+   no source change is the tool, not the tests.
 
 ## Exceptions
 
