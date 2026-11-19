@@ -1,6 +1,6 @@
 ---
 title: "Vertex client uses the deprecated GoogleAuth `credentials` option"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-11-18
 updated: 2026-11-18
@@ -33,9 +33,9 @@ Found on 2026-11-18 while upgrading `google-auth-library` 10.9.1 → 11.3.4.
 
 ## Acceptance Criteria
 
-- [ ] `vertex-client.ts` builds its login without the deprecated option (for example a `JWT`
+- [x] `vertex-client.ts` builds its login without the deprecated option (for example a `JWT`
       client with `email`, `key` and `scopes`), and the warning no longer prints.
-- [ ] `server/lib/__tests__/vertex-client.test.ts` covers the new construction.
+- [x] `server/lib/__tests__/vertex-client.test.ts` covers the new construction.
 - [ ] A real Vertex call succeeds after the change (owner check, or a deploy plus a vision
       request), since the unit test mocks the library.
 
@@ -43,3 +43,11 @@ Found on 2026-11-18 while upgrading `google-auth-library` 10.9.1 → 11.3.4.
 
 - `server/lib/vertex-client.ts`
 - `server/lib/__tests__/vertex-client.test.ts`
+
+## Updates
+
+### 2026-11-18
+
+- Code change: `new GoogleAuth({ authClient: new JWT({ email, key, scopes }) })`. GoogleAuth stays, so `getAccessToken()` still returns a string and the apiKey setter is unchanged.
+- Offline probe against the real google-auth-library 11.3.4 with a throwaway RSA key: the old form prints the deprecation (control), the new form prints nothing; both build a `JWT` client with the same email and the cloud-platform scope; `GoogleAuth.getAccessToken()` returns the JWT client's token string.
+- Left open for the third criterion only: a real Vertex call after the deploy (a vision request, or the owner's check). Close this todo when that succeeds.
