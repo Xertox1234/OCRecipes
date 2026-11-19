@@ -255,13 +255,18 @@ export async function performPantrySave(
       }
       // Read under a row lock, then compare: the pantry screen's own edits
       // do not take the advisory lock. A row that is gone, not the user's, or
-      // no longer holds what the card showed is never written.
+      // no longer is what the card showed (name, unit, amount) is never written.
       const current = await getPantryItemForUpdate(
         inner,
         row.itemId,
         ctx.userId,
       );
-      if (!current || !sameAmount(current.quantity, row.held)) {
+      if (
+        !current ||
+        current.name.slice(0, 200) !== row.name ||
+        current.unit !== row.unit ||
+        !sameAmount(current.quantity, row.held)
+      ) {
         counts.skipped += 1;
         continue;
       }

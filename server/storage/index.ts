@@ -204,7 +204,7 @@ export const storage = {
   removeMealPlanItem: mealPlans.removeMealPlanItem,
   reorderMealPlanItems: mealPlans.reorderMealPlanItems,
   updateMealPlanItemAudience: mealPlans.updateMealPlanItemAudience,
-  isMealPlanItemConfirmed: mealPlans.isMealPlanItemConfirmed,
+  createMealPlanConfirmLog: mealPlans.createMealPlanConfirmLog,
   // Grocery lists
   createGroceryList: groceryLists.createGroceryList,
   getGroceryListCount: groceryLists.getGroceryListCount,

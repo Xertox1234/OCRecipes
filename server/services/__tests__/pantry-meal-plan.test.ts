@@ -379,12 +379,12 @@ describe("pantry-meal-plan", () => {
     beforeEach(() => {
       vi.mocked(getFamilyContext).mockResolvedValue({
         active: false,
-        profiles: [],
+        profileCount: 0,
       });
     });
 
     async function promptFor(
-      family: { active: boolean; profiles: unknown[] },
+      family: Awaited<ReturnType<typeof getFamilyContext>>,
       householdSize: number,
     ): Promise<string> {
       vi.mocked(storage.getPantryItems).mockResolvedValue(
@@ -394,9 +394,7 @@ describe("pantry-meal-plan", () => {
         createMockUserProfile({ userId: "user1", householdSize }),
       );
       vi.mocked(storage.getUser).mockResolvedValue(undefined);
-      vi.mocked(getFamilyContext).mockResolvedValue(
-        family as Awaited<ReturnType<typeof getFamilyContext>>,
-      );
+      vi.mocked(getFamilyContext).mockResolvedValue(family);
       vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
@@ -409,31 +407,20 @@ describe("pantry-meal-plan", () => {
     }
 
     it("counts the user plus every profile when family planning is active", async () => {
-      const msg = await promptFor(
-        {
-          active: true,
-          profiles: [
-            { name: "Ivy", note: "secret note", allergies: ["peanuts"] },
-            { name: "Max" },
-            { name: "Zed" },
-          ],
-        },
-        2,
-      );
+      // Only a count reaches this service (getFamilyContext never loads the
+      // profiles), so no name, note or allergy can reach the prompt.
+      const msg = await promptFor({ active: true, profileCount: 3 }, 2);
       expect(msg).toContain("HOUSEHOLD SIZE: 4 people");
       expect(msg).toContain("household size (4)");
-      for (const leaked of ["Ivy", "Max", "Zed", "secret note"]) {
-        expect(msg).not.toContain(leaked);
-      }
     });
 
     it("keeps householdSize when family planning is inactive", async () => {
-      const msg = await promptFor({ active: false, profiles: [] }, 2);
+      const msg = await promptFor({ active: false, profileCount: 0 }, 2);
       expect(msg).toContain("HOUSEHOLD SIZE: 2 people");
     });
 
     it("keeps householdSize when active with no profiles", async () => {
-      const msg = await promptFor({ active: true, profiles: [] }, 2);
+      const msg = await promptFor({ active: true, profileCount: 0 }, 2);
       expect(msg).toContain("HOUSEHOLD SIZE: 2 people");
     });
 

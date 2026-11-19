@@ -213,6 +213,9 @@ Every reader of `meal_plan_items` must respect this. Verified list (2026-11-16):
 - **Sent to an AI provider, so must never include profile meals:** the coach's `get_meal_plan`
   tool, the coach brief, and meal suggestions' "already planned today" list. All three read through
   `getMealPlanItemSummaries`, which therefore never returns profile meals.
+- **Second-hand, accepted (owner ruling 2026-11-18):** a generated grocery list includes a profile
+  meal's ingredients, and the coach's `get_grocery_lists` tool sends the list's items to the
+  provider. Grocery items carry no name, allergy or note and are not profile details.
 - **Portions:** `getMealPlanIngredientsForDateRange` (grocery).
 - **Unaffected:** the data export (new columns flow through), weekly reports (only checks that a
   plan exists), the coach context builder (reads no plan).
@@ -281,7 +284,9 @@ user's own allergies. For a shared or profile slot there are two options:
 2. Send nothing about the family. Suggestions may clash, and the local allergen warning catches it
    after the fact.
 
-The design assumes option 2 until the owner rules.
+**Ruled 2026-11-18 (security audit): option 2.** Nothing about the family reaches the provider;
+the per-person allergen warning is the safety net. `getFamilyContext` returns only a headcount, so
+AI-bound callers never hold profile rows.
 
 **Should pantry-generated meals stop putting the whole household's portions on the user's ring?**
 (The existing exception above.) What the design does without a ruling:

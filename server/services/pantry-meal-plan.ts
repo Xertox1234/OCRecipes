@@ -316,8 +316,8 @@ export async function buildPantryMealPlanForUser(
   // profile's name, note or allergies.
   const family = await getFamilyContext(userId, features);
   const householdSize =
-    family.active && family.profiles.length > 0
-      ? 1 + family.profiles.length
+    family.active && family.profileCount > 0
+      ? 1 + family.profileCount
       : (userProfile?.householdSize ?? DEFAULT_HOUSEHOLD_SIZE);
 
   return generateMealPlanFromPantry({

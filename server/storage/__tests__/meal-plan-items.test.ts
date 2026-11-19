@@ -637,16 +637,17 @@ describe("meal-plan-items storage", () => {
         "profile",
         profile.id,
       );
-      expect(updated?.audience).toBe("profile");
-      expect(updated?.familyProfileId).toBe(profile.id);
+      expect(updated).toMatchObject({
+        audience: "profile",
+        familyProfileId: profile.id,
+      });
       const back = await updateMealPlanItemAudience(
         self.id,
         testUser.id,
         "shared",
         null,
       );
-      expect(back?.audience).toBe("shared");
-      expect(back?.familyProfileId).toBeNull();
+      expect(back).toMatchObject({ audience: "shared", familyProfileId: null });
     });
 
     it("updateMealPlanItemAudience returns undefined for the wrong user and leaves the row", async () => {

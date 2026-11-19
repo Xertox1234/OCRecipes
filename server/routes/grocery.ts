@@ -136,7 +136,7 @@ export function register(app: Express): void {
           req.userId,
           parsed.data.startDate,
           parsed.data.endDate,
-          { active: family.active, profileCount: family.profiles.length },
+          { active: family.active, profileCount: family.profileCount },
         );
 
         // Aggregate

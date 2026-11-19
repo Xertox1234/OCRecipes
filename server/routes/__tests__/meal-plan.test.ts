@@ -34,17 +34,15 @@ vi.mock("../../storage", () => ({
     addMealPlanItem: vi.fn(),
     getScannedItem: vi.fn(),
     removeMealPlanItem: vi.fn(),
-    getMealPlanItemById: vi.fn(),
     getConfirmedMealPlanItemIds: vi.fn(),
-    createDailyLog: vi.fn(),
+    createMealPlanConfirmLog: vi.fn(),
     getPantryItems: vi.fn(),
     getUserProfile: vi.fn(),
     getUser: vi.fn(),
     reorderMealPlanItems: vi.fn(),
     updateMealPlanItemAudience: vi.fn(),
-    isMealPlanItemConfirmed: vi.fn(),
     getFamilyProfile: vi.fn(),
-    getFamilyProfiles: vi.fn(),
+    countFamilyProfiles: vi.fn(),
     createMealPlanFromSuggestions: vi.fn(),
     incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
   },
@@ -104,7 +102,7 @@ function mockFamily({ premium = true, switchOn = true } = {}) {
   vi.mocked(storage.getUserProfile).mockResolvedValue({
     familyPlanningEnabled: switchOn,
   } as Awaited<ReturnType<typeof storage.getUserProfile>>);
-  vi.mocked(storage.getFamilyProfiles).mockResolvedValue([]);
+  vi.mocked(storage.countFamilyProfiles).mockResolvedValue(0);
 }
 
 const mockRecipe = createMockMealPlanRecipe({
@@ -920,11 +918,12 @@ describe("Meal Plan Routes", () => {
       vi.mocked(storage.getFamilyProfile).mockResolvedValue({
         id: 7,
       } as Awaited<ReturnType<typeof storage.getFamilyProfile>>);
-      vi.mocked(storage.isMealPlanItemConfirmed).mockResolvedValue(true);
+      vi.mocked(storage.updateMealPlanItemAudience).mockResolvedValue(
+        "confirmed",
+      );
       const res = await patch("3", { audience: "profile", familyProfileId: 7 });
       expect(res.status).toBe(409);
       expect(res.body.code).toBe("ALREADY_CONFIRMED");
-      expect(storage.updateMealPlanItemAudience).not.toHaveBeenCalled();
     });
 
     it("is not shadowed by the reorder route", async () => {
@@ -1157,45 +1156,35 @@ describe("Meal Plan Routes", () => {
   describe("POST /api/meal-plan/items/:id/confirm", () => {
     it("400 for a meal planned for a family profile", async () => {
       mockPremium();
-      vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
-        ...createMockMealPlanItem({ audience: "profile", familyProfileId: 7 }),
-        recipe: null,
-        scannedItem: null,
+      vi.mocked(storage.createMealPlanConfirmLog).mockResolvedValue({
+        status: "profile",
       });
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
         .set("Authorization", "Bearer token");
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("VALIDATION_ERROR");
-      expect(storage.createDailyLog).not.toHaveBeenCalled();
     });
     it("confirms a meal plan item", async () => {
       mockPremium();
-      vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
-        ...createMockMealPlanItem({
-          plannedDate: "2025-01-01",
-          mealType: "dinner",
-        }),
-        recipe: null,
-        scannedItem: null,
+      const log = createMockDailyLog();
+      vi.mocked(storage.createMealPlanConfirmLog).mockResolvedValue({
+        status: "created",
+        log,
       });
-      vi.mocked(storage.createDailyLog).mockResolvedValue(createMockDailyLog());
 
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(201);
+      expect(res.body.id).toBe(log.id);
+      expect(storage.createMealPlanConfirmLog).toHaveBeenCalledWith(1, "1");
     });
 
     it("returns 409 when the unique index rejects a duplicate confirm", async () => {
       mockPremium();
-      vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
-        ...createMockMealPlanItem({ plannedDate: "2025-01-01" }),
-        recipe: null,
-        scannedItem: null,
-      });
-      vi.mocked(storage.createDailyLog).mockRejectedValue(
+      vi.mocked(storage.createMealPlanConfirmLog).mockRejectedValue(
         Object.assign(new Error("duplicate key"), { code: "23505" }),
       );
 
@@ -1209,7 +1198,9 @@ describe("Meal Plan Routes", () => {
 
     it("returns 404 when item not found", async () => {
       mockPremium();
-      vi.mocked(storage.getMealPlanItemById).mockResolvedValue(undefined);
+      vi.mocked(storage.createMealPlanConfirmLog).mockResolvedValue({
+        status: "not_found",
+      });
 
       const res = await request(app)
         .post("/api/meal-plan/items/999/confirm")
@@ -1242,7 +1233,7 @@ describe("Meal Plan Routes", () => {
 
     it("returns 500 on storage error", async () => {
       mockPremium();
-      vi.mocked(storage.getMealPlanItemById).mockRejectedValue(
+      vi.mocked(storage.createMealPlanConfirmLog).mockRejectedValue(
         new Error("DB error"),
       );
 
@@ -1258,7 +1249,7 @@ describe("Meal Plan Routes", () => {
       vi.mocked(reportError).mockClear();
       mockPremium();
       const error = new Error("DB error");
-      vi.mocked(storage.getMealPlanItemById).mockRejectedValue(error);
+      vi.mocked(storage.createMealPlanConfirmLog).mockRejectedValue(error);
 
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
@@ -1482,9 +1473,7 @@ describe("Meal Plan Routes", () => {
 
       it("saves shared meals with servings 1 when active with profiles", async () => {
         mockFamily();
-        vi.mocked(storage.getFamilyProfiles).mockResolvedValue([
-          { id: 1 },
-        ] as Awaited<ReturnType<typeof storage.getFamilyProfiles>>);
+        vi.mocked(storage.countFamilyProfiles).mockResolvedValue(1);
         const saved = await save();
         expect(saved.planItem).toEqual(
           expect.objectContaining({ audience: "shared", servings: "1" }),
@@ -1493,15 +1482,15 @@ describe("Meal Plan Routes", () => {
       });
 
       it.each([
-        ["inactive (switch off)", { switchOn: false }, [{ id: 1 }]],
-        ["not premium", { premium: false }, [{ id: 1 }]],
-        ["active with no profiles", {}, []],
+        ["inactive (switch off)", { switchOn: false }, 1],
+        ["not premium", { premium: false }, 1],
+        ["active with no profiles", {}, 0],
       ])(
         "keeps self and the client servings when %s",
-        async (_l, opts, profiles) => {
+        async (_l, opts, profileCount) => {
           mockFamily(opts);
-          vi.mocked(storage.getFamilyProfiles).mockResolvedValue(
-            profiles as Awaited<ReturnType<typeof storage.getFamilyProfiles>>,
+          vi.mocked(storage.countFamilyProfiles).mockResolvedValue(
+            profileCount,
           );
           const saved = await save();
           expect(saved.planItem.servings).toBe("4");

@@ -372,6 +372,37 @@ describe("pantry write card", () => {
       expect(await pantryOf(other.id)).toHaveLength(1);
     });
 
+    it("skips a row renamed or re-united since the card was built, even at the same amount", async () => {
+      const milk = await stock("Milk", { quantity: "2", unit: "L" });
+      const rice = await stock("Rice", { quantity: "1", unit: "kg" });
+      const payload = await buildPantryPayload(
+        args([
+          { action: "remove", itemId: milk.id },
+          { action: "use", itemId: rice.id, quantity: "1" },
+        ]),
+        user.id,
+      );
+      await tx
+        .update(schema.pantryItems)
+        .set({ name: "Oat milk" })
+        .where(eq(schema.pantryItems.id, milk.id));
+      await tx
+        .update(schema.pantryItems)
+        .set({ unit: "lb" })
+        .where(eq(schema.pantryItems.id, rice.id));
+
+      const refs = await performPantrySave(tx, card(payload), {}, ctx());
+      expect(refs.pantryCounts).toMatchObject({
+        removed: 0,
+        used: 0,
+        skipped: 2,
+      });
+      expect((await pantryOf()).map((p) => p.name).sort()).toEqual([
+        "Oat milk",
+        "Rice",
+      ]);
+    });
+
     it("adds only what fits under the pantry cap", async () => {
       await tx.insert(schema.pantryItems).values(
         Array.from({ length: MAX_PANTRY_ITEMS - 1 }, (_, i) => ({

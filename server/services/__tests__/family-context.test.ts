@@ -7,59 +7,58 @@ import { TIER_FEATURES } from "@shared/types/premium";
 vi.mock("../../storage", () => ({
   storage: {
     getUserProfile: vi.fn(),
+    countFamilyProfiles: vi.fn(),
     getFamilyProfiles: vi.fn(),
   },
 }));
 
 const premium = TIER_FEATURES.premium;
 const free = TIER_FEATURES.free;
-const kid = {
-  id: 1,
-  userId: "1",
-  name: "Kid",
-  allergies: [],
-  note: null,
-  sortOrder: 0,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
 
 describe("getFamilyContext", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(storage.getFamilyProfiles).mockResolvedValue([kid]);
+    vi.mocked(storage.countFamilyProfiles).mockResolvedValue(2);
   });
 
-  it("is active with profiles when the flag and the switch are on", async () => {
+  it("is active with the profile count when the flag and the switch are on", async () => {
     vi.mocked(storage.getUserProfile).mockResolvedValue(
       createMockUserProfile({ familyPlanningEnabled: true }),
     );
     expect(await getFamilyContext("1", premium)).toEqual({
       active: true,
-      profiles: [kid],
+      profileCount: 2,
     });
   });
 
-  it("is inactive without loading profiles when the flag is off", async () => {
+  it("never loads the profiles themselves (health data stays out of its callers)", async () => {
+    vi.mocked(storage.getUserProfile).mockResolvedValue(
+      createMockUserProfile({ familyPlanningEnabled: true }),
+    );
+    await getFamilyContext("1", premium);
+    expect(storage.getFamilyProfiles).not.toHaveBeenCalled();
+  });
+
+  it("is inactive without counting when the flag is off", async () => {
     vi.mocked(storage.getUserProfile).mockResolvedValue(
       createMockUserProfile({ familyPlanningEnabled: true }),
     );
     expect(await getFamilyContext("1", free)).toEqual({
       active: false,
-      profiles: [],
+      profileCount: 0,
     });
-    expect(storage.getFamilyProfiles).not.toHaveBeenCalled();
+    expect(storage.countFamilyProfiles).not.toHaveBeenCalled();
   });
 
-  it("is inactive without loading profiles when the switch is off", async () => {
+  it("is inactive without counting when the switch is off", async () => {
     vi.mocked(storage.getUserProfile).mockResolvedValue(
       createMockUserProfile({ familyPlanningEnabled: false }),
     );
     expect(await getFamilyContext("1", premium)).toEqual({
       active: false,
-      profiles: [],
+      profileCount: 0,
     });
-    expect(storage.getFamilyProfiles).not.toHaveBeenCalled();
+    expect(storage.countFamilyProfiles).not.toHaveBeenCalled();
   });
 
   it("is inactive when the user has no profile row", async () => {
