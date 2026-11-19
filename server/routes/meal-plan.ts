@@ -182,6 +182,7 @@ export function register(app: Express): void {
           title: recipeData.title,
           instructions: recipeData.instructions,
           ingredients: ingredients ?? null,
+          sourceType,
         });
         if (!quality.valid) {
           sendError(res, 400, quality.reason!, ErrorCode.VALIDATION_ERROR);
@@ -386,6 +387,7 @@ export function register(app: Express): void {
             title: recipeData.title,
             instructions: recipeData.instructions,
             ingredients: ingredients ?? null,
+            sourceType,
           });
           if (!quality.valid) {
             sendError(res, 400, quality.reason!, ErrorCode.VALIDATION_ERROR);

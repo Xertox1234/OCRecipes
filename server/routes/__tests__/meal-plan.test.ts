@@ -347,6 +347,42 @@ describe("Meal Plan Routes", () => {
       );
     });
 
+    // The exact body SimpleEntrySheet sends: a dish name and the nutrition
+    // estimate, with no ingredients and no instructions.
+    it("creates a quick_entry recipe from a title and nutrition alone", async () => {
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({
+          title: "Bacon and eggs",
+          sourceType: "quick_entry",
+        }),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Bacon and eggs",
+          sourceType: "quick_entry",
+          caloriesPerServing: "420",
+          proteinPerServing: "25",
+          carbsPerServing: "2",
+          fatPerServing: "34",
+          servings: 1,
+        });
+
+      expect(res.status).toBe(201);
+    });
+
+    it("still rejects a title-only recipe that is not a quick entry", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({ title: "Bacon and eggs", caloriesPerServing: "420" });
+
+      expect(res.status).toBe(400);
+      expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
+    });
+
     it("defaults sourceType to user_created when omitted", async () => {
       vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
 

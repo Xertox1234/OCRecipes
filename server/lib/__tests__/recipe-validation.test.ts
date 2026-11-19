@@ -93,4 +93,20 @@ describe("validateRecipeQuality", () => {
     });
     expect(result.valid).toBe(false);
   });
+
+  it("accepts a quick entry with a title alone", () => {
+    const result = validateRecipeQuality({
+      title: "Bacon and eggs",
+      sourceType: "quick_entry",
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("still requires a real title for a quick entry", () => {
+    const result = validateRecipeQuality({
+      title: "ab",
+      sourceType: "quick_entry",
+    });
+    expect(result.valid).toBe(false);
+  });
 });
