@@ -6,13 +6,10 @@ import React, {
   useMemo,
 } from "react";
 import { StyleSheet, View } from "react-native";
-import { Feather } from "@expo/vector-icons";
 import {
   GestureDetector,
   useSimultaneousGestures,
 } from "react-native-gesture-handler";
-import { ThemedText } from "@/components/ThemedText";
-import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   Camera,
@@ -30,9 +27,10 @@ import {
   isVisionCameraBarcodeType,
   type VisionCameraBarcodeType,
 } from "@shared/types/camera";
-import { AbsoluteFill, Spacing } from "@/constants/theme";
 import { logger } from "@/lib/logger";
 import { useCameraFocusAndZoom } from "../hooks/useCameraFocusAndZoom";
+import { useCameraSessionReporting } from "../hooks/useCameraSessionReporting";
+import { CameraUnavailable } from "./CameraUnavailable";
 import { FocusRing } from "./FocusRing";
 import { ZoomLabel } from "./ZoomLabel";
 import type {
@@ -118,15 +116,12 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     // (js-rendered-feedback-not-evidence-native-call-succeeded-2026-07-25.md),
     // not a high-frequency gesture callback where re-arming matters.
     const captureFailureReportedRef = useRef(false);
-    const cameraErrorReportedRef = useRef(false);
-    const cameraCancelWarnedRef = useRef(false);
     const scannerErrorReportedRef = useRef(false);
-    // Interruptions latch PER REASON, and each reported start gets exactly one
-    // end report — same as CameraView.ios.tsx. CameraX only reports `unknown`
-    // today, but a library version that forwards a real reason must not have
-    // its first (routine) one hide a later, diagnostic one.
-    const reportedInterruptionReasonsRef = useRef(new Set<string>());
-    const awaitingInterruptionEndRef = useRef(false);
+    // Camera error + interruption reporting, shared with CameraView.ios.tsx;
+    // a CameraX control-call cancel is warned about, not reported.
+    const sessionReporting = useCameraSessionReporting({
+      isBenignError: isBenignCameraCancel,
+    });
 
     const { reducedMotion } = useAccessibility();
     const { focusPoint, zoomLabel, tapGesture, pinchGesture } =
@@ -229,38 +224,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             torchMode={
               device.hasTorch ? (enableTorch ? "on" : "off") : undefined
             }
-            onError={(error) => {
-              // CameraX throws OperationCanceledException ("Camera is not
-              // active") when a control call races session start — benign,
-              // the camera runs. Warn only, and leave the error latch for a
-              // real failure.
-              if (isBenignCameraCancel(error)) {
-                if (!cameraCancelWarnedRef.current) {
-                  cameraCancelWarnedRef.current = true;
-                  logger.warn("[CameraView] Camera control cancelled", error);
-                }
-                return;
-              }
-              if (cameraErrorReportedRef.current) return;
-              cameraErrorReportedRef.current = true;
-              logger.error("[CameraView] Camera error", error);
-            }}
-            onInterruptionStarted={(reason) => {
-              // Backgrounding the app mid-scan is routine, not a failure.
-              if (reason === "video-device-not-available-in-background") return;
-              const reported = reportedInterruptionReasonsRef.current;
-              if (reported.has(reason)) return;
-              reported.add(reason);
-              awaitingInterruptionEndRef.current = true;
-              logger.error(
-                `[CameraView] Camera session interrupted (${reason})`,
-              );
-            }}
-            onInterruptionEnded={() => {
-              if (!awaitingInterruptionEndRef.current) return;
-              awaitingInterruptionEndRef.current = false;
-              logger.error("[CameraView] Camera session interruption ended");
-            }}
+            {...sessionReporting}
           />
           <FocusRing point={focusPoint} reducedMotion={reducedMotion} />
           <ZoomLabel label={zoomLabel} />
@@ -271,45 +235,3 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
 );
 
 CameraView.displayName = "CameraView";
-
-// Kept for edge cases where the camera hardware is unavailable
-export function CameraUnavailable() {
-  const { theme } = useTheme();
-  return (
-    <View
-      style={[styles.unavailable, { backgroundColor: theme.backgroundDefault }]}
-    >
-      <Feather
-        name="camera-off"
-        size={48}
-        color={theme.textSecondary}
-        accessible={false}
-      />
-      <ThemedText type="h4" style={styles.unavailableTitle}>
-        Camera unavailable
-      </ThemedText>
-      <ThemedText
-        type="body"
-        style={[styles.unavailableSubtitle, { color: theme.textSecondary }]}
-      >
-        Camera is not available on this device
-      </ThemedText>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  unavailable: {
-    ...AbsoluteFill,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing.md,
-    paddingHorizontal: Spacing["3xl"],
-  },
-  unavailableTitle: {
-    marginTop: Spacing.sm,
-  },
-  unavailableSubtitle: {
-    textAlign: "center",
-  },
-});

@@ -51,7 +51,7 @@ import {
 } from "@/components/meal-plan/AudienceChoice";
 import { usePlanFamily } from "@/hooks/useFamily";
 import { ApiError } from "@/lib/api-error";
-import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
+import { usePlanSuggestFlow } from "@/hooks/usePlanSuggestFlow";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, FontFamily } from "@/constants/theme";
 import {
@@ -60,7 +60,6 @@ import {
   computeItemMacros,
   computeMealSectionSummary,
   getAutoExpandedMealType,
-  suggestionToPlanItem,
 } from "@/components/meal-plan/meal-plan-utils";
 import {
   useMealPlanItems,
@@ -68,7 +67,6 @@ import {
   useReorderMealPlanItems,
   useUpdateMealPlanItemAudience,
   invalidateMealPlanItems,
-  useAddMealPlanItem,
   useConfirmMealPlanItem,
 } from "@/hooks/useMealPlan";
 import { GOALS_QUERY_KEY, useCalorieGoal } from "@/hooks/useCalorieGoal";
@@ -90,7 +88,6 @@ import type {
   MealPlanStackParamList,
 } from "@/types/navigation";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
-import type { MealSuggestion } from "@shared/types/meal-suggestions";
 // Device-LOCAL basis: `planned_date` must be the day the user tapped on the
 // date strip, which is derived from local component getters below
 // (`setHours(0,0,0,0)`, `getDate()`). `toDateString` (UTC) would key a
@@ -173,9 +170,6 @@ export default function MealPlanDayScreen() {
   const [selectedDate] = useState(
     () => parseLocalDateString(route.params?.date) ?? today,
   );
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [suggestModalVisible, setSuggestModalVisible] = useState(false);
-  const [suggestMealType, setSuggestMealType] = useState<MealType>("breakfast");
   const [expandedSections, setExpandedSections] = useState<Set<MealType>>(
     () => new Set([getAutoExpandedMealType()]),
   );
@@ -227,7 +221,6 @@ export default function MealPlanDayScreen() {
   // (and, since those callbacks feed the memoized MealSlotSection/
   // MealSlotItem rows, defeat their React.memo). See CoachChat.tsx for the
   // same pattern.
-  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
   const { mutate: confirmItem } = useConfirmMealPlanItem();
 
   // Fetch daily summary for confirmed meal plan item IDs
@@ -510,40 +503,19 @@ export default function MealPlanDayScreen() {
     [haptics, openSheet],
   );
 
-  const handleSuggest = useCallback(
-    (mealType: MealType) => {
-      if (!features.aiMealSuggestions) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
-        setShowUpgradeModal(true);
-        return;
-      }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      setSuggestMealType(mealType);
-      setSuggestModalVisible(true);
-    },
-    [features.aiMealSuggestions, haptics],
-  );
-
-  const handleSelectSuggestion = useCallback(
-    async (suggestion: MealSuggestion) => {
-      try {
-        // One server call: the recipe and its plan item are created in a
-        // single transaction, so a failure leaves nothing behind.
-        await addMealPlanItem(
-          suggestionToPlanItem(suggestion, selectedDateStr, suggestMealType),
-        );
-
-        // The modal closes, so confirm with a toast (fires its own Success).
-        toast.success(formatPlanAddSuccess(selectedDateStr, suggestMealType));
-        setSuggestModalVisible(false);
-      } catch {
-        toast.error(
-          "Couldn't add the suggestion to your plan. Please try again.",
-        );
-      }
-    },
-    [addMealPlanItem, selectedDateStr, suggestMealType, toast],
-  );
+  const {
+    suggestModalVisible,
+    suggestMealType,
+    handleSuggest,
+    handleSelectSuggestion,
+    closeSuggest,
+    showUpgradeModal,
+    setShowUpgradeModal,
+  } = usePlanSuggestFlow({
+    dateStr: selectedDateStr,
+    initialMealType: "breakfast",
+    canSuggest: features.aiMealSuggestions,
+  });
 
   const handleConfirmItem = useCallback(
     (id: number) => {
@@ -725,7 +697,7 @@ export default function MealPlanDayScreen() {
         visible={suggestModalVisible}
         date={selectedDateStr}
         mealType={suggestMealType}
-        onClose={() => setSuggestModalVisible(false)}
+        onClose={closeSuggest}
         onSelectSuggestion={handleSelectSuggestion}
       />
       <UpgradeModal

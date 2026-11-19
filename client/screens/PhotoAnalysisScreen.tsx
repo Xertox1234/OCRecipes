@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo } from "react";
 import {
   StyleSheet,
   View,
@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -20,7 +19,6 @@ import { ThemedView } from "@/components/ThemedView";
 import { ScanFlowStepIndicator } from "@/components/ScanFlowStepIndicator";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
-import { PreparationPicker } from "@/components/PreparationPicker";
 import {
   SkeletonBox,
   SkeletonLoadingRegion,
@@ -28,20 +26,17 @@ import {
 } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import {
-  getConfidenceTier,
-  getConfidenceColor,
-  getConfidenceLabel,
-} from "@/lib/confidence";
+import { getConfidenceTier } from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { listStaggerMaxIndex } from "@/constants/animations";
 import { RecipeGenerationModal } from "@/components/RecipeGenerationModal";
 import { usePhotoAnalysis } from "@/hooks/usePhotoAnalysis";
-import { FoodCategory } from "@shared/constants/preparation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { FoodItem } from "@/lib/photo-upload";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
+import { ConfidenceBadge } from "@/components/photo-analysis/ConfidenceBadge";
+import { FoodItemCard } from "@/components/photo-analysis/FoodItemCard";
+import { FollowUpModal } from "@/components/photo-analysis/FollowUpModal";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -49,311 +44,6 @@ type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 type PhotoAnalysisRouteProp = RouteProp<RootStackParamList, "PhotoAnalysis">;
-
-function ConfidenceBadge({ confidence }: { confidence: number }) {
-  const { theme } = useTheme();
-  const tier = getConfidenceTier(confidence);
-  const color = getConfidenceColor(theme, tier);
-  const label = getConfidenceLabel(tier);
-
-  return (
-    <View
-      style={[
-        styles.confidenceBadge,
-        { backgroundColor: withOpacity(color, 0.12) },
-      ]}
-      accessibilityLabel={`Confidence: ${Math.round(confidence * 100)}%`}
-    >
-      <ThemedText type="small" style={{ color }}>
-        {label} Confidence ({Math.round(confidence * 100)}%)
-      </ThemedText>
-    </View>
-  );
-}
-
-function FoodItemCard({
-  food,
-  index,
-  onEdit,
-  reducedMotion,
-  isSelected,
-  onToggleSelect,
-  showNutrition,
-  showCheckbox,
-  prepMethod,
-  onPrepChange,
-  isPrepLoading,
-  showPrepPicker,
-}: {
-  food: FoodItem;
-  index: number;
-  onEdit: (index: number, field: "name" | "quantity", value: string) => void;
-  reducedMotion: boolean;
-  isSelected: boolean;
-  onToggleSelect: () => void;
-  showNutrition: boolean;
-  showCheckbox: boolean;
-  prepMethod?: string;
-  onPrepChange?: (method: string) => void;
-  isPrepLoading?: boolean;
-  showPrepPicker: boolean;
-}) {
-  const { theme } = useTheme();
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(food.name);
-  const [editQuantity, setEditQuantity] = useState(food.quantity);
-
-  const handleSave = () => {
-    onEdit(index, "name", editName);
-    onEdit(index, "quantity", editQuantity);
-    setIsEditing(false);
-  };
-
-  return (
-    <Animated.View
-      entering={
-        reducedMotion
-          ? undefined
-          : FadeInUp.delay(Math.min(index, listStaggerMaxIndex) * 100).duration(
-              400,
-            )
-      }
-    >
-      <Card
-        elevation={1}
-        style={[styles.foodItemCard, !isSelected && styles.foodItemUnselected]}
-      >
-        <View style={styles.foodItemHeader}>
-          {/* Checkbox (only in log intent) */}
-          {showCheckbox && (
-            <Pressable
-              onPress={onToggleSelect}
-              accessibilityLabel={
-                isSelected ? `Unselect ${food.name}` : `Select ${food.name}`
-              }
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: isSelected }}
-              style={styles.checkboxButton}
-              hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
-            >
-              <Feather
-                name={isSelected ? "check-square" : "square"}
-                size={22}
-                color={isSelected ? theme.success : theme.textSecondary}
-              />
-            </Pressable>
-          )}
-
-          {isEditing ? (
-            <View style={styles.editFields}>
-              <FocusTextInput
-                label="Food"
-                style={[
-                  styles.editInput,
-                  {
-                    backgroundColor: theme.backgroundSecondary,
-                    color: theme.text,
-                  },
-                ]}
-                value={editName}
-                onChangeText={setEditName}
-                placeholder="e.g. grilled chicken"
-                placeholderTextColor={theme.textSecondary}
-                accessibilityLabel="Food name"
-              />
-              <FocusTextInput
-                label="Quantity"
-                style={[
-                  styles.editInput,
-                  styles.quantityInput,
-                  {
-                    backgroundColor: theme.backgroundSecondary,
-                    color: theme.text,
-                  },
-                ]}
-                value={editQuantity}
-                onChangeText={setEditQuantity}
-                placeholder="e.g. 1 cup or 200 g"
-                placeholderTextColor={theme.textSecondary}
-              />
-            </View>
-          ) : (
-            <View style={styles.foodItemInfo}>
-              <ThemedText type="body" style={{ fontWeight: "600" }}>
-                {food.name}
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {food.quantity}
-              </ThemedText>
-            </View>
-          )}
-          <Pressable
-            onPress={() => (isEditing ? handleSave() : setIsEditing(true))}
-            accessibilityLabel={isEditing ? "Save changes" : "Edit food item"}
-            accessibilityRole="button"
-            style={[
-              styles.editButton,
-              { backgroundColor: theme.backgroundSecondary },
-            ]}
-          >
-            <Feather
-              name={isEditing ? "check" : "edit-2"}
-              size={16}
-              color={theme.text}
-            />
-          </Pressable>
-        </View>
-
-        {showNutrition && food.nutrition && (
-          <View style={[styles.nutritionRow, { borderTopColor: theme.border }]}>
-            <View style={styles.nutritionItem}>
-              <ThemedText type="h4" style={{ color: theme.calorieAccent }}>
-                {Math.round(food.nutrition.calories)}
-              </ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                cal
-              </ThemedText>
-            </View>
-            <View style={styles.nutritionItem}>
-              <ThemedText type="body" style={{ color: theme.proteinAccent }}>
-                {Math.round(food.nutrition.protein)}g
-              </ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                protein
-              </ThemedText>
-            </View>
-            <View style={styles.nutritionItem}>
-              <ThemedText type="body" style={{ color: theme.carbsAccent }}>
-                {Math.round(food.nutrition.carbs)}g
-              </ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                carbs
-              </ThemedText>
-            </View>
-            <View style={styles.nutritionItem}>
-              <ThemedText type="body" style={{ color: theme.fatAccent }}>
-                {Math.round(food.nutrition.fat)}g
-              </ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                fat
-              </ThemedText>
-            </View>
-          </View>
-        )}
-
-        {food.needsClarification && food.clarificationQuestion && (
-          <View
-            style={[
-              styles.clarificationBanner,
-              { backgroundColor: withOpacity(theme.warning, 0.15) },
-            ]}
-          >
-            <Feather name="help-circle" size={14} color={theme.warning} />
-            <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
-              {food.clarificationQuestion}
-            </ThemedText>
-          </View>
-        )}
-
-        {/* Preparation Picker (log intent only) */}
-        {showPrepPicker && onPrepChange && (
-          <PreparationPicker
-            category={(food.category as FoodCategory) || "other"}
-            selectedMethod={prepMethod || "As Served"}
-            onMethodChange={onPrepChange}
-            isLoading={isPrepLoading}
-          />
-        )}
-      </Card>
-    </Animated.View>
-  );
-}
-
-function FollowUpModal({
-  questions,
-  currentIndex,
-  onAnswer,
-  onSkip,
-}: {
-  questions: string[];
-  currentIndex: number;
-  onAnswer: (question: string, answer: string) => void;
-  onSkip: () => void;
-}) {
-  const { theme } = useTheme();
-  const [answer, setAnswer] = useState("");
-
-  const currentQuestion = questions[currentIndex];
-
-  const handleSubmit = () => {
-    if (answer.trim()) {
-      onAnswer(currentQuestion, answer.trim());
-      setAnswer("");
-    }
-  };
-
-  return (
-    <View
-      style={[
-        styles.followUpModal,
-        { backgroundColor: theme.backgroundDefault },
-      ]}
-      accessibilityViewIsModal={true}
-    >
-      <View style={styles.followUpHeader}>
-        <Feather name="help-circle" size={24} color={theme.info} />
-        <ThemedText type="h4" style={styles.followUpTitle}>
-          Quick Question
-        </ThemedText>
-        <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {currentIndex + 1} of {questions.length}
-        </ThemedText>
-      </View>
-
-      <ThemedText type="body" style={styles.followUpQuestion}>
-        {currentQuestion}
-      </ThemedText>
-
-      <FocusTextInput
-        style={[
-          styles.followUpInput,
-          { backgroundColor: theme.backgroundSecondary, color: theme.text },
-        ]}
-        value={answer}
-        onChangeText={setAnswer}
-        placeholder="Type your answer..."
-        placeholderTextColor={theme.textSecondary}
-        accessibilityLabel="Follow-up question about food"
-        multiline
-        returnKeyType="done"
-        // Return submits (as QuickLogScreen does) instead of a line break.
-        submitBehavior="blurAndSubmit"
-        onSubmitEditing={handleSubmit}
-      />
-
-      <View style={styles.followUpButtons}>
-        <Pressable
-          onPress={onSkip}
-          accessibilityLabel="Skip question"
-          accessibilityRole="button"
-          style={[
-            styles.skipButton,
-            { backgroundColor: theme.backgroundSecondary },
-          ]}
-        >
-          <ThemedText type="body">Skip</ThemedText>
-        </Pressable>
-        <Button
-          onPress={handleSubmit}
-          disabled={!answer.trim()}
-          style={{ flex: 1, backgroundColor: theme.success }}
-        >
-          Continue
-        </Button>
-      </View>
-    </View>
-  );
-}
 
 export default function PhotoAnalysisScreen() {
   const insets = useSafeAreaInsets();
@@ -853,11 +543,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: Spacing.lg,
   },
-  confidenceBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
   warningBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -865,65 +550,6 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.xs,
     marginBottom: Spacing.lg,
-  },
-  foodItemCard: {
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
-  foodItemUnselected: {
-    opacity: 0.6,
-  },
-  foodItemHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  checkboxButton: {
-    marginRight: Spacing.md,
-    paddingTop: 2,
-  },
-  foodItemInfo: {
-    flex: 1,
-    marginRight: Spacing.md,
-  },
-  editFields: {
-    flex: 1,
-    marginRight: Spacing.md,
-    gap: Spacing.sm,
-  },
-  editInput: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.xs,
-    fontSize: 16,
-  },
-  quantityInput: {
-    width: 120,
-  },
-  editButton: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.xs,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  nutritionRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingTop: Spacing.md,
-    marginTop: Spacing.md,
-    borderTopWidth: 1,
-  },
-  nutritionItem: {
-    alignItems: "center",
-  },
-  clarificationBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.xs,
-    marginTop: Spacing.md,
   },
   totalsCard: {
     padding: Spacing["2xl"],
@@ -954,50 +580,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 13,
     marginTop: Spacing.xs,
-  },
-  followUpModal: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: Spacing.xl,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    shadowColor: "#000", // hardcoded — shadow color is always black
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 10,
-  },
-  followUpHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  followUpTitle: {
-    flex: 1,
-  },
-  followUpQuestion: {
-    marginBottom: Spacing.lg,
-  },
-  followUpInput: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
-    fontSize: 16,
-    minHeight: 80,
-    textAlignVertical: "top",
-    marginBottom: Spacing.lg,
-  },
-  followUpButtons: {
-    flexDirection: "row",
-    gap: Spacing.md,
-  },
-  skipButton: {
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing["2xl"],
-    borderRadius: BorderRadius.full,
-    justifyContent: "center",
-    alignItems: "center",
   },
 });
