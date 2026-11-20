@@ -55,13 +55,6 @@ export function getCellContentHeight(
   );
 }
 
-/** Size of the audience badge and the warning mark; both sit in a corner. */
-const BADGE_SIZE = 16;
-const WARNING_SIZE = 12;
-/** Space between the warning mark and the edge of its backing disc. */
-const WARNING_BACKING_PAD = 2;
-const CORNER_INSET = 4;
-
 /**
  * The overlay under the title. A picture can be any colour, so the overlay is
  * the same dark in both themes and the text on it is white (`buttonText`).
@@ -108,7 +101,6 @@ export const WeekGridCell = React.memo(function WeekGridCell({
   }
 
   const imageUri = resolveImageUrl(cell.imageUrl);
-  const hasWarning = Boolean(cell.family?.warning);
   const textColor = imageUri ? theme.buttonText : theme.text;
   const extraColor = imageUri ? theme.buttonText : theme.textSecondary;
 
@@ -137,17 +129,10 @@ export const WeekGridCell = React.memo(function WeekGridCell({
           imageUri
             ? [styles.overlay, { backgroundColor: TITLE_OVERLAY_COLOR }]
             : styles.bodyFill,
-          // The warning sits in the bottom right corner, over this block.
-          hasWarning ? styles.bodyBesideWarning : null,
         ]}
       >
         <ThemedText
-          style={[
-            styles.title,
-            { color: textColor },
-            // With no image the badge sits over the title's corner.
-            cell.family?.badge && !imageUri ? styles.titleBesideBadge : null,
-          ]}
+          style={[styles.title, { color: textColor }]}
           numberOfLines={
             imageUri ? TITLE_LINES_WITH_IMAGE : TITLE_LINES_WITHOUT_IMAGE
           }
@@ -165,55 +150,6 @@ export const WeekGridCell = React.memo(function WeekGridCell({
           </ThemedText>
         ) : null}
       </View>
-      {/* Both marks are drawn over the cell (absolute) and after the text
-          block, so they never change its height and the overlay cannot cover
-          them. The cell's own label already says "for Ivy" and "allergen
-          warning", so they are decorative. */}
-      {cell.family?.badge ? (
-        <View
-          testID="cell-audience-badge"
-          style={[styles.badge, { backgroundColor: theme.accentSolid }]}
-          accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {cell.family.badge.kind === "shared" ? (
-            <Feather name="users" size={10} color={theme.buttonText} />
-          ) : (
-            <ThemedText
-              maxScale={GRID_MAX_FONT_SCALE}
-              style={[styles.badgeInitial, { color: theme.buttonText }]}
-            >
-              {cell.family.badge.initial}
-            </ThemedText>
-          )}
-        </View>
-      ) : null}
-      {cell.family?.warning ? (
-        <View
-          testID="cell-allergen-warning"
-          style={[
-            styles.warning,
-            // The error red is tuned for the theme's own surfaces, not for a
-            // dark overlay, so over a picture it gets a surface to sit on.
-            imageUri
-              ? [
-                  styles.warningBacking,
-                  { backgroundColor: theme.backgroundSecondary },
-                ]
-              : null,
-          ]}
-          accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          <Feather
-            name="alert-triangle"
-            size={WARNING_SIZE}
-            color={theme.error}
-          />
-        </View>
-      ) : null}
     </PressableScale>
   );
 });
@@ -229,37 +165,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderStyle: "dashed",
-  },
-  badge: {
-    position: "absolute",
-    top: CORNER_INSET,
-    right: CORNER_INSET,
-    width: BADGE_SIZE,
-    height: BADGE_SIZE,
-    borderRadius: BADGE_SIZE / 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badgeInitial: {
-    fontSize: 10,
-    lineHeight: 12,
-    fontFamily: FontFamily.bold,
-  },
-  warning: {
-    position: "absolute",
-    bottom: CORNER_INSET,
-    right: CORNER_INSET,
-    width: WARNING_SIZE,
-    height: WARNING_SIZE,
-  },
-  warningBacking: {
-    bottom: CORNER_INSET - WARNING_BACKING_PAD,
-    right: CORNER_INSET - WARNING_BACKING_PAD,
-    width: WARNING_SIZE + WARNING_BACKING_PAD * 2,
-    height: WARNING_SIZE + WARNING_BACKING_PAD * 2,
-    borderRadius: (WARNING_SIZE + WARNING_BACKING_PAD * 2) / 2,
-    alignItems: "center",
-    justifyContent: "center",
   },
   image: {
     position: "absolute",
@@ -282,12 +187,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  bodyBesideWarning: {
-    paddingRight: WARNING_SIZE + CORNER_INSET + WARNING_BACKING_PAD * 2,
-  },
-  titleBesideBadge: {
-    paddingRight: BADGE_SIZE + CORNER_INSET,
   },
   title: {
     fontSize: TITLE_FONT_SIZE,

@@ -154,25 +154,18 @@ describe("WeekGrid family markers", () => {
     );
   }
 
-  it("shows a group badge for a shared meal and the initial for a profile's", () => {
-    renderFamilyGrid(true);
-    const badges = screen.getAllByTestId("cell-audience-badge");
-    expect(badges).toHaveLength(2);
-    expect(screen.getByText("I")).toBeDefined();
-  });
-
-  it("shows the warning mark only on the clashing cell", () => {
-    renderFamilyGrid(true);
-    expect(screen.getAllByTestId("cell-allergen-warning")).toHaveLength(1);
-  });
-
-  it("hides the badge and the warning from the accessibility tree", () => {
-    renderFamilyGrid(true);
-    for (const el of [
-      ...screen.getAllByTestId("cell-audience-badge"),
-      ...screen.getAllByTestId("cell-allergen-warning"),
-    ]) {
-      expect(el.getAttribute("aria-hidden")).toBe("true");
+  it("draws no audience badge and no warning mark on a cell, family or not", () => {
+    for (const withFamily of [true, false]) {
+      const { container } = renderFamilyGrid(withFamily);
+      expect(screen.queryAllByTestId("cell-audience-badge")).toHaveLength(0);
+      expect(screen.queryAllByTestId("cell-allergen-warning")).toHaveLength(0);
+      // No icon besides the empty cells' plus, and no profile initial.
+      expect(container.querySelectorAll('[data-icon="users"]')).toHaveLength(0);
+      expect(
+        container.querySelectorAll('[data-icon="alert-triangle"]'),
+      ).toHaveLength(0);
+      expect(screen.queryByText("I")).toBeNull();
+      cleanup();
     }
   });
 
@@ -193,47 +186,10 @@ describe("WeekGrid family markers", () => {
     ).toBeDefined();
   });
 
-  it("draws nothing extra without a family", () => {
-    renderFamilyGrid(false);
-    expect(screen.queryAllByTestId("cell-audience-badge")).toHaveLength(0);
-    expect(screen.queryAllByTestId("cell-allergen-warning")).toHaveLength(0);
-  });
-
   it("leaves the cell's height and text allowance alone", () => {
     expect(CELL_HEIGHT).toBe(100);
     expect(GRID_MAX_FONT_SCALE).toBe(1.2);
     expect(getCellContentHeight(1, false)).toBe(5 + (3 * 14 + 13) + 6);
-  });
-
-  it("gives the warning a backing only where it sits over a picture", () => {
-    const withPicture = buildWeekGrid(
-      [
-        makeItem({
-          audience: "profile",
-          familyProfileId: 7,
-          recipeId: 2,
-          recipe: {
-            ...recipeWith("Satay", [
-              { id: "peanuts", viaDerived: false, possible: false },
-            ]),
-            imageUrl: "https://img/satay.jpg",
-          },
-        }),
-      ],
-      week,
-      today,
-      { profiles: [ivy], userAllergies: [] },
-    );
-    renderComponent(
-      <WeekGrid days={withPicture} onAddPress={vi.fn()} onDayPress={vi.fn()} />,
-    );
-    // Drawn after the overlay, so the overlay cannot cover it.
-    const overlay = screen.getByTestId("cell-title-overlay");
-    const warning = screen.getByTestId("cell-allergen-warning");
-    expect(
-      overlay.compareDocumentPosition(warning) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 });
 
