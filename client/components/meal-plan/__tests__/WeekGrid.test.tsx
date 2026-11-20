@@ -154,17 +154,32 @@ describe("WeekGrid family markers", () => {
     );
   }
 
-  it("draws no audience badge and no warning mark on a cell, family or not", () => {
+  it("shows a group badge for a shared meal and the initial for a profile's", () => {
+    renderFamilyGrid(true);
+    const badges = screen.getAllByTestId("cell-audience-badge");
+    expect(badges).toHaveLength(2);
+    expect(screen.getByText("I")).toBeDefined();
+  });
+
+  it("hides the badge from the accessibility tree", () => {
+    renderFamilyGrid(true);
+    for (const el of screen.getAllByTestId("cell-audience-badge")) {
+      expect(el.getAttribute("aria-hidden")).toBe("true");
+    }
+  });
+
+  it("draws no badge without a family", () => {
+    renderFamilyGrid(false);
+    expect(screen.queryAllByTestId("cell-audience-badge")).toHaveLength(0);
+  });
+
+  it("draws no allergen warning mark on a cell, family or not", () => {
     for (const withFamily of [true, false]) {
       const { container } = renderFamilyGrid(withFamily);
-      expect(screen.queryAllByTestId("cell-audience-badge")).toHaveLength(0);
       expect(screen.queryAllByTestId("cell-allergen-warning")).toHaveLength(0);
-      // No icon besides the empty cells' plus, and no profile initial.
-      expect(container.querySelectorAll('[data-icon="users"]')).toHaveLength(0);
       expect(
         container.querySelectorAll('[data-icon="alert-triangle"]'),
       ).toHaveLength(0);
-      expect(screen.queryByText("I")).toBeNull();
       cleanup();
     }
   });

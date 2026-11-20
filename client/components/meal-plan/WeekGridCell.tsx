@@ -55,6 +55,10 @@ export function getCellContentHeight(
   );
 }
 
+/** Size of the audience badge; it sits in the cell's top right corner. */
+const BADGE_SIZE = 16;
+const CORNER_INSET = 4;
+
 /**
  * The overlay under the title. A picture can be any colour, so the overlay is
  * the same dark in both themes and the text on it is white (`buttonText`).
@@ -132,7 +136,12 @@ export const WeekGridCell = React.memo(function WeekGridCell({
         ]}
       >
         <ThemedText
-          style={[styles.title, { color: textColor }]}
+          style={[
+            styles.title,
+            { color: textColor },
+            // With no image the badge sits over the title's corner.
+            cell.family?.badge && !imageUri ? styles.titleBesideBadge : null,
+          ]}
           numberOfLines={
             imageUri ? TITLE_LINES_WITH_IMAGE : TITLE_LINES_WITHOUT_IMAGE
           }
@@ -150,6 +159,29 @@ export const WeekGridCell = React.memo(function WeekGridCell({
           </ThemedText>
         ) : null}
       </View>
+      {/* The badge is drawn over the cell (absolute), so it never changes the
+          cell's height or where its text sits. The cell's own label already
+          says "for Ivy", so it is decorative. */}
+      {cell.family?.badge ? (
+        <View
+          testID="cell-audience-badge"
+          style={[styles.badge, { backgroundColor: theme.accentSolid }]}
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {cell.family.badge.kind === "shared" ? (
+            <Feather name="users" size={10} color={theme.buttonText} />
+          ) : (
+            <ThemedText
+              maxScale={GRID_MAX_FONT_SCALE}
+              style={[styles.badgeInitial, { color: theme.buttonText }]}
+            >
+              {cell.family.badge.initial}
+            </ThemedText>
+          )}
+        </View>
+      ) : null}
     </PressableScale>
   );
 });
@@ -165,6 +197,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderStyle: "dashed",
+  },
+  badge: {
+    position: "absolute",
+    top: CORNER_INSET,
+    right: CORNER_INSET,
+    width: BADGE_SIZE,
+    height: BADGE_SIZE,
+    borderRadius: BADGE_SIZE / 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeInitial: {
+    fontSize: 10,
+    lineHeight: 12,
+    fontFamily: FontFamily.bold,
   },
   image: {
     position: "absolute",
@@ -187,6 +234,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  titleBesideBadge: {
+    paddingRight: BADGE_SIZE + CORNER_INSET,
   },
   title: {
     fontSize: TITLE_FONT_SIZE,
