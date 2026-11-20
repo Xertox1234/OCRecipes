@@ -94,6 +94,11 @@ describe("Button", () => {
     );
   });
 
+  it("centres every line of a label that wraps", () => {
+    renderComponent(<Button>Plan from pantry</Button>);
+    expect(screen.getByText("Plan from pantry").style.textAlign).toBe("center");
+  });
+
   it("uses explicit accessibilityLabel over derived", () => {
     renderComponent(<Button accessibilityLabel="Custom label">Text</Button>);
     expect(screen.getByRole("button").getAttribute("aria-label")).toBe(
