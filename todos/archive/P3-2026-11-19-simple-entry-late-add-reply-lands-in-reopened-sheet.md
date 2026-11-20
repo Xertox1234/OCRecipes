@@ -1,6 +1,6 @@
 ---
 title: "Simple Entry: a late add reply can land in a reopened sheet"
-status: backlog
+status: done
 priority: low
 created: 2026-11-19
 updated: 2026-11-19
@@ -29,10 +29,10 @@ The mobile reviewer raised this on the final confirmation pass of #1945 (2026-11
 
 ## Acceptance Criteria
 
-- [ ] `handleAdd` captures the session before its first `await` and, when the session has changed, skips `showError`, `setShowUpgrade`, the busy and `isAdding` resets, and `onDismiss()`.
-- [ ] A successful late add still invalidates the meal-plan items query and still shows the success toast, because the entry was saved.
-- [ ] A test in `client/components/meal-plan/__tests__/SimpleEntrySheet.test.tsx` holds the add request open, closes and reopens the sheet, rejects the request, and asserts the new opening shows no error and its Estimate button is usable.
-- [ ] A second test resolves the held request instead and asserts the reopened sheet is not dismissed.
+- [x] `handleAdd` captures the session before its first `await` and, when the session has changed, skips `showError`, `setShowUpgrade`, the busy and `isAdding` resets, and `onDismiss()`.
+- [x] A successful late add still invalidates the meal-plan items query and still shows the success toast, because the entry was saved.
+- [x] A test in `client/components/meal-plan/__tests__/SimpleEntrySheet.test.tsx` holds the add request open, closes and reopens the sheet, rejects the request, and asserts the new opening shows no error and its Estimate button is usable.
+- [x] A second test resolves the held request instead and asserts the reopened sheet is not dismissed.
 
 ## Implementation Notes
 
@@ -59,3 +59,7 @@ Decide the saved-but-closed case deliberately: the recipe and plan item exist, s
 ### 2026-11-19
 
 - Initial creation, from the mobile reviewer's note on PR #1945.
+
+### 2026-11-19 (done)
+
+- `handleAdd` now compares the session after its requests. A late reply still refreshes the plan and shows the toast when the entry was saved, but leaves the new opening's error, busy state and visibility alone. Two tests added.
