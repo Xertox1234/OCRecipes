@@ -161,18 +161,26 @@ describe("WeekGrid family markers", () => {
     expect(screen.getByText("I")).toBeDefined();
   });
 
-  it("shows the warning mark only on the clashing cell", () => {
+  it("hides the badge from the accessibility tree", () => {
     renderFamilyGrid(true);
-    expect(screen.getAllByTestId("cell-allergen-warning")).toHaveLength(1);
+    for (const el of screen.getAllByTestId("cell-audience-badge")) {
+      expect(el.getAttribute("aria-hidden")).toBe("true");
+    }
   });
 
-  it("hides the badge and the warning from the accessibility tree", () => {
-    renderFamilyGrid(true);
-    for (const el of [
-      ...screen.getAllByTestId("cell-audience-badge"),
-      ...screen.getAllByTestId("cell-allergen-warning"),
-    ]) {
-      expect(el.getAttribute("aria-hidden")).toBe("true");
+  it("draws no badge without a family", () => {
+    renderFamilyGrid(false);
+    expect(screen.queryAllByTestId("cell-audience-badge")).toHaveLength(0);
+  });
+
+  it("draws no allergen warning mark on a cell, family or not", () => {
+    for (const withFamily of [true, false]) {
+      const { container } = renderFamilyGrid(withFamily);
+      expect(screen.queryAllByTestId("cell-allergen-warning")).toHaveLength(0);
+      expect(
+        container.querySelectorAll('[data-icon="alert-triangle"]'),
+      ).toHaveLength(0);
+      cleanup();
     }
   });
 
@@ -193,16 +201,10 @@ describe("WeekGrid family markers", () => {
     ).toBeDefined();
   });
 
-  it("draws nothing extra without a family", () => {
-    renderFamilyGrid(false);
-    expect(screen.queryAllByTestId("cell-audience-badge")).toHaveLength(0);
-    expect(screen.queryAllByTestId("cell-allergen-warning")).toHaveLength(0);
-  });
-
   it("leaves the cell's height and text allowance alone", () => {
     expect(CELL_HEIGHT).toBe(100);
     expect(GRID_MAX_FONT_SCALE).toBe(1.2);
-    expect(getCellContentHeight(1, false)).toBe(5 + (3 * 15 + 14) + 6);
+    expect(getCellContentHeight(1, false)).toBe(5 + (3 * 14 + 13) + 6);
   });
 });
 
@@ -274,13 +276,27 @@ describe("WeekGrid", () => {
     expect(screen.getAllByRole("button")).toHaveLength(35);
   });
 
-  it("shows the extra count on the bottom line of a slot with several items, and nowhere else", () => {
+  it("shows the extra count on a slot with several items, and nowhere else", () => {
     renderGrid();
-    expect(screen.getByText("1,150 · +1")).toBeDefined();
-    expect(screen.queryAllByText(/· \+\d/)).toHaveLength(1);
-    // A single-item slot shows the bare calories: once in the cell, once as
-    // that day's total.
-    expect(screen.getAllByText("120")).toHaveLength(2);
+    expect(screen.getByText("+1")).toBeDefined();
+    expect(screen.queryAllByText(/^\+\d/)).toHaveLength(1);
+  });
+
+  it("shows no calorie number inside a cell; the day total keeps it", () => {
+    renderGrid();
+    expect(screen.queryByText(/1,150 ·/)).toBeNull();
+    // Each number appears once: as that day's total under the column.
+    expect(screen.getAllByText("1,150")).toHaveLength(1);
+    expect(screen.getAllByText("120")).toHaveLength(1);
+  });
+
+  it("sets the title on an overlay over the picture, and only where there is a picture", () => {
+    renderGrid();
+    const overlays = screen.getAllByTestId("cell-title-overlay");
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].textContent).toContain("Tacos");
+    // A slot without a picture keeps its title on the plain cell.
+    expect(screen.getByText("Greek yogurt")).toBeDefined();
   });
 
   it("shows the first item's recipe image, and none for a slot without one", () => {
@@ -292,7 +308,7 @@ describe("WeekGrid", () => {
 
   it("shows each day's planned calories under its column", () => {
     renderGrid();
-    // Tuesday's total; the cell's own bottom line carries the "· +1" suffix.
+    // Tuesday's total.
     expect(screen.getByText("1,150")).toBeDefined();
   });
 
@@ -311,8 +327,9 @@ describe("WeekGrid", () => {
       const texts = Array.from(container.querySelectorAll("span")).filter(
         (el) => el.textContent !== "plus",
       );
-      // Row labels, day headers, cell text and day totals.
-      expect(texts.length).toBeGreaterThanOrEqual(30);
+      // Row labels, day headers, cell text and day totals (29 in this
+      // fixture; the floor only proves the filter did not empty the list).
+      expect(texts.length).toBeGreaterThanOrEqual(25);
       const uncapped = texts.filter(
         (el) =>
           el.getAttribute("maxfontsizemultiplier") !==

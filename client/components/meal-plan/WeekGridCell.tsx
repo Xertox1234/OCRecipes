@@ -5,7 +5,12 @@ import { Feather } from "@expo/vector-icons";
 import { FallbackImage } from "@/components/FallbackImage";
 import { PressableScale } from "@/components/PressableScale";
 import { ThemedText } from "@/components/ThemedText";
-import { BorderRadius, FontFamily, withOpacity } from "@/constants/theme";
+import {
+  BorderRadius,
+  CameraColors,
+  FontFamily,
+  withOpacity,
+} from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { resolveImageUrl } from "@/lib/query-client";
 
@@ -14,24 +19,28 @@ import { type GridDay, getCellAccessibilityLabel } from "./week-grid-utils";
 
 // ── Sizes ────────────────────────────────────────────────────────────
 // A day column is only about 100pt wide, so a cell holds exactly this much:
-// an optional image strip, a title, and one bottom line. Heights are fixed
-// so the grid stays a grid; text scaling is capped to what still fits (the
-// day screen shows every meal at full Dynamic Type size).
+// a title and, when more items share the slot, a "+1" line. With a picture,
+// the picture fills the cell and the text sits on a dark overlay along the
+// bottom; without one, the text sits on the plain cell. Heights are fixed so
+// the grid stays a grid; text scaling is capped to what still fits (the day
+// screen shows every meal at full Dynamic Type size).
 export const CELL_HEIGHT = 100;
-export const CELL_IMAGE_HEIGHT = 36;
 export const DAY_HEADER_HEIGHT = 52;
 /** Cap on Dynamic Type inside the grid. See `getCellContentHeight`. */
 export const GRID_MAX_FONT_SCALE = 1.2;
-const TITLE_FONT_SIZE = 12;
-const TITLE_LINE_HEIGHT = 15;
-const BOTTOM_LINE_FONT_SIZE = 11;
-const BOTTOM_LINE_HEIGHT = 14;
+const TITLE_FONT_SIZE = 11;
+const TITLE_LINE_HEIGHT = 14;
+const EXTRA_LINE_FONT_SIZE = 10;
+const EXTRA_LINE_HEIGHT = 13;
 const BODY_PADDING_TOP = 5;
 const BODY_PADDING_BOTTOM = 6;
 const TITLE_LINES_WITH_IMAGE = 2;
 const TITLE_LINES_WITHOUT_IMAGE = 3;
 
-/** Height a filled cell's contents need at a given text scale. */
+/**
+ * Height a filled cell's text block needs at a given text scale, "+1" line
+ * included. Over a picture this is the overlay's height.
+ */
 export function getCellContentHeight(
   fontScale: number,
   hasImage: boolean,
@@ -40,23 +49,22 @@ export function getCellContentHeight(
     ? TITLE_LINES_WITH_IMAGE
     : TITLE_LINES_WITHOUT_IMAGE;
   return (
-    (hasImage ? CELL_IMAGE_HEIGHT : 0) +
     BODY_PADDING_TOP +
-    (titleLines * TITLE_LINE_HEIGHT + BOTTOM_LINE_HEIGHT) * fontScale +
+    (titleLines * TITLE_LINE_HEIGHT + EXTRA_LINE_HEIGHT) * fontScale +
     BODY_PADDING_BOTTOM
   );
 }
 
-/** Size of the audience badge and the warning mark; both sit in a corner. */
+/** Size of the audience badge; it sits in the cell's top right corner. */
 const BADGE_SIZE = 16;
-const WARNING_SIZE = 12;
 const CORNER_INSET = 4;
 
-/** "610", or "1,150 · +1" when more items share the slot. */
-function formatBottomLine(calories: number, extraCount: number): string {
-  const kcal = calories.toLocaleString("en-US");
-  return extraCount > 0 ? `${kcal} · +${extraCount}` : kcal;
-}
+/**
+ * The overlay under the title. A picture can be any colour, so the overlay is
+ * the same dark in both themes and the text on it is white (`buttonText`).
+ * 0.6 black keeps white text at 4.5:1 even over a pure white picture.
+ */
+const TITLE_OVERLAY_COLOR = CameraColors.overlayMediumDark;
 
 export const WeekGridCell = React.memo(function WeekGridCell({
   day,
@@ -97,6 +105,8 @@ export const WeekGridCell = React.memo(function WeekGridCell({
   }
 
   const imageUri = resolveImageUrl(cell.imageUrl);
+  const textColor = imageUri ? theme.buttonText : theme.text;
+  const extraColor = imageUri ? theme.buttonText : theme.textSecondary;
 
   return (
     <PressableScale
@@ -116,9 +126,42 @@ export const WeekGridCell = React.memo(function WeekGridCell({
           accessible={false}
         />
       ) : null}
-      {/* Both marks are drawn over the cell (absolute), so they never change
-          its height or where its text sits. The cell's own label already
-          says "for Ivy" and "allergen warning", so they are decorative. */}
+      <View
+        testID={imageUri ? "cell-title-overlay" : undefined}
+        style={[
+          styles.body,
+          imageUri
+            ? [styles.overlay, { backgroundColor: TITLE_OVERLAY_COLOR }]
+            : styles.bodyFill,
+        ]}
+      >
+        <ThemedText
+          style={[
+            styles.title,
+            { color: textColor },
+            // With no image the badge sits over the title's corner.
+            cell.family?.badge && !imageUri ? styles.titleBesideBadge : null,
+          ]}
+          numberOfLines={
+            imageUri ? TITLE_LINES_WITH_IMAGE : TITLE_LINES_WITHOUT_IMAGE
+          }
+          maxScale={GRID_MAX_FONT_SCALE}
+        >
+          {cell.title}
+        </ThemedText>
+        {cell.extraCount > 0 ? (
+          <ThemedText
+            style={[styles.extraLine, { color: extraColor }]}
+            numberOfLines={1}
+            maxScale={GRID_MAX_FONT_SCALE}
+          >
+            {`+${cell.extraCount}`}
+          </ThemedText>
+        ) : null}
+      </View>
+      {/* The badge is drawn over the cell (absolute), so it never changes the
+          cell's height or where its text sits. The cell's own label already
+          says "for Ivy", so it is decorative. */}
       {cell.family?.badge ? (
         <View
           testID="cell-audience-badge"
@@ -139,44 +182,6 @@ export const WeekGridCell = React.memo(function WeekGridCell({
           )}
         </View>
       ) : null}
-      {cell.family?.warning ? (
-        <View
-          testID="cell-allergen-warning"
-          style={styles.warning}
-          accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          <Feather
-            name="alert-triangle"
-            size={WARNING_SIZE}
-            color={theme.error}
-          />
-        </View>
-      ) : null}
-      <View style={styles.body}>
-        <ThemedText
-          style={[
-            styles.title,
-            { color: theme.text },
-            // With no image the badge sits over the title's corner.
-            cell.family?.badge && !imageUri ? styles.titleBesideBadge : null,
-          ]}
-          numberOfLines={
-            imageUri ? TITLE_LINES_WITH_IMAGE : TITLE_LINES_WITHOUT_IMAGE
-          }
-          maxScale={GRID_MAX_FONT_SCALE}
-        >
-          {cell.title}
-        </ThemedText>
-        <ThemedText
-          style={[styles.bottomLine, { color: theme.textSecondary }]}
-          numberOfLines={1}
-          maxScale={GRID_MAX_FONT_SCALE}
-        >
-          {formatBottomLine(cell.calories, cell.extraCount)}
-        </ThemedText>
-      </View>
     </PressableScale>
   );
 });
@@ -208,23 +213,27 @@ const styles = StyleSheet.create({
     lineHeight: 12,
     fontFamily: FontFamily.bold,
   },
-  warning: {
-    position: "absolute",
-    bottom: CORNER_INSET,
-    right: CORNER_INSET,
-    width: WARNING_SIZE,
-    height: WARNING_SIZE,
-  },
   image: {
-    width: "100%",
-    height: CELL_IMAGE_HEIGHT,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   body: {
-    flex: 1,
-    justifyContent: "space-between",
     paddingHorizontal: 6,
     paddingTop: BODY_PADDING_TOP,
     paddingBottom: BODY_PADDING_BOTTOM,
+  },
+  bodyFill: {
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  overlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   titleBesideBadge: {
     paddingRight: BADGE_SIZE + CORNER_INSET,
@@ -232,11 +241,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: TITLE_FONT_SIZE,
     lineHeight: TITLE_LINE_HEIGHT,
-    fontFamily: FontFamily.semiBold,
+    fontFamily: FontFamily.regular,
   },
-  bottomLine: {
-    fontSize: BOTTOM_LINE_FONT_SIZE,
-    lineHeight: BOTTOM_LINE_HEIGHT,
-    fontFamily: FontFamily.medium,
+  extraLine: {
+    fontSize: EXTRA_LINE_FONT_SIZE,
+    lineHeight: EXTRA_LINE_HEIGHT,
+    fontFamily: FontFamily.regular,
   },
 });
