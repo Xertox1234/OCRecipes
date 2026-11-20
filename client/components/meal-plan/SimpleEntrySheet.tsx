@@ -363,6 +363,10 @@ function SimpleEntrySheetContentInner(
     setError(null);
 
     const key = retryKey(title, totals);
+    // The sheet may be closed and reopened while the save is in flight. The
+    // save still completes, but only this opening's screen may be touched.
+    const session = sessionRef.current;
+    const isCurrent = () => session === sessionRef.current;
     try {
       let recipeId: number;
       let hasPicture: boolean;
@@ -384,7 +388,9 @@ function SimpleEntrySheetContentInner(
         // A dish someone has entered before comes back with its shared
         // picture; a new one gets its picture generated after the save.
         hasPicture = Boolean(recipe.imageUrl);
-        createdRecipeRef.current = { key, id: recipe.id, hasPicture };
+        if (isCurrent()) {
+          createdRecipeRef.current = { key, id: recipe.id, hasPicture };
+        }
         recipeId = recipe.id;
       }
 
@@ -395,21 +401,27 @@ function SimpleEntrySheetContentInner(
         servings,
       });
 
-      createdRecipeRef.current = null;
+      // The entry is saved whichever opening is showing, so the plan
+      // refreshes and the toast (which fires its own Success) confirms it.
       invalidateMealPlanItems(queryClient);
       if (!hasPicture) refreshMealPlanItemsForPendingPicture(queryClient);
-      // The sheet closes, so confirm with a toast (fires its own Success).
       toast.success(formatPlanAddSuccess(plannedDate, mealType));
+      if (!isCurrent()) return;
+      createdRecipeRef.current = null;
       onDismiss();
     } catch (err) {
+      if (!isCurrent()) return;
       if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
         setShowUpgrade(true);
       } else {
         showError(ADD_ERROR);
       }
     } finally {
-      isBusyRef.current = false;
-      setIsAdding(false);
+      // A later opening has already reset these for itself.
+      if (isCurrent()) {
+        isBusyRef.current = false;
+        setIsAdding(false);
+      }
     }
   };
 

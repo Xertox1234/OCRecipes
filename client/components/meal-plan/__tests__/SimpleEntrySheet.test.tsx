@@ -385,6 +385,53 @@ describe("SimpleEntrySheet", () => {
       );
     });
 
+    /** Taps Add with the plan request held open, then closes and reopens. */
+    async function addThenReopen() {
+      let settle: { resolve: (v: unknown) => void; reject: (e: Error) => void };
+      mockParseFoodText.mockResolvedValue({ items: [food()] });
+      mockCreateRecipe.mockResolvedValue({ id: 42, imageUrl: "pic.jpg" });
+      mockAddItem.mockReturnValue(
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject };
+        }),
+      );
+      const { rerender } = renderComponent(
+        <SimpleEntrySheetContent {...defaultProps} />,
+      );
+      await submitDish("soup");
+      await waitFor(() => expect(mockAddItem).toHaveBeenCalled());
+
+      rerender(<SimpleEntrySheetContent {...defaultProps} mealType={null} />);
+      rerender(<SimpleEntrySheetContent {...defaultProps} mealType="dinner" />);
+      return settle!;
+    }
+
+    it("keeps a failed add that arrives after a reopen out of the new opening", async () => {
+      const settle = await addThenReopen();
+      await act(async () => {
+        settle.reject(new Error("500"));
+      });
+
+      expect(screen.queryByText(ADD_ERROR)).toBeNull();
+      expect(mockNotification).not.toHaveBeenCalled();
+      typeDish("stew");
+      expect(screen.getByText("Estimate").closest("button")).toHaveProperty(
+        "disabled",
+        false,
+      );
+    });
+
+    it("does not close a reopened sheet when an earlier add lands, but still confirms it", async () => {
+      const settle = await addThenReopen();
+      await act(async () => {
+        settle.resolve({ id: 1 });
+      });
+
+      expect(defaultProps.onDismiss).not.toHaveBeenCalled();
+      // The entry was saved, so the confirmation is still true.
+      expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    });
+
     it("explains a total too large to save instead of failing the add", async () => {
       mockParseFoodText.mockResolvedValue({
         items: [food({ unit: "serving", calories: 60000 })],
