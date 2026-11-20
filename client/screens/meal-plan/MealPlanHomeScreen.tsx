@@ -718,6 +718,9 @@ const styles = StyleSheet.create({
   },
   action: {
     flex: 1,
+    // Two buttons share the row, so each gives its label more room: at the
+    // default padding "Plan from pantry" wraps on narrower phones.
+    paddingHorizontal: Spacing.md,
   },
   skeleton: {
     paddingHorizontal: Spacing.lg,

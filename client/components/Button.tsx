@@ -156,6 +156,8 @@ const styles = StyleSheet.create({
   buttonText: {
     fontFamily: FontFamily.semiBold,
     fontWeight: "600",
+    // A label that wraps in a narrow button keeps each line centred.
+    textAlign: "center",
   },
   loadingRow: {
     flexDirection: "row",
