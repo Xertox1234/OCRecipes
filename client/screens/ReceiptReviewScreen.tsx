@@ -531,7 +531,9 @@ export default function ReceiptReviewScreen() {
           ]}
         >
           <Feather name="alert-triangle" size={16} color={theme.warning} />
-          <ThemedText style={[styles.warningText, { color: theme.warning }]}>
+          <ThemedText
+            style={[styles.warningText, { color: theme.badgeWarningText }]}
+          >
             Some items may be missing — check the list
           </ThemedText>
         </View>

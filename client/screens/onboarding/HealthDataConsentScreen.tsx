@@ -82,7 +82,12 @@ export default function HealthDataConsentScreen() {
               { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
           >
-            <Feather name="shield" size={40} color={theme.success} />
+            <Feather
+              name="shield"
+              size={40}
+              color={theme.success}
+              accessible={false}
+            />
           </View>
           <ThemedText type="h3" style={styles.title}>
             Your Health Details, Your Choice
@@ -105,7 +110,11 @@ export default function HealthDataConsentScreen() {
             },
           ]}
         >
-          <ThemedText type="body" style={{ fontWeight: "600" }}>
+          <ThemedText
+            type="body"
+            accessibilityRole="header"
+            style={{ fontWeight: "600" }}
+          >
             Why we ask
           </ThemedText>
           <ThemedText
@@ -203,7 +212,12 @@ export default function HealthDataConsentScreen() {
             accessibilityLabel="Go back"
             accessibilityRole="button"
           >
-            <Feather name="arrow-left" size={24} color={theme.text} />
+            <Feather
+              name="arrow-left"
+              size={24}
+              color={theme.text}
+              accessible={false}
+            />
           </Pressable>
           <Button
             onPress={handleAgree}

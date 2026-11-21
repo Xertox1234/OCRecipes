@@ -12,6 +12,7 @@
 // source of `useHeaderHeight`) are globally aliased (vitest.config.mts) —
 // only navigation/route and the screen's own data hook need a local mock.
 import React from "react";
+import { AccessibilityInfo } from "react-native";
 import { act, fireEvent, screen } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -213,7 +214,7 @@ describe("PhotoAnalysisScreen — edit field labels", () => {
       haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
     });
     renderComponent(<PhotoAnalysisScreen />);
-    fireEvent.click(screen.getByLabelText("Edit food item"));
+    fireEvent.click(screen.getByLabelText("Edit Rice"));
 
     expect(
       screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
@@ -255,7 +256,7 @@ describe("PhotoAnalysisScreen — follow-up Return key", () => {
       haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
     });
     renderComponent(<PhotoAnalysisScreen />);
-    const input = screen.getByLabelText("Follow-up question about food");
+    const input = screen.getByLabelText("Your answer to: How was it cooked?");
     fireEvent.change(input, { target: { value: "Grilled" } });
     const props = reactProps(input);
     // Without it a multiline field turns Return into a line break.
@@ -267,6 +268,80 @@ describe("PhotoAnalysisScreen — follow-up Return key", () => {
       "How was it cooked?",
       "Grilled",
     );
+  });
+});
+
+// Accessibility audit 2026-11-21 M13: the assertive live region wrapped the
+// Try again button, so TalkBack re-read the whole container (button included)
+// on every change; only the message is the alert now.
+describe("PhotoAnalysisScreen — analysis error", () => {
+  it("makes only the message the alert, with Try again beside it", () => {
+    mockUsePhotoAnalysis.mockReturnValue({
+      isAnalyzing: false,
+      loadingText: "",
+      analysisResult: null,
+      showFollowUp: false,
+      followUpIndex: 0,
+      handleFollowUpAnswer: vi.fn(),
+      handleSkipFollowUp: vi.fn(),
+      foods: [],
+      selectedFoods: [],
+      selectedItems: new Set(),
+      prepMethods: {},
+      prepLoading: {},
+      totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      error: "Couldn't analyze this photo.",
+      BeverageSheet: () => null,
+      haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
+    });
+    renderComponent(<PhotoAnalysisScreen />);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Couldn't analyze this photo.",
+    );
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+});
+
+// Accessibility audit 2026-11-21 M8: the follow-up sheet is an absolute
+// overlay — on TalkBack the results list behind it stayed reachable, and the
+// question appeared silently with an input that did not say what it asked.
+describe("PhotoAnalysisScreen — follow-up question accessibility", () => {
+  const withFollowUp = () =>
+    mockUsePhotoAnalysis.mockReturnValue({
+      isAnalyzing: false,
+      loadingText: "",
+      analysisResult: {
+        foods: [],
+        overallConfidence: 0.5,
+        followUpQuestions: ["How was it cooked?"],
+      },
+      showFollowUp: true,
+      followUpIndex: 0,
+      handleFollowUpAnswer: vi.fn(),
+      handleSkipFollowUp: vi.fn(),
+      foods: [],
+      selectedFoods: [],
+      selectedItems: new Set(),
+      prepMethods: {},
+      prepLoading: {},
+      totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      error: null,
+      BeverageSheet: () => null,
+      haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
+    });
+
+  it("announces the question and hides the results behind it", () => {
+    const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+    announce.mockClear();
+    withFollowUp();
+    const { container } = renderComponent(<PhotoAnalysisScreen />);
+    expect(announce).toHaveBeenCalledWith(
+      "Quick question, 1 of 1: How was it cooked?",
+    );
+    const scroll = container.querySelector(
+      "[data-testid='photo-analysis-scroll']",
+    );
+    expect(scroll?.getAttribute("aria-hidden")).toBe("true");
   });
 });
 

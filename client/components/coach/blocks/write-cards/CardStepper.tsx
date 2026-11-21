@@ -43,6 +43,9 @@ export function CardStepper({
       disabled={delta < 0 ? value <= min : value >= max}
       accessibilityRole="button"
       accessibilityLabel={`${delta < 0 ? "Fewer" : "More"} ${name}`}
+      // The row below is the screen-reader control; these are touch-only.
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={styles.target}
     >
       <View style={[styles.button, { borderColor: theme.border }]}>
@@ -57,6 +60,9 @@ export function CardStepper({
   return (
     <View
       style={styles.row}
+      // Without `accessible` iOS never makes this an element, and the role,
+      // value and actions below are ignored.
+      accessible
       accessibilityRole="adjustable"
       accessibilityLabel={name}
       accessibilityValue={{ min, max, now: value }}
@@ -66,7 +72,12 @@ export function CardStepper({
       }
     >
       {button(-1)}
-      <ThemedText type="body" style={styles.value}>
+      <ThemedText
+        type="body"
+        style={styles.value}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {value}
       </ThemedText>
       {button(1)}

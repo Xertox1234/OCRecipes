@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SelectableTile } from "@/components/SelectableTile";
@@ -37,6 +37,22 @@ export function AllergenGrid({
   disabled,
 }: AllergenGridProps) {
   const { theme } = useTheme();
+  const pendingName = COMMON_ALLERGENS.find(
+    (a) => a.id === pendingAllergen,
+  )?.name;
+
+  // The severity choice mounts below the whole grid, far from the chip that
+  // opened it, so say so. Both platforms: nothing here is a live region. Keyed
+  // on the allergen, so switching to another one re-asks; silent on close.
+  const askedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingName && askedRef.current !== pendingName) {
+      AccessibilityInfo.announceForAccessibility(
+        `Choose a severity for ${pendingName}`,
+      );
+    }
+    askedRef.current = pendingName ?? null;
+  }, [pendingName]);
 
   const severityColor = (severity: Severity | undefined) =>
     severity === "severe"
@@ -57,7 +73,12 @@ export function AllergenGrid({
               key={allergen.id}
               onPress={() => onToggle(allergen.id)}
               disabled={disabled}
-              accessibilityLabel={allergen.name}
+              // Severity is otherwise only colour and a one-letter badge.
+              accessibilityLabel={
+                allergy
+                  ? `${allergen.name}, ${allergy.severity}`
+                  : allergen.name
+              }
               accessibilityRole="checkbox"
               accessibilityState={{ checked: selected, disabled: !!disabled }}
               style={[
@@ -80,6 +101,9 @@ export function AllergenGrid({
               </ThemedText>
               {allergy && (
                 <View
+                  accessible={false}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
                   style={[
                     styles.severityBadge,
                     { backgroundColor: severityColor(allergy.severity) },
@@ -105,9 +129,12 @@ export function AllergenGrid({
             { backgroundColor: theme.backgroundDefault },
           ]}
         >
-          <ThemedText type="body" style={{ fontWeight: "600" }}>
-            Severity for{" "}
-            {COMMON_ALLERGENS.find((a) => a.id === pendingAllergen)?.name}?
+          <ThemedText
+            type="body"
+            accessibilityRole="header"
+            style={{ fontWeight: "600" }}
+          >
+            Severity for {pendingName}?
           </ThemedText>
           <View style={styles.severityOptions}>
             {SEVERITY_OPTIONS.map((option) => (
@@ -115,7 +142,7 @@ export function AllergenGrid({
                 key={option.value}
                 onPress={() => onSeverity(option.value)}
                 disabled={disabled}
-                accessibilityLabel={`${option.label}: ${option.description}`}
+                accessibilityLabel={`${option.label} for ${pendingName}: ${option.description}`}
                 accessibilityRole="button"
                 style={[
                   styles.severityOption,

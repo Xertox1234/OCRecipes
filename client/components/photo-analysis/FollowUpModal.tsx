@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { StyleSheet, View, Pressable } from "react-native";
+import React, { useEffect, useState } from "react";
+import { AccessibilityInfo, StyleSheet, View, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
 
 import { FocusTextInput } from "@/components/FocusTextInput";
@@ -23,6 +23,15 @@ export function FollowUpModal({
   const [answer, setAnswer] = useState("");
 
   const currentQuestion = questions[currentIndex];
+
+  // The sheet appears over the results with no focus move and no live region,
+  // so each question is announced as it arrives (both platforms).
+  useEffect(() => {
+    if (!currentQuestion) return;
+    AccessibilityInfo.announceForAccessibility(
+      `Quick question, ${currentIndex + 1} of ${questions.length}: ${currentQuestion}`,
+    );
+  }, [currentIndex, currentQuestion, questions.length]);
 
   const handleSubmit = () => {
     if (answer.trim()) {
@@ -62,7 +71,7 @@ export function FollowUpModal({
         onChangeText={setAnswer}
         placeholder="Type your answer..."
         placeholderTextColor={theme.textSecondary}
-        accessibilityLabel="Follow-up question about food"
+        accessibilityLabel={`Your answer to: ${currentQuestion}`}
         multiline
         returnKeyType="done"
         // Return submits (as QuickLogScreen does) instead of a line break.
@@ -85,7 +94,7 @@ export function FollowUpModal({
         <Button
           onPress={handleSubmit}
           disabled={!answer.trim()}
-          style={{ flex: 1, backgroundColor: theme.success }}
+          style={{ flex: 1, backgroundColor: theme.successSolid }}
         >
           Continue
         </Button>

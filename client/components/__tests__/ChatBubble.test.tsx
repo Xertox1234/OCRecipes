@@ -124,4 +124,15 @@ describe("ChatBubble — entrance", () => {
     expect(screen.getByText("Hi")).toBeDefined();
     expect(screen.getByText("Hello")).toBeDefined();
   });
+
+  // Accessibility audit 2026-11-21 M3: the nested button is unreachable inside
+  // the accessible row on iOS; it is touch-only now (the row carries a
+  // "speak" accessibility action instead — see chat-bubble-utils.test.ts).
+  it("hides the touch-only Read aloud button from assistive tech", () => {
+    renderComponent(
+      <ChatBubble role="assistant" content="Hi" onSpeak={() => {}} />,
+    );
+    expect(screen.queryByRole("button", { name: "Read aloud" })).toBeNull();
+    expect(screen.getByLabelText("Read aloud")).toBeTruthy();
+  });
 });

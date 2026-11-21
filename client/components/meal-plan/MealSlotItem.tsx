@@ -235,7 +235,8 @@ export const MealSlotItem = React.memo(function MealSlotItem({
               pressed && { opacity: 0.7 },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Who's it for?"
+            // Its own focus stop on Android, so it names its meal.
+            accessibilityLabel={`Who's it for? ${name}`}
           >
             <Feather name="users" size={14} color={theme.link} />
             <ThemedText

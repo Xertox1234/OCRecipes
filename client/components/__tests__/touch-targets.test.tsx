@@ -19,6 +19,7 @@ import { UpgradeModal } from "../UpgradeModal";
 import { SheetHeader } from "../sheet/SheetChrome";
 import { MealSlotSection } from "../meal-plan/MealSlotSection";
 import { CardStepper } from "../coach/blocks/write-cards/CardStepper";
+import { Chip } from "../Chip";
 import CoachChat from "../coach/CoachChat";
 import { Colors } from "@/constants/theme";
 
@@ -161,6 +162,13 @@ describe("icon-only buttons are a real 44pt box, not hitSlop", () => {
     );
     expectRealBox("More Large eggs");
     expectRealBox("Fewer Large eggs");
+  });
+
+  // Accessibility audit 2026-11-21 M4: filter/outline chips were ~28pt tall
+  // with no hitSlop. The pressable is a 44pt target around the visual pill.
+  it.each(["filter", "outline"] as const)("a pressable %s chip", (variant) => {
+    renderComponent(<Chip label="Me" variant={variant} onPress={vi.fn()} />);
+    expectRealBox("Me");
   });
 
   it("ChatBubble read-aloud button", () => {

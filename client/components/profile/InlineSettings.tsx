@@ -75,10 +75,20 @@ export const InlineSettings = React.memo(function InlineSettings({
           style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
         >
           <View style={styles.rowLeft}>
-            <Feather name="clipboard" size={20} color={theme.textSecondary} />
+            <Feather
+              name="clipboard"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
             <ThemedText style={styles.label}>Dietary Profile</ThemedText>
           </View>
-          <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+          <Feather
+            name="chevron-right"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
         </Pressable>
 
         <View style={[styles.divider, { backgroundColor: theme.border }]} />
@@ -89,7 +99,12 @@ export const InlineSettings = React.memo(function InlineSettings({
                 the Coach reminders screen. */}
             <View style={styles.row}>
               <View style={styles.rowLeft}>
-                <Feather name="users" size={20} color={theme.textSecondary} />
+                <Feather
+                  name="users"
+                  size={20}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
                 <ThemedText style={styles.label}>Plan for my family</ThemedText>
               </View>
               <Switch
@@ -131,6 +146,7 @@ export const InlineSettings = React.memo(function InlineSettings({
                       name="user-plus"
                       size={20}
                       color={theme.textSecondary}
+                      accessible={false}
                     />
                     <ThemedText style={styles.label}>Family</ThemedText>
                   </View>
@@ -138,6 +154,7 @@ export const InlineSettings = React.memo(function InlineSettings({
                     name="chevron-right"
                     size={18}
                     color={theme.textSecondary}
+                    accessible={false}
                   />
                 </Pressable>
                 <View
@@ -166,6 +183,7 @@ export const InlineSettings = React.memo(function InlineSettings({
               }
               size={20}
               color={theme.textSecondary}
+              accessible={false}
             />
             <ThemedText style={styles.label}>Appearance</ThemedText>
           </View>

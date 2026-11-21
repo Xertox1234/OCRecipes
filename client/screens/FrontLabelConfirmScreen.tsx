@@ -286,7 +286,10 @@ export default function FrontLabelConfirmScreen() {
               ]}
             >
               <ThemedText
-                style={[styles.sourceBadgeText, { color: theme.warning }]}
+                style={[
+                  styles.sourceBadgeText,
+                  { color: theme.badgeWarningText },
+                ]}
               >
                 Scanned locally
               </ThemedText>

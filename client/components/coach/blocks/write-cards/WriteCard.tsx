@@ -151,9 +151,9 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
     try {
       const result = await undo();
       setStatus(result.status);
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility("Undone");
-      }
+      // Both platforms: the receipt's live region unmounts with the undo, so
+      // nothing else tells TalkBack (and focus goes with the Undo button).
+      AccessibilityInfo.announceForAccessibility("Undone");
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setUndoError(saveErrorMessage(err));

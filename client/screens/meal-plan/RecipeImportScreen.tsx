@@ -106,13 +106,17 @@ export default function RecipeImportScreen() {
   // loading and device are one phase to the user: announce it once.
   const phase = state === "device" ? "loading" : state;
   useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    if (phase === "loading") {
-      AccessibilityInfo.announceForAccessibility("Extracting recipe data");
-    } else if (phase === "needs-browser") {
+    // The sign-in panel has no Android live region (the loading view and the
+    // error state do), so it is the one phase announced on both platforms.
+    if (phase === "needs-browser") {
       AccessibilityInfo.announceForAccessibility(
         "We couldn't read this recipe. The site may need you to sign in.",
       );
+      return;
+    }
+    if (Platform.OS !== "ios") return;
+    if (phase === "loading") {
+      AccessibilityInfo.announceForAccessibility("Extracting recipe data");
     } else if (phase === "error") {
       AccessibilityInfo.announceForAccessibility(
         `Import failed: ${errorMessage}`,

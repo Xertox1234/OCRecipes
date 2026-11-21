@@ -121,7 +121,7 @@ describe("EditDietaryProfileScreen — one selection tick per pick", () => {
   it("a severity option is a button that ticks once", () => {
     form.selectedAllergen = "peanuts";
     renderComponent(<EditDietaryProfileScreen />);
-    fireEvent.click(screen.getByRole("button", { name: /^Severe:/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Severe for / }));
     expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
   });
 });

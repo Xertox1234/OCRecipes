@@ -11,12 +11,18 @@ const lightThemeColors = {
   success: "#007A30",
   warning: "#F57C00",
   error: "#D32F2F",
+  badgeSuccessText: "#00742E",
+  badgeWarningText: "#9D5000",
+  badgeErrorText: "#BD2828",
 } as any;
 
 const darkThemeColors = {
   success: "#4CAF7D",
   warning: "#FFB74D",
   error: "#F16360",
+  badgeSuccessText: "#4CAF7D",
+  badgeWarningText: "#FFB74D",
+  badgeErrorText: "#F37774",
 } as any;
 
 describe("getConfidenceTier", () => {
@@ -44,16 +50,19 @@ describe("getConfidenceTier", () => {
 });
 
 describe("getConfidenceColor", () => {
-  it("maps each tier to the matching theme color, light theme", () => {
-    expect(getConfidenceColor(lightThemeColors, "high")).toBe("#007A30");
-    expect(getConfidenceColor(lightThemeColors, "medium")).toBe("#F57C00");
-    expect(getConfidenceColor(lightThemeColors, "low")).toBe("#D32F2F");
+  // Accessibility audit 2026-11-21 H2: the colour is drawn as TEXT on a 0.12
+  // tint of itself, so it must be the badge*Text token — light `warning`
+  // #F57C00 measured 2.51:1 on cream, `error` 3.87:1 on its own tint.
+  it("maps each tier to the AA badge text token, light theme", () => {
+    expect(getConfidenceColor(lightThemeColors, "high")).toBe("#00742E");
+    expect(getConfidenceColor(lightThemeColors, "medium")).toBe("#9D5000");
+    expect(getConfidenceColor(lightThemeColors, "low")).toBe("#BD2828");
   });
 
-  it("maps each tier to the matching theme color, dark theme", () => {
+  it("maps each tier to the AA badge text token, dark theme", () => {
     expect(getConfidenceColor(darkThemeColors, "high")).toBe("#4CAF7D");
     expect(getConfidenceColor(darkThemeColors, "medium")).toBe("#FFB74D");
-    expect(getConfidenceColor(darkThemeColors, "low")).toBe("#F16360");
+    expect(getConfidenceColor(darkThemeColors, "low")).toBe("#F37774");
   });
 });
 

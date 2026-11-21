@@ -175,7 +175,7 @@ export default function DietTypeScreen() {
                   <View
                     style={[
                       styles.selectedBadge,
-                      { backgroundColor: theme.success },
+                      { backgroundColor: theme.successSolid },
                     ]}
                   >
                     <Feather name="check" size={14} color={theme.buttonText} />

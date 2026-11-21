@@ -199,7 +199,8 @@ export default function EditDietaryProfileScreen({
     needsConsent,
     handleSave,
   } = useDietaryProfileForm({ addAllergen: route?.params?.addAllergen });
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
 
   // No consent, no health data: ask before a save that stores a health detail.
   const handleSavePress = () => {
@@ -279,6 +280,9 @@ export default function EditDietaryProfileScreen({
       accessibilityViewIsModal
     >
       <ScrollView
+        // Hidden from TalkBack while the consent confirm is open
+        // (accessibilityViewIsModal on the sheet is iOS-only).
+        {...behindContentA11yProps}
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
@@ -419,9 +423,9 @@ export default function EditDietaryProfileScreen({
                     styles.cuisineChip,
                     {
                       backgroundColor: selected
-                        ? theme.error
+                        ? theme.errorSolid
                         : theme.backgroundDefault,
-                      borderColor: selected ? theme.error : theme.border,
+                      borderColor: selected ? theme.errorSolid : theme.border,
                     },
                   ]}
                 >
@@ -719,8 +723,10 @@ export default function EditDietaryProfileScreen({
         </View>
       </ScrollView>
 
-      {/* Save Button */}
+      {/* Save Button — a sibling of the ScrollView, so it needs its own
+          spread to leave TalkBack's reach behind the consent confirm. */}
       <View
+        {...behindContentA11yProps}
         style={[
           styles.footer,
           {

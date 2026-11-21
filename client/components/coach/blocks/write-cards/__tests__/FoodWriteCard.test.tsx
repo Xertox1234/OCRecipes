@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { AccessibilityInfo, Platform } from "react-native";
 import { renderComponent } from "../../../../../../test/utils/render-component";
 import WriteCard from "../WriteCard";
 import type {
@@ -70,7 +71,7 @@ describe("FoodWriteCard", () => {
   it('FoodWriteCard shows "Log 226 cal" and updates to "Log 298 cal" after + on eggs', () => {
     renderComponent(<Harness initial={block()} />);
     expect(screen.getByRole("button", { name: "Log 226 cal" })).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "More Large eggs" }));
+    fireEvent.click(screen.getByLabelText("More Large eggs"));
     expect(screen.getByRole("button", { name: "Log 298 cal" })).toBeDefined();
   });
 
@@ -79,7 +80,7 @@ describe("FoodWriteCard", () => {
       ok({ status: "saved", receipt: "✓ Logged to Breakfast · 298 cal" }),
     );
     renderComponent(<Harness initial={block()} />);
-    fireEvent.click(screen.getByRole("button", { name: "More Large eggs" }));
+    fireEvent.click(screen.getByLabelText("More Large eggs"));
     fireEvent.click(screen.getByRole("button", { name: "Log 298 cal" }));
     await waitFor(() =>
       expect(screen.getByText("✓ Logged to Breakfast · 298 cal")).toBeDefined(),
@@ -129,6 +130,29 @@ describe("FoodWriteCard", () => {
     );
   });
 
+  // Accessibility audit 2026-11-21 L11: "Undone" was announced on iOS only,
+  // but no Android live region covers it (the receipt's unmounts), so TalkBack
+  // got silence as the Undo button vanished under focus.
+  it("announces a successful undo on Android too", async () => {
+    const original = Platform.OS;
+    (Platform as { OS: string }).OS = "android";
+    try {
+      const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+      announce.mockClear();
+      mockApiRequest
+        .mockResolvedValueOnce(
+          ok({ status: "saved", receipt: "✓ Logged to Breakfast · 226 cal" }),
+        )
+        .mockResolvedValueOnce(ok({ status: "live" }));
+      renderComponent(<Harness initial={block()} />);
+      fireEvent.click(screen.getByRole("button", { name: "Log 226 cal" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+      await waitFor(() => expect(announce).toHaveBeenCalledWith("Undone"));
+    } finally {
+      (Platform as { OS: string }).OS = original;
+    }
+  });
+
   it("a failed save keeps the card editable with a retry", async () => {
     mockApiRequest.mockRejectedValueOnce(
       new TypeError("Network request failed"),
@@ -142,9 +166,9 @@ describe("FoodWriteCard", () => {
     ).toBeDefined();
     expect(screen.getByRole("button", { name: "Log 226 cal" })).toBeDefined();
     expect(
-      (
-        screen.getByRole("button", { name: "More Large eggs" }) as HTMLElement
-      ).getAttribute("aria-disabled"),
+      (screen.getByLabelText("More Large eggs") as HTMLElement).getAttribute(
+        "aria-disabled",
+      ),
     ).not.toBe("true");
   });
 

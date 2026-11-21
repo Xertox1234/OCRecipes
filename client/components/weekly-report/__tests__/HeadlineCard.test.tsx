@@ -44,4 +44,20 @@ describe("HeadlineCard celebration", () => {
     );
     expect(screen.queryByTestId("weekly-celebration-badge")).toBeNull();
   });
+
+  // Accessibility audit 2026-11-21 L5: the header role sat on a plain card
+  // View (not an accessibility element, so iOS ignored it); it belongs on
+  // the headline text alone.
+  it("makes the headline, and only the headline, a header", () => {
+    renderComponent(
+      <HeadlineCard
+        headline="A steady week."
+        subline="You logged 6 of 7 days."
+        celebrate={false}
+        onCelebrated={vi.fn()}
+      />,
+    );
+    const headers = screen.queryAllByRole("header");
+    expect(headers.map((h) => h.textContent)).toEqual(["A steady week."]);
+  });
 });

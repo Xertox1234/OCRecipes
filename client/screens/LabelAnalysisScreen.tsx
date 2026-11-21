@@ -579,7 +579,7 @@ export default function LabelAnalysisScreen() {
                 <Feather name="smartphone" size={12} color={theme.info} />
                 <ThemedText
                   type="small"
-                  style={{ color: theme.info, fontWeight: "600" }}
+                  style={{ color: theme.badgeInfoText, fontWeight: "600" }}
                 >
                   Scanned locally
                 </ThemedText>
@@ -705,7 +705,10 @@ export default function LabelAnalysisScreen() {
               color={theme.warning}
               accessible={false}
             />
-            <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
+            <ThemedText
+              type="small"
+              style={{ color: theme.badgeWarningText, flex: 1 }}
+            >
               Couldn&apos;t verify with AI. Retry before logging.
             </ThemedText>
           </View>
@@ -760,7 +763,9 @@ export default function LabelAnalysisScreen() {
           <ThemedText
             type="body"
             style={{
-              color: verificationResult.isMatch ? theme.success : theme.warning,
+              color: verificationResult.isMatch
+                ? theme.badgeSuccessText
+                : theme.badgeWarningText,
               flex: 1,
             }}
           >
@@ -817,7 +822,7 @@ export default function LabelAnalysisScreen() {
             accessible={false}
             importantForAccessibility="no-hide-descendants"
           />
-          <ThemedText type="small" style={{ color: theme.info }}>
+          <ThemedText type="small" style={{ color: theme.badgeInfoText }}>
             Updated with AI analysis
           </ThemedText>
         </Animated.View>

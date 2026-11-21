@@ -1,5 +1,5 @@
 interface ThemeColors {
-  error: string;
+  errorSolid: string;
   accentSolid: string;
   buttonText: string;
   backgroundSecondary: string;
@@ -13,7 +13,8 @@ interface ConfirmButtonStyle {
 
 /**
  * Returns button style for the confirm action based on destructive flag.
- * Destructive: red (theme.error) background, white text.
+ * Destructive: red (theme.errorSolid) background, white text — `error` is a
+ * text colour and fails AA under white in dark mode.
  * Non-destructive: accent (theme.accentSolid) background, white text.
  */
 export function getConfirmButtonStyle(
@@ -21,7 +22,7 @@ export function getConfirmButtonStyle(
   theme: ThemeColors,
 ): ConfirmButtonStyle {
   return {
-    backgroundColor: destructive ? theme.error : theme.accentSolid,
+    backgroundColor: destructive ? theme.errorSolid : theme.accentSolid,
     textColor: theme.buttonText,
   };
 }
