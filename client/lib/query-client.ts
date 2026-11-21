@@ -161,7 +161,7 @@ export function notifySessionExpired(): void {
  * The body is read via `res.clone()` so the caller's own `res.text()`/`.json()`
  * is left intact.
  */
-async function notifyIfSessionExpired(
+export async function notifyIfSessionExpired(
   res: Response,
   sentToken: string | null,
 ): Promise<void> {
