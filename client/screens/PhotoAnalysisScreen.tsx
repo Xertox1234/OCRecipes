@@ -4,7 +4,6 @@ import {
   View,
   ScrollView,
   Image,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -36,6 +35,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 import { ConfidenceBadge } from "@/components/photo-analysis/ConfidenceBadge";
 import { FoodItemCard } from "@/components/photo-analysis/FoodItemCard";
+import { AnalysisErrorBanner } from "@/components/photo-analysis/AnalysisErrorBanner";
 import { FollowUpModal } from "@/components/photo-analysis/FollowUpModal";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
@@ -197,40 +197,10 @@ export default function PhotoAnalysisScreen() {
 
           {/* Error State */}
           {error && (
-            <View
-              style={[
-                styles.errorContainer,
-                { backgroundColor: withOpacity(theme.error, 0.12) },
-              ]}
-            >
-              <Feather
-                name="alert-circle"
-                size={20}
-                color={theme.error}
-                accessible={false}
-              />
-              {/* The live region is the message only: on the container it
-                  re-read the Try again button with every change (TalkBack).
-                  badgeErrorText: plain `error` is 3.87:1 on its own tint. */}
-              <ThemedText
-                type="body"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="assertive"
-                style={{ color: theme.badgeErrorText, flex: 1 }}
-              >
-                {error}
-              </ThemedText>
-              <Pressable
-                onPress={() => navigation.goBack()}
-                accessibilityLabel="Try again"
-                accessibilityRole="button"
-                style={styles.errorRetry}
-              >
-                <ThemedText type="small" style={{ color: theme.link }}>
-                  Try Again
-                </ThemedText>
-              </Pressable>
-            </View>
+            <AnalysisErrorBanner
+              message={error}
+              onRetry={() => navigation.goBack()}
+            />
           )}
 
           {/* Analysis Results */}
@@ -503,13 +473,6 @@ export default function PhotoAnalysisScreen() {
 }
 
 const styles = StyleSheet.create({
-  // A real 44pt box (no hitSlop — it cannot reach past the banner).
-  errorRetry: {
-    minHeight: 44,
-    minWidth: 44,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   container: {
     flex: 1,
   },
@@ -556,14 +519,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 200,
     borderRadius: BorderRadius.lg,
-  },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.lg,
   },
   resultsHeader: {
     flexDirection: "row",
