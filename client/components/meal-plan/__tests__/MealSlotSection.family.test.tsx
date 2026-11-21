@@ -106,9 +106,11 @@ describe("MealSlotItem family row", () => {
     expect(label).toContain("Allergens not checked");
   });
 
-  it("has a Who's it for? button that hands the item over", () => {
+  // Accessibility audit 2026-11-21 L3: on Android this nested button is its
+  // own focus stop, and every row's said just "Who's it for?".
+  it("has a Who's it for? button, naming its meal, that hands the item over", () => {
     const onChange = renderFamilyRow();
-    fireEvent.click(screen.getByRole("button", { name: "Who's it for?" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Who's it for\? \S/ }));
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0].id).toBe(1);
   });

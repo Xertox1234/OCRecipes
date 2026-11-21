@@ -4,7 +4,7 @@ export const Colors = {
   light: {
     // Text
     text: "#1C1410",
-    textSecondary: "#6B6B6B", // WCAG AA: 4.8:1 on #FAF6F0
+    textSecondary: "#626262", // WCAG AA: 5.67:1 on #FAF6F0, 4.93:1 on backgroundSecondary (#6B6B6B was 4.31:1 there)
     buttonText: "#FFFFFF",
     // Navigation
     tabIconDefault: "#6B6B6B",
@@ -23,6 +23,12 @@ export const Colors = {
     // light to sit under white text as a fill. #B5451C = 5.48:1 vs white in BOTH
     // modes (AA pass). Use `link` for text/icons/tints, `accentSolid` for fills.
     accentSolid: "#B5451C",
+    // Solid success/error FILLS under white content (buttons, confirm). Same
+    // split as accentSolid: `success`/`error` are text colours, too light in
+    // dark mode to carry white text (2.71:1 / 3.14:1). 5.49:1 and 4.98:1 vs
+    // #FFFFFF in BOTH modes, and over 3:1 against the dark background.
+    successSolid: "#007A30",
+    errorSolid: "#D32F2F",
     // Backgrounds - warm parchment/cream tones
     backgroundRoot: "#FAF6F0",
     backgroundDefault: "#FAF6F0",
@@ -101,6 +107,9 @@ export const Colors = {
     // 5.48:1 vs #FFFFFF. Distinct from `link` (#E07050), which is the on-dark
     // TEXT color and only 3.18:1 as a fill under white. Same hex as light mode.
     accentSolid: "#B5451C",
+    // Solid fills under white content — see light mode.
+    successSolid: "#007A30",
+    errorSolid: "#D32F2F",
     // Backgrounds - deep charcoal-brown (cast iron, slate)
     backgroundRoot: "#1E1814",
     backgroundDefault: "#1E1814",

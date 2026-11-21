@@ -90,7 +90,12 @@ export default function AiSharingScreen({
               { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
           >
-            <Feather name="cpu" size={36} color={theme.success} />
+            <Feather
+              name="cpu"
+              size={36}
+              color={theme.success}
+              accessible={false}
+            />
           </View>
           <ThemedText type="h3" style={styles.centered}>
             AI features and your data

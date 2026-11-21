@@ -41,6 +41,14 @@ export const AllergenWarningBanner = React.memo(function AllergenWarningBanner({
       : highestSeverity === "moderate"
         ? theme.warning
         : theme.info;
+  // `color` is the fill/icon tone; text needs the AA text token (light-mode
+  // warning/info are 2.51:1 / 2.90:1 as text).
+  const textColor =
+    highestSeverity === "severe"
+      ? theme.badgeErrorText
+      : highestSeverity === "moderate"
+        ? theme.badgeWarningText
+        : theme.badgeInfoText;
 
   const icon: "alert-triangle" | "alert-circle" | "info" =
     highestSeverity === "severe"
@@ -64,7 +72,12 @@ export const AllergenWarningBanner = React.memo(function AllergenWarningBanner({
       <Feather name={icon} size={18} color={color} accessible={false} />
       <ThemedText
         type="small"
-        style={{ color, marginLeft: Spacing.sm, flex: 1, fontWeight: "600" }}
+        style={{
+          color: textColor,
+          marginLeft: Spacing.sm,
+          flex: 1,
+          fontWeight: "600",
+        }}
       >
         {message}
       </ThemedText>

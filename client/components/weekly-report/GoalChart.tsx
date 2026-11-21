@@ -58,7 +58,9 @@ export function GoalChart({ facts }: { facts: WeeklyFacts }) {
       ]}
     >
       <View style={styles.headerRow}>
-        <ThemedText style={styles.title}>Goal vs actual</ThemedText>
+        <ThemedText style={styles.title} accessibilityRole="header">
+          Goal vs actual
+        </ThemedText>
         <ThemedText style={[styles.goalText, { color: theme.textSecondary }]}>
           goal {Math.round(goal)} {unit}
         </ThemedText>

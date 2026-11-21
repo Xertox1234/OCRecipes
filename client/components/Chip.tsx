@@ -203,15 +203,19 @@ export function Chip({
             ? { selected, checked: selected }
             : { selected }
         }
-        style={[chipStyles, animatedChipStyle, animatedStyle]}
+        // A 44pt touch target around the unchanged visual pill: the filter and
+        // outline pills are ~28pt, and hitSlop cannot reach past a tight parent.
+        style={styles.target}
       >
-        {leading}
-        <AnimatedThemedText
-          maxScale={MAX_FONT_SCALE_CONSTRAINED}
-          style={[textStyles, animatedTextStyle]}
-        >
-          {label}
-        </AnimatedThemedText>
+        <Animated.View style={[chipStyles, animatedChipStyle, animatedStyle]}>
+          {leading}
+          <AnimatedThemedText
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
+            style={[textStyles, animatedTextStyle]}
+          >
+            {label}
+          </AnimatedThemedText>
+        </Animated.View>
       </AnimatedPressable>
     );
   }
@@ -238,6 +242,12 @@ export function Chip({
 }
 
 const styles = StyleSheet.create({
+  target: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   chip: {
     alignItems: "center",
     justifyContent: "center",

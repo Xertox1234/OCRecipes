@@ -4,7 +4,9 @@ import {
   TAB_BAR_HEIGHT,
   tabBarHeight,
   withOpacity,
+  Colors,
 } from "../theme";
+import { contrastRatio as contrast } from "../../../test/utils/wcag-contrast";
 
 describe("withOpacity", () => {
   it("appends correct alpha for full opacity", () => {
@@ -58,4 +60,35 @@ describe("tabBarHeight", () => {
   it("keeps the fixed height on iOS", () => {
     expect(tabBarHeight(34, "ios")).toBe(TAB_BAR_HEIGHT);
   });
+});
+
+// Accessibility audit 2026-11-21 H1: dark-mode `success` (#4CAF7D) and
+// `error` (#F16360) are TEXT colours (light enough to read on dark); as fills
+// under white content they measure 2.71:1 and 3.14:1. Fills use *Solid.
+describe("solid fill tokens under white content", () => {
+  it.each(["light", "dark"] as const)(
+    "%s successSolid and errorSolid reach 4.5:1 under buttonText",
+    (mode) => {
+      const t = Colors[mode];
+      expect(contrast(t.successSolid, t.buttonText)).toBeGreaterThanOrEqual(
+        4.5,
+      );
+      expect(contrast(t.errorSolid, t.buttonText)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+});
+
+// Accessibility audit 2026-11-21 M11: secondary text sits on
+// backgroundSecondary cards (weekly-report settings, notebook, opening brief);
+// #6B6B6B measured 4.31:1 there.
+describe("secondary text on secondary surfaces", () => {
+  it.each(["light", "dark"] as const)(
+    "%s textSecondary reaches 4.5:1 on backgroundSecondary",
+    (mode) => {
+      const t = Colors[mode];
+      expect(
+        contrast(t.textSecondary, t.backgroundSecondary),
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 });

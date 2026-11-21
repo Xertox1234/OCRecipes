@@ -49,7 +49,9 @@ export function TrendsCard({
       ]}
     >
       <View style={styles.header}>
-        <ThemedText style={styles.title}>Your trends</ThemedText>
+        <ThemedText style={styles.title} accessibilityRole="header">
+          Your trends
+        </ThemedText>
         <ThemedText style={[styles.small, { color: theme.textSecondary }]}>
           last {points.length} weeks
         </ThemedText>

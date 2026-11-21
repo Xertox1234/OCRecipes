@@ -265,7 +265,10 @@ export default function SavedItemsScreen() {
           ]}
         >
           <Feather name="alert-circle" size={16} color={theme.warning} />
-          <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
+          <ThemedText
+            type="small"
+            style={{ color: theme.badgeWarningText, flex: 1 }}
+          >
             You&apos;ve reached the free limit. Upgrade to Premium for unlimited
             saves.
           </ThemedText>

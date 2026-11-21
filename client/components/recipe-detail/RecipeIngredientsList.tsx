@@ -155,7 +155,7 @@ export function RecipeIngredientsList({
           <ThemedText
             type="small"
             style={{
-              color: theme.warning,
+              color: theme.badgeWarningText,
               marginLeft: Spacing.sm,
               flex: 1,
               fontWeight: "600",

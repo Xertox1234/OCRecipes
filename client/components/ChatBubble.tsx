@@ -10,6 +10,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, FontFamily, BorderRadius } from "@/constants/theme";
 import { chatReplyTextFadeMs, chatSentEntrance } from "@/constants/animations";
+import {
+  getSpeakAccessibilityActions,
+  handleSpeakAccessibilityAction,
+} from "./chat-bubble-utils";
 
 interface ChatBubbleProps {
   role: "user" | "assistant" | "system";
@@ -79,6 +83,13 @@ export function ChatBubble({
       accessible
       accessibilityRole="text"
       accessibilityLabel={`NutriCoach: ${spokenMarkdown(content)}`}
+      accessibilityActions={getSpeakAccessibilityActions(
+        !!onSpeak,
+        !!isSpeaking,
+      )}
+      onAccessibilityAction={(e) =>
+        handleSpeakAccessibilityAction(e.nativeEvent.actionName, onSpeak)
+      }
     >
       <View
         style={[styles.avatarDot, { backgroundColor: theme.accentSolid }]}
@@ -101,6 +112,10 @@ export function ChatBubble({
               isSpeaking ? "Stop reading aloud" : "Read aloud"
             }
             accessibilityState={{ selected: isSpeaking }}
+            // Touch-only: the row above carries this as an accessibility
+            // action, since iOS cannot reach a child of an accessible row.
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           >
             <Ionicons
               name={isSpeaking ? "stop-circle" : "volume-high"}

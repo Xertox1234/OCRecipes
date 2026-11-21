@@ -67,7 +67,6 @@ export function HeadlineCard({
         styles.card,
         { backgroundColor: theme.surface, borderColor: theme.border },
       ]}
-      accessibilityRole="header"
     >
       {play && (
         <Animated.View
@@ -80,10 +79,17 @@ export function HeadlineCard({
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
-          <Feather name="check" size={20} color={theme.success} />
+          <Feather
+            name="check"
+            size={20}
+            color={theme.success}
+            accessible={false}
+          />
         </Animated.View>
       )}
-      <ThemedText style={styles.headline}>{headline}</ThemedText>
+      <ThemedText style={styles.headline} accessibilityRole="header">
+        {headline}
+      </ThemedText>
       {subline ? (
         <ThemedText style={styles.subline}>{subline}</ThemedText>
       ) : null}

@@ -8,7 +8,7 @@ import {
   cleanup,
 } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, Platform } from "react-native";
 
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -357,5 +357,30 @@ describe("RecipeImportScreen — on-device fallback", () => {
     expect(calls).toContain(
       "We couldn't read this recipe. The site may need you to sign in.",
     );
+  });
+
+  // Accessibility audit 2026-11-21 M6: on Android the loading view is a live
+  // region (so its announce is iOS-only), but the sign-in panel that replaces
+  // it has none — TalkBack heard "Extracting…" and then silence.
+  it("announces the sign-in panel on Android too, but not the extracting phase", async () => {
+    const original = Platform.OS;
+    (Platform as { OS: string }).OS = "android";
+    try {
+      const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+      announce.mockClear();
+      mockParse.mockRejectedValue(failWith(ErrorCode.FETCH_FAILED));
+      mockParsePage.mockRejectedValue(failWith(ErrorCode.NO_RECIPE_DATA));
+      await startImport();
+      await screen.findByTestId("import-webview");
+      triggerBlocks(["{}"], "https://www.allrecipes.com/soup");
+      await screen.findByText("We couldn't read this recipe");
+      const calls = announce.mock.calls.map((c) => c[0]);
+      expect(calls).not.toContain("Extracting recipe data");
+      expect(calls).toContain(
+        "We couldn't read this recipe. The site may need you to sign in.",
+      );
+    } finally {
+      (Platform as { OS: string }).OS = original;
+    }
   });
 });

@@ -44,7 +44,12 @@ export function DidYouKnowCard({
             },
       ]}
     >
-      <Feather name={ICON[tip.target]} size={22} color={theme.link} />
+      <Feather
+        name={ICON[tip.target]}
+        size={22}
+        color={theme.link}
+        accessible={false}
+      />
       <View style={styles.body}>
         {tinted ? (
           <ThemedText style={[styles.eyebrow, { color: theme.link }]}>

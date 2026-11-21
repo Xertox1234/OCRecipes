@@ -1015,7 +1015,7 @@ describe("MealPlanDayScreen — family planning", () => {
     renderComponent(<MealPlanDayScreen />);
     expect(screen.queryByText("for Ivy")).toBeNull();
     expect(
-      screen.queryAllByRole("button", { name: "Who's it for?" }),
+      screen.queryAllByRole("button", { name: /^Who's it for\?/ }),
     ).toHaveLength(0);
   });
 
@@ -1048,7 +1048,7 @@ describe("MealPlanDayScreen — family planning", () => {
   it("changing the audience sends the item, audience and profile id", () => {
     renderComponent(<MealPlanDayScreen />);
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Who's it for?" })[1],
+      screen.getAllByRole("button", { name: /^Who's it for\?/ })[1],
     );
     fireEvent.click(screen.getByRole("radio", { name: "Sam" }));
     expect(updateAudienceMock).toHaveBeenCalledTimes(1);
@@ -1079,7 +1079,7 @@ describe("MealPlanDayScreen — family planning", () => {
   it("shows a toast when the change fails", () => {
     renderComponent(<MealPlanDayScreen />);
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Who's it for?" })[1],
+      screen.getAllByRole("button", { name: /^Who's it for\?/ })[1],
     );
     fireEvent.click(screen.getByRole("radio", { name: "Sam" }));
     const callbacks = updateAudienceMock.mock.calls[0][1] as {

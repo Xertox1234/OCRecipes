@@ -319,7 +319,7 @@ export function DeleteAccountModal({
             styles.flexButton,
             styles.destructiveButton,
             {
-              backgroundColor: theme.error,
+              backgroundColor: theme.errorSolid,
               opacity: confirmDisabled ? 0.6 : 1,
             },
           ]}

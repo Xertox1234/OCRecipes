@@ -12,6 +12,7 @@ import * as Haptics from "expo-haptics";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { PressableScale } from "@/components/PressableScale";
 import { IngredientIcon } from "@/components/IngredientIcon";
 import { useTheme } from "@/hooks/useTheme";
@@ -279,19 +280,16 @@ export default function ReceiptMealPlanScreen() {
             Starting {formatDate(startDate, 0)}
           </ThemedText>
 
-          {generateMutation.isError && (
-            <View
-              style={[
-                styles.errorBanner,
-                { backgroundColor: withOpacity(theme.error, 0.12) },
-              ]}
-            >
-              <Feather name="alert-circle" size={16} color={theme.error} />
-              <ThemedText style={[styles.errorText, { color: theme.error }]}>
-                {getGenerateErrorMessage(generateMutation.error)}
-              </ThemedText>
-            </View>
-          )}
+          {/* InlineError: an assertive alert plus the iOS announce — the
+              server's reason (e.g. an empty pantry) must be heard. */}
+          <InlineError
+            message={
+              generateMutation.isError
+                ? getGenerateErrorMessage(generateMutation.error)
+                : null
+            }
+            style={styles.error}
+          />
 
           <PressableScale
             onPress={handleGenerate}
@@ -678,18 +676,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: Spacing.md,
   },
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
+  error: {
     marginTop: Spacing.lg,
     width: "100%",
-  },
-  errorText: {
-    fontSize: 14,
-    flex: 1,
   },
   generateButton: {
     flexDirection: "row",

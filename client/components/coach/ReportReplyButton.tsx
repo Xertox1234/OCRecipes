@@ -77,7 +77,12 @@ export default function ReportReplyButton({
   if (done) {
     return (
       <Animated.View entering={entering} style={[styles.wrap, styles.doneRow]}>
-        <Ionicons name="flag" size={14} color={theme.textSecondary} />
+        <Ionicons
+          name="flag"
+          size={14}
+          color={theme.textSecondary}
+          accessible={false}
+        />
         <ThemedText type="caption" style={{ color: theme.textSecondary }}>
           {DONE_TEXT}
         </ThemedText>
