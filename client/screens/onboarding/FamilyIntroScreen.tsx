@@ -164,7 +164,6 @@ export default function FamilyIntroScreen() {
           onPress={nextStep}
           style={styles.continueButton}
           accessibilityLabel="Continue"
-          testID="family-intro-continue"
         >
           Continue
         </Button>

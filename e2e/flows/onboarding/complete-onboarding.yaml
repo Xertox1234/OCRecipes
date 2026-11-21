@@ -151,14 +151,13 @@ tags:
     timeout: 15000
 - tapOn: "Get Started"
 
-# 1a. Family planning card (a premium feature; it asks nothing). Tapped by
-#     testID: "Continue" as text could match another label.
+# 1a. Family planning card (a premium feature; it asks nothing). Wait on its
+#     headline, then tap its only "Continue" (the shared Button takes no
+#     testID).
 - extendedWaitUntil:
-    visible:
-      id: "family-intro-continue"
+    visible: "Cooking for more than one\\?"
     timeout: 15000
-- tapOn:
-    id: "family-intro-continue"
+- tapOn: "Continue"
 
 # 1b. AI-sharing question (privacy audit H3): who the AI features send data
 #     to. Allow it, as a new user who goes on to use the app would.
