@@ -139,7 +139,7 @@ tags:
       - tapOn: "Not Now"
 
 # Onboarding wizard — real screen order from OnboardingNavigator.tsx:
-# Welcome → AiSharing → HealthDataConsent → Allergies → HealthConditions → DietType →
+# Welcome → FamilyIntro → AiSharing → HealthDataConsent → Allergies → HealthConditions → DietType →
 # Goals → Preferences → TastePicks. This flow declines the health-data
 # consent, so the four health screens (Allergies, HealthConditions, DietType,
 # Goals) are skipped: no consent, no health data (onboarding-steps.ts →
@@ -150,6 +150,15 @@ tags:
     visible: "Get Started"
     timeout: 15000
 - tapOn: "Get Started"
+
+# 1a. Family planning card (a premium feature; it asks nothing). Tapped by
+#     testID: "Continue" as text could match another label.
+- extendedWaitUntil:
+    visible:
+      id: "family-intro-continue"
+    timeout: 15000
+- tapOn:
+    id: "family-intro-continue"
 
 # 1b. AI-sharing question (privacy audit H3): who the AI features send data
 #     to. Allow it, as a new user who goes on to use the app would.

@@ -30,8 +30,9 @@ also win new subscriptions.
 - **The card is its own onboarding screen with one button, Continue.** No purchase button on it:
   buying in the middle of onboarding is a detour, and the owner asked for "then onto the next
   step". The card says where to turn it on instead.
-- **It comes right after the three intro screens, before the first question**, and is not counted
-  as a question step (the Welcome copy keeps saying "6 quick steps").
+- **It comes right after Welcome**, before the AI-sharing question, and is not counted as a
+  question step (the Welcome copy keeps saying "6 quick steps"). The first draft put it after the
+  health-data consent, but that screen's copy leads straight into the health questions.
 - **Everyone sees it once, in onboarding only**, including people who skip nothing else. Skipping
   onboarding skips the card. Existing accounts never see it.
 - **The card promises only what works today**: shared and one-person meals, per-person allergy
@@ -108,7 +109,7 @@ The owner chose B (2026-11-21). A was the earlier draft.
 
 ## Stage 1 — the front door (a small change)
 
-One new onboarding screen, `FamilyIntro`, after HealthDataConsent and before Allergies. It is an
+One new onboarding screen, `FamilyIntro`, after Welcome and before AiSharing. It is an
 intro screen (the intro count becomes 4), shown with or without the health-data consent, and it
 collects nothing.
 

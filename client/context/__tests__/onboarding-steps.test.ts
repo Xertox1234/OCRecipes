@@ -9,37 +9,50 @@ import {
   prevStepIndex,
 } from "../onboarding-steps";
 
+const at = (name: (typeof ONBOARDING_SCREENS)[number]) =>
+  ONBOARDING_SCREENS.indexOf(name);
+
 describe("onboarding-steps", () => {
-  it("has 6 questionnaire steps after Welcome, the AI question and consent", () => {
+  it("has 6 questionnaire steps after the intro screens", () => {
     expect(QUESTION_STEP_COUNT).toBe(6);
   });
 
-  it("returns 0 for Welcome, AiSharing and HealthDataConsent (pre-questionnaire)", () => {
-    expect(getQuestionStep(0)).toBe(0);
-    expect(getQuestionStep(1)).toBe(0);
-    expect(getQuestionStep(2)).toBe(0);
-    expect(getStepLabel(0)).toBeNull();
-    expect(getStepLabel(1)).toBeNull();
-    expect(getStepLabel(2)).toBeNull();
+  it("returns 0 for the four intro screens (pre-questionnaire)", () => {
+    for (const name of [
+      "Welcome",
+      "FamilyIntro",
+      "AiSharing",
+      "HealthDataConsent",
+    ] as const) {
+      expect(getQuestionStep(at(name))).toBe(0);
+      expect(getStepLabel(at(name))).toBeNull();
+    }
+  });
+
+  // Owner ruling 2026-11-21: one card about family planning (a premium
+  // feature), right after Welcome. It asks nothing, so it is an intro screen
+  // and is shown with or without the health-data consent.
+  it("shows the family card right after Welcome, then the AI question", () => {
+    expect(nextStepIndex(at("Welcome"), false)).toBe(at("FamilyIntro"));
+    expect(nextStepIndex(at("FamilyIntro"), false)).toBe(at("AiSharing"));
+    expect(nextStepIndex(at("FamilyIntro"), true)).toBe(at("AiSharing"));
+    expect(prevStepIndex(at("AiSharing"), false)).toBe(at("FamilyIntro"));
   });
 
   // Privacy audit H3 (owner ruling 2026-11-10): a new account is asked about
   // AI sharing inside onboarding, before any question whose answer AI uses.
-  it("asks the AI-sharing question right after Welcome", () => {
-    expect(nextStepIndex(0, false)).toBe(
-      ONBOARDING_SCREENS.indexOf("AiSharing"),
-    );
-    expect(nextStepIndex(ONBOARDING_SCREENS.indexOf("AiSharing"), false)).toBe(
-      ONBOARDING_SCREENS.indexOf("HealthDataConsent"),
-    );
+  it("asks the AI-sharing question before the consent and every question", () => {
+    expect(nextStepIndex(at("AiSharing"), false)).toBe(at("HealthDataConsent"));
+    expect(at("AiSharing")).toBeLessThan(at("Allergies"));
+    expect(at("AiSharing")).toBeLessThan(at("Preferences"));
   });
 
   it("numbers questionnaire screens 1..6 through TastePicks", () => {
-    expect(getQuestionStep(3)).toBe(1);
-    expect(getQuestionStep(8)).toBe(6);
-    expect(getStepLabel(3)).toBe("Step 1 of 6");
-    expect(getStepLabel(7)).toBe("Step 5 of 6");
-    expect(getStepLabel(8)).toBe("Step 6 of 6");
+    expect(getQuestionStep(at("Allergies"))).toBe(1);
+    expect(getQuestionStep(at("TastePicks"))).toBe(6);
+    expect(getStepLabel(at("Allergies"))).toBe("Step 1 of 6");
+    expect(getStepLabel(at("Preferences"))).toBe("Step 5 of 6");
+    expect(getStepLabel(at("TastePicks"))).toBe("Step 6 of 6");
   });
 
   // The counter must follow the real screen list: adding a screen to the
@@ -47,6 +60,7 @@ describe("onboarding-steps", () => {
   it("derives the step counts from the onboarding screen list", () => {
     expect(ONBOARDING_SCREENS.slice(0, INTRO_SCREEN_COUNT)).toEqual([
       "Welcome",
+      "FamilyIntro",
       "AiSharing",
       "HealthDataConsent",
     ]);

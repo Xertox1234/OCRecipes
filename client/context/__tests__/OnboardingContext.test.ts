@@ -7,6 +7,7 @@ import {
   useOnboarding,
   type Allergy,
 } from "../OnboardingContext";
+import { ONBOARDING_SCREENS } from "../onboarding-steps";
 
 // Exercise the REAL OnboardingProvider / useOnboarding rather than
 // re-declaring the types/defaults and re-implementing updateData/nextStep/
@@ -87,7 +88,7 @@ describe("OnboardingProvider default data", () => {
   it("starts at step 0 with the provider's totalSteps", () => {
     const { result } = renderOnboarding();
     expect(result.current.currentStep).toBe(0);
-    expect(result.current.totalSteps).toBe(9);
+    expect(result.current.totalSteps).toBe(ONBOARDING_SCREENS.length);
   });
 });
 
@@ -307,19 +308,24 @@ describe("OnboardingProvider completeOnboarding", () => {
       const { result } = renderHook(() => useOnboarding(), {
         wrapper: createWrapper(),
       });
+      const at = (name: (typeof ONBOARDING_SCREENS)[number]) =>
+        ONBOARDING_SCREENS.indexOf(name);
+      // Welcome → FamilyIntro → AiSharing → the consent screen.
       act(() => result.current.nextStep());
       act(() => result.current.nextStep());
+      act(() => result.current.nextStep());
+      expect(result.current.currentStep).toBe(at("HealthDataConsent"));
 
       act(() => result.current.answerConsent(false));
       expect(result.current.data.healthDataConsent).toBe(false);
-      expect(result.current.currentStep).toBe(7); // Preferences
+      expect(result.current.currentStep).toBe(at("Preferences"));
 
       act(() => result.current.nextStep());
-      expect(result.current.currentStep).toBe(8); // TastePicks
+      expect(result.current.currentStep).toBe(at("TastePicks"));
 
       act(() => result.current.prevStep());
       act(() => result.current.prevStep());
-      expect(result.current.currentStep).toBe(2); // back on the consent screen
+      expect(result.current.currentStep).toBe(at("HealthDataConsent"));
     });
 
     it("declining after answering drops the health answers already given", () => {
