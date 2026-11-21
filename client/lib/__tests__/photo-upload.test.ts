@@ -21,6 +21,10 @@ import { ApiError } from "../api-error";
 import { uploadAsync } from "expo-file-system/legacy";
 import { tokenStorage } from "../token-storage";
 import { compressImage, cleanupImage } from "../image-compression";
+import {
+  notifyIfSessionExpired,
+  notifyIfStreamSessionExpired,
+} from "../query-client";
 
 /**
  * We only test the pure `calculateTotals` function here.
@@ -40,6 +44,8 @@ vi.mock("../token-storage", () => ({
 
 vi.mock("../query-client", () => ({
   getApiUrl: vi.fn().mockReturnValue("http://localhost:3000"),
+  notifyIfSessionExpired: vi.fn(),
+  notifyIfStreamSessionExpired: vi.fn(),
 }));
 
 vi.mock("../image-compression", () => ({
@@ -870,5 +876,80 @@ describe("mapPhotoResultToImportedRecipeData", () => {
   it("always sets sourceUrl to photo_import", () => {
     const mapped = mapPhotoResultToImportedRecipeData(fullResult);
     expect(mapped.sourceUrl).toBe("photo_import");
+  });
+});
+
+// Camera audit 2026-11-21 M4: these uploads send their own bearer and never
+// pass through apiRequest, so a revoked token on the camera path showed only
+// "try again" — the 401 must reach the shared session-expiry check.
+describe("session expiry on photo uploads", () => {
+  const expiredBody = JSON.stringify({
+    error: "Token expired",
+    code: "TOKEN_EXPIRED",
+  });
+
+  beforeEach(() => {
+    vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
+    vi.mocked(compressImage).mockResolvedValue({
+      uri: "file:///compressed.jpg",
+      width: 100,
+      height: 100,
+      sizeKB: 10,
+    });
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 401,
+      body: expiredBody,
+      headers: {},
+      mimeType: "application/json",
+    });
+  });
+
+  it.each([
+    ["uploadPhotoForAnalysis", () => uploadPhotoForAnalysis("file:///p.jpg")],
+    ["uploadLabelForAnalysis", () => uploadLabelForAnalysis("file:///p.jpg")],
+    [
+      "uploadRecipePhotoForAnalysis",
+      () => uploadRecipePhotoForAnalysis("file:///p.jpg"),
+    ],
+    [
+      "uploadFrontLabelPhoto",
+      () => uploadFrontLabelPhoto("file:///p.jpg", "0123"),
+    ],
+  ])("%s passes a 401 to the session-expiry check", async (_name, run) => {
+    await expect(run()).rejects.toThrow();
+    expect(notifyIfStreamSessionExpired).toHaveBeenCalledWith(
+      401,
+      expiredBody,
+      "test-token",
+    );
+  });
+
+  it.each([
+    ["lookupNutritionByPrep", () => lookupNutritionByPrep("rice")],
+    ["submitFollowUp", () => submitFollowUp("s1", "q", "a")],
+    [
+      "confirmPhotoAnalysis",
+      () =>
+        confirmPhotoAnalysis({
+          sessionId: "s1",
+          foods: [],
+        } as unknown as Parameters<typeof confirmPhotoAnalysis>[0]),
+    ],
+    ["confirmLabelAnalysis", () => photoUpload.confirmLabelAnalysis("s1", 1)],
+    ["uploadRecipeTextForAnalysis", () => uploadRecipeTextForAnalysis("x")],
+    ["confirmFrontLabel", () => confirmFrontLabel("s1", "0123")],
+  ])("%s passes a 401 to the session-expiry check", async (_name, run) => {
+    const response = {
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve(JSON.parse(expiredBody)),
+      text: () => Promise.resolve(expiredBody),
+      clone() {
+        return this;
+      },
+    };
+    mockFetch.mockResolvedValue(response);
+    await expect(run()).rejects.toThrow();
+    expect(notifyIfSessionExpired).toHaveBeenCalledWith(response, "test-token");
   });
 });

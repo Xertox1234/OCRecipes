@@ -219,6 +219,18 @@ export default function ScanScreen() {
     cleanupPendingUris();
     dispatch({ type: "RESET" });
   }, [cleanupPendingUris, dispatch]);
+  // RESET parks the phase at IDLE, and only CAMERA_READY leaves it (the focus
+  // effect below). A reset that keeps the user on Scan ("Try again", closing
+  // the upsell) must re-arm, or barcodes and the shutter stay dead until the
+  // screen is reopened. navigation.isFocused() reads focus live, so a call
+  // that lands after the user left stays at IDLE.
+  const rearmScan = useCallback(() => {
+    resetScan();
+    if (navigation.isFocused()) {
+      hasLockedRef.current = false;
+      dispatch({ type: "CAMERA_READY" });
+    }
+  }, [resetScan, navigation, dispatch]);
   // Backstop for the case ScanScreen unmounts (the scan modal dismissed)
   // without the blur effect below running first. Idempotent: cleanupPendingUris
   // clears the set after running, and deleteAsync is idempotent itself.
@@ -426,6 +438,7 @@ export default function ScanScreen() {
         const safetyFlag = pickTopSafetyFlag(flags);
         dispatch({
           type: "PRODUCT_LOADED",
+          barcode,
           product: buildProductSummary(data, flags),
         });
         // Raise salience on a severe flag WITHOUT blocking the flow (badges only).
@@ -495,6 +508,14 @@ export default function ScanScreen() {
 
       const decision = evaluateBarcodeDetection(tracking, barcode);
 
+      // Armed here, before the branches, so the first frame of a sighting
+      // gets it too: a code seen for one frame must still time out to
+      // HUNTING. Every later frame clears it at the top of this callback, and
+      // a lock (hasLockedRef) clears it below.
+      barcodeAbsentTimerRef.current = setTimeout(() => {
+        dispatch({ type: "BARCODE_LOST" });
+      }, 800);
+
       if (decision.action === "start") {
         dispatch({ type: "FIRST_BARCODE_DETECTED", barcode, bounds });
         return;
@@ -513,14 +534,12 @@ export default function ScanScreen() {
           });
           setSonarVisible(true);
         }
+        clearTimeout(barcodeAbsentTimerRef.current);
+        barcodeAbsentTimerRef.current = null;
         dispatch({ type: "BARCODE_LOCKED" });
         void fetchProductInfo(barcode);
         return;
       }
-
-      barcodeAbsentTimerRef.current = setTimeout(() => {
-        dispatch({ type: "BARCODE_LOST" });
-      }, 800);
     },
     [isFocused, screenWidth, screenHeight, fetchProductInfo, haptics, dispatch],
   );
@@ -1033,7 +1052,8 @@ export default function ScanScreen() {
                 // in the a11y tree behind the modal. Focus-trap safety itself does not
                 // hinge on ordering — UpgradeModal is a RN <Modal> in its own native
                 // window, so its trap never nests with the chip's accessibilityViewIsModal
-                // (which lingers through its spring-out). The camera sits at IDLE behind.
+                // (which lingers through its spring-out). The camera sits at IDLE behind
+                // until the upsell closes (rearmScan).
                 resetScan();
                 setShowUpgradeModal(true);
                 break;
@@ -1066,7 +1086,7 @@ export default function ScanScreen() {
           isConfirmingRef.current = false;
           setIsSmartConfirming(false);
         }}
-        onRetry={resetScan}
+        onRetry={rearmScan}
       />
 
       {confirmCard && (
@@ -1079,7 +1099,10 @@ export default function ScanScreen() {
 
       <UpgradeModal
         visible={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
+        onClose={() => {
+          setShowUpgradeModal(false);
+          rearmScan();
+        }}
       />
     </View>
   );

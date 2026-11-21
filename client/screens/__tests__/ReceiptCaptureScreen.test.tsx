@@ -295,6 +295,36 @@ describe("ReceiptCaptureScreen — capture and gallery failures", () => {
     );
   });
 
+  // Camera audit 2026-11-21 L7: if the screen unmounts while takePicture is
+  // still writing, the unmount cleanup runs before the uri is known, so the
+  // file that lands afterwards was orphaned.
+  it("deletes a capture that finishes after the screen unmounted", async () => {
+    let finishCapture!: (photo: { uri: string }) => void;
+    mockTakePicture.mockReturnValue(
+      new Promise((resolve) => {
+        finishCapture = resolve;
+      }),
+    );
+    const { unmount } = renderComponent(<ReceiptCaptureScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo of receipt"));
+    });
+    await act(async () => {
+      unmount();
+    });
+    await act(async () => {
+      finishCapture({ uri: "file:///late-capture.jpg" });
+    });
+
+    await waitFor(() =>
+      expect(mockDeleteAsync).toHaveBeenCalledWith("file:///late-capture.jpg", {
+        idempotent: true,
+      }),
+    );
+    expect(mockRecognize).not.toHaveBeenCalled();
+  });
+
   // A picker error (e.g. photo-library permission denied) was an unhandled
   // rejection with no feedback (audit 2026-10-29 L-cam-5).
   it("tells the user when the gallery picker fails", async () => {

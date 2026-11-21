@@ -194,9 +194,25 @@ vi.mock("@/lib/photo-upload", () => ({
 // that Vite's ESM module graph can't resolve under jsdom. UpgradeModal has its
 // own dedicated tests (UpgradeModal.test.ts, UpgradeModal.a11y.test.tsx) — it's
 // a separate unit boundary, same as ProductChip — so a stub is appropriate here.
-vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: () => null,
-}));
+// The stub renders a close control while visible so a test can drive onClose.
+vi.mock("@/components/UpgradeModal", async () => {
+  const { createElement } = await import("react");
+  return {
+    UpgradeModal: ({
+      visible,
+      onClose,
+    }: {
+      visible: boolean;
+      onClose: () => void;
+    }) =>
+      visible
+        ? createElement("button", {
+            "aria-label": "Close upgrade prompt",
+            onClick: onClose,
+          })
+        : null,
+  };
+});
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: vi.fn(), error: mockToastError }),
 }));
@@ -340,6 +356,25 @@ describe("ScanScreen — safe back navigation", () => {
         index: 0,
         routes: [{ name: "Main" }],
       });
+    });
+  });
+
+  // Camera audit 2026-11-21 L1: before the system prompt is answered the gate
+  // offered only "Allow Camera" — a headerless full-screen modal with no way
+  // out for a user who doesn't want to grant access yet.
+  describe("permission-undetermined — Cancel and go back", () => {
+    beforeEach(() => {
+      mockPermissionStatus.value = "undetermined";
+    });
+
+    it("offers Cancel, which leaves Scan", () => {
+      mockCanGoBack.mockReturnValue(true);
+
+      renderComponent(<ScanScreen />);
+      expect(screen.getByLabelText("Allow camera access")).toBeTruthy();
+      fireEvent.click(screen.getByLabelText("Cancel and go back"));
+
+      expect(mockGoBack).toHaveBeenCalledOnce();
     });
   });
 
@@ -1092,6 +1127,35 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
     expect(mockCapturePhotoToFile).not.toHaveBeenCalled();
   });
 
+  // Camera audit 2026-11-21 M2: the first frame's `start` branch returned
+  // before arming the 800 ms "barcode lost" timer, so a code seen for one
+  // frame stranded BARCODE_TRACKING — shutter blocked, hints stopped.
+  it("returns to HUNTING when a barcode is seen for a single frame", async () => {
+    renderComponent(<ScanScreen />);
+    const handler = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0]
+      .onBarcodeScanned;
+    await act(async () => {
+      handler!([
+        {
+          rawValue: "0778918011332",
+          format: "ean-13",
+          boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+        },
+      ] as Parameters<NonNullable<typeof handler>>[0]);
+    });
+    expect(
+      screen.getByLabelText("Take photo").getAttribute("aria-disabled"),
+    ).toBe("true");
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    });
+
+    expect(
+      screen.getByLabelText("Take photo").getAttribute("aria-disabled"),
+    ).toBe("false");
+  });
+
   it("mirrors the armed state as enabled on arrival (HUNTING)", () => {
     renderComponent(<ScanScreen />);
     expect(
@@ -1472,6 +1536,71 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
     expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
       idempotent: true,
     });
+  });
+
+  // Camera audit 2026-11-21 H1: "Try again" dispatched RESET, which parks the
+  // phase at IDLE — and only the focus effect ever leaves IDLE. The shutter
+  // (and barcode scanning) stayed dead until Scan was reopened.
+  it("re-arms the camera after a failed smart classification is retried", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockRejectedValueOnce(
+      new Error("classification failed"),
+    );
+
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    const retry = await screen.findByLabelText("Retry smart photo analysis");
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+
+    vi.mocked(uploadPhotoForAnalysis).mockClear();
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce(
+      classificationResult,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    expect(uploadPhotoForAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  // Camera audit 2026-11-21 H1 (premium-blocked half): the blocked route
+  // resets and shows the upsell; closing the upsell must hand back a live
+  // camera, not one parked at IDLE.
+  it("re-arms the camera when the upgrade prompt from a blocked smart route is closed", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce({
+      ...classificationResult,
+      contentType: "grocery_receipt",
+    });
+
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    const confirm = await screen.findByLabelText(
+      "Confirm smart photo analysis",
+    );
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    const close = await screen.findByLabelText("Close upgrade prompt");
+    await act(async () => {
+      fireEvent.click(close);
+    });
+
+    vi.mocked(uploadPhotoForAnalysis).mockClear();
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce(
+      classificationResult,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    expect(uploadPhotoForAnalysis).toHaveBeenCalledTimes(1);
   });
 
   // The other half of the Risk note: leaving Scan mid-classification (no

@@ -7,6 +7,7 @@ import React, {
   useMemo,
 } from "react";
 import { apiRequest } from "@/lib/query-client";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "@/lib/fetch-timeout";
 import { logger } from "@/lib/logger";
 import type { BatchItem, ResolvedBatchItem } from "@shared/types/batch-scan";
 
@@ -146,13 +147,24 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
       const controller = new AbortController();
       abortControllersRef.current.set(itemId, controller);
       inFlightRef.current++;
+      // apiRequest drops its default deadline when given a signal, so the
+      // lookup owns one. A timeout fails the item (retryable); only a cancel
+      // (remove / new session / clear) is silent.
+      let timedOut = false;
+      const deadline = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, DEFAULT_REQUEST_TIMEOUT_MS);
+      const cancelled = () => controller.signal.aborted && !timedOut;
 
       try {
         const res = await apiRequest(
           "GET",
           `/api/nutrition/barcode/${encodeURIComponent(barcode)}`,
+          undefined,
+          { signal: controller.signal },
         );
-        if (controller.signal.aborted) return;
+        if (cancelled()) return;
 
         const data = await res.json();
 
@@ -178,7 +190,7 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
 
         dispatch({ type: "RESOLVE_ITEM" });
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (cancelled()) return;
         logger.error("BatchScan: nutrition lookup failed", err);
 
         const idx = itemsRef.current.findIndex((i) => i.id === itemId);
@@ -198,6 +210,7 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
 
         dispatch({ type: "FAIL_ITEM" });
       } finally {
+        clearTimeout(deadline);
         abortControllersRef.current.delete(itemId);
         inFlightRef.current--;
         processQueue();
@@ -207,10 +220,22 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
     return lookup(itemId, barcode);
   }, []);
 
+  // Abort every lookup and drop the queue. inFlightRef is NOT zeroed: each
+  // aborted lookup still runs its own `finally` decrement, so zeroing here
+  // drove the counter negative and lifted the concurrency cap.
+  const cancelLookups = useCallback(() => {
+    for (const controller of abortControllersRef.current.values()) {
+      controller.abort();
+    }
+    abortControllersRef.current.clear();
+    lookupQueueRef.current = [];
+  }, []);
+
   const startSession = useCallback(() => {
+    cancelLookups();
     itemsRef.current = [];
     dispatch({ type: "START_SESSION" });
-  }, []);
+  }, [cancelLookups]);
 
   const addItemAndLookup = useCallback(
     (barcode: string) => {
@@ -289,15 +314,10 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
   );
 
   const clearSession = useCallback(() => {
-    for (const controller of abortControllersRef.current.values()) {
-      controller.abort();
-    }
-    abortControllersRef.current.clear();
-    lookupQueueRef.current = [];
-    inFlightRef.current = 0;
+    cancelLookups();
     itemsRef.current = [];
     dispatch({ type: "CLEAR" });
-  }, []);
+  }, [cancelLookups]);
 
   const setSaving = useCallback((saving: boolean) => {
     dispatch({ type: "SET_SAVING", isSaving: saving });

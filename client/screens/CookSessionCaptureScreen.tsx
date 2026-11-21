@@ -45,6 +45,7 @@ import {
 } from "./CookSessionCaptureScreen-utils";
 import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
 import { useCreateCookSession, useAddCookPhoto } from "@/hooks/useCookSession";
+import { useOwnedTempFiles } from "@/hooks/useOwnedTempFiles";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -107,6 +108,11 @@ export default function CookSessionCaptureScreen() {
     return sessionPromiseRef.current;
   }, [sessionId, createSession]);
 
+  // Captures and gallery picks taken here are this screen's to delete (the
+  // review screen reads ingredients from the server, not these files). The
+  // initialPhotoUri is NOT owned: PhotoIntent stays in the stack showing it.
+  const ownTempFile = useOwnedTempFiles();
+
   const handleAnalyzePhoto = useCallback(
     async (photoUri: string) => {
       setIsAnalyzing(true);
@@ -162,6 +168,7 @@ export default function CookSessionCaptureScreen() {
       if (!cameraRef.current) return;
       const photo = await cameraRef.current.takePicture();
       if (photo?.uri) {
+        ownTempFile(photo.uri);
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         void handleAnalyzePhoto(photo.uri);
       } else {
@@ -173,7 +180,14 @@ export default function CookSessionCaptureScreen() {
     } finally {
       setIsCapturing(false);
     }
-  }, [isCapturing, photos.length, isAnalyzing, haptics, handleAnalyzePhoto]);
+  }, [
+    isCapturing,
+    photos.length,
+    isAnalyzing,
+    haptics,
+    handleAnalyzePhoto,
+    ownTempFile,
+  ]);
 
   const handlePickFromGallery = useCallback(async () => {
     const remaining = MAX_PHOTOS - photos.length;
@@ -188,10 +202,11 @@ export default function CookSessionCaptureScreen() {
 
     if (!result.canceled && result.assets.length > 0) {
       for (const asset of result.assets) {
+        ownTempFile(asset.uri);
         await handleAnalyzePhoto(asset.uri);
       }
     }
-  }, [photos.length, handleAnalyzePhoto]);
+  }, [photos.length, handleAnalyzePhoto, ownTempFile]);
 
   const handleDone = useCallback(() => {
     if (!sessionId || ingredientCount === 0) {

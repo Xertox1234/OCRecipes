@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { getApiUrl, apiRequest } from "@/lib/query-client";
+import {
+  getApiUrl,
+  apiRequest,
+  notifyIfSessionExpired,
+} from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { createUploadFilePart } from "@/lib/upload-file-part";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
@@ -92,6 +96,7 @@ export function useReceiptScan() {
           body: formData,
           signal: controller.signal,
         });
+        await notifyIfSessionExpired(response, token);
 
         enterStage("response");
         if (!response.ok) {

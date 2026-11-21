@@ -48,7 +48,8 @@ export function scanPhaseReducer(
       };
 
     case "PRODUCT_LOADED":
-      if (state.type !== "BARCODE_LOCKED") return state;
+      if (state.type !== "BARCODE_LOCKED" || state.barcode !== action.barcode)
+        return state;
       return { ...state, product: action.product };
 
     case "BARCODE_LOST":
