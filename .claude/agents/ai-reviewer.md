@@ -3,6 +3,7 @@ name: ai-reviewer
 description: "Use when reviewing AI/LLM integration and nutrition-domain code — OpenAI API usage, prompt engineering and safety, response validation, cost management, and nutrition data pipelines and macro/micronutrient calculations."
 tools: Read, Grep, Glob, Bash, LSP
 model: sonnet
+effort: medium
 ---
 
 # AI/LLM & Nutrition Domain Reviewer

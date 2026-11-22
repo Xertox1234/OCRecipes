@@ -3,6 +3,7 @@ name: mobile-reviewer
 description: "Use when reviewing React Native/Expo client code — UI/UX and theming, accessibility (VoiceOver/TalkBack, WCAG contrast), camera/OCR/barcode capture, and mobile performance."
 tools: Read, Grep, Glob, Bash, LSP
 model: sonnet
+effort: medium
 ---
 
 # Mobile Reviewer
