@@ -155,10 +155,10 @@ what it would delete and deletes nothing. Nothing is ever moved.
 - Each redirect: in a new shell, run the tool once and show its cache landed on the drive and the laptop path stayed empty.
 - Unplugged: in a new shell with the drive ejected, each variable is unset and the tool still runs (falls back).
 - Scan: a test with a fixture home (temp folders, one per class) checks classification and that the auto step
-  deletes only allowlisted REFILL paths, skips when the drive is unmounted, and skips when the owner tool is running.
+  deletes only allowlisted REFILL paths, skips when the drive is unmounted, and skips when a process has a file open under the path.
 - First real run is `--dry-run`, shown to the owner, before the `launchd` agent is turned on.
 
 ## 8. Left to the builder
 
-Script and agent names; exact weekly time; report format; the per-cache `pgrep` names; how "grown since last report"
+Script and agent names; exact weekly time; report format; the `lsof` timeout and performance handling; how "grown since last report"
 is stored; whether SwiftPM has a usable setting (§4.2).
