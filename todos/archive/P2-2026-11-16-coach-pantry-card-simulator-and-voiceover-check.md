@@ -1,9 +1,9 @@
 ---
 title: "Coach pantry card: first look in the simulator, with a VoiceOver pass"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-16
-updated: 2026-11-16
+updated: 2026-11-22
 assignee:
 labels: [deferred, accessibility, react-native]
 github_issue:
@@ -28,15 +28,15 @@ The card is `client/components/coach/blocks/write-cards/PantryWriteCard.tsx`, dr
 
 ## Acceptance Criteria
 
-- [ ] A pantry card with add, use and remove rows is on screen in the simulator, made from a
+- [x] A pantry card with add, use and remove rows is on screen in the simulator, made from a
       seeded `coach_write_cards` row and its message block on the local database (no model call).
-- [ ] Screenshots, light and dark, of each state: fresh, a row unticked, saved (with the
+- [x] Screenshots, light and dark, of each state: fresh, a row unticked, saved (with the
       receipt line, including a skipped count), undone, and saved again after Undo.
-- [ ] Save, Undo and the second save change the local pantry as the receipt says.
-- [ ] VoiceOver reads each row's action, name and amount, and the tick state; Save and Undo
+- [x] Save, Undo and the second save change the local pantry as the receipt says.
+- [x] VoiceOver reads each row's action, name and amount, and the tick state; Save and Undo
       are reachable and named.
-- [ ] The card holds up at the largest accessibility text size (no clipped buttons).
-- [ ] Any defect found is fixed in the same PR, test first.
+- [x] The card holds up at the largest accessibility text size (no clipped buttons).
+- [x] Any defect found is fixed in the same PR, test first.
 
 ## Implementation Notes
 
@@ -68,3 +68,26 @@ The card is `client/components/coach/blocks/write-cards/PantryWriteCard.tsx`, dr
 ### 2026-11-16
 
 - Initial creation
+
+### 2026-11-22
+
+- Seeded with `server/scripts/seed-pantry-card-check.ts` (local `demo`, Coach Pro), opened from
+  the Coach tab, iPhone 17 Pro simulator. Screenshots of all five states, light and dark, plus
+  the largest text size before and after the fix: `/Volumes/U34Bolt/OCRecipes/tmp/pantry-card/`.
+- Pantry after each step matched its receipt: save with spinach unticked and rice changed under
+  the card → "2 added, 1 used · 1 skipped" (eggs 6→18, new oat milk with a 7-day best-before,
+  milk 2→1.5, rice and spinach untouched); Undo restored all four rows and deleted the oat milk;
+  saving again → "2 added, 2 used".
+- Fixed at the largest accessibility size, test first: rows squeezed the name to one letter
+  wide (`CardCheckRow` now stacks tag, name and amount), the saved receipt broke mid-word
+  beside Undo (now above it), and Save/Undo labels were clipped by `Button`'s fixed 52pt
+  height (card buttons now grow). Default size unchanged: rows 44pt, button 52pt.
+- Criterion 4, accessibility tree (simulator): the accessibility tree gives every row "Action, name, amount"
+  with checkbox checked/unchecked, and names "Update pantry" and "Undo"; VoiceOver speech, the
+  save announcement and focus after Undo can only be heard on a device.
+- Found, out of scope, filed: `todos/P2-2026-11-22-coach-pro-links-open-the-plain-chat-without-cards.md`
+  (the `chat/<id>` link opens a screen with no cards) and
+  `todos/P2-2026-11-22-button-fixed-height-clips-labels-at-large-text.md` (app-wide).
+- Criterion 4 checked by the owner on the iPhone with VoiceOver (production OTA from
+  e516f5ca1, which includes the card), 2026-11-22: "looks good", after a listen-through of
+  the rows, a tick change, Save with its receipt, and Undo.

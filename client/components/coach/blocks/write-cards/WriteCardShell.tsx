@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
@@ -7,7 +7,11 @@ import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
-import type { CardUiState } from "./write-card-utils";
+import {
+  cardButtonGrowStyle,
+  stackCardRow,
+  type CardUiState,
+} from "./write-card-utils";
 
 interface Props {
   state: CardUiState;
@@ -43,6 +47,9 @@ const LOCKED_LABEL: Record<"replaced" | "expired", string> = {
 export function WriteCardShell(props: Props) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
+  // At the accessibility text sizes the receipt goes above Undo; beside it,
+  // the receipt broke mid-word.
+  const stacked = stackCardRow(useWindowDimensions().fontScale);
   const { state } = props;
   const frame = [
     styles.card,
@@ -75,12 +82,15 @@ export function WriteCardShell(props: Props) {
         entering={reducedMotion ? undefined : FadeIn}
         style={frame}
       >
-        <View style={styles.savedRow}>
+        <View style={[styles.savedRow, stacked && styles.savedRowStacked]}>
           {/* The live region is the receipt alone: on the row it would make
               TalkBack re-read the receipt when Undo leaves. */}
           <ThemedText
             type="small"
-            style={[styles.receipt, { color: theme.success }]}
+            style={[
+              stacked ? styles.receiptStacked : styles.receipt,
+              { color: theme.success },
+            ]}
             accessibilityLiveRegion="polite"
           >
             {props.receipt ?? "✓ Saved"}
@@ -90,6 +100,7 @@ export function WriteCardShell(props: Props) {
               variant="ghost"
               onPress={props.onUndo}
               accessibilityLabel="Undo"
+              style={cardButtonGrowStyle}
             >
               Undo
             </Button>
@@ -120,7 +131,7 @@ export function WriteCardShell(props: Props) {
         loadingText="Saving…"
         disabled={!props.canSave || saving}
         accessibilityLabel={props.buttonLabel}
-        style={styles.primary}
+        style={[cardButtonGrowStyle, styles.primary]}
       >
         {props.buttonLabel}
       </Button>
@@ -143,7 +154,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: Spacing.sm,
   },
+  savedRowStacked: { flexDirection: "column", alignItems: "flex-start" },
   receipt: { flex: 1 },
+  receiptStacked: { alignSelf: "stretch" },
   busy: { opacity: 0.6 },
   error: { marginTop: Spacing.sm },
   primary: { marginTop: Spacing.md },
