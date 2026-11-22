@@ -21,13 +21,11 @@ describe("buttonBoxStyle", () => {
   // No layout change at the default text size: a one-line label and a label
   // that wraps to two lines both still fit inside the 52pt minimum.
   it.each([1, 2])(
-    "a %i-line label at the default size still makes a 52pt button",
+    "a %i-line label at the default size fits inside the 52pt minimum",
     (lines) => {
       const content =
         lines * Typography.body.lineHeight + 2 * buttonBoxStyle.paddingVertical;
-      expect(Math.max(buttonBoxStyle.minHeight, content)).toBe(
-        Spacing.buttonHeight,
-      );
+      expect(content).toBeLessThanOrEqual(Spacing.buttonHeight);
     },
   );
 

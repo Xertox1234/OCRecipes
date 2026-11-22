@@ -28,7 +28,7 @@ The shared component was left alone: that todo was scoped to the write cards, an
 
 ## Acceptance Criteria
 
-- [x] At the largest accessibility text size, no `Button` label is clipped. _(by construction: the box has no fixed height; not seen on a simulator)_
+- [x] At the largest accessibility text size, no `Button` label is clipped.
 - [x] At the default size every `Button` is still 52pt tall (no layout change).
 - [x] A test pins the change (pure style helper or equivalent, per the repo's test pattern).
 - [x] Once `Button` grows by itself, the write cards' `cardButtonGrowStyle` override is removed.
@@ -65,6 +65,12 @@ The shared component was left alone: that todo was scoped to the write cards, an
 - The loading text can shrink and wrap beside the spinner.
 - Removed the write cards' `cardButtonGrowStyle`. Their buttons now have 2pt vertical padding
   where the workaround gave 8pt.
-- No `Button` caller passes its own `height` (scripted scan of every `<Button style=…>`).
-- Not checked: screens that lay a `Button` out inside a fixed-height container, and the
-  simulator at the largest text size.
+- No `Button` caller passes its own `height` (scripted scan of all 85 `<Button>` uses in 48
+  files). 30 sit in a row; every row without `alignItems` holds only `Button`s or a 52pt
+  sibling, except `FollowUpModal`, where Continue now matches the 56pt Skip beside it (it was
+  52pt).
+- Seen on the iPhone 17 Pro simulator: at `accessibility-extra-extra-extra-large` the pantry
+  card's "Update pantry" (two lines) and "Undo" show in full; at the default size "Update
+  pantry" is still 52pt.
+- Not checked: the loading row on screen, other screens at the largest size, and a `Button`
+  inside a fixed-height container.
