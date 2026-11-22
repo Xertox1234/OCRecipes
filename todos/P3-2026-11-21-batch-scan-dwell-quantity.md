@@ -3,9 +3,9 @@ title: "Batch scan adds 1 to an item's quantity every 2 s while its barcode stay
 status: backlog
 priority: low
 created: 2026-11-21
-updated: 2026-11-21
+updated: 2026-11-22
 assignee:
-labels: [deferred, camera, client, product-decision]
+labels: [deferred, camera, client]
 github_issue:
 ---
 
@@ -21,8 +21,9 @@ Camera audit 2026-11-21 finding, deferred at triage by the owner. Source: `docs/
 
 ## Acceptance Criteria
 
-- [ ] Owner decides: require the code to leave the frame before a rescan counts, a longer window, or keep as is
-- [ ] If changed: useCamera batch-mode tests cover dwell vs. a deliberate rescan
+- [ ] In batch mode a barcode that stays in view is counted once; it counts again only after it has been absent from the frame (for N consecutive frames / ms) and reappears
+- [ ] No "Item already scanned" announcement while the same code just dwells
+- [ ] useCamera batch-mode tests cover dwell (no increment) vs leave-and-return (increment)
 
 ## Implementation Notes
 
@@ -33,3 +34,7 @@ Option A: count a repeat only after the barcode has been absent for N frames/ms.
 ### 2026-11-21
 
 - Filed from the camera audit (deferred at triage)
+
+### 2026-11-22
+
+- Owner decision: a repeat counts only after the barcode has left the camera view and come back — holding still never adds more.

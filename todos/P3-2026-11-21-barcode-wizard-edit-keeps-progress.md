@@ -3,9 +3,9 @@ title: "Decide what "Edit" on the barcode wizard's review steps should keep"
 status: backlog
 priority: low
 created: 2026-11-21
-updated: 2026-11-21
+updated: 2026-11-22
 assignee:
-labels: [deferred, camera, client, product-decision]
+labels: [deferred, camera, client]
 github_issue:
 ---
 
@@ -21,8 +21,10 @@ Camera audit 2026-11-21 finding, deferred at triage by the owner. Source: `docs/
 
 ## Acceptance Criteria
 
-- [ ] Owner decides the intended Edit/Retake/save behaviour from the wizard
-- [ ] If changed: tests cover Edit → return keeps progress, and save routes to NutritionDetail
+- [ ] Edit on a wizard review step returns to that step with the barcode and earlier photos intact
+- [ ] Retake from FrontLabelConfirm in the wizard returns to the wizard, not a fresh HUNTING
+- [ ] Saving from the wizard path ends on NutritionDetail (no pop(2) that skips it)
+- [ ] Tests cover the Edit round-trip and the save route
 
 ## Implementation Notes
 
@@ -33,3 +35,7 @@ Likely needs the wizard state to survive the edit round-trip (route params or a 
 ### 2026-11-21
 
 - Filed from the camera audit (deferred at triage)
+
+### 2026-11-22
+
+- Owner decision: keep progress — Edit/Retake returns to the same wizard step with the barcode and earlier photos kept, and saving continues to NutritionDetail as normal.
