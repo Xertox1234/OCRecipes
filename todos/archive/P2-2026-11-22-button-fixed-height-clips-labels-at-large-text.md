@@ -1,6 +1,6 @@
 ---
 title: "Shared Button's fixed 52pt height clips its label at large text sizes"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-22
 updated: 2026-11-22
@@ -28,10 +28,10 @@ The shared component was left alone: that todo was scoped to the write cards, an
 
 ## Acceptance Criteria
 
-- [ ] At the largest accessibility text size, no `Button` label is clipped.
-- [ ] At the default size every `Button` is still 52pt tall (no layout change).
-- [ ] A test pins the change (pure style helper or equivalent, per the repo's test pattern).
-- [ ] Once `Button` grows by itself, the write cards' `cardButtonGrowStyle` override is removed.
+- [x] At the largest accessibility text size, no `Button` label is clipped.
+- [x] At the default size every `Button` is still 52pt tall (no layout change).
+- [x] A test pins the change (pure style helper or equivalent, per the repo's test pattern).
+- [x] Once `Button` grows by itself, the write cards' `cardButtonGrowStyle` override is removed.
 
 ## Implementation Notes
 
@@ -55,3 +55,22 @@ The shared component was left alone: that todo was scoped to the write cards, an
 ### 2026-11-22
 
 - Initial creation (deferred from the pantry-card simulator check).
+
+### 2026-11-22 (fix)
+
+- `Button`'s box is now `minHeight: 52` with 2pt vertical padding (`buttonBoxStyle` in
+  `client/components/button-utils.ts`), so it grows with its label. The padding is what is left
+  of 52pt after two lines of body text, so a one-line and a two-line label at the default size
+  still make a 52pt button.
+- The loading text can shrink and wrap beside the spinner.
+- Removed the write cards' `cardButtonGrowStyle`. Their buttons now have 2pt vertical padding
+  where the workaround gave 8pt.
+- No `Button` caller passes its own `height` (scripted scan of all 85 `<Button>` uses in 48
+  files). 30 sit in a row; every row without `alignItems` holds only `Button`s or a 52pt
+  sibling, except `FollowUpModal`, where Continue now matches the 56pt Skip beside it (it was
+  52pt).
+- Seen on the iPhone 17 Pro simulator: at `accessibility-extra-extra-extra-large` the pantry
+  card's "Update pantry" (two lines) and "Undo" show in full; at the default size "Update
+  pantry" is still 52pt.
+- Not checked: the loading row on screen, other screens at the largest size, and a `Button`
+  inside a fixed-height container.

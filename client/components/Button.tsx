@@ -10,6 +10,7 @@ import {
 import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { buttonBoxStyle } from "@/components/button-utils";
 import { usePressScale } from "@/hooks/usePressScale";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing, FontFamily } from "@/constants/theme";
@@ -147,7 +148,8 @@ export function Button({
 
 const styles = StyleSheet.create({
   button: {
-    height: Spacing.buttonHeight,
+    // Grows with its label at large text sizes (see buttonBoxStyle).
+    ...buttonBoxStyle,
     borderRadius: BorderRadius.button,
     alignItems: "center",
     justifyContent: "center",
@@ -166,5 +168,8 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontWeight: "500",
+    // Beside the spinner in a row: lets long or large text wrap instead of
+    // running past the button's edges.
+    flexShrink: 1,
   },
 });

@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
-import { Spacing } from "@/constants/theme";
 import {
-  cardButtonGrowStyle,
   cardUiState,
   dayChipLabel,
   mealChipLabel,
@@ -22,16 +20,6 @@ describe("stackCardRow", () => {
   it("stacks the row from XXXL up", () => {
     expect(stackCardRow(1.35)).toBe(true);
     expect(stackCardRow(3.1)).toBe(true);
-  });
-});
-
-describe("cardButtonGrowStyle", () => {
-  // Button's fixed 52pt height clipped "Update pantry" at the largest text
-  // size (sim check 2026-11-22): the card's buttons grow with their label.
-  it("drops the fixed height and keeps it as the minimum", () => {
-    expect(cardButtonGrowStyle.height).toBe("auto");
-    expect(cardButtonGrowStyle.minHeight).toBe(Spacing.buttonHeight);
-    expect(cardButtonGrowStyle.paddingVertical).toBeGreaterThan(0);
   });
 });
 

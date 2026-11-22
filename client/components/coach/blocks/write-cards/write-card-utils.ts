@@ -1,5 +1,4 @@
 import { ApiError } from "@/lib/api-error";
-import { Spacing } from "@/constants/theme";
 import { mealLabel } from "@shared/lib/coach-write-card-math";
 import type {
   WriteCardDay,
@@ -84,17 +83,6 @@ const STACK_FONT_SCALE = 1.3;
 export function stackCardRow(fontScale: number): boolean {
   return fontScale >= STACK_FONT_SCALE;
 }
-
-/**
- * Lets a card's Save or Undo button grow with its label. `Button` has a fixed
- * 52pt height, which clipped "Update pantry" at the largest text size; 52
- * stays the minimum, so nothing moves at the default sizes.
- */
-export const cardButtonGrowStyle = {
-  height: "auto",
-  minHeight: Spacing.buttonHeight,
-  paddingVertical: Spacing.sm,
-} as const;
 
 /** "Mon, Nov 9" for a plan row's yyyy-mm-dd (noon avoids a tz day-shift). */
 export function planDayLabel(plannedDate: string): string {
