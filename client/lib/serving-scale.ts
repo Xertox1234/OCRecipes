@@ -8,9 +8,9 @@ export function parseFraction(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
-  // Try plain number first (integer or decimal)
-  const plain = Number(trimmed);
-  if (!isNaN(plain)) return plain;
+  // Plain non-negative decimal ("2", "1.25", ".5"). Not Number(): it also
+  // accepts "Infinity", "1e3", "0x10", "-1" and "5.", none of them a quantity.
+  if (/^\d+(\.\d+)?$|^\.\d+$/.test(trimmed)) return Number(trimmed);
 
   // Try mixed fraction: "1 1/2"
   const mixedMatch = trimmed.match(/^(\d+)\s+(\d+)\/(\d+)$/);
@@ -76,8 +76,13 @@ export function formatAsFraction(value: number): string {
     return String(whole + 1);
   }
 
-  // Fallback: 1 decimal place
+  // Fallback: 1 decimal place. A rounded value can land on a cooking fraction
+  // (0.46 → 0.5), so format it once more to show "1/2" rather than "0.5"; the
+  // second pass returns its input unchanged, so this recurses at most once.
   const rounded = parseFloat(value.toFixed(1));
+  if (Number.isFinite(rounded) && rounded !== value) {
+    return formatAsFraction(rounded);
+  }
   // Avoid trailing .0
   if (rounded === Math.floor(rounded)) {
     return String(Math.floor(rounded));
@@ -93,18 +98,20 @@ export function scaleIngredientQuantity(
   quantity: string | number | null | undefined,
   ratio: number,
 ): { scaled: string | null; isNumeric: boolean } {
-  if (quantity == null) return { scaled: null, isNumeric: false };
+  const notNumeric = { scaled: null, isNumeric: false };
+  if (quantity == null) return notNumeric;
 
-  // Number type: scale directly
-  if (typeof quantity === "number") {
-    return { scaled: formatAsFraction(quantity * ratio), isNumeric: true };
-  }
+  const parsed =
+    typeof quantity === "number" ? quantity : parseFraction(quantity);
+  if (parsed === null || !isShowableAmount(parsed)) return notNumeric;
 
-  // String type: try parsing
-  const parsed = parseFraction(quantity);
-  if (parsed === null) {
-    return { scaled: null, isNumeric: false };
-  }
+  // A finite amount can still overflow (1e308 × 2) or turn NaN (Infinity × 0).
+  const product = parsed * ratio;
+  if (!isShowableAmount(product)) return notNumeric;
 
-  return { scaled: formatAsFraction(parsed * ratio), isNumeric: true };
+  return { scaled: formatAsFraction(product), isNumeric: true };
+}
+
+function isShowableAmount(v: number): boolean {
+  return Number.isFinite(v) && v >= 0;
 }

@@ -35,6 +35,18 @@ describe("parseFraction", () => {
     expect(parseFraction("some")).toBeNull();
   });
 
+  // Number() accepts all of these; none is a cooking quantity.
+  it.each(["Infinity", "1e3", "0x10", "-1", "5.", "+2"])(
+    "returns null for %j, which Number() would accept",
+    (input) => {
+      expect(parseFraction(input)).toBeNull();
+    },
+  );
+
+  it("parses a leading-dot decimal", () => {
+    expect(parseFraction(".5")).toBe(0.5);
+  });
+
   it("handles whitespace", () => {
     expect(parseFraction(" 2 ")).toBe(2);
     expect(parseFraction(" 1/2 ")).toBeCloseTo(0.5);
@@ -78,6 +90,14 @@ describe("formatAsFraction", () => {
 
   it("handles zero", () => {
     expect(formatAsFraction(0)).toBe("0");
+  });
+
+  // The 1-decimal fallback can land on a cooking fraction; show it the way
+  // that fraction is shown everywhere else ("1/2", not "0.5").
+  it("snaps a fallback that rounds onto a fraction", () => {
+    expect(formatAsFraction(0.46)).toBe("1/2");
+    expect(formatAsFraction(1.46)).toBe("1 1/2");
+    expect(formatAsFraction(0.5)).toBe("1/2");
   });
 
   it("snaps values very close to a whole number", () => {
@@ -164,4 +184,21 @@ describe("scaleIngredientQuantity", () => {
       isNumeric: false,
     });
   });
+
+  it.each<[string | number, number]>([
+    [-1, 2],
+    [Number.NaN, 2],
+    [Number.POSITIVE_INFINITY, 2],
+    [1e308, 2],
+    ["9".repeat(400), 2],
+    ["-1", 2],
+  ])(
+    "returns isNumeric false for %s × %s (negative, non-finite or overflow)",
+    (quantity, ratio) => {
+      expect(scaleIngredientQuantity(quantity, ratio)).toEqual({
+        scaled: null,
+        isNumeric: false,
+      });
+    },
+  );
 });
