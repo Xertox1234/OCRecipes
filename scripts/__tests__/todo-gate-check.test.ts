@@ -196,18 +196,23 @@ describe("todo-gate-check.sh — single-file mode", () => {
     expect(stdout).toMatch(/PARSE_ERROR/);
   });
 
-  it("exits 2 (ERROR) when the file exists but is unreadable", () => {
-    const dir = makeTempDir();
-    const path = writeTodo(dir, "t.md", { title: '"Unreadable"' });
-    chmodSync(path, 0o000);
-    try {
-      const { status, stdout } = runSingle(path);
-      expect(status).toBe(2);
-      expect(stdout).toMatch(/ERROR/);
-    } finally {
-      chmodSync(path, 0o644); // restore so afterEach's rmSync can clean up the temp dir
-    }
-  });
+  // Root ignores file modes, so chmod 000 cannot make the file unreadable
+  // there (cloud containers run as root); CI and local runs still cover it.
+  it.skipIf(process.getuid?.() === 0)(
+    "exits 2 (ERROR) when the file exists but is unreadable",
+    () => {
+      const dir = makeTempDir();
+      const path = writeTodo(dir, "t.md", { title: '"Unreadable"' });
+      chmodSync(path, 0o000);
+      try {
+        const { status, stdout } = runSingle(path);
+        expect(status).toBe(2);
+        expect(stdout).toMatch(/ERROR/);
+      } finally {
+        chmodSync(path, 0o644); // restore so afterEach's rmSync can clean up the temp dir
+      }
+    },
+  );
 
   it("exits 1 (GATED, fail-closed) when blocked_until is not a valid YYYY-MM-DD", () => {
     const dir = makeTempDir();
