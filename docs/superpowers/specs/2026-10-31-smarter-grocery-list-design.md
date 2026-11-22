@@ -1,7 +1,7 @@
 # Smarter Grocery List — Design
 
 **Date:** 2026-10-31
-**Status:** Draft for owner approval — owner Q&A complete, builder check done
+**Status:** Draft for owner approval — owner Q&A complete, builder check done; refreshed 2026-11-22 against `main` (see "Refresh 2026-11-22" at the end, which also lists the questions for the owner)
 **Mockups:** two throwaway browser mockups (not committed): the list overview and the voice listen → check flow. The owner approved both ("everything" / "that looks great"), and their content is described in full below.
 **Reviews:** builder check (questions folded in); an advisor review (bump ordering, both-empty bump, parser isolation, export coverage, all fixed); `/spec-review`, verdict approve-with-edits, all edits applied (race-safe bump under an advisory lock, offline scope removed, one amount formatter, security section, permission wording, work order, tests, verification). Calibrated against `2026-10-31-cookbook-ai-cover-studio-design.md`, `2026-10-25-form-fields-feel-and-behaviour-design.md` and `2026-06-12-offline-persistence-design.md`.
 
@@ -42,10 +42,8 @@ Success: typing or saying things the way people normally do (`Milk 2L`, `2 cans 
 
 Every item has a **count** and, optionally, a **size**:
 
-| Typed                      | Shown                      | count                         | size |
-| -------------------------- | -------------------------- | ----------------------------- | ---- |
 | Typed                      | Shown                      | stored as                     |
-| ---                        | ---                        | ---                           |
+| -------------------------- | -------------------------- | ----------------------------- |
 | `Milk 2L`                  | Milk · 2 L                 | count 1, quantity 2, unit L   |
 | `500g mince` then **+**    | Beef mince · 2 × 500 g     | count 2, quantity 500, unit g |
 | `2 cans chopped tomatoes`  | Chopped tomatoes · 2 cans  | count 1, quantity 2, unit can |
@@ -66,9 +64,11 @@ Every item has a **count** and, optionally, a **size**:
   - Neither has an amount → a missing amount counts as 1, so the row becomes 2 and gains the − / + controls. `Bob's Red Sauce` added twice → `Bob's Red Sauce · 2`.
   - Anything else (`1 L` vs `2 cartons`) → **second line**.
   - Generated (meal-plan) rows are bumped like manual ones: it's the same shopping. **Ticked rows are bumped too, and the bump unticks them** (owner ruling A below).
-- Name matching for bumps ignores case, extra spaces and simple plurals (`apple`/`apples`, `tomato`/`tomatoes`).
+- Name matching for bumps ignores case, extra spaces and simple plurals (`apple`/`apples`, `tomato`/`tomatoes`). The server already has a name key and a unit key for this (`matchKey` and `unitKey` in `server/services/pantry-deduction.ts`, used by the pantry rule and the Coach grocery card). **Move those to `shared/` and reuse them; do not write a second matching rule.** If they prove too loose or too strict for a bump, change them in one place, with tests for the pantry rule too.
+- **Only typed and spoken adds bump** (Claude's call, owner question 2 in the refresh section). Generated lists, batch scan and the Coach grocery and plan cards keep inserting their own lines as they do today: each Coach card remembers the rows it created so its Undo can delete exactly those, and a bump into an existing row would break that.
 - **The bump rules are one pure function in `shared/`** (Claude's call). The **server** uses it for the actual write. The **client** uses it **only to preview** what will happen: the voice check screen's "already on your list: makes it 2 L" note and the typed hint. Adds are not optimistic and are not queued offline today (`useAddManualGroceryItem` invalidates on success), and this design does not change that.
-- **The write is race-safe** (spec-review, `docs/rules/database.md` per-row derived value rule). The match is a per-row decision taken by comparing the new item against sibling rows, so it runs in **one transaction** whose **first statement is `pg_advisory_xact_lock`** keyed on the list id. It then SELECTs candidates under the lock and either INSERTs, or UPDATEs with a **relative** `count = count + n` / `quantity = quantity + n`. A voice batch runs as one transaction under one lock, and a batch that names the same item twice ("milk … and milk") merges inside the batch before matching. Without this, a double-tapped Return or two phones adding milk at once makes two lines or loses a bump.
+- **The write is race-safe** (spec-review, `docs/rules/database.md` per-row derived value rule). The match is a per-row decision taken by comparing the new item against sibling rows, so it runs in **one transaction** whose **first statement is `pg_advisory_xact_lock`** keyed on the list id. **Use the per-list lock that already exists**: `insertGroceryListItemsUnderCap` in `server/storage/grocery-lists.ts` takes `grocery-list-items:<listId>` before it counts rows for the 500-item cap (#1930). The bump write takes that same key, so a bump and a capped insert on one list can never interleave; a second key would let them. It then SELECTs candidates under the lock and either INSERTs, or UPDATEs with a **relative** `count = count + n` / `quantity = quantity + n`. A voice batch runs as one transaction under one lock, and a batch that names the same item twice ("milk … and milk") merges inside the batch before matching. Without this, a double-tapped Return or two phones adding milk at once makes two lines or loses a bump.
+- **The 500-item cap** (`MAX_GROCERY_LIST_ITEMS`, #1930). A bump adds no row, so it works on a full list. A new line on a full list is refused with the existing `LIMIT_REACHED` answer and the existing "list is full" message. A voice batch on a nearly full list applies every bump, inserts the new lines that fit, in order, and reports how many were left out: the same "adds as many as fit" behaviour every other insert path has. The app then says how many were skipped.
 
 ## Parsing rules
 
@@ -88,7 +88,7 @@ A live hint under the add box shows what the text will become ("Becomes Milk · 
 
 `categorizeIngredient()` and its `CATEGORY_KEYWORDS` already exist in `server/services/grocery-generation.ts`. Manual adds currently skip them (the add route defaults `category` to `"other"`).
 
-**Builder's call, recommended:** move the keyword map and `categorizeIngredient` to `shared/` so the client hint and the server use one list. The add route then categorises any item sent without a category. Check the keywords cover common shopping words that recipes rarely use (paper towels, dish soap, coffee, cereal); anything that doesn't match stays "Other".
+**Builder's call, recommended:** move the keyword map and `categorizeIngredient` to `shared/` so the client hint and the server use one list. Since October three Coach card services import it from `grocery-generation.ts` (`server/services/write-cards/grocery.ts`, `pantry.ts`, `plan.ts`); point them at the new home in the same change. The add route then categorises any item sent without a category. Check the keywords cover common shopping words that recipes rarely use (paper towels, dish soap, coffee, cereal); anything that doesn't match stays "Other".
 
 ## Remembered amounts
 
@@ -101,29 +101,31 @@ A live hint under the add box shows what the text will become ("Becomes Milk · 
 
 ## Voice
 
-- Reuse `client/hooks/useSpeechToText.ts` (already used by Coach chat and `SimpleEntrySheet`). Don't add a new speech library.
+- Reuse `client/hooks/useSpeechToText.ts` (already used by Coach chat and `SimpleEntrySheet`). Don't add a new speech library. Only one field may own the microphone at a time; follow the ownership rule the voice fields use (`client/hooks/useVoiceField.ts`, #1735 and #1739).
+- **The add box already has a 🎤 button** (added since October). Today it dictates straight into the add box, replacing its text, and Return adds one item. In this design that same button opens the listening sheet instead (Claude's call, owner question 1 in the refresh section). There is one mic button, not two.
 - **Listening sheet:** a large pulsing mic and the live transcript. Tap the mic to stop, or Cancel.
 - **Check sheet:** the parsed rows as in the mockup. Each row has ✕, the name, an optional note line (bump / "your usual"), and − / + controls (or **Amount ▾** if there's no amount). Then **Add N items** and **🎤 Say more**, which appends to the same list.
 - If permission is denied or nothing is heard, show the hook's existing error message in the sheet. The typed path is unaffected.
-- **Add N items** sends everything in one request, so a partial failure can't leave half the items added. _Builder's call_ on the shape (a batch endpoint, or the single-add endpoint taking an array).
+- **Add N items** sends everything in one request, so a failure can't leave half the items added. (A full list is not a failure: see the 500-item cap rule above.) _Builder's call_ on the shape (a batch endpoint, or the single-add endpoint taking an array).
 
 ## Server changes (summary)
 
 - Add-item route: accepts count/quantity/unit, categorises when no category is given, applies the bump rules **on the server** (so two phones adding milk agree), and returns whether it bumped or inserted.
 - Item update route (`PUT …/items/:itemId`): today it accepts only `isChecked` / `addedToPantry` (and refuses a body with neither). It needs reworking to also take `count` / `quantity` / `unit` from − / + and the picker. This is a real rewrite of the schema and refine rule, not a one-line addition.
-- **New** `DELETE …/grocery-lists/:id/items/:itemId` for swipe-remove. `deleteGroceryListItem()` already exists in `server/storage/grocery-lists.ts` with an ownership check, but nothing calls it.
+- **New** `DELETE …/grocery-lists/:id/items/:itemId` for swipe-remove. `deleteGroceryListItem()` already exists in `server/storage/grocery-lists.ts` with an ownership check. The Coach grocery and plan cards call it for their Undo; no route does yet.
+- **Every reader of an amount must count `count`.** Once a row can be `2 × 500 g`, anything that reads `quantity` alone under-reads it. Besides the screen, that is: the Coach grocery read tool (`server/services/coach-tools/grocery.ts`), the pantry rule the Coach cards use to skip what is already at home (`server/services/pantry-deduction.ts`), and Add to Pantry. Each takes the total (count × size) from one shared helper. Slice 3 is not done until all three do.
 - **New** clear endpoint: clear ticked / clear all for one list, with ownership enforced.
 - Remembered-amount read and write, scoped to the signed-in user.
 - The bump decision and batch add live in a service function (route → service → storage), not inline in the route (`docs/rules/architecture.md`). The storage function owns the transaction and lock.
 - **− / + and the picker send the absolute new value** (count / quantity / unit), not a delta. A retried request then can't double-apply, and two phones editing the same row resolve last-write-wins, which is acceptable for a shopping list. Only the add-again bump is relative, under the lock above.
-- One migration: the `count` column (`integer NOT NULL DEFAULT 1`) plus the defaults table, as a hand-written idempotent `migrations/0033_*.sql` with the same header shape as `0032` (ordering note, apply command, `to_regclass` verify query). `db:push` is the dev path only. Prod migration process applies: get the `to_regclass` output before merging.
+- One migration: the `count` column (`integer NOT NULL DEFAULT 1`) plus the defaults table, as a hand-written idempotent migration with the next free number (`0050` on 2026-11-22; check again when slice 3 starts) and the same header shape as `0049_dish_images.sql` (ordering note, apply command, `to_regclass` verify query). `db:push` is the dev path only. Prod migration process applies: get the `to_regclass` output before merging.
 
 ## Security and ownership (spec-review)
 
 - Every new or changed route checks the list belongs to `req.userId` before reading or writing. **`deleteGroceryListItem(id, listId, userId?)` makes `userId` optional, and the ownership JOIN runs only when it's passed**, so the DELETE route must pass `req.userId`. The clear route does the same.
 - The defaults table is read and written only by `req.userId`. There is no endpoint that takes a user id.
 - Zod limits on every body, matching the existing add schema: name ≤ 200 characters, unit ≤ 50, numbers finite and positive with a sane upper bound (e.g. ≤ 9,999). The voice batch caps the number of items (e.g. ≤ 50) so one request stays small (compare #1649's request-size cap).
-- No rate limiter is needed: there's no AI or expensive work (`docs/rules/api.md`). No premium gate (owner ruling B).
+- Each new route takes `crudRateLimit` inline, like every existing route in `server/routes/grocery.ts` (CodeQL's missing-rate-limiting check is required). No stricter limiter is needed: there's no AI or expensive work (`docs/rules/api.md`). No premium gate (owner ruling B).
 
 ## Client changes (summary)
 
@@ -131,17 +133,19 @@ All in `client/screens/meal-plan/GroceryListScreen.tsx` and its hooks in `client
 
 - Add box: live hint, 🎤 button, sends parsed fields.
 - Row: amount text and − / + controls, or **Amount ▾**. − / + and the picker update the cache optimistically, following the existing optimistic `useToggleGroceryItem` (`onMutate` plus rollback), and every mutation shows visible failure copy (`docs/rules/client-state.md`).
-- **One amount formatter** (in `shared/`) is used everywhere an amount is shown: the row, the voice check screen, the **Share** text, and the Add-to-Pantry total. Today the row (`GroceryListScreen.tsx:128`) and the Share text (`:313`) each format `quantity unit` inline. Left alone, both would show "500 g" for 2 × 500 g.
-- `SwipeableRow` gains a remove action on the opposite side to "Pantry" (that side is always "remove", including for users who don't have the Pantry swipe), with an Undo toast. **Undo must restore the item exactly** (name, amount, category, ticked state). _Builder's call_ on how: delay the server delete until the toast closes, or re-create the item.
-- ⋯ menu (**new**: the header has only a Share button today, so put Share inside it or keep it beside the menu; builder's call): Clear ticked items (immediate, with Undo toast) and Clear all items… (confirmation, no undo).
+- **One amount formatter** (in `shared/`) is used everywhere an amount is shown: the row, the voice check screen, the **Share** text, and the Add-to-Pantry total. Today the row (`GroceryListScreen.tsx:136`), the row's spoken label (`:146`) and the Share text (`:360`) each format `quantity unit` inline. Left alone, all three would say "500 g" for 2 × 500 g.
+- `SwipeableRow` gains a remove action on the opposite side to "Pantry" (its `rightAction`, which the component already supports; that side is always "remove", including for users who don't have the Pantry swipe), with Undo. **Undo must restore the item exactly** (name, amount, category, ticked state, added-to-pantry flag).
+- **Undo has no timer** (owner ruling 2026-11-22, WCAG 2.2.1, #1963): it stays until the user's next action on the list or until they leave the screen. The shared toast still hides an action after 5 seconds (`ACTION_DISMISS_MS` in `client/components/Toast.tsx`), so the grocery Undo cannot be a plain toast action as it stands. _Builder's call_ between an Undo bar on the screen and a toast option that stays. Either way the item is deleted on the server at once and Undo puts it back through a restore call. "Delay the delete until the toast closes" is no longer an option, because nothing closes on a clock.
+- ⋯ menu (**new**: the header has only a Share button today, so put Share inside it or keep it beside the menu; builder's call): Clear ticked items (immediate, with the same untimed Undo, restoring every cleared row) and Clear all items… (confirmation, no undo).
 - Theme tokens only (light and dark). Every control gets an accessibility label ("Increase milk", "Remove Bob's Red Sauce").
+- **Accessibility, from the 2026-11-21 audit's rules.** − / + and ✕ are at least 44 pt. A − / + tap, a bump, a removal and a clear are each announced with the result ("Milk, 2 times 2 litres"), not only drawn. Remove is reachable without swiping (an accessibility action on the row). The row keeps working at the largest text sizes: the amount and its controls wrap under the name rather than clip.
 
 ## Constraints
 
 - Strict TDD (CLAUDE.md). The parser is pure and gets table-driven tests covering every example in this document, including the anti-goal cases.
-- Existing generated lists must keep working unchanged. Grocery mutations aren't offline-durable today (no `mutationKey` / `setMutationDefaults`), and this design keeps it that way; offline grocery editing would be its own project.
+- Existing generated lists must keep working unchanged. Of the grocery mutations only the tick is offline-durable today (`TOGGLE_GROCERY_ITEM_KEY` in `client/lib/mutation-defaults.ts`). Adds are not, and this design adds no new durable mutation; offline grocery editing would be its own project. The tick's durable replay must keep working after the item update route is reworked.
 - Add to Pantry from a row with count > 1 sends the total (count × size).
-- **iOS permission wording.** The speech-recognition prompt text in `app.json` (lines 19 and 186) says "for voice food logging". The first voice use from the grocery list would show that text. Reword it to cover both, e.g. "…for voice food logging and adding items to your grocery list." This is a native change: it ships in the next EAS build, not an OTA. Until then the old wording shows, which is accurate but incomplete.
+- **iOS permission wording.** The speech-recognition prompt text in `app.json` (lines 19 and 187) now reads "…to turn what you dictate into text for food logging, recipes and coach messages." The grocery add box already uses the microphone under that text. Add the grocery list to it, e.g. "…for food logging, recipes, grocery lists and coach messages." This is a native change: it ships in the next EAS build, not an OTA. Until then the current wording shows, which is accurate but incomplete.
 
 ## Work order (spec-review: mergeable slices)
 
@@ -173,4 +177,25 @@ Each slice is its own PR, usable on its own, in this order:
 
 ## Left to the builder
 
-Storage shape (if not the recommended `count` column), endpoint shapes, component boundaries, the exact plural rules, the drop-down list, the "and"-pair list, and how Undo is implemented, all within the behaviour above.
+Storage shape (if not the recommended `count` column), endpoint shapes, component boundaries, the drop-down list, the "and"-pair list, and how Undo is drawn, all within the behaviour above.
+
+## Refresh 2026-11-22
+
+The spec sat on an unpushed branch for three weeks. It was checked against `main` at `8623366b7`, and each point below is folded into the section it belongs to.
+
+What changed in the code since 2026-10-31:
+
+- **A 500-item cap and a per-list lock exist** (#1930). The bump reuses that lock, and the cap rules for a bump and for a voice batch are now stated.
+- **The Coach can read grocery lists and add to them through cards** (#1892–#1897, #1917). So there are more insert paths than the add route, more readers of an amount, and an existing name and unit matching rule to reuse.
+- **The add box already has a mic button** that dictates into the field (#1735, #1739).
+- **Undo may not run on a timer** (owner ruling 2026-11-22, #1963), which removes one of the two Undo designs this spec offered.
+- **The tick is now offline-durable.** The spec said no grocery mutation was.
+- **Smaller corrections:** the migration number (0033 → the next free one, 0050 today), the permission text and its line numbers, the screen line numbers, `deleteGroceryListItem` now having callers, the rate-limit line, and a doubled table header.
+
+Unchanged and still true: the parser files, `parseIngredientText` feeding only the recipe form, the item update route accepting only the tick and the pantry flag, manual adds defaulting to "Other", and the data export listing tables by name.
+
+Questions for the owner before approval:
+
+1. **The mic button.** Today it dictates into the add box. This design makes the same button open the listening sheet with the check screen. Confirm, or keep quick dictation and give the sheet its own button.
+2. **Coach and generated adds.** This design bumps only what the user types or says. Items added by a Coach card, a generated list or a batch scan still arrive as their own lines, so "Milk" from the Coach can sit beside the user's "Milk · 2 L". Confirm, or ask for those paths to bump too (a larger change: the Coach card's Undo would need a new design).
+3. **Still open from October:** remembered amounts are learned from the Amount ▾ drop-down only, not from typed amounts ("Remembered amounts" above). Veto if typed amounts should be learned too.
