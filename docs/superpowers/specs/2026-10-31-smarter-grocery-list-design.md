@@ -1,7 +1,7 @@
 # Smarter Grocery List — Design
 
 **Date:** 2026-10-31
-**Status:** Draft for owner approval — owner Q&A complete, builder check done; refreshed 2026-11-22 against `main` (see "Refresh 2026-11-22" at the end); every open question answered by the owner on 2026-11-22
+**Status:** Approved by the owner 2026-11-22. Nothing is built yet; the work order below is the build plan. Owner Q&A complete, builder check done; refreshed 2026-11-22 against `main` (see "Refresh 2026-11-22" at the end); every open question answered by the owner on 2026-11-22
 **Mockups:** two throwaway browser mockups (not committed): the list overview and the voice listen → check flow. The owner approved both ("everything" / "that looks great"), and their content is described in full below.
 **Reviews:** builder check (questions folded in); an advisor review (bump ordering, both-empty bump, parser isolation, export coverage, all fixed); `/spec-review`, verdict approve-with-edits, all edits applied (race-safe bump under an advisory lock, offline scope removed, one amount formatter, security section, permission wording, work order, tests, verification). Calibrated against `2026-10-31-cookbook-ai-cover-studio-design.md`, `2026-10-25-form-fields-feel-and-behaviour-design.md` and `2026-06-12-offline-persistence-design.md`.
 
