@@ -33,7 +33,7 @@ The card is `client/components/coach/blocks/write-cards/PantryWriteCard.tsx`, dr
 - [x] Screenshots, light and dark, of each state: fresh, a row unticked, saved (with the
       receipt line, including a skipped count), undone, and saved again after Undo.
 - [x] Save, Undo and the second save change the local pantry as the receipt says.
-- [ ] VoiceOver reads each row's action, name and amount, and the tick state; Save and Undo
+- [x] VoiceOver reads each row's action, name and amount, and the tick state; Save and Undo
       are reachable and named.
 - [x] The card holds up at the largest accessibility text size (no clipped buttons).
 - [x] Any defect found is fixed in the same PR, test first.
@@ -82,9 +82,12 @@ The card is `client/components/coach/blocks/write-cards/PantryWriteCard.tsx`, dr
   wide (`CardCheckRow` now stacks tag, name and amount), the saved receipt broke mid-word
   beside Undo (now above it), and Save/Undo labels were clipped by `Button`'s fixed 52pt
   height (card buttons now grow). Default size unchanged: rows 44pt, button 52pt.
-- Criterion 4 needs a person: the accessibility tree gives every row "Action, name, amount"
+- Criterion 4, accessibility tree (simulator): the accessibility tree gives every row "Action, name, amount"
   with checkbox checked/unchecked, and names "Update pantry" and "Undo"; VoiceOver speech, the
   save announcement and focus after Undo can only be heard on a device.
 - Found, out of scope, filed: `todos/P2-2026-11-22-coach-pro-links-open-the-plain-chat-without-cards.md`
   (the `chat/<id>` link opens a screen with no cards) and
   `todos/P2-2026-11-22-button-fixed-height-clips-labels-at-large-text.md` (app-wide).
+- Criterion 4 checked by the owner on the iPhone with VoiceOver (production OTA from
+  e516f5ca1, which includes the card), 2026-11-22: "looks good", after a listen-through of
+  the rows, a tick change, Save with its receipt, and Undo.
