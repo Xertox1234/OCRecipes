@@ -37,10 +37,13 @@ source, not the test.
 
 ### 3. Check the database is local
 
-Calling routes writes rows. Read only the **host** of `DATABASE_URL`; never print the URL:
+Calling routes writes rows. Read only the **host** of `DATABASE_URL`; never print the URL. The
+server loads `.env` through dotenv, which never overrides a variable already exported in the
+shell, so the check reads the shell first, exactly as the server will. Run it from the worktree
+root, in the same kind of shell you start the server from in step 4:
 
 ```bash
-node -e 'const l=require("fs").readFileSync(".env","utf8").split("\n").find(x=>/^\s*(export\s+)?DATABASE_URL=/.test(x));if(!l){console.log("host: none");process.exit()}const v=l.split("=").slice(1).join("=").trim().replace(/^["\x27]|["\x27]$/g,"");try{console.log("host:",new URL(v).hostname)}catch(e){console.log("host: unparseable")}'
+node -e 'const fs=require("fs");let v=process.env.DATABASE_URL,src="shell";if(!v&&fs.existsSync(".env")){src=".env";const l=fs.readFileSync(".env","utf8").split("\n").find(x=>/^\s*(export\s+)?DATABASE_URL=/.test(x));v=l&&l.split("=").slice(1).join("=").trim().replace(/^["\x27]|["\x27]$/g,"")}if(!v){console.log("host: none");process.exit()}try{console.log("host:",new URL(v).hostname,"(from "+src+")")}catch(e){console.log("host: unparseable")}'
 ```
 
 Host is not `localhost` or `127.0.0.1` (or none/unparseable) → report **BLOCKED (non-local DB)**
@@ -76,8 +79,9 @@ on a command line), send it, keep `token` from the response, and delete the file
 curl -s -X POST localhost:3101/api/auth/login -H 'Content-Type: application/json' -d @<that file>
 ```
 
-The response has no `token` (a two-step email-code challenge instead) → report **BLOCKED (demo
-account has two-step on)**. Do not try to complete the code step.
+The response has no `token` → report **BLOCKED (login: <status> <the response's `code`, or
+"two-step challenge" when it asks for an email code>)**. Do not try to complete a code step, and
+do not retry with another password.
 
 ### 6. Call each changed route
 
