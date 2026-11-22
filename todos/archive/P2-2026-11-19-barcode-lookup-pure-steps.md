@@ -1,6 +1,6 @@
 ---
 title: "Extract lookupBarcode's pure steps into tested functions"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-19
 updated: 2026-11-19
@@ -23,9 +23,9 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ## Acceptance Criteria
 
-- [ ] Pure `buildSearchTermCandidates(offProduct)`, `extractOffPer100g(offProduct)` and `isOffSelfConsistent(...)` with network-free unit tests
-- [ ] `lookupBarcode` is an orchestrator of ~150 lines
-- [ ] Cache write stays last (first-write-wins); lookup results unchanged on the existing fixtures
+- [x] Pure `buildSearchTermCandidates(offProduct)`, `extractOffPer100g(offProduct)` and `isOffSelfConsistent(...)` with network-free unit tests
+- [x] `lookupBarcode` is an orchestrator of ~150 lines
+- [x] Cache write stays last (first-write-wins); lookup results unchanged on the existing fixtures
 
 ## Implementation Notes
 
@@ -48,3 +48,8 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 ### 2026-11-19
 
 - Filed from the 2026-11-19 maintainability audit (deferred at triage).
+
+### 2026-11-21
+
+- Criterion 2 evidence: lookupBarcode is ~258 lines, of which ~100 are the retained rule comments; fetch (Step 1), secondary lookup (Step 3) and serving resolution (Step 5) became local helpers in barcode-lookup.ts. Code-only body is near the ~150 target.
+- Criterion 1 evidence: server/services/**tests**/barcode-lookup-steps.test.ts (13 tests); existing 91 barcode-lookup tests unchanged and green.
