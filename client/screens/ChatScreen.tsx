@@ -53,6 +53,8 @@ import { getInputBarBottomPadding } from "@/components/bottom-budget-utils";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { shouldHandOffToCoachPro } from "@/navigation/coachConversationRoute";
 import {
   useChatMessages,
   useSendMessage,
@@ -394,6 +396,23 @@ export default function ChatScreen() {
   // chat with it. Precedent: NotebookEntryScreen.tsx (docs/rules/react-native.md).
   const isMalformedId = conversationId !== null && !(conversationId > 0);
   const validConversationId = isMalformedId ? null : conversationId;
+
+  // Chat draws text only; a Coach Pro reply's write cards show in CoachPro.
+  // A Pro user opened on a conversation (the ocrecipes://chat/<id> deep link)
+  // is handed over — popTo returns to an existing CoachPro or replaces this
+  // screen. Keyed on the id this screen was OPENED with: a new chat's first
+  // send sets `conversationId` mid-reply. Waits for the resolved plan (a
+  // loading plan reads free) because the hand-off is one-way.
+  const [openedConversationId] = useState(conversationId);
+  const isCoachPro = usePremiumFeature("coachPro");
+  const handOff = shouldHandOffToCoachPro(openedConversationId, isCoachPro);
+  useEffect(() => {
+    if (handOff && openedConversationId !== null) {
+      navigation.popTo("CoachPro", {
+        selectedConversationId: openedConversationId,
+      });
+    }
+  }, [handOff, openedConversationId, navigation]);
 
   // The opening brief (spec 2026-11-08): a new chat opens with the coach's
   // brief. Its form is fixed for this screen, so marking today seen doesn't

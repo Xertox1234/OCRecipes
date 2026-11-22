@@ -46,17 +46,26 @@ import { getChatRouteId } from "../chatRouteId";
  * already has its own coverage.
  */
 
-const { mockReminders, mockToast, mockNavigationRef } = vi.hoisted(() => ({
-  // The reminders hook's answer — mutable so a test can turn the dot on.
-  mockReminders: { hasPending: false },
-  // One stable object, like the real useToast() (memoized in ToastProvider).
-  mockToast: {
-    info: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    dismiss: vi.fn(),
-  },
-  mockNavigationRef: { isReady: vi.fn(() => true), navigate: vi.fn() },
+const { mockReminders, mockToast, mockNavigationRef, mockPlan } = vi.hoisted(
+  () => ({
+    // The reminders hook's answer — mutable so a test can turn the dot on.
+    mockReminders: { hasPending: false },
+    // useShowsCoachPro's answer — mutable so a test can change the plan
+    // between the toast and the tap. Default: a resolved free user.
+    mockPlan: { showsCoachPro: false },
+    // One stable object, like the real useToast() (memoized in ToastProvider).
+    mockToast: {
+      info: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      dismiss: vi.fn(),
+    },
+    mockNavigationRef: { isReady: vi.fn(() => true), navigate: vi.fn() },
+  }),
+);
+
+vi.mock("@/hooks/usePremiumFeatures", () => ({
+  useShowsCoachPro: () => mockPlan.showsCoachPro,
 }));
 
 vi.mock("@/lib/coach-brief-seen", () => ({
@@ -159,6 +168,7 @@ vi.mock("@/components/ScanFAB", () => ({
 
 beforeEach(() => {
   mockReminders.hasPending = false;
+  mockPlan.showsCoachPro = false;
   mockNavigationRef.isReady.mockReturnValue(true);
 });
 
@@ -410,6 +420,51 @@ describe("MainTabNavigator — Coach reply ready toast", () => {
       "Chat",
       expect.anything(),
     );
+  });
+
+  it("tapping Open sends a Coach Pro user to CoachPro with the conversation selected, where its cards show", async () => {
+    mockPlan.showsCoachPro = true;
+    const { queryClient } = renderWithClient();
+    act(() => {
+      noteCoachReplyFinished(queryClient, 5);
+    });
+    await settle();
+
+    openAction().onPress();
+
+    expect(mockNavigationRef.navigate).toHaveBeenCalledOnce();
+    expect(mockNavigationRef.navigate).toHaveBeenCalledWith(
+      "Main",
+      {
+        screen: "CoachTab",
+        params: {
+          screen: "CoachPro",
+          params: { selectedConversationId: 5 },
+          pop: true,
+        },
+      },
+      { pop: true },
+    );
+  });
+
+  it("reads the plan when Open is tapped, not when the toast was raised", async () => {
+    // Raised while the plan read free; resolved to Pro before the tap.
+    const { queryClient, rerender } = renderWithClient();
+    act(() => {
+      noteCoachReplyFinished(queryClient, 5);
+    });
+    await settle();
+    mockPlan.showsCoachPro = true;
+    rerender(<MainTabNavigator />);
+    await settle();
+
+    openAction().onPress();
+
+    const [, nested] = mockNavigationRef.navigate.mock.calls[0] as [
+      string,
+      { params: { screen: string } },
+    ];
+    expect(nested.params.screen).toBe("CoachPro");
   });
 
   // A mocked navigationRef cannot tell "return to the existing Main" from

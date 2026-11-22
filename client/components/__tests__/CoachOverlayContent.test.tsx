@@ -58,9 +58,17 @@ vi.mock("@/hooks/useCoachStream", async () => {
   };
 });
 
-const { messagesHolder, mockOpenCoachConversation } = vi.hoisted(() => ({
-  messagesHolder: { messages: [] as unknown[] },
-  mockOpenCoachConversation: vi.fn(),
+const { messagesHolder, mockOpenCoachConversation, mockPlan } = vi.hoisted(
+  () => ({
+    messagesHolder: { messages: [] as unknown[] },
+    mockOpenCoachConversation: vi.fn(),
+    // useShowsCoachPro's answer. Default: a Coach Pro user.
+    mockPlan: { showsCoachPro: true },
+  }),
+);
+
+vi.mock("@/hooks/usePremiumFeatures", () => ({
+  useShowsCoachPro: () => mockPlan.showsCoachPro,
 }));
 
 vi.mock("@/hooks/useChat", () => ({
@@ -311,6 +319,7 @@ describe("CoachOverlayContent — replies with cards", () => {
   afterEach(() => {
     messagesHolder.messages = [];
     mockOpenCoachConversation.mockClear();
+    mockPlan.showsCoachPro = true;
   });
 
   const reply = (id: number, metadata: unknown) => ({
@@ -347,7 +356,28 @@ describe("CoachOverlayContent — replies with cards", () => {
     fireEvent.click(link);
 
     expect(onDismiss).toHaveBeenCalled();
-    expect(mockOpenCoachConversation).toHaveBeenCalledWith(9);
+    // Coach Pro: CoachPro is the screen that draws the reply's cards.
+    expect(mockOpenCoachConversation).toHaveBeenCalledWith(9, true);
+  });
+
+  it("a free user's link opens the plain chat", async () => {
+    mockPlan.showsCoachPro = false;
+    messagesHolder.messages = [reply(21, { blocks: [card] })];
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "Sides?", question: "sides" }}
+        screenContext="recipe"
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "See the full reply in Coach",
+      }),
+    );
+
+    expect(mockOpenCoachConversation).toHaveBeenCalledWith(9, false);
   });
 
   it("a reply whose only block is the Checked: trail has no link", async () => {

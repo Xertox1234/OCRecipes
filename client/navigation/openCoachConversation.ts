@@ -1,4 +1,5 @@
 import { navigationRef } from "@/navigation/navigationRef";
+import { coachConversationParams } from "@/navigation/coachConversationRoute";
 
 /**
  * Open a Coach conversation from anywhere, including from under a root modal.
@@ -13,14 +14,22 @@ import { navigationRef } from "@/navigation/navigationRef";
  *
  * Its own module (not MainTabNavigator) so screens and components can import
  * it without pulling in the tab navigator.
+ *
+ * `toCoachPro` (from `useShowsCoachPro`, read at tap time) sends a Pro user to
+ * CoachPro with the conversation selected: only CoachPro draws a reply's
+ * write cards. A free user gets the plain Chat. The caller passes the plan
+ * because this runs outside React.
  */
-export function openCoachConversation(conversationId: number): void {
+export function openCoachConversation(
+  conversationId: number,
+  toCoachPro: boolean,
+): void {
   if (!navigationRef.isReady()) return;
   navigationRef.navigate(
     "Main",
     {
       screen: "CoachTab",
-      params: { screen: "Chat", params: { conversationId }, pop: true },
+      params: coachConversationParams(conversationId, toCoachPro),
     },
     { pop: true },
   );

@@ -26,6 +26,7 @@ import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { filterValidBlocks } from "@/components/coach/coach-chat-utils";
 import { openCoachConversation } from "@/navigation/openCoachConversation";
+import { useShowsCoachPro } from "@/hooks/usePremiumFeatures";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { chatMessagesKey } from "@/lib/query-keys";
 import {
@@ -66,6 +67,9 @@ export function CoachOverlayContent({
   const { reducedMotion } = useAccessibility();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  // The full-reply link exists because the reply has cards: a Pro user must
+  // land in CoachPro, the screen that draws them.
+  const showsCoachPro = useShowsCoachPro();
 
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [inputText, setInputText] = useState("");
@@ -461,7 +465,7 @@ export function CoachOverlayContent({
                 <Pressable
                   onPress={() => {
                     onDismiss();
-                    openCoachConversation(conversationId);
+                    openCoachConversation(conversationId, showsCoachPro);
                   }}
                   style={({ pressed }) => [
                     styles.fullReplyLink,

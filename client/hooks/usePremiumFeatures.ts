@@ -1,5 +1,6 @@
 import { usePremiumContext } from "@/context/PremiumContext";
 import type { PremiumFeatureKey } from "@shared/types/premium";
+import { showsCoachPro } from "@/navigation/coachConversationRoute";
 import {
   getBarcodeTypesForTier,
   isPremiumBarcodeType,
@@ -19,6 +20,15 @@ export function usePremiumFeature(featureKey: PremiumFeatureKey): boolean {
 
   // For numeric features like maxDailyScans, consider them "enabled" if > 0
   return value > 0;
+}
+
+/**
+ * Whether Coach conversations open in CoachPro: a Pro user, and also while the
+ * plan is unknown (owner ruling 2026-11-02). See `showsCoachPro`.
+ */
+export function useShowsCoachPro(): boolean {
+  const { isPremiumResolved } = usePremiumContext();
+  return showsCoachPro(usePremiumFeature("coachPro"), isPremiumResolved);
 }
 
 /**

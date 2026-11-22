@@ -125,7 +125,11 @@ vi.mock("@/hooks/useChat", () => ({
 
 const { mockImpact } = vi.hoisted(() => ({ mockImpact: vi.fn() }));
 
-const mockPremium = vi.hoisted(() => ({ isPremium: false }));
+const mockPremium = vi.hoisted(() => ({
+  isPremium: false,
+  // Read through usePremiumFeature("coachPro"); a loading plan reads free.
+  features: { coachPro: false } as Record<string, boolean | number>,
+}));
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => mockPremium,
 }));
@@ -578,6 +582,60 @@ describe("ChatScreen — malformed conversationId (deep link)", () => {
 
     expect(mockPopTo).toHaveBeenCalledWith("ChatList");
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+});
+
+// The ocrecipes://chat/<id> deep link lands on Chat, which draws text only. A
+// Coach Pro user is handed over to CoachPro (popTo replaces the deep-linked
+// Chat), where the reply's write cards show.
+describe("ChatScreen — Coach Pro hand-off", () => {
+  afterEach(() => {
+    mockPremium.features = { coachPro: false };
+  });
+
+  it("hands a Coach Pro user's conversation over to CoachPro", () => {
+    mockPremium.features = { coachPro: true };
+    mockRouteParams.value = { conversationId: 42 };
+
+    renderComponent(<ChatScreen />);
+
+    expect(mockPopTo).toHaveBeenCalledWith("CoachPro", {
+      selectedConversationId: 42,
+    });
+  });
+
+  it("keeps a free user on Chat", () => {
+    mockRouteParams.value = { conversationId: 42 };
+
+    renderComponent(<ChatScreen />);
+
+    expect(mockPopTo).not.toHaveBeenCalled();
+  });
+
+  it("waits for the plan: hands off once it resolves to Coach Pro", () => {
+    mockRouteParams.value = { conversationId: 42 };
+    const { rerender } = renderComponent(<ChatScreen />);
+    expect(mockPopTo).not.toHaveBeenCalled();
+
+    mockPremium.features = { coachPro: true };
+    rerender(<ChatScreen />);
+
+    expect(mockPopTo).toHaveBeenCalledWith("CoachPro", {
+      selectedConversationId: 42,
+    });
+  });
+
+  it("keeps a new chat on Chat after its first send sets the id", () => {
+    // The Weekly Report's openCoachWithMessage path: opened with no id.
+    mockPremium.features = { coachPro: true };
+    mockRouteParams.value = { initialMessage: "How was my week?" };
+    const { rerender } = renderComponent(<ChatScreen />);
+
+    // The first send's setParams({ conversationId }) lands mid-reply.
+    mockRouteParams.value = { conversationId: 99 };
+    rerender(<ChatScreen />);
+
+    expect(mockPopTo).not.toHaveBeenCalledWith("CoachPro", expect.anything());
   });
 });
 

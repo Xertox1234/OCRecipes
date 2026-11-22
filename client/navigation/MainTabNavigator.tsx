@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
@@ -36,6 +36,7 @@ import {
 } from "@/hooks/useGeneratedRecipeNotices";
 import { openRecipeCreate } from "@/navigation/openRecipeCreate";
 import { openCoachConversation } from "@/navigation/openCoachConversation";
+import { useShowsCoachPro } from "@/hooks/usePremiumFeatures";
 import { navigationRef } from "@/navigation/navigationRef";
 import {
   FontFamily,
@@ -111,6 +112,13 @@ function AnimatedTabIcon({
  */
 function CoachReplyToastBridge(): null {
   const toast = useToast();
+  // Read when Open is tapped, not when the toast was raised: a toast shown
+  // while the plan loads can be tapped after it resolves.
+  const showsCoachPro = useShowsCoachPro();
+  const showsCoachProRef = useRef(showsCoachPro);
+  useEffect(() => {
+    showsCoachProRef.current = showsCoachPro;
+  }, [showsCoachPro]);
 
   useEffect(
     () =>
@@ -118,7 +126,8 @@ function CoachReplyToastBridge(): null {
         toast.info("Coach replied — tap to open", {
           action: {
             label: "Open",
-            onPress: () => openCoachConversation(conversationId),
+            onPress: () =>
+              openCoachConversation(conversationId, showsCoachProRef.current),
           },
         });
       }),
