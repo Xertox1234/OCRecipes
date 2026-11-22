@@ -1712,7 +1712,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
     const { rerender } = await driveToStep2Reviewing();
 
     await screen.findByLabelText(
-      "Nutrition label captured. Double tap to edit.",
+      "Nutrition label captured. Double tap to retake.",
     );
     expect(mockDeleteAsync).not.toHaveBeenCalled();
 
@@ -1727,7 +1727,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
   });
 });
 
-describe("ScanScreen — onEditStep2/onEditStep3 release the transferred photo, not the whole phase", () => {
+describe("ScanScreen — Retake keeps the wizard's progress", () => {
   const driveBarcodeLockAndProceed = async () => {
     const rendered = renderComponent(<ScanScreen />);
 
@@ -1750,50 +1750,57 @@ describe("ScanScreen — onEditStep2/onEditStep3 release the transferred photo, 
     return rendered;
   };
 
-  // Zero coverage previously (PR #1055 review finding): onEditStep2 releases
-  // the STEP2 photo (ownership transfers to LabelAnalysis) instead of leaving
-  // it for the abandon-cleanup this navigate's own blur would otherwise run.
-  it("onEditStep2 releases the photo instead of leaving it for abandon-cleanup", async () => {
-    const { rerender } = await driveBarcodeLockAndProceed();
+  // Owner decision 2026-11-22: Retake stays in the wizard — no navigate, so
+  // no blur reset — and keeps the barcode and earlier photos. Only the
+  // discarded photo is deleted.
+  it("step 2 Retake re-arms the camera for the label, then finishes to NutritionDetail", async () => {
+    mockCapturePhotoToFile
+      .mockResolvedValueOnce({ filePath: "/label.jpg" })
+      .mockResolvedValueOnce({ filePath: "/label2.jpg" });
+    await driveBarcodeLockAndProceed();
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
     fireEvent.click(
       await screen.findByLabelText(
-        "Nutrition label captured. Double tap to edit.",
+        "Nutrition label captured. Double tap to retake.",
       ),
     );
 
-    expect(mockNavigate).toHaveBeenCalledWith("LabelAnalysis", {
-      imageUri: "file:///label.jpg",
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
     });
 
-    // Simulate the blur this navigate causes — must NOT delete: ownership
-    // transferred to LabelAnalysis, which owns its own cleanup.
-    mockIsFocused.value = false;
+    // The camera is armed for the label again; the new photo carries on.
     await act(async () => {
-      rerender(<ScanScreen />);
+      fireEvent.click(screen.getByLabelText("Take photo"));
     });
-
-    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
-      "file:///label.jpg",
-      expect.anything(),
+    fireEvent.click(
+      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+    );
+    await waitFor(
+      () =>
+        expect(mockNavigate).toHaveBeenCalledWith(
+          "NutritionDetail",
+          expect.objectContaining({
+            barcode: "0778918011332",
+            nutritionImageUri: "file:///label2.jpg",
+          }),
+        ),
+      { timeout: 3000 },
     );
   });
 
-  // Zero coverage previously. onEditStep3 releases only frontImageUri (the
-  // URI it knows transfers) — nutritionImageUri must stay pending so the
-  // abandon-cleanup this navigate's blur triggers still deletes it. Distinct
-  // mock paths per capture are required: mockCapturePhotoToFile resolving the
-  // same path for both captures would dedupe them to one pendingTempUrisRef
-  // entry and make this assertion vacuous.
-  it("onEditStep3 releases only frontImageUri, leaving nutritionImageUri pending for abandon-cleanup", async () => {
+  // Distinct mock paths per capture: one shared path would make the
+  // keep-the-nutrition-photo assertion vacuous.
+  it("step 3 Retake discards only the front photo and returns to step 3", async () => {
     mockCapturePhotoToFile
       .mockResolvedValueOnce({ filePath: "/label.jpg" })
-      .mockResolvedValueOnce({ filePath: "/front.jpg" });
-
-    const { rerender } = await driveBarcodeLockAndProceed();
+      .mockResolvedValueOnce({ filePath: "/front.jpg" })
+      .mockResolvedValueOnce({ filePath: "/front2.jpg" });
+    await driveBarcodeLockAndProceed();
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
@@ -1807,28 +1814,42 @@ describe("ScanScreen — onEditStep2/onEditStep3 release the transferred photo, 
     });
 
     fireEvent.click(
-      await screen.findByLabelText("Front label captured. Double tap to edit."),
+      await screen.findByLabelText(
+        "Front label captured. Double tap to retake.",
+      ),
     );
 
-    expect(mockNavigate).toHaveBeenCalledWith(
-      "FrontLabelConfirm",
-      expect.objectContaining({ imageUri: "file:///front.jpg" }),
-    );
-
-    mockIsFocused.value = false;
-    await act(async () => {
-      rerender(<ScanScreen />);
-    });
-
-    // frontImageUri was released — ownership transferred, must survive.
-    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
-      "file:///front.jpg",
-      expect.anything(),
-    );
-    // nutritionImageUri was never released here — abandon-cleanup deletes it.
-    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///front.jpg", {
       idempotent: true,
     });
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///label.jpg",
+      expect.anything(),
+    );
+    // Back at step 3's prompt, nutrition photo kept.
+    expect(screen.getByLabelText("Finish scan")).toBeTruthy();
+
+    // A new front photo finishes with both photos on NutritionDetail.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    await waitFor(
+      () =>
+        expect(mockNavigate).toHaveBeenCalledWith(
+          "NutritionDetail",
+          expect.objectContaining({
+            barcode: "0778918011332",
+            nutritionImageUri: "file:///label.jpg",
+            frontImageUri: "file:///front2.jpg",
+          }),
+        ),
+      { timeout: 4000 },
+    );
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///label.jpg",
+      expect.anything(),
+    );
   });
 });
 

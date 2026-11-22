@@ -734,8 +734,8 @@ describe("scan-screen-utils", () => {
           BARCODE_TRACKING:
             "Scanning the barcode automatically. No photo needed.",
           IDLE: "Camera is still starting.",
-          STEP2_REVIEWING: "Reviewing your photo. Confirm or edit it first.",
-          STEP3_REVIEWING: "Reviewing your photo. Confirm or edit it first.",
+          STEP2_REVIEWING: "Reviewing your photo. Confirm or retake it first.",
+          STEP3_REVIEWING: "Reviewing your photo. Confirm or retake it first.",
           CLASSIFYING: "Still working on the photo you just took.",
           SMART_CONFIRMED: "Confirm or retake the photo you just took.",
           SMART_ERROR:

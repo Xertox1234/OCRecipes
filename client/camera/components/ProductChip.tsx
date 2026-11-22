@@ -45,8 +45,8 @@ interface Props {
   onConfirm: () => void;
   onProceedToLabel: () => void;
   onStepConfirmed: () => void;
-  onEditStep2: () => void;
-  onEditStep3: () => void;
+  onRetakeStep2: () => void;
+  onRetakeStep3: () => void;
   onSmartPhotoConfirm: () => void;
   onRetry: () => void;
   /**
@@ -57,7 +57,7 @@ interface Props {
   isSmartConfirming?: boolean;
   /**
    * True while VoiceOver/TalkBack is active. The auto-advancing review card
-   * (step2_review/step3_review) falls back to explicit Confirm/Edit buttons
+   * (step2_review/step3_review) falls back to explicit Confirm/Retake buttons
    * in this mode — the ~1s auto-advance timer in ScanScreen is suppressed for
    * screen-reader users (see docs/rules/accessibility.md and the design spec),
    * so this state needs its own explicit continue affordance instead.
@@ -77,8 +77,8 @@ export function ProductChip({
   onConfirm,
   onProceedToLabel,
   onStepConfirmed,
-  onEditStep2,
-  onEditStep3,
+  onRetakeStep2,
+  onRetakeStep3,
   onSmartPhotoConfirm,
   onRetry,
   importantForAccessibility,
@@ -348,18 +348,18 @@ export function ProductChip({
             </PressableScale>
             <PressableScale
               style={styles.btnSecondary}
-              onPress={onEditStep2}
-              accessibilityLabel="Edit nutrition values"
+              onPress={onRetakeStep2}
+              accessibilityLabel="Retake nutrition label photo"
               accessibilityRole="button"
             >
-              <Text style={styles.btnSecondaryText}>Edit values</Text>
+              <Text style={styles.btnSecondaryText}>Retake photo</Text>
             </PressableScale>
           </>
         ) : (
           <TouchableOpacity
             style={styles.reviewCard}
-            onPress={onEditStep2}
-            accessibilityLabel="Nutrition label captured. Double tap to edit."
+            onPress={onRetakeStep2}
+            accessibilityLabel="Nutrition label captured. Double tap to retake."
             accessibilityRole="button"
           >
             <View style={styles.reviewRow}>
@@ -400,18 +400,18 @@ export function ProductChip({
             </PressableScale>
             <PressableScale
               style={styles.btnSecondary}
-              onPress={onEditStep3}
-              accessibilityLabel="Edit front label values"
+              onPress={onRetakeStep3}
+              accessibilityLabel="Retake front label photo"
               accessibilityRole="button"
             >
-              <Text style={styles.btnSecondaryText}>Edit values</Text>
+              <Text style={styles.btnSecondaryText}>Retake photo</Text>
             </PressableScale>
           </>
         ) : (
           <TouchableOpacity
             style={styles.reviewCard}
-            onPress={onEditStep3}
-            accessibilityLabel="Front label captured. Double tap to edit."
+            onPress={onRetakeStep3}
+            accessibilityLabel="Front label captured. Double tap to retake."
             accessibilityRole="button"
           >
             <View style={styles.reviewRow}>

@@ -126,6 +126,27 @@ export function scanPhaseReducer(
         ocrText: state.ocrText,
       };
 
+    case "RETAKE_STEP":
+      // Back to the camera for the same step; the barcode and any earlier
+      // photo stay. The caller deletes the discarded photo.
+      if (state.type === "STEP2_REVIEWING") {
+        return {
+          type: "LABEL_PROMPTED",
+          barcode: state.barcode,
+          product: state.product,
+        };
+      }
+      if (state.type === "STEP3_REVIEWING") {
+        return {
+          type: "STEP2_CONFIRMED",
+          barcode: state.barcode,
+          product: state.product,
+          nutritionImageUri: state.nutritionImageUri,
+          ocrText: state.ocrText,
+        };
+      }
+      return state;
+
     case "SMART_PHOTO_INITIATED":
       return { type: "CLASSIFYING", imageUri: action.imageUri };
 
