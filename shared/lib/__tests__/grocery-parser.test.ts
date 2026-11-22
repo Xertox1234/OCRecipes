@@ -27,6 +27,10 @@ describe("parseGroceryText", () => {
       ["milk x2", "Milk", 2, null],
       ["2 x milk", "Milk", 2, null],
       ["3 apples", "Apples", 3, null],
+      // A unit letter must be a whole word: never 3 L of "emons".
+      ["3 lemons", "Lemons", 3, null],
+      ["2 grapes", "Grapes", 2, null],
+      ["lemons 3", "Lemons", 3, null],
       ["a dozen eggs", "Eggs", 12, null],
       ["500g mince", "Mince", 500, "g"],
       ["half a kilo of cheese", "Cheese", 0.5, "kg"],
