@@ -130,6 +130,12 @@ vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => mockPremium,
 }));
 
+// The plan-based route choice — mutable so a test can be a Coach Pro user.
+const mockShowsCoachPro = vi.hoisted(() => ({ value: false }));
+vi.mock("@/hooks/useShowsCoachPro", () => ({
+  useShowsCoachPro: () => mockShowsCoachPro.value,
+}));
+
 // The shared react-native mock has no Keyboard; the keyboard-visibility hook
 // is covered by bottom-budget-utils.test.ts (pure math).
 vi.mock("@/hooks/useKeyboardVisible", () => ({
@@ -578,6 +584,65 @@ describe("ChatScreen — malformed conversationId (deep link)", () => {
 
     expect(mockPopTo).toHaveBeenCalledWith("ChatList");
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+});
+
+// The plain Chat screen draws a reply's text only. A Coach Pro user's chats
+// belong in CoachPro, which draws the write cards, so a Chat opened on a
+// conversation (the ocrecipes://chat/<id> link, whose route is fixed before
+// the plan can be read) hands over to it.
+describe("ChatScreen — hand-off to CoachPro", () => {
+  afterEach(() => {
+    mockShowsCoachPro.value = false;
+  });
+
+  it("sends a Coach Pro user to the conversation in CoachPro and draws nothing itself", () => {
+    mockShowsCoachPro.value = true;
+    mockRouteParams.value = { conversationId: 42 };
+
+    renderComponent(<ChatScreen />);
+
+    // popTo: pops back to the stack's CoachPro, or — on a cold link, where the
+    // Coach stack holds only this Chat — replaces Chat with it.
+    expect(mockPopTo).toHaveBeenCalledOnce();
+    expect(mockPopTo).toHaveBeenCalledWith("CoachPro", {
+      selectedConversationId: 42,
+    });
+    expect(screen.queryByPlaceholderText("Ask NutriCoach...")).toBeNull();
+    expect(mockUseChatMessages).not.toHaveBeenCalled();
+  });
+
+  it("keeps a free user on Chat", () => {
+    mockRouteParams.value = { conversationId: 42 };
+
+    renderComponent(<ChatScreen />);
+
+    expect(mockPopTo).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("Ask NutriCoach...")).toBeTruthy();
+  });
+
+  it("keeps a malformed link id on Chat, which shows its error", () => {
+    mockShowsCoachPro.value = true;
+    mockRouteParams.value = { conversationId: 0 };
+
+    renderComponent(<ChatScreen />);
+
+    expect(mockPopTo).not.toHaveBeenCalled();
+  });
+
+  // A new chat gains its id from the first send (setParams). The decision is
+  // made from the params the screen opened with, so the chat is not pulled
+  // away mid-reply.
+  it("keeps a new chat on Chat after it gains its conversation id", () => {
+    mockShowsCoachPro.value = true;
+    mockRouteParams.value = { initialMessage: "Tell me about my week" };
+
+    const { rerender } = renderComponent(<ChatScreen />);
+    mockRouteParams.value = { conversationId: 99 };
+    rerender(<ChatScreen />);
+
+    expect(mockPopTo).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("Ask NutriCoach...")).toBeTruthy();
   });
 });
 
