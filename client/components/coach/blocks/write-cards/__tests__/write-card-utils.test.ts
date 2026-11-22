@@ -1,12 +1,39 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
+import { Spacing } from "@/constants/theme";
 import {
+  cardButtonGrowStyle,
   cardUiState,
   dayChipLabel,
   mealChipLabel,
   saveErrorMessage,
+  stackCardRow,
   stepCount,
 } from "../write-card-utils";
+
+describe("stackCardRow", () => {
+  // iOS body text: Large (default) 1.0, XXXL ≈ 1.35, the largest
+  // accessibility size ≈ 3.1. Side by side, the tag and amount left the name
+  // one letter wide at the largest size (sim check 2026-11-22).
+  it("keeps the row on one line at the default sizes", () => {
+    expect(stackCardRow(1)).toBe(false);
+    expect(stackCardRow(1.24)).toBe(false);
+  });
+  it("stacks the row from XXXL up", () => {
+    expect(stackCardRow(1.35)).toBe(true);
+    expect(stackCardRow(3.1)).toBe(true);
+  });
+});
+
+describe("cardButtonGrowStyle", () => {
+  // Button's fixed 52pt height clipped "Update pantry" at the largest text
+  // size (sim check 2026-11-22): the card's buttons grow with their label.
+  it("drops the fixed height and keeps it as the minimum", () => {
+    expect(cardButtonGrowStyle.height).toBe("auto");
+    expect(cardButtonGrowStyle.minHeight).toBe(Spacing.buttonHeight);
+    expect(cardButtonGrowStyle.paddingVertical).toBeGreaterThan(0);
+  });
+});
 
 describe("stepCount", () => {
   it("stepCount clamps at 0 and 20", () => {

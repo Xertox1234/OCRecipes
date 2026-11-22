@@ -1,11 +1,12 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { PressableScale } from "@/components/PressableScale";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing } from "@/constants/theme";
+import { stackCardRow } from "./write-card-utils";
 
 interface Props {
   label: string;
@@ -20,6 +21,22 @@ interface Props {
 export function CardCheckRow({ label, detail, tag, checked, onToggle }: Props) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  // At the accessibility text sizes the tag, name and amount stack beside
+  // the box; side by side they left the name one letter wide.
+  const stacked = stackCardRow(useWindowDimensions().fontScale);
+  const tagText = tag ? (
+    <ThemedText
+      type="caption"
+      style={[!stacked && styles.tag, { color: theme.textSecondary }]}
+    >
+      {tag}
+    </ThemedText>
+  ) : null;
+  const detailText = detail ? (
+    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+      {detail}
+    </ThemedText>
+  ) : null;
   return (
     <PressableScale
       onPress={() => {
@@ -36,27 +53,18 @@ export function CardCheckRow({ label, detail, tag, checked, onToggle }: Props) {
         size={20}
         color={checked ? theme.link : theme.textSecondary}
       />
-      {tag ? (
-        <ThemedText
-          type="caption"
-          style={[styles.tag, { color: theme.textSecondary }]}
-        >
-          {tag}
-        </ThemedText>
-      ) : null}
+      {stacked ? null : tagText}
       <View style={styles.text}>
+        {stacked ? tagText : null}
         <ThemedText
           type="body"
           style={!checked ? { color: theme.textSecondary } : undefined}
         >
           {label}
         </ThemedText>
+        {stacked ? detailText : null}
       </View>
-      {detail ? (
-        <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-          {detail}
-        </ThemedText>
-      ) : null}
+      {stacked ? null : detailText}
     </PressableScale>
   );
 }
