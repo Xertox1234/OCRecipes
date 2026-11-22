@@ -25,12 +25,9 @@ import * as Haptics from "expo-haptics";
 import { ChatBubble } from "@/components/ChatBubble";
 import { InlineError } from "@/components/InlineError";
 import { useTTS } from "@/hooks/useTTS";
-import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
-import MemoryRefsTag from "@/components/coach/MemoryRefsTag";
-import ReportReplyButton from "@/components/coach/ReportReplyButton";
 import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
 import { COACH_BRIEF_KEY } from "@/hooks/useCoachBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -42,7 +39,6 @@ import {
   type ChatMessage,
   type StreamingRecipe,
 } from "@/hooks/useChat";
-import { RecipeCard as GeneratedRecipeCard } from "@/components/recipe-chat/RecipeCard";
 import {
   finderItemNavParams,
   finderActionNeedsPlan,
@@ -69,7 +65,6 @@ import {
   useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
-import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -82,7 +77,9 @@ import {
   getStreamFinishAnnouncement,
   latestLiveWriteCard,
   lockOlderWriteCards,
+  deriveMessageView,
 } from "@/components/coach/coach-chat-utils";
+import { CoachMessageRow } from "@/components/coach/CoachMessageRow";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import StreamingBubble from "@/components/coach/StreamingBubble";
@@ -1014,135 +1011,52 @@ export default function CoachChat({
     ({ item }: { item: ChatListItem }) => {
       if (item.type === "message") {
         const msg = item.message;
-        const isAssistant = msg.role === "assistant";
-        const savedBlocks = lockedMessageBlocks.get(msg.id);
-        // A finder message's text is the old-client fallback; the block replaces it.
-        const hasFinderBlock =
-          savedBlocks?.some((b) => isFinderBlockType(b.type)) ?? false;
-        // The footer still shows this reply's other blocks (finder blocks
-        // never go there), so the saved copy and Regenerate wait.
-        const isHeld = msg.id === heldReplyId;
-        const blocksForMsg = isHeld
-          ? savedBlocks?.filter((b) => isFinderBlockType(b.type))
-          : savedBlocks;
-        // No Regenerate under a finder message: handleRetry re-sends the
-        // last user text without its finderAction, so a "Get ideas for you"
-        // tap would come back as a community search for that label. The
-        // finder message's own buttons are the next step.
-        const isRetryTarget =
-          !showLiveReply &&
-          isAssistant &&
-          !hasFinderBlock &&
-          !isHeld &&
-          msg.id === lastAssistantMessageId;
-        // Visible memory R1: the server already kept only confirmed ids.
-        const memoryRefBlock = savedBlocks?.find(
-          (b) => b.type === "memory_refs",
-        );
-        const memoryRefIds =
-          memoryRefBlock?.type === "memory_refs" ? memoryRefBlock.ids : null;
-        const generated = generatedRecipes.get(msg.id);
-        const savedRecipeId =
-          savedRecipeIdsRef.current.get(msg.id) ??
-          savedRecipeIdFromMetadata(msg.metadata);
+        const view = deriveMessageView(msg, {
+          savedBlocks: lockedMessageBlocks.get(msg.id),
+          heldReplyId,
+          showLiveReply,
+          lastAssistantMessageId,
+          savedRecipeIds: savedRecipeIdsRef.current,
+        });
         return (
-          <View>
-            {!hasFinderBlock && (
-              <ChatBubble
-                role={msg.role as "user" | "assistant"}
-                content={msg.content}
-                onSpeak={
-                  isAssistant ? () => ttsSpeak(msg.id, msg.content) : undefined
-                }
-                isSpeaking={
-                  isAssistant && speakingMessageId === msg.id && isSpeaking
-                }
-              />
-            )}
-            {blocksForMsg?.map((block, i) => {
-              const bKey = `${msg.id}-${i}`;
-              return (
-                <BlockRenderer
-                  key={`${msg.id}-block-${i}`}
-                  block={block}
-                  onAction={handleBlockAction}
-                  onQuickReply={handleQuickReply}
-                  blockKey={bKey}
-                  onCommitmentAccept={handleCommitmentAccept}
-                  isUsed={usedQuickRepliesRef.current.has(bKey)}
-                  isCommitmentAccepted={
-                    block.type === "commitment_card"
-                      ? acceptedCommitmentsRef.current.has(
-                          block.notebookEntryId ??
-                            `${block.title}::${block.followUpDate}`,
-                        )
-                      : undefined
-                  }
-                  isActive={!showLiveReply && msg.id === lastAssistantMessageId}
-                  lockedFinderButtons={finderLocks}
-                  onFinderAction={handleFinderAction}
-                  onLockedFinderButton={openUpgrade}
-                  onOpenFinderItem={handleOpenFinderItem}
-                  onMakeFinderItem={handleMakeFinderItem}
-                  makingFinderItemId={makingFinderItemId}
-                  expiredFinderFlowIds={expiredFinderFlowIds}
-                  messageContent={msg.content}
-                  adjustChoices={adjustChoices}
-                  writeCardEdits={
-                    block.type === "write_card"
-                      ? writeCardEdits[block.cardId]
-                      : undefined
-                  }
-                  onWriteCardEdit={handleWriteCardEdit}
-                  replyInFlight={showLiveReply}
-                />
-              );
-            })}
-            {memoryRefIds ? <MemoryRefsTag ids={memoryRefIds} /> : null}
-            {generated ? (
-              <GeneratedRecipeCard
-                recipe={generated.recipe}
-                allergenWarning={generated.allergenWarning}
-                isSaved={savedRecipeId !== null}
-                isSaving={savingRecipeMessageId === msg.id}
-                onSave={() => void handleSaveGeneratedRecipe(msg.id)}
-                isFavourited={
-                  savedRecipeId !== null &&
-                  !!favouriteIds?.ids.some(
-                    (f) =>
-                      f.recipeId === savedRecipeId &&
-                      f.recipeType === "community",
-                  )
-                }
-                onFavourite={() =>
-                  void handleFavouriteGeneratedRecipe(msg.id, savedRecipeId)
-                }
-              />
-            ) : null}
-            {/* Privacy audit G7: every saved AI reply can be reported, cards
-                and block-only replies included. Not while the footer still
-                shows the rest of this reply. */}
-            {isAssistant && !isHeld ? (
-              <ReportReplyButton messageId={msg.id} />
-            ) : null}
-            {isRetryTarget && (
-              <Pressable
-                onPress={handleRetry}
-                style={({ pressed }) => [
-                  styles.retryButton,
-                  pressed && { opacity: 0.7 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Regenerate response"
-              >
-                <Text
-                  style={[styles.retryText, { color: theme.textSecondary }]}
-                >
-                  ↺ Regenerate
-                </Text>
-              </Pressable>
-            )}
-          </View>
+          <CoachMessageRow
+            message={msg}
+            view={view}
+            isSpeaking={
+              view.isAssistant && speakingMessageId === msg.id && isSpeaking
+            }
+            onSpeak={ttsSpeak}
+            showLiveReply={showLiveReply}
+            isActive={!showLiveReply && msg.id === lastAssistantMessageId}
+            usedQuickReplies={usedQuickRepliesRef.current}
+            acceptedCommitments={acceptedCommitmentsRef.current}
+            onBlockAction={handleBlockAction}
+            onQuickReply={handleQuickReply}
+            onCommitmentAccept={handleCommitmentAccept}
+            lockedFinderButtons={finderLocks}
+            onFinderAction={handleFinderAction}
+            onLockedFinderButton={openUpgrade}
+            onOpenFinderItem={handleOpenFinderItem}
+            onMakeFinderItem={handleMakeFinderItem}
+            makingFinderItemId={makingFinderItemId}
+            expiredFinderFlowIds={expiredFinderFlowIds}
+            adjustChoices={adjustChoices}
+            writeCardEdits={writeCardEdits}
+            onWriteCardEdit={handleWriteCardEdit}
+            generated={generatedRecipes.get(msg.id)}
+            isSavingRecipe={savingRecipeMessageId === msg.id}
+            isRecipeFavourited={
+              view.savedRecipeId !== null &&
+              !!favouriteIds?.ids.some(
+                (f) =>
+                  f.recipeId === view.savedRecipeId &&
+                  f.recipeType === "community",
+              )
+            }
+            onSaveRecipe={(id) => void handleSaveGeneratedRecipe(id)}
+            onFavouriteRecipe={handleFavouriteGeneratedRecipe}
+            onRetry={handleRetry}
+          />
         );
       }
 
@@ -1166,7 +1080,6 @@ export default function CoachChat({
       ttsSpeak,
       lastAssistantMessageId,
       heldReplyId,
-      theme.textSecondary,
       finderLocks,
       handleFinderAction,
       openUpgrade,
@@ -1410,17 +1323,6 @@ export default function CoachChat({
 const styles = StyleSheet.create({
   messageList: { flex: 1 },
   messageContent: { padding: Spacing.md, paddingBottom: Spacing.lg },
-  retryButton: {
-    alignSelf: "flex-start",
-    paddingVertical: 12,
-    paddingHorizontal: Spacing.sm,
-    marginTop: 2,
-    // WCAG 2.5.5 AAA: lift the tap target to ≥44pt. alignSelf: flex-start keeps
-    // the width hugging the label; minHeight raises height only.
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  retryText: { fontSize: 12 },
   historyError: {
     alignItems: "center",
     gap: Spacing.sm,
