@@ -20,6 +20,14 @@ describe("categorizeIngredient", () => {
     }
   });
 
+  it("files 'mince' as meat without pulling minced things into meat", () => {
+    expect(categorizeIngredient("mince")).toBe("meat");
+    expect(categorizeIngredient("minced mint")).toBe("produce");
+    expect(categorizeIngredient("minced lime")).toBe("produce");
+    expect(categorizeIngredient("minced fish")).toBe("seafood");
+    expect(categorizeIngredient("minced beef")).toBe("meat");
+  });
+
   it("does not file household items under a food aisle", () => {
     // Each of these contains a food keyword ("ham" in shampoo, "roll").
     for (const name of [

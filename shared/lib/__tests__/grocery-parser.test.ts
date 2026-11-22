@@ -125,6 +125,16 @@ describe("parseGroceryText", () => {
       ["five spice", "Five spice", null, null],
       ["WD-40", "WD-40", null, null],
       ["formula 409", "Formula 409", null, null],
+      // A second number left in the name makes the reading doubtful.
+      ["Lays 2 for 1", "Lays 2 for 1", null, null],
+      ["Coffee 1 kg 3", "Coffee 1 kg 3", null, null],
+      ["Ensure 8 oz 6 pack", "Ensure 8 oz 6 pack", null, null],
+      ["2 cans 400g tomatoes", "2 cans 400g tomatoes", null, null],
+      // A trailing number that names the product, not how many.
+      ["Vitamin B 12", "Vitamin B 12", null, null],
+      ["Omega 3", "Omega 3", null, null],
+      ["Baby food stage 2", "Baby food stage 2", null, null],
+      ["nappies size 4", "Nappies size 4", null, null],
       // An amount with no name is not an item.
       ["2L", "2L", null, null],
       ["x2", "X2", null, null],

@@ -145,6 +145,9 @@ const GLUED_UNIT_RE = /^([a-zA-Z]+)\s+(.+)$/;
 const SPACED_UNIT_RE = /^([a-zA-Z]+)\s+(?:of\s+)?(.+)$/;
 const TRAIL_UNIT_RE = new RegExp(`^(.+?)\\s+(${NUM})\\s*([a-zA-Z]+)$`);
 const TRAIL_BARE_RE = /^(.+?)\s+(\d{1,2})$/;
+/** A name ending in a single letter or one of these takes its number as a label. */
+const NUMBER_NAMES_THE_PRODUCT_RE =
+  /(?:^|\s)(?:[a-z]|stage|size|step|phase|level|grade|type|no\.?|number|factor|spf|omega|formula|series)$/i;
 
 /** Trim, collapse spaces, drop a leading "some", capitalise the first letter. */
 export function tidyGroceryName(raw: string): string {
@@ -226,14 +229,18 @@ function trailingAmount(text: string): Amount | null {
     if (quantity !== null && unit) return { name: withUnit[1], quantity, unit };
   }
   const bare = text.match(TRAIL_BARE_RE);
-  if (bare) return { name: bare[1], quantity: Number(bare[2]), unit: null };
+  // "Vitamin B 12", "stage 2", "size 4": the number names the product.
+  if (bare && !NUMBER_NAMES_THE_PRODUCT_RE.test(bare[1])) {
+    return { name: bare[1], quantity: Number(bare[2]), unit: null };
+  }
   return null;
 }
 
 function readAmount(text: string): Amount | null {
   const amount = leadingAmount(text) ?? trailingAmount(text);
-  // An amount needs a name beside it: "12 34" is not an item.
-  return amount && /[^\d\s]/.test(amount.name) ? amount : null;
+  // A number still in the name ("Lays 2 for 1", "12 34") makes the reading
+  // doubtful, and a doubtful reading is added as typed.
+  return amount && !/\d/.test(amount.name) ? amount : null;
 }
 
 /**

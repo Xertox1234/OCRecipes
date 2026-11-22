@@ -94,7 +94,6 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
     "veal",
     "bison",
     "duck",
-    "mince",
   ],
   seafood: [
     "salmon",
@@ -236,10 +235,20 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
 };
 
 /**
+ * Names filed only when they are the whole name. "mince" as a substring
+ * keyword would pull "minced mint" and "minced fish" into meat.
+ */
+const WHOLE_NAMES: Record<string, GroceryCategory> = {
+  mince: "meat",
+};
+
+/**
  * Guess a grocery store category for an ingredient name.
  */
 export function categorizeIngredient(name: string): GroceryCategory {
   const lower = name.toLowerCase();
+  const exact = WHOLE_NAMES[lower.trim()];
+  if (exact) return exact;
 
   // Check categories with longer keywords first to avoid false matches
   // e.g. "ground cumin" should match "cumin" in spices, not "ground" in meat
