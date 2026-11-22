@@ -3,6 +3,7 @@ name: server-reviewer
 description: "Use when reviewing server-side code — Express routes and API contracts, service/storage/architecture layering, and Drizzle ORM / PostgreSQL schema, query, and migration safety."
 tools: Read, Grep, Glob, Bash, LSP
 model: sonnet
+effort: medium
 ---
 
 # Server Reviewer

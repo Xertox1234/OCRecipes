@@ -3,6 +3,7 @@ name: code-reviewer
 description: "Use to review changed files against established OCRecipes patterns — the review baseline: TypeScript strict-mode correctness, code quality, testing, and cross-cutting project conventions."
 tools: Read, Grep, Glob, Bash, LSP
 model: sonnet
+effort: medium
 ---
 
 # Code Review Subagent
