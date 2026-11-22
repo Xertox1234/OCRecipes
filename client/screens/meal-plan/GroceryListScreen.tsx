@@ -44,6 +44,8 @@ import {
   formatPantryFullSkipped,
 } from "@/lib/log-success";
 import { formatGroceryListTitle } from "@/lib/format";
+import { formatGroceryAmount } from "@shared/lib/grocery-amount";
+import { buildGroceryAdd } from "./grocery-add-utils";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -133,9 +135,7 @@ function GroceryItemRow({
     width: strikeProgress.value * nameWidth,
   }));
 
-  const quantityStr = item.quantity
-    ? `${parseFloat(item.quantity)}${item.unit ? ` ${item.unit}` : ""}`
-    : "";
+  const quantityStr = formatGroceryAmount(item) ?? "";
 
   return (
     <Pressable
@@ -292,13 +292,16 @@ export default function GroceryListScreen() {
     }
   }, [pantryPromptItem]);
 
+  // What the typed text will become: the fields to send and the hint line.
+  const addPreview = buildGroceryAdd(newItemName);
+
   const handleAddItem = useCallback(() => {
-    const name = newItemName.trim();
-    if (!name) return;
+    const add = buildGroceryAdd(newItemName);
+    if (!add) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     releaseVoice();
     addItemMutation.mutate(
-      { listId, name },
+      { listId, ...add.fields },
       {
         onSuccess: () => setNewItemName(""),
         // A 4xx skips the global error toast, so a full list says so here.
@@ -357,9 +360,8 @@ export default function GroceryListScreen() {
       lines.push(`## ${category.charAt(0).toUpperCase() + category.slice(1)}`);
       for (const item of items) {
         const check = item.isChecked ? "[x]" : "[ ]";
-        const qty = item.quantity
-          ? ` (${parseFloat(item.quantity)}${item.unit ? ` ${item.unit}` : ""})`
-          : "";
+        const amount = formatGroceryAmount(item);
+        const qty = amount ? ` (${amount})` : "";
         lines.push(`${check} ${item.name}${qty}`);
       }
       lines.push("");
@@ -581,7 +583,7 @@ export default function GroceryListScreen() {
                 ]}
                 value={newItemName}
                 onChangeText={setNewItemName}
-                placeholder="e.g. 2 lemons"
+                placeholder="e.g. milk 2L"
                 placeholderTextColor={theme.textSecondary}
                 returnKeyType="done"
                 onSubmitEditing={handleAddItem}
@@ -611,6 +613,13 @@ export default function GroceryListScreen() {
                 <Feather name="plus" size={20} color={theme.buttonText} />
               </Pressable>
             </View>
+            {addPreview ? (
+              <ThemedText
+                style={[styles.addItemHint, { color: theme.textSecondary }]}
+              >
+                {addPreview.hint}
+              </ThemedText>
+            ) : null}
           </>
         }
         ListEmptyComponent={
@@ -768,6 +777,10 @@ const styles = StyleSheet.create({
   manualBadgeText: {
     fontSize: 10,
     fontFamily: FontFamily.medium,
+  },
+  addItemHint: {
+    fontSize: 13,
+    marginTop: Spacing.xs,
   },
   addItemRow: {
     flexDirection: "row",
