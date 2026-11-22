@@ -1,6 +1,6 @@
 ---
 title: "Split handleCoachChat into load / stream / finalize stages chosen by tier"
-status: backlog
+status: done
 priority: high
 created: 2026-11-19
 updated: 2026-11-19
@@ -23,10 +23,10 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ## Acceptance Criteria
 
-- [ ] A `proOnly(isCoachPro, () => fetch, empty)` helper replaces the three cast ternaries
-- [ ] Stages `loadTurnContext`, `streamReply` (cached replay kept as its own small generator) and `finalizeTurn` take and return plain data
-- [ ] The tier picks which stages run; per-line `isCoachPro` checks drop to the stage selection
-- [ ] `coach-pro-chat.ts` under 600 lines; streamed event order, cache keys and quota/refund behaviour unchanged (existing tests green)
+- [x] A `proOnly(isCoachPro, () => fetch, empty)` helper replaces the three cast ternaries
+- [x] Stages `loadTurnContext`, `streamReply` (cached replay kept as its own small generator) and `finalizeTurn` take and return plain data
+- [x] The tier picks which stages run; per-line `isCoachPro` checks drop to the stage selection
+- [x] `coach-pro-chat.ts` under 600 lines; streamed event order, cache keys and quota/refund behaviour unchanged (existing tests green)
 
 ## Implementation Notes
 
@@ -50,3 +50,8 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 ### 2026-11-19
 
 - Filed from the 2026-11-19 maintainability audit (deferred at triage).
+
+### 2026-11-21
+
+- Done: handleCoachChat is now a 126-line orchestrator over finder-gate, loadTurnContext, streamReply (cached replay / Pro / free generators, safety re-scan last) and finalizeTurn, in server/services/coach-pro-chat/. proOnly replaces the three cast ternaries.
+- Criterion 4 evidence: `wc -l server/services/coach-pro-chat.ts` = 126; existing suites (coach-pro-chat, write-cards, offer-acceptance, nutrition-coach, chat route) pass unchanged.

@@ -1,0 +1,171 @@
+import { storage } from "../../storage";
+import { fireAndForget } from "../../lib/fire-and-forget";
+import { filterMemoryRefs } from "../memory-refs";
+import { filterAllergyCards } from "../allergy-cards";
+import { parseBlocksFromContent } from "../coach-blocks";
+import { buildTrail } from "../coach-step-labels";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import { createWriteCardBlock } from "./write-card-context";
+import { deliverOfferToolCall, persistCoachReply } from "./offer-delivery";
+import { extractAndStoreNotebook } from "./notebook";
+import type { TurnContext } from "./load-turn-context";
+import type { ReplyResult } from "./stream-reply";
+import type { CoachChatEvent, CoachChatParams } from "./types";
+
+interface ReplyBlocks {
+  textContent: string;
+  blocks: CoachBlock[];
+  wroteCard: boolean;
+}
+
+/** The free tier's reply is plain text: no blocks, no card, no trail. */
+function freeReplyBlocks(reply: ReplyResult): ReplyBlocks {
+  return { textContent: reply.fullResponse, blocks: [], wroteCard: false };
+}
+
+/** Coach Pro: parse blocks, build the write card, lead with the trail. */
+async function proReplyBlocks(
+  params: CoachChatParams,
+  turn: TurnContext,
+  reply: ReplyResult,
+): Promise<ReplyBlocks> {
+  const { conversationId, userId, isAborted } = params;
+  const { fullResponse } = reply;
+  let blocks: CoachBlock[] = [];
+  let textContent = fullResponse;
+  if (fullResponse) {
+    const parsedBlocks = parseBlocksFromContent(fullResponse);
+    textContent = parsedBlocks.text;
+    // R1: a reply may cite only confirmed entries the prompt was given.
+    const confirmedIds = new Set(
+      turn.notebookEntries
+        .filter(
+          (e) =>
+            e.status === "active" &&
+            e.confirmedAt != null &&
+            (e.type === "goal" ||
+              e.type === "preference" ||
+              e.type === "commitment"),
+        )
+        .map((e) => e.id),
+    );
+    blocks = filterAllergyCards(
+      filterMemoryRefs(parsedBlocks.blocks, confirmedIds),
+      turn.context.dietaryProfile.allergies.map((a) => a.name),
+    );
+  }
+
+  // The write card is built (and its row created) only for a client still
+  // here: the row locks the previous live card, which an abandoned turn must
+  // not do.
+  let wroteCard = false;
+  if (reply.writeCardProposal && fullResponse && !isAborted()) {
+    const card = await createWriteCardBlock(
+      reply.writeCardProposal,
+      { conversationId, userId, tz: turn.tz },
+      reply.writeCardPrepared,
+    );
+    if (card) {
+      blocks = [...blocks, card];
+      wroteCard = true;
+    }
+  }
+
+  // The trail leads the reply's blocks, so it sits right under the text and
+  // above any card. A safety override replaced the reply: no trail for it.
+  const trail = buildTrail(reply.trailEntries);
+  if (!reply.safetyOverridden && trail.length > 0) {
+    blocks = [{ type: "checked_trail", items: trail }, ...blocks];
+  }
+  return { textContent, blocks, wroteCard };
+}
+
+/**
+ * Everything after the stream: blocks, the offer tool call, persistence, the
+ * cache write, auto-title, the final blocks event and notebook extraction.
+ */
+export async function* finalizeTurn(
+  params: CoachChatParams,
+  turn: TurnContext,
+  reply: ReplyResult,
+): AsyncGenerator<CoachChatEvent> {
+  const { conversationId, userId, content, turnKey, isCoachPro, isAborted } =
+    params;
+  const { fullResponse } = reply;
+
+  const { textContent, blocks, wroteCard } = isCoachPro
+    ? await proReplyBlocks(params, turn, reply)
+    : freeReplyBlocks(reply);
+
+  const maybeAutoTitle = () => {
+    if (!isAborted() && turn.turnCount <= 1) {
+      const shortTitle =
+        content.slice(0, 50) + (content.length > 50 ? "..." : "");
+      fireAndForget(
+        "coach-chat-auto-title",
+        storage.updateChatConversationTitle(conversationId, userId, shortTitle),
+      );
+    }
+  };
+
+  // ── offer_recipe (offer flag on) — save BEFORE yield, then return ──
+  if (reply.offerToolArgs !== null && params.finder) {
+    const handled = yield* deliverOfferToolCall({
+      params,
+      finder: params.finder,
+      rawArgs: reply.offerToolArgs,
+      history: turn.history,
+      leadText: textContent.trim(),
+      leadBlocks: blocks,
+      maybeAutoTitle,
+    });
+    if (handled) return;
+  }
+
+  if (fullResponse && !isAborted()) {
+    await persistCoachReply(
+      conversationId,
+      userId,
+      turnKey,
+      textContent,
+      blocks.length > 0 ? { blocks } : null,
+    );
+  }
+
+  // Cache write after DB write (ordering fix: cache should only exist for persisted messages)
+  if (turn.questionHash && fullResponse && !isAborted()) {
+    fireAndForget(
+      "coach-cache-response",
+      storage.setCoachCachedResponse(
+        userId,
+        turn.questionHash,
+        content,
+        fullResponse,
+      ),
+    );
+  }
+
+  maybeAutoTitle();
+
+  // Send blocks in the final event for Coach Pro
+  if (!isAborted() && blocks.length > 0) {
+    yield { type: "blocks", blocks };
+  }
+
+  // Fire-and-forget notebook extraction + archival for Coach Pro
+  if (isCoachPro && fullResponse && !isAborted()) {
+    fireAndForget(
+      "coach-notebook-extraction",
+      extractAndStoreNotebook({
+        messageHistory: turn.messageHistory,
+        content,
+        textContent,
+        userId,
+        conversationId,
+        today: turn.today,
+        tz: turn.tz,
+        wroteCard,
+      }),
+    );
+  }
+}
