@@ -288,6 +288,86 @@ describe("useCamera — batch mode", () => {
     );
   });
 
+  // Camera audit 2026-11-21 L4: a barcode held in view re-armed the window
+  // on every repeat, so dwelling added 1 to the quantity every 2 s. Owner
+  // decision 2026-11-22: a repeat counts only after the code left the view.
+  it("counts a barcode held in view once, however long it dwells", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    for (let i = 0; i < 20; i++) {
+      act(() => {
+        result.current.handleBarcodeScanned({
+          data: "1234567890123",
+          type: "ean13",
+        });
+        vi.advanceTimersByTime(500);
+      });
+    }
+
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+    expect(onBarcodeScanned).toHaveBeenLastCalledWith(
+      { data: "1234567890123", type: "ean13" },
+      false,
+    );
+  });
+
+  it("counts a repeat when the barcode leaves the view and comes back", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    // Dwell for 3 s, then the code is out of view for 2 s, then back.
+    for (let i = 0; i < 6; i++) {
+      act(() => {
+        result.current.handleBarcodeScanned({
+          data: "1234567890123",
+          type: "ean13",
+        });
+        vi.advanceTimersByTime(500);
+      });
+    }
+    act(() => {
+      vi.advanceTimersByTime(1500);
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
+    expect(onBarcodeScanned).toHaveBeenLastCalledWith(
+      { data: "1234567890123", type: "ean13" },
+      true,
+    );
+  });
+
+  it("does not count a return after an absence just under the window", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1999);
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+  });
+
   it("resets isScanning after the debounce window elapses (L19 fix)", () => {
     const onBarcodeScanned = vi.fn();
     const { result } = renderHook(() =>
