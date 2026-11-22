@@ -28,8 +28,10 @@ export interface UseCameraReturn {
  *
  * In batch mode, uses a Map<barcode, timestamp> for per-barcode debouncing:
  * - Different barcodes are processed immediately
- * - Same barcode within debounceMs is silently ignored
- * - Same barcode after debounceMs fires callback with isRepeat=true
+ * - Same barcode seen again within debounceMs of its last sighting is
+ *   silently ignored (and refreshes that sighting), so a code held in view
+ *   counts once
+ * - Same barcode after an absence of debounceMs fires isRepeat=true
  * - isScanning is true for debounceMs after the most recent accepted scan
  */
 /** Maximum entries retained in the batch-mode scanned barcodes Map. */
@@ -80,7 +82,13 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
         const lastTime = scannedBarcodesRef.current.get(result.data);
 
         if (lastTime !== undefined && now - lastTime < debounceMs) {
-          return; // Within debounce window for this barcode, ignore
+          // Still in view: refresh the last sighting so a code held in frame
+          // never counts again — it must be absent for debounceMs first.
+          // Delete-then-set moves it to the back, so eviction drops the
+          // code sighted longest ago.
+          scannedBarcodesRef.current.delete(result.data);
+          scannedBarcodesRef.current.set(result.data, now);
+          return;
         }
 
         const isRepeat = lastTime !== undefined;
