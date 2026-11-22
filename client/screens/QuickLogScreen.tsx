@@ -175,6 +175,7 @@ export default function QuickLogScreen() {
     return (
       <View
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+        accessibilityViewIsModal
       >
         <UpgradeModal visible={true} onClose={() => navigation.goBack()} />
       </View>

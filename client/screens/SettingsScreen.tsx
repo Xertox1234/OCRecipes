@@ -456,6 +456,14 @@ export default function SettingsScreen() {
     >
       <Card elevation={1} style={styles.card} {...behindContentA11yProps}>
         {visibleItems.map((item, index) => {
+          // A toggle-like row names its current state, visibly and to screen
+          // readers (the subtitle alone never said whether it was on).
+          const stateText =
+            item.id === "aiSharing" && aiSharingStatus
+              ? aiSharingStatus.allowed
+                ? "On"
+                : "Off"
+              : null;
           return (
             <React.Fragment key={item.id}>
               {index > 0 && (
@@ -465,7 +473,11 @@ export default function SettingsScreen() {
               )}
               <Pressable
                 onPress={() => handlePress(item.id)}
-                accessibilityLabel={item.label}
+                accessibilityLabel={
+                  stateText
+                    ? `${item.label}, ${stateText.toLowerCase()}`
+                    : item.label
+                }
                 accessibilityRole="button"
                 accessibilityHint={item.subtitle ?? "Tap to open"}
                 style={({ pressed }) => [
@@ -502,6 +514,16 @@ export default function SettingsScreen() {
                   </View>
                 </View>
                 <View style={styles.settingsItemRight}>
+                  {stateText && (
+                    <ThemedText
+                      style={[
+                        styles.settingsSubtitle,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
+                      {stateText}
+                    </ThemedText>
+                  )}
                   {!item.danger && (
                     <Feather
                       name="chevron-right"

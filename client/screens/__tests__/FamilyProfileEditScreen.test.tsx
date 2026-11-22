@@ -134,7 +134,7 @@ describe("FamilyProfileEditScreen — adding", () => {
   it("saves the trimmed name, the allergies and a null note, then closes with a success moment", async () => {
     renderComponent(<FamilyProfileEditScreen />);
     typeName("  Ivy ");
-    pickAllergen("Peanuts", /^Severe:/);
+    pickAllergen("Peanuts", /^Severe for /);
     fireEvent.click(save());
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
@@ -156,7 +156,7 @@ describe("FamilyProfileEditScreen — adding", () => {
     state.consented = false;
     renderComponent(<FamilyProfileEditScreen />);
     typeName("Ivy");
-    pickAllergen("Peanuts", /^Mild:/);
+    pickAllergen("Peanuts", /^Mild for /);
     fireEvent.click(save());
 
     expect(mockCreate).not.toHaveBeenCalled();
@@ -198,7 +198,7 @@ describe("FamilyProfileEditScreen — adding", () => {
     mockGrant.mockRejectedValue(new Error("offline"));
     renderComponent(<FamilyProfileEditScreen />);
     typeName("Ivy");
-    pickAllergen("Peanuts", /^Mild:/);
+    pickAllergen("Peanuts", /^Mild for /);
     fireEvent.click(save());
     await act(async () => mockConfirm.mock.calls[0][0].onConfirm());
 
@@ -270,7 +270,7 @@ describe("FamilyProfileEditScreen — editing", () => {
     );
     expect(
       screen
-        .getByRole("checkbox", { name: "Dairy/Milk" })
+        .getByRole("checkbox", { name: /^Dairy\/Milk, / })
         .getAttribute("aria-checked"),
     ).toBe("true");
 

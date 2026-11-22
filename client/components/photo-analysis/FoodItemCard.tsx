@@ -70,9 +70,9 @@ export function FoodItemCard({
           {showCheckbox && (
             <Pressable
               onPress={onToggleSelect}
-              accessibilityLabel={
-                isSelected ? `Unselect ${food.name}` : `Select ${food.name}`
-              }
+              // The checkbox state says checked/unchecked; a label that also
+              // flipped Select/Unselect said it twice.
+              accessibilityLabel={food.name}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: isSelected }}
               style={styles.checkboxButton}
@@ -131,7 +131,9 @@ export function FoodItemCard({
           )}
           <Pressable
             onPress={() => (isEditing ? handleSave() : setIsEditing(true))}
-            accessibilityLabel={isEditing ? "Save changes" : "Edit food item"}
+            accessibilityLabel={
+              isEditing ? `Save ${food.name}` : `Edit ${food.name}`
+            }
             accessibilityRole="button"
             style={[
               styles.editButton,
@@ -191,7 +193,10 @@ export function FoodItemCard({
             ]}
           >
             <Feather name="help-circle" size={14} color={theme.warning} />
-            <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
+            <ThemedText
+              type="small"
+              style={{ color: theme.badgeWarningText, flex: 1 }}
+            >
               {food.clarificationQuestion}
             </ThemedText>
           </View>

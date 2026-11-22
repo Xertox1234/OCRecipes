@@ -177,6 +177,13 @@ describe("QuickLogScreen — premium guard", () => {
     expect(foodInput()).toBeNull();
   });
 
+  // Accessibility audit 2026-11-21 L8: every return path of a modal screen
+  // is modal (docs/rules/accessibility.md), the locked one included.
+  it("keeps the locked state modal", () => {
+    const { container } = renderComponent(<QuickLogScreen />);
+    expect(container.querySelector("[aria-modal='true']")).not.toBeNull();
+  });
+
   it("closing the upgrade flow leaves the screen", () => {
     renderComponent(<QuickLogScreen />);
     upgradeCalls().at(-1)![0].onClose();

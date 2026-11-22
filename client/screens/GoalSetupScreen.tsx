@@ -265,7 +265,8 @@ export default function GoalSetupScreen() {
   const navigation = useNavigation<GoalSetupScreenNavigationProp>();
   const queryClient = useQueryClient();
   const { consented, grant: grantConsent } = useHealthConsent();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const { updateUser } = useAuthContext();
   const canSetMacros = usePremiumFeature("macroGoals");
   // While the plan is unknown the fields stay read-only (a free user's typed
@@ -516,6 +517,9 @@ export default function GoalSetupScreen() {
     <ThemedView style={styles.container} accessibilityViewIsModal>
       <ScreenScrollView
         ref={scrollViewRef}
+        // Hidden from TalkBack while a confirm is open (the sheet's
+        // accessibilityViewIsModal is iOS-only).
+        {...behindContentA11yProps}
         headerInsetExtra={Spacing.xl}
         style={styles.scrollView}
         contentContainerStyle={[

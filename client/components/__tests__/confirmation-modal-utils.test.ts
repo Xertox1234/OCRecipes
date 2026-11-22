@@ -7,6 +7,7 @@ import {
 
 const lightTheme = {
   error: "#D32F2F",
+  errorSolid: "#D32F2F",
   link: "#B5451C",
   accentSolid: "#B5451C",
   buttonText: "#FFFFFF",
@@ -16,6 +17,7 @@ const lightTheme = {
 
 const darkTheme = {
   error: "#F16360",
+  errorSolid: "#D32F2F",
   link: "#E07050",
   accentSolid: "#B5451C",
   buttonText: "#FFFFFF",
@@ -28,6 +30,14 @@ describe("getConfirmButtonStyle", () => {
     const result = getConfirmButtonStyle(true, lightTheme);
     expect(result.backgroundColor).toBe("#D32F2F");
     expect(result.textColor).toBe("#FFFFFF");
+  });
+
+  // Accessibility audit 2026-11-21 H1: dark `error` is a text colour
+  // (3.14:1 under white) — the destructive fill must be errorSolid.
+  it("returns errorSolid (not error) for destructive in dark mode", () => {
+    const result = getConfirmButtonStyle(true, darkTheme);
+    expect(result.backgroundColor).toBe(darkTheme.errorSolid);
+    expect(result.backgroundColor).not.toBe(darkTheme.error);
   });
 
   it("returns accentSolid color for non-destructive (light)", () => {
@@ -43,11 +53,6 @@ describe("getConfirmButtonStyle", () => {
     expect(result.backgroundColor).toBe("#B5451C");
     expect(result.backgroundColor).not.toBe(darkTheme.link);
     expect(result.textColor).toBe("#FFFFFF");
-  });
-
-  it("uses dark theme error color when destructive", () => {
-    const result = getConfirmButtonStyle(true, darkTheme);
-    expect(result.backgroundColor).toBe("#F16360");
   });
 });
 

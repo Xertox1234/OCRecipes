@@ -4,7 +4,6 @@ import {
   View,
   ScrollView,
   Image,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -36,6 +35,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 import { ConfidenceBadge } from "@/components/photo-analysis/ConfidenceBadge";
 import { FoodItemCard } from "@/components/photo-analysis/FoodItemCard";
+import { AnalysisErrorBanner } from "@/components/photo-analysis/AnalysisErrorBanner";
 import { FollowUpModal } from "@/components/photo-analysis/FollowUpModal";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
@@ -91,6 +91,8 @@ export default function PhotoAnalysisScreen() {
     showPrepPicker,
     loadingText,
   } = usePhotoAnalysis(imageUri, intent);
+  const followUpOpen =
+    showFollowUp && !!analysisResult?.followUpQuestions?.length;
 
   // Tell screen-reader users the photo is being analyzed. Delayed 500ms
   // since this route is `presentation: "modal"` — an immediate announce
@@ -161,6 +163,13 @@ export default function PhotoAnalysisScreen() {
         keyboardVerticalOffset={headerHeight}
       >
         <ScrollView
+          testID="photo-analysis-scroll"
+          // Behind the follow-up sheet (an absolute overlay, so its
+          // accessibilityViewIsModal does not cover TalkBack): leave the tree.
+          accessibilityElementsHidden={followUpOpen}
+          importantForAccessibility={
+            followUpOpen ? "no-hide-descendants" : "auto"
+          }
           style={styles.scrollView}
           contentContainerStyle={[
             styles.content,
@@ -188,28 +197,10 @@ export default function PhotoAnalysisScreen() {
 
           {/* Error State */}
           {error && (
-            <View
-              accessibilityRole="alert"
-              accessibilityLiveRegion="assertive"
-              style={[
-                styles.errorContainer,
-                { backgroundColor: withOpacity(theme.error, 0.12) },
-              ]}
-            >
-              <Feather name="alert-circle" size={20} color={theme.error} />
-              <ThemedText type="body" style={{ color: theme.error, flex: 1 }}>
-                {error}
-              </ThemedText>
-              <Pressable
-                onPress={() => navigation.goBack()}
-                accessibilityLabel="Try again"
-                accessibilityRole="button"
-              >
-                <ThemedText type="small" style={{ color: theme.link }}>
-                  Try Again
-                </ThemedText>
-              </Pressable>
-            </View>
+            <AnalysisErrorBanner
+              message={error}
+              onRetry={() => navigation.goBack()}
+            />
           )}
 
           {/* Analysis Results */}
@@ -246,7 +237,7 @@ export default function PhotoAnalysisScreen() {
                       />
                       <ThemedText
                         type="small"
-                        style={{ color: theme.warning, flex: 1 }}
+                        style={{ color: theme.badgeWarningText, flex: 1 }}
                       >
                         {overallTier === "low"
                           ? "AI confidence is low. Please review and edit items as needed."
@@ -385,7 +376,7 @@ export default function PhotoAnalysisScreen() {
                       accessibilityLabel={`Log ${selectedItems.size} items to today`}
                       style={[
                         styles.primaryButton,
-                        { backgroundColor: theme.success },
+                        { backgroundColor: theme.successSolid },
                       ]}
                     >
                       {`Log ${selectedItems.size} Item${selectedItems.size !== 1 ? "s" : ""} to Today`}
@@ -426,7 +417,7 @@ export default function PhotoAnalysisScreen() {
                     accessibilityLabel="Generate recipe from detected ingredients"
                     style={[
                       styles.primaryButton,
-                      { backgroundColor: theme.success },
+                      { backgroundColor: theme.successSolid },
                     ]}
                   >
                     Generate Recipe
@@ -457,7 +448,7 @@ export default function PhotoAnalysisScreen() {
         <BeverageSheet />
 
         {/* Follow-up Questions Modal */}
-        {showFollowUp && analysisResult?.followUpQuestions && (
+        {followUpOpen && analysisResult?.followUpQuestions && (
           <FollowUpModal
             questions={analysisResult.followUpQuestions}
             currentIndex={followUpIndex}
@@ -528,14 +519,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 200,
     borderRadius: BorderRadius.lg,
-  },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.lg,
   },
   resultsHeader: {
     flexDirection: "row",

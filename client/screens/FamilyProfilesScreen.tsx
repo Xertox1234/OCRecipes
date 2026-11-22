@@ -162,6 +162,7 @@ export default function FamilyProfilesScreen() {
                     name="chevron-right"
                     size={18}
                     color={theme.textSecondary}
+                    accessible={false}
                   />
                 </Pressable>
               ) : (
@@ -179,7 +180,12 @@ export default function FamilyProfilesScreen() {
                   pressed && { opacity: 0.7 },
                 ]}
               >
-                <Feather name="trash-2" size={18} color={theme.error} />
+                <Feather
+                  name="trash-2"
+                  size={18}
+                  color={theme.error}
+                  accessible={false}
+                />
               </Pressable>
             </View>
           );

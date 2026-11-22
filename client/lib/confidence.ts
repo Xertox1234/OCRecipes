@@ -14,11 +14,14 @@ export function getConfidenceTier(score: number): ConfidenceTier {
   return "low";
 }
 
+// Every caller draws this as TEXT (or a small dot) on a 0.12 tint of the same
+// colour, so it returns the badge*Text tokens, which are AA on that tint in
+// both modes. Plain `warning`/`error` are not (2.51:1 / 3.87:1 in light mode).
 export function getConfidenceColor(theme: Theme, tier: ConfidenceTier): string {
   const tierColors: Record<ConfidenceTier, string> = {
-    high: theme.success,
-    medium: theme.warning,
-    low: theme.error,
+    high: theme.badgeSuccessText,
+    medium: theme.badgeWarningText,
+    low: theme.badgeErrorText,
   };
   return tierColors[tier];
 }

@@ -298,7 +298,7 @@ export default function BatchSummaryScreen() {
           ]}
         >
           <Feather name="alert-circle" size={14} color={theme.warning} />
-          <Text style={[styles.badgeText, { color: theme.warning }]}>
+          <Text style={[styles.badgeText, { color: theme.badgeWarningText }]}>
             {unverifiedCount} item{unverifiedCount !== 1 ? "s" : ""} failed to
             load
           </Text>

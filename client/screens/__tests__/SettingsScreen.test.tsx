@@ -525,6 +525,25 @@ describe("SettingsScreen — AI features", () => {
     mockOpenAiSharing.mockReset();
   });
 
+  // Accessibility audit 2026-11-21 M10: the row never said whether AI sharing
+  // was on, so a screen-reader user could not tell what a tap would do.
+  it("says whether AI features are on", () => {
+    renderComponent(<SettingsScreen />);
+    expect(
+      screen.getByRole("button", { name: "AI features, on" }),
+    ).toBeTruthy();
+    expect(screen.getByText("On")).toBeTruthy();
+  });
+
+  it("says when AI features are off", () => {
+    aiSharing.status = { allowed: false, answered: true };
+    renderComponent(<SettingsScreen />);
+    expect(
+      screen.getByRole("button", { name: "AI features, off" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Off")).toBeTruthy();
+  });
+
   it("asks first, then turns AI features off", async () => {
     renderComponent(<SettingsScreen />);
 
