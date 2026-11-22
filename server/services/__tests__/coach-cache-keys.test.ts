@@ -4,11 +4,11 @@ import {
   hashCoachCacheKey,
   hashNotebookDedupeKey,
 } from "../coach-cache-keys";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext } from "../coach-prompt";
 
 vi.mock("../../storage", () => ({ storage: {} }));
 
-vi.mock("../nutrition-coach", () => ({
+vi.mock("../coach-prompt", () => ({
   getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
 }));
 

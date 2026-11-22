@@ -88,9 +88,12 @@ vi.mock("../../storage", () => ({
 vi.mock("../../services/nutrition-coach", () => ({
   generateCoachResponse: vi.fn(),
   generateCoachProResponse: vi.fn(),
+  SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
+}));
+
+vi.mock("../../services/coach-prompt", () => ({
   // The free-tier path hashes a response-cache key that includes this.
   getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test"),
-  SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
 }));
 
 vi.mock("../../services/coach-blocks", () => ({

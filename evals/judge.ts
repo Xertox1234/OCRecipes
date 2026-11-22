@@ -1,7 +1,7 @@
 import { currentJudgeModel } from "./lib/judge-generic";
 import { sanitizeUserInput } from "../server/lib/ai-safety";
-import { formatAboutUserLines } from "../server/services/nutrition-coach";
-import type { CoachContext } from "../server/services/nutrition-coach";
+import { formatAboutUserLines } from "../server/services/coach-prompt";
+import type { CoachContext } from "../server/services/coach-prompt";
 
 export { currentJudgeModel };
 

@@ -3,7 +3,7 @@ import {
   assembleCoachContext,
   buildCoachSuggestions,
 } from "../coach-context-builder";
-import { buildSystemPrompt } from "../nutrition-coach";
+import { buildSystemPrompt } from "../coach-prompt";
 import {
   createMockCoachNotebookEntry,
   createMockUserProfile,

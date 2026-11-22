@@ -25,7 +25,7 @@ const getMealPlanSchema = z.object({
 // `plannedDate` staying REQUIRED **in the OpenAI JSON tool definition** (the
 // `required: [...]` array in `getToolDefinitions`) — as distinct from the Zod
 // field below, which is `.optional()` — is only defensible because the prompt
-// now states the user's calendar date (`nutrition-coach.ts`, the "Current time
+// now states the user's calendar date (`coach-prompt.ts`, the "Current time
 // for this user" line, rendered as yyyy-mm-dd in their timezone). Before that
 // the model was required to emit a date it had never been told, so it guessed —
 // and this proposal writes a real row. **If that date is ever removed from the

@@ -1,6 +1,6 @@
 ---
 title: "Move coach prompt building out of nutrition-coach.ts into coach-prompt.ts"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-19
 updated: 2026-11-19
@@ -23,10 +23,10 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ## Acceptance Criteria
 
-- [ ] `server/services/coach-prompt.ts` owns the prompt half plus `CoachContext` / `CoachAllergy`; importers import from the defining module (no re-export barrel)
-- [ ] `nutrition-coach.ts` keeps only the generators and is under 600 lines
+- [x] `server/services/coach-prompt.ts` owns the prompt half plus `CoachContext` / `CoachAllergy`; importers import from the defining module (no re-export barrel)
+- [x] `nutrition-coach.ts` keeps only the generators and is under 600 lines
 - [ ] Optional: `classifyStreamFailure(abortSignal, error, log, tag)` collapses the repeated catch blocks
-- [ ] Prompt text and template-version hash byte-identical (pin with a test)
+- [x] Prompt text and template-version hash byte-identical (pin with a test)
 
 ## Implementation Notes
 
@@ -45,6 +45,12 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 - Behaviour drift during the move — keep it a pure restructuring and diff behaviour against the existing tests.
 
 ## Updates
+
+### 2026-11-21
+
+- Criterion 3 not met: optional classifyStreamFailure left out; out of scope for a pure move.
+- Criterion 4 evidence: server/services/**tests**/coach-prompt.test.ts pins hash b28e7ee438e62ac8, taken before the move.
+- Importers outside the contract list (evals/\*, scripts/probe-offer-recipe.ts, tests) repointed to coach-prompt for criterion 1.
 
 ### 2026-11-19
 

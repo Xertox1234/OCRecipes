@@ -11,7 +11,7 @@ import { civilDateString } from "../lib/civil-date";
 import {
   getSystemPromptTemplateVersion,
   type CoachContext,
-} from "./nutrition-coach";
+} from "./coach-prompt";
 import type { CoachIntent } from "./coach-intent-classifier";
 
 /**

@@ -7,7 +7,8 @@ import type { CoachChatEvent, CoachChatParams } from "../coach-pro-chat";
 import { handleCoachChat } from "../coach-pro-chat";
 import { storage } from "../../storage";
 import { generateCoachProResponse } from "../nutrition-coach";
-import type { CoachContext, CoachProChunk } from "../nutrition-coach";
+import type { CoachProChunk } from "../nutrition-coach";
+import type { CoachContext } from "../coach-prompt";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "../coach-blocks";
 import {
   buildWriteCardPayload,
@@ -49,8 +50,11 @@ vi.mock("../../storage", () => ({
 vi.mock("../nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   generateCoachResponse: vi.fn(),
-  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("v"),
   SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
+}));
+
+vi.mock("../coach-prompt", () => ({
+  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("v"),
 }));
 
 vi.mock("../coach-blocks", () => ({

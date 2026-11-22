@@ -71,7 +71,7 @@ export async function extractAndStoreNotebook(a: {
     // stream drains. NOTE: this is not guaranteed to be the identical
     // instant the coach's own system prompt rendered its date from —
     // that is a separate, independently-defaulted `new Date()` in
-    // nutrition-coach.ts's `buildSystemPrompt` — just the closer and
+    // coach-prompt.ts's `buildSystemPrompt` — just the closer and
     // more correct of the two available anchors.
     { now: today, tz, wroteCard },
   );

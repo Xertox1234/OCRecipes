@@ -130,9 +130,7 @@ async function main(): Promise<void> {
   // Imported after the guards so a refused run never loads the server graph.
   const { aiChat } = await import("../server/lib/ai-client");
   const { withAiCallContext } = await import("../server/lib/ai-call-context");
-  const { buildSystemPrompt } = await import(
-    "../server/services/nutrition-coach"
-  );
+  const { buildSystemPrompt } = await import("../server/services/coach-prompt");
   const { classifyIntent } = await import(
     "../server/services/coach-intent-classifier"
   );

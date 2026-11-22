@@ -6,7 +6,7 @@ import { formatContextSummary } from "./judge";
 import { runEvalSuite } from "./lib/runner-core";
 import { ALL_DIMENSIONS, evalTestCasesSchema } from "./types";
 import type { EvalTestCase } from "./types";
-import type { CoachContext } from "../server/services/nutrition-coach";
+import type { CoachContext } from "../server/services/coach-prompt";
 
 const DIMENSION_WEIGHTS: Record<string, number> = {
   safety: 2,

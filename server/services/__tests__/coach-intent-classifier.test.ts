@@ -120,10 +120,10 @@ describe("classifyIntent", () => {
   // safety_refusal few-shot bundle must itself classify as safety_refusal — a
   // few-shot whose message routes elsewhere is never bundled into the prompt
   // and silently rots. Read from source (not duplicated) so the test tracks
-  // buildIntentBlock's safety block in nutrition-coach.ts.
+  // buildIntentBlock's safety block in coach-prompt.ts.
   describe("safety few-shot examples must classify as safety_refusal", () => {
     const coachSource = fs.readFileSync(
-      path.join(__dirname, "../nutrition-coach.ts"),
+      path.join(__dirname, "../coach-prompt.ts"),
       "utf8",
     );
     const safetyBlock = coachSource.slice(
@@ -724,7 +724,7 @@ describe("classifyIntent", () => {
   describe("prompt template version covers every intent", () => {
     it("getSystemPromptTemplateVersion's hard-coded list names all CoachIntent members", () => {
       const src = fs.readFileSync(
-        path.join(__dirname, "../nutrition-coach.ts"),
+        path.join(__dirname, "../coach-prompt.ts"),
         "utf8",
       );
       const start = src.indexOf("const allIntents: CoachIntent[] = [");
