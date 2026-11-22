@@ -3,7 +3,7 @@ title: "Settle radio accessibilityState: the rule says selected, Chip sends both
 status: backlog
 priority: low
 created: 2026-11-21
-updated: 2026-11-21
+updated: 2026-11-22
 assignee:
 labels: [deferred, accessibility, client, product-decision]
 github_issue:
@@ -21,8 +21,9 @@ Accessibility audit 2026-11-21 finding, deferred at triage by the owner (or a pa
 
 ## Acceptance Criteria
 
-- [ ] Owner decides selected vs checked for radios, after a TalkBack check
-- [ ] Chip and docs/rules/accessibility.md agree
+- [ ] On an Android device with TalkBack, compare one radio chip sending `checked` only vs `selected` only (e.g. the "Who's it for?" audience choice) and record what each announces
+- [ ] Chip and docs/rules/accessibility.md are changed to the variant TalkBack reads correctly (then `npm run build:copilot-instructions`)
+- [ ] VoiceOver re-checked for the chosen variant
 
 ## Implementation Notes
 
@@ -33,3 +34,7 @@ Files: `client/components/Chip.tsx`, `docs/rules/accessibility.md` (then `npm ru
 ### 2026-11-21
 
 - Filed from the accessibility audit
+
+### 2026-11-22
+
+- Owner decision: check on TalkBack first, then standardise on whichever reading is correct (Chip stays as is until then). The rule and the component must match afterwards.

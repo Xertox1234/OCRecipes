@@ -3,9 +3,9 @@ title: "Decide on the week grid's 1.2x text-size cap"
 status: backlog
 priority: low
 created: 2026-11-21
-updated: 2026-11-21
+updated: 2026-11-22
 assignee:
-labels: [deferred, accessibility, client, product-decision]
+labels: [deferred, accessibility, client]
 github_issue:
 ---
 
@@ -21,8 +21,9 @@ Accessibility audit 2026-11-21 finding, deferred at triage by the owner (or a pa
 
 ## Acceptance Criteria
 
-- [ ] Owner decides: raise the cap, add a visible route to full text, or document the exception
-- [ ] If changed, check the grid at the largest accessibility sizes on both platforms
+- [ ] The cap is documented as a deliberate exception (code comment at GRID_MAX_FONT_SCALE and a line in the relevant docs/solutions or rules note)
+- [ ] A sighted large-text user can tell that tapping a day shows the full text (e.g. a visible affordance or hint on the grid)
+- [ ] No change to cell size or the 7-column layout
 
 ## Implementation Notes
 
@@ -33,3 +34,7 @@ Files: `client/components/meal-plan/WeekGridCell.tsx`, `client/components/meal-p
 ### 2026-11-21
 
 - Filed from the accessibility audit
+
+### 2026-11-22
+
+- Owner decision: keep the 1.2x cap, record it as a deliberate exception, and make the route to full-size text (tapping a day) obvious.

@@ -3,9 +3,9 @@ title: "Timed Undo and banners: meet WCAG 2.2.1 (Timing Adjustable)"
 status: backlog
 priority: medium
 created: 2026-11-21
-updated: 2026-11-21
+updated: 2026-11-22
 assignee:
-labels: [deferred, accessibility, client, product-decision]
+labels: [deferred, accessibility, client]
 github_issue:
 ---
 
@@ -21,9 +21,11 @@ Accessibility audit 2026-11-21 finding, deferred at triage by the owner (or a pa
 
 ## Acceptance Criteria
 
-- [ ] Owner decides the approach: no auto-dismiss for Undo, AccessibilityInfo.getRecommendedTimeoutMillis (Android), or a persistent undo route
-- [ ] The SavedToNotebook announce does not cut off the reply announce
-- [ ] Tests cover the chosen behaviour
+- [ ] Write-card Undo (WriteCardShell / UNDO_VISIBLE_MS) stays until the user sends the next message or leaves the screen
+- [ ] The SavedToNotebook popup keeps Undo until the next action instead of auto-confirming after 6 s
+- [ ] OfflineBanner stays until dismissed or the connection returns
+- [ ] The SavedToNotebook announce no longer cuts off the reply announce on iOS
+- [ ] Tests cover each (no auto-hide; hide on the next action)
 
 ## Implementation Notes
 
@@ -34,3 +36,7 @@ Doc evidence: WCAG 2.2 SC 2.2.1; RN AccessibilityInfo.getRecommendedTimeoutMilli
 ### 2026-11-21
 
 - Filed from the accessibility audit
+
+### 2026-11-22
+
+- Owner decision: no timers — Undo stays visible until the next action (the next message sent, or leaving the screen); the offline banner stays until dismissed or back online.

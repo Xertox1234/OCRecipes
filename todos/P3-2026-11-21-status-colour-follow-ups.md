@@ -3,7 +3,7 @@ title: "Status-colour follow-ups from the accessibility audit"
 status: backlog
 priority: low
 created: 2026-11-21
-updated: 2026-11-21
+updated: 2026-11-22
 assignee:
 labels: [deferred, accessibility, client, design-system]
 github_issue:
@@ -33,3 +33,7 @@ Use test/utils/wcag-contrast.ts for the maths. Files as listed plus `client/cons
 ### 2026-11-21
 
 - Filed from the accessibility audit
+
+### 2026-11-22
+
+- Owner decision: for the DidYouKnow card, show the tinted variant on the white `surface` with a light accent border (light-mode link measures 5.48:1 on white; dark surface = dark backgroundSecondary, where link is 4.78:1). The other three items in this todo are unchanged.
