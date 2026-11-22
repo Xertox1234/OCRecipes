@@ -7,11 +7,7 @@ import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
-import {
-  cardButtonGrowStyle,
-  stackCardRow,
-  type CardUiState,
-} from "./write-card-utils";
+import { stackCardRow, type CardUiState } from "./write-card-utils";
 
 interface Props {
   state: CardUiState;
@@ -100,7 +96,6 @@ export function WriteCardShell(props: Props) {
               variant="ghost"
               onPress={props.onUndo}
               accessibilityLabel="Undo"
-              style={cardButtonGrowStyle}
             >
               Undo
             </Button>
@@ -131,7 +126,7 @@ export function WriteCardShell(props: Props) {
         loadingText="Saving…"
         disabled={!props.canSave || saving}
         accessibilityLabel={props.buttonLabel}
-        style={[cardButtonGrowStyle, styles.primary]}
+        style={styles.primary}
       >
         {props.buttonLabel}
       </Button>
