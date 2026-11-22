@@ -1,5 +1,5 @@
 import { storage } from "../../storage";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext } from "../coach-prompt";
 import { assembleCoachContext } from "../coach-context-builder";
 import { consumeWarmUp } from "../coach-warm-up";
 import {

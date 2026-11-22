@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { generateCoachProResponse } from "../nutrition-coach";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext } from "../coach-prompt";
 import { aiChat } from "../../lib/ai-client";
 
 vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));

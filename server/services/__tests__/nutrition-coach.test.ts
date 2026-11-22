@@ -4,7 +4,8 @@ import {
   generateCoachResponse,
   SAFETY_OVERRIDE_SENTINEL,
 } from "../nutrition-coach";
-import type { CoachContext, CoachProChunk } from "../nutrition-coach";
+import type { CoachProChunk } from "../nutrition-coach";
+import type { CoachContext } from "../coach-prompt";
 import { aiChat } from "../../lib/ai-client";
 import { executeToolCall } from "../coach-tools";
 import {

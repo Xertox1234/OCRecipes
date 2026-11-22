@@ -53,8 +53,11 @@ vi.mock("../../storage", () => ({
 vi.mock("../nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   generateCoachResponse: vi.fn(),
-  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
   SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
+}));
+
+vi.mock("../coach-prompt", () => ({
+  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
 }));
 
 vi.mock("../coach-blocks", () => ({

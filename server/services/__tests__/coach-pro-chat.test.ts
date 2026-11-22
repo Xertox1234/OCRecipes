@@ -25,7 +25,8 @@ import {
   generateCoachProResponse,
   generateCoachResponse,
 } from "../nutrition-coach";
-import type { CoachContext, CoachProChunk } from "../nutrition-coach";
+import type { CoachProChunk } from "../nutrition-coach";
+import type { CoachContext } from "../coach-prompt";
 import { parseBlocksFromContent } from "../coach-blocks";
 import { consumeWarmUp } from "../coach-warm-up";
 import { fireAndForget } from "../../lib/fire-and-forget";
@@ -80,8 +81,11 @@ vi.mock("../../storage", () => ({
 vi.mock("../nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   generateCoachResponse: vi.fn(),
-  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
   SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
+}));
+
+vi.mock("../coach-prompt", () => ({
+  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
 }));
 
 vi.mock("../coach-blocks", () => ({
@@ -2210,8 +2214,8 @@ describe("getSystemPromptTemplateVersion (real implementation)", () => {
   it("returns a stable 16-char hex string", async () => {
     // Use the real module, not the mocked one
     const { getSystemPromptTemplateVersion } =
-      await vi.importActual<typeof import("../nutrition-coach")>(
-        "../nutrition-coach",
+      await vi.importActual<typeof import("../coach-prompt")>(
+        "../coach-prompt",
       );
     const v1 = getSystemPromptTemplateVersion();
     const v2 = getSystemPromptTemplateVersion();

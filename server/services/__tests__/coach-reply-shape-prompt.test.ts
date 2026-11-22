@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSystemPrompt, type CoachContext } from "../nutrition-coach";
+import { buildSystemPrompt, type CoachContext } from "../coach-prompt";
 import type { CoachIntent } from "../coach-intent-classifier";
 
 // Show-the-work spec 2026-11-09 (R8, M4): targets only when they change the

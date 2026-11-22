@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { formatContextSummary } from "../judge";
 import { resolveJudgeBackend } from "../lib/judge-generic";
-import type { CoachContext } from "../../server/services/nutrition-coach";
+import type { CoachContext } from "../../server/services/coach-prompt";
 
 // ../judge value-imports formatAboutUserLines from nutrition-coach.ts, whose
 // coach-tools import chains to server/storage → server/db.ts, which throws at

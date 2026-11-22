@@ -3,7 +3,7 @@ import { createServiceLogger, toError } from "../../lib/logger";
 import { sanitizeContextField } from "../../lib/ai-safety";
 import { isRecipeFinderEnabled } from "../recipe-finder/config";
 import { getBlocksSystemPrompt } from "../coach-blocks";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext } from "../coach-prompt";
 import {
   buildWriteCardPayload,
   describeLiveCard,

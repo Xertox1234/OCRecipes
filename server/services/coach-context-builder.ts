@@ -9,7 +9,7 @@ import {
   DEFAULT_NOTEBOOK_MAX_CHARS,
 } from "./notebook-budget";
 import { isRecipeFinderEnabled } from "./recipe-finder";
-import type { CoachContext } from "./nutrition-coach";
+import type { CoachContext } from "./coach-prompt";
 import type { PremiumFeatures } from "@shared/types/premium";
 import type { MeasurementUnit } from "@shared/lib/units";
 import type { CoachNotebookEntry, DailyLog, UserProfile } from "@shared/schema";

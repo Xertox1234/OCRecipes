@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CoachContext } from "../server/services/nutrition-coach";
+import type { CoachContext } from "../server/services/coach-prompt";
 import type { AiCallRecord } from "../server/lib/ai-call-context";
 
 // Widened to string for generic runner; per-service aliases below for type docs.
