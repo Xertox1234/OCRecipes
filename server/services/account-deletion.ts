@@ -18,12 +18,14 @@ import { revokeAppleIdentities } from "./auth-session";
  *
  * The caller owns re-auth and the second-factor gate; this function assumes
  * both passed. `awaitCleanup` makes step 5 finish before this returns — for
- * `server/scripts/delete-account.ts`, never for a request.
+ * `server/scripts/delete-account.ts`, never for a request — and the result
+ * then counts the cleanup steps that failed (always 0 when not awaited), so
+ * a script run by hand can say that stored pictures were left behind.
  */
 export async function deleteAccount(
   user: Pick<User, "id" | "avatarUrl">,
   options: { awaitCleanup?: boolean } = {},
-): Promise<void> {
+): Promise<{ cleanupFailures: number }> {
   // Revoke Apple tokens BEFORE the delete cascades the identity rows
   // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
   await revokeAppleIdentities(await storage.listIdentities(user.id));
@@ -56,16 +58,30 @@ export async function deleteAccount(
   // Filter AFTER the delete: any reference left belongs to another
   // account (a shared copy, or a crafted meal-plan imageUrl), and
   // deleteImage keeps its per-kind prefix guard.
-  const imageCleanup = storage
+  const imageDeletes = storage
     .filterUnreferencedImageUrls(ownedImages)
     .then((images) =>
-      Promise.all(images.map((i) => deleteImage(i.url, i.kind))),
+      Promise.allSettled(images.map((i) => deleteImage(i.url, i.kind))),
     );
+  const imageCleanup = imageDeletes.then((results) => {
+    const failed = results.find((r) => r.status === "rejected");
+    if (failed) throw failed.reason;
+  });
   fireAndForget("account-deletion-image-cleanup", imageCleanup);
 
   // A script exits when this returns, so it waits; a failure is already
-  // logged above and never fails the deletion.
-  if (options.awaitCleanup) {
-    await Promise.allSettled([avatarCleanup, imageCleanup]);
-  }
+  // logged above and never fails the deletion, but it is counted: the rows
+  // that named these pictures are gone, so nothing can find them later.
+  if (!options.awaitCleanup) return { cleanupFailures: 0 };
+  const [avatar, images] = await Promise.allSettled([
+    avatarCleanup,
+    imageDeletes,
+  ]);
+  return {
+    cleanupFailures:
+      (avatar.status === "rejected" ? 1 : 0) +
+      (images.status === "rejected"
+        ? 1 // the reference check itself failed: nothing was tried
+        : images.value.filter((r) => r.status === "rejected").length),
+  };
 }

@@ -111,7 +111,20 @@ describe("deleteAccount", () => {
     deleteImage.mockRejectedValue(new Error("r2 down"));
     await expect(
       deleteAccount({ id: "u1", avatarUrl: "a" }, { awaitCleanup: true }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ cleanupFailures: 2 });
+  });
+
+  it("a waited deletion with every image removed reports no failures", async () => {
+    await expect(
+      deleteAccount({ id: "u1", avatarUrl: "a" }, { awaitCleanup: true }),
+    ).resolves.toEqual({ cleanupFailures: 0 });
+  });
+
+  it("a failed reference check counts as a cleanup failure", async () => {
+    storage.filterUnreferencedImageUrls.mockRejectedValue(new Error("db"));
+    await expect(
+      deleteAccount({ id: "u1", avatarUrl: null }, { awaitCleanup: true }),
+    ).resolves.toEqual({ cleanupFailures: 1 });
   });
 
   it("revokes the ticket tokens as Apple identities", async () => {
@@ -145,9 +158,9 @@ describe("deleteAccount", () => {
     storage.filterUnreferencedImageUrls.mockImplementation(
       () => new Promise((r) => (release = () => r([]))),
     );
-    await expect(
-      deleteAccount({ id: "u1", avatarUrl: null }),
-    ).resolves.toBeUndefined();
+    await expect(deleteAccount({ id: "u1", avatarUrl: null })).resolves.toEqual(
+      { cleanupFailures: 0 },
+    );
     release();
   });
 });

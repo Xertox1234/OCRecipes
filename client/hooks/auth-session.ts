@@ -22,6 +22,7 @@ import { registerPushToken } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
 import { clearFeatureTipsState } from "@/lib/feature-tips-storage";
+import { clearBriefSeen } from "@/lib/coach-brief-seen";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
 import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
@@ -185,6 +186,9 @@ export async function clearDurableLocalState(): Promise<boolean> {
     if (!(await clearHomeActionsState())) ok = false;
     // Which teaching tips were seen / features used: same shared-device bleed.
     if (!(await clearFeatureTipsState())) ok = false;
+    // The day the full Coach brief was last shown: the next account on this
+    // phone would otherwise get the short brief on its first visit.
+    if (!(await clearBriefSeen())) ok = false;
     // Recent recipe searches: same global, non-namespaced key with the same
     // cross-user bleed risk on a shared device; clear them on every session-ending
     // path. Non-throwing; a failed wipe feeds `ok` so the durable-owner marker is

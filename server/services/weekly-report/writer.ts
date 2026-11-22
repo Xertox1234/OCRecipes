@@ -5,13 +5,14 @@ import {
   sanitizeContextField,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
-import { logger } from "../../lib/logger";
+import { logger, toError } from "../../lib/logger";
 import {
   weeklyReportContentSchema,
   type WeeklyFacts,
   type WeeklyReportContent,
 } from "@shared/schemas/coach-weekly-report";
 import { applyGuards, templateContent, validateContent } from "./text-guard";
+import { civilWeekday } from "./week-window";
 
 /**
  * Coach writes the weekly report's sentences in ONE call; the numbers are
@@ -24,7 +25,7 @@ You receive FACTS (JSON) about the last seven days. Write short, warm sentences 
 
 Rules:
 - Use only numbers that appear in FACTS, written as digits. Never work out new numbers (no averages, percentages or totals of your own).
-- Refer to days by weekday name (e.g. "Tuesday") and to trend weeks as "recent weeks"; never write dates, months or years.
+- Refer to days by the weekday given in FACTS.days (e.g. "Tuesday"); never work a weekday out from a date. Refer to trend weeks as "recent weeks"; never write dates, months or years.
 - Lead with wins: what went well comes first, and the headline is the most encouraging true thing about the week.
 - A missing log is not a skipped meal. Say "no lunch logged", never that they skipped or missed it.
 - Never use these words, even in ordinary phrases: missed, failed, only, broken, behind, skipped, "didn't eat", deficit, weight, lose, streak. For example, write "just" or "1 day" instead of "only", and "keep it going" instead of "don't lose momentum".
@@ -43,6 +44,16 @@ Reply with JSON only, exactly this shape:
 
 ${SYSTEM_PROMPT_BOUNDARY}`;
 
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
 /** The facts as the model sees them: titles sanitised, calories hidden under the guard. */
 function promptFacts(facts: WeeklyFacts) {
   const hideCalories = facts.lowCalorieGuard;
@@ -56,6 +67,8 @@ function promptFacts(facts: WeeklyFacts) {
     },
     days: facts.days.map((d) => ({
       date: d.date,
+      // Named here from the civil date so the model never derives it.
+      weekday: WEEKDAY_NAMES[civilWeekday(d.date)],
       meals: d.meals,
       protein: d.protein,
       carbs: d.carbs,
@@ -104,12 +117,13 @@ export function buildWeeklyReportMessages(facts: WeeklyFacts) {
  */
 export async function writeWeeklyReport(
   facts: WeeklyFacts,
-  opts: { aiAllowed: boolean },
+  opts: { aiAllowed: boolean; userId: string },
 ): Promise<{ content: WeeklyReportContent; source: "ai" | "template" }> {
   const fallback = () => ({
     content: applyGuards(templateContent(facts), facts),
     source: "template" as const,
   });
+  const logContext = { userId: opts.userId, weekStart: facts.weekStart };
   // No AI words after a safety signal: the gentle template only.
   if (!opts.aiAllowed || facts.safetySignal) return fallback();
   try {
@@ -137,14 +151,19 @@ export async function writeWeeklyReport(
     const check = validateContent(guarded, facts);
     if (!check.ok) {
       logger.warn(
-        { reason: check.reason },
+        { reason: check.reason, ...logContext },
         "weekly report: text rejected, using template",
       );
       return fallback();
     }
     return { content: guarded, source: "ai" };
   } catch (err) {
-    logger.warn({ err }, "weekly report: AI call failed, using template");
+    // Reaches Sentry: a failed call or an unusable reply. Ids and the week
+    // only — never the facts or the reply text.
+    logger.error(
+      { err: toError(err), ...logContext },
+      "weekly report: AI call failed, using template",
+    );
     return fallback();
   }
 }

@@ -4,6 +4,7 @@ import { notify } from "../../notifications/notify";
 import { writeWeeklyReport } from "../writer";
 import { createMockWeeklyFacts } from "../../../__tests__/factories";
 import { isAiSharingAllowedFor } from "../../../lib/ai-sharing-gate";
+import { logger } from "../../../lib/logger";
 import {
   generateWeeklyReportForUser,
   sendDueWeeklyReportPushes,
@@ -145,12 +146,14 @@ describe("generateWeeklyReportForUser", () => {
     await generateWeeklyReportForUser("u1", NOW, TZ);
     expect(vi.mocked(writeWeeklyReport).mock.calls[0][1]).toEqual({
       aiAllowed: true,
+      userId: "u1",
     });
     vi.mocked(isAiSharingAllowedFor).mockResolvedValue(false);
     await generateWeeklyReportForUser("u1", NOW, TZ);
     expect(isAiSharingAllowedFor).toHaveBeenCalledWith("u1");
     expect(vi.mocked(writeWeeklyReport).mock.calls[1][1]).toEqual({
       aiAllowed: false,
+      userId: "u1",
     });
   });
 
@@ -250,5 +253,45 @@ describe("sendDueWeeklyReportPushes", () => {
       .mockResolvedValueOnce({ pushDelivered: true });
     expect(await sendDueWeeklyReportPushes(NOW)).toBe(1);
     expect(s.releaseWeeklyReportDelivery).toHaveBeenCalledWith("u1", 41);
+  });
+
+  it("a release that fails after an undelivered push is logged and the loop carries on (L1)", async () => {
+    s.getDuePushes.mockResolvedValue([
+      { userId: "u1", id: 41, headline: "h" },
+      { userId: "u2", id: 42, headline: "h" },
+    ]);
+    s.claimWeeklyReportDelivery.mockResolvedValue(true);
+    vi.mocked(notify)
+      .mockResolvedValueOnce({ pushDelivered: false })
+      .mockResolvedValueOnce({ pushDelivered: true });
+    const dbDown = new Error("db down");
+    s.releaseWeeklyReportDelivery.mockRejectedValueOnce(dbDown);
+    expect(await sendDueWeeklyReportPushes(NOW)).toBe(1);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith(
+      { err: dbDown, userId: "u1", reportId: 41 },
+      expect.stringContaining("release"),
+    );
+  });
+
+  it("a release that fails after a push that threw is logged and the loop carries on (L1)", async () => {
+    s.getDuePushes.mockResolvedValue([
+      { userId: "u1", id: 41, headline: "h" },
+      { userId: "u2", id: 42, headline: "h" },
+    ]);
+    s.claimWeeklyReportDelivery.mockResolvedValue(true);
+    vi.mocked(notify)
+      .mockImplementationOnce(async () => {
+        throw new Error("expo down");
+      })
+      .mockResolvedValueOnce({ pushDelivered: true });
+    const dbDown = new Error("db down");
+    s.releaseWeeklyReportDelivery.mockRejectedValueOnce(dbDown);
+    expect(await sendDueWeeklyReportPushes(NOW)).toBe(1);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith(
+      { err: dbDown, userId: "u1", reportId: 41 },
+      expect.stringContaining("release"),
+    );
   });
 });

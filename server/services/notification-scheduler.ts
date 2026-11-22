@@ -364,6 +364,15 @@ export async function sendMealLogReminders(
  * are claimed before sending, so a re-run sends nothing twice.
  */
 export async function runWeeklyReports(now: Date): Promise<void> {
+  // Counts only — one summary line per tick, never report or health data.
+  const counts = {
+    inWindow: 0,
+    created: 0,
+    exists: 0,
+    skippedNotPro: 0,
+    skippedDisabled: 0,
+    failed: 0,
+  };
   try {
     await forEachUserPaged(async (pageUserIds) => {
       let tzMap: Map<string, string | null>;
@@ -379,14 +388,20 @@ export async function runWeeklyReports(now: Date): Promise<void> {
       const due = pageUserIds.filter(
         (id) => reportWeekFor(now, parseTimezone(tzMap.get(id))).isReportDue,
       );
+      counts.inWindow += due.length;
       await runBounded(due, async (userId) => {
         try {
-          await generateWeeklyReportForUser(
+          const result = await generateWeeklyReportForUser(
             userId,
             now,
             parseTimezone(tzMap.get(userId)),
           );
+          if (result === "created") counts.created++;
+          else if (result === "exists") counts.exists++;
+          else if (result === "skipped-not-pro") counts.skippedNotPro++;
+          else counts.skippedDisabled++;
         } catch (err) {
+          counts.failed++;
           logger.error(
             { err: toError(err), userId },
             "notification-scheduler: failed weekly report for user",
@@ -400,6 +415,22 @@ export async function runWeeklyReports(now: Date): Promise<void> {
       "notification-scheduler: failed to page users for weekly report",
     );
   }
+  // A catch-up hour where everyone already has the report says nothing.
+  if (counts.inWindow > counts.exists) {
+    logger.info(counts, "notification-scheduler: weekly report run");
+    // Users skipped for their plan or setting, or already done, were not tried.
+    const tried =
+      counts.inWindow -
+      counts.exists -
+      counts.skippedNotPro -
+      counts.skippedDisabled;
+    if (counts.failed > 0 && counts.failed === tried) {
+      logger.error(
+        { inWindow: counts.inWindow, tried, failed: counts.failed },
+        "notification-scheduler: weekly report failed for every user it tried",
+      );
+    }
+  }
   try {
     await sendDueWeeklyReportPushes(now);
   } catch (err) {
@@ -412,9 +443,13 @@ export async function runWeeklyReports(now: Date): Promise<void> {
 
 /**
  * Run slot for a cron tick: the nearest UTC hour boundary, e.g. "2026-11-01T09".
- * Both jobs fire on the hour, so two instances ticking a few ms apart (or
- * straddling the boundary through clock skew) compute the SAME slot — truncating
- * would split them across two slots and both would run. Exported for testing.
+ * Both jobs fire on the hour. node-cron itself never fires early, only on time
+ * or late (up to MISSED_EXECUTION_TOLERANCE_MS), but instances' clocks differ:
+ * one whose clock runs slightly behind reads 08:59:59.9 at its own tick.
+ * Rounding gives both instances the SAME slot — truncating would split them
+ * across two slots and both would run. A run more than 30 minutes late would
+ * round to the next hour, so the tolerance must stay well under that.
+ * Exported for testing.
  */
 export function schedulerRunSlot(now: Date): string {
   const HOUR_MS = 3_600_000;
@@ -461,6 +496,28 @@ let scheduledTask: ReturnType<typeof cron.schedule> | null = null;
 let localHourTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
+ * How late a tick may wake and still run. node-cron's default is 1 second:
+ * past it the tick is dropped, with no catch-up. Five minutes covers a busy
+ * event loop or a slow start, keeps the run inside the same local hour for
+ * every user, and stays far below the 30 minutes at which schedulerRunSlot
+ * would round a late run into the next hour's slot.
+ */
+const MISSED_EXECUTION_TOLERANCE_MS = 5 * 60_000;
+
+/** A tick later than the tolerance is dropped by node-cron: make it loud. */
+function logMissedExecutions(
+  task: ReturnType<typeof cron.schedule>,
+  jobName: string,
+): void {
+  task.on("execution:missed", (ctx) => {
+    logger.error(
+      { jobName, missedSlot: ctx.date.toISOString() },
+      "notification-scheduler: missed a scheduled run",
+    );
+  });
+}
+
+/**
  * Start the daily cron jobs that send reminders.
  * Safe to call multiple times — only one set of job instances is created.
  */
@@ -484,8 +541,14 @@ export function startNotificationScheduler(): void {
         );
         reportError(err, "notification-scheduler: commitment cron");
       }),
-    { timezone: "UTC", noOverlap: true, name: "commitment-reminders" },
+    {
+      timezone: "UTC",
+      noOverlap: true,
+      name: "commitment-reminders",
+      missedExecutionTolerance: MISSED_EXECUTION_TOLERANCE_MS,
+    },
   );
+  logMissedExecutions(scheduledTask, "commitment-reminders");
 
   // Hourly — per-user local-time reminders. Each run selects only the users
   // whose local hour is the target (daily check-in at 09:00 local, meal-log
@@ -524,8 +587,14 @@ export function startNotificationScheduler(): void {
           }),
         ]),
       ),
-    { timezone: "UTC", noOverlap: true, name: "local-hour-reminders" },
+    {
+      timezone: "UTC",
+      noOverlap: true,
+      name: "local-hour-reminders",
+      missedExecutionTolerance: MISSED_EXECUTION_TOLERANCE_MS,
+    },
   );
+  logMissedExecutions(localHourTask, "local-hour-reminders");
 
   logger.info(
     "notification-scheduler: started (09:00 UTC commitments; hourly local-time check-in 09:00 / meal-log 12:00 / weekly report Sun 18:00)",
