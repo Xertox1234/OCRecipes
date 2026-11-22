@@ -51,4 +51,4 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 - Filed from the 2026-11-19 maintainability audit (deferred at triage).
 
 - Criterion 1 evidence: server/services/meal-plan-recipe-prepare.ts returns `{ok:false,reason}|{ok:true,recipeData,ingredients,sourceType,mealTypes,imageKey,sharedImageUrl}`; tests in server/services/**tests**/meal-plan-recipe-prepare.test.ts
-- Criterion 4 evidence: server/routes/**tests**/meal-plan.test.ts already mocks recipe-auto-image and fire-and-forget; unchanged and green (110 tests)
+- Criterion 4 evidence: server/routes/**tests**/meal-plan.test.ts already mocks recipe-generation (the leaf service the background image job calls); unchanged and green (110 tests)
