@@ -26,8 +26,6 @@ import {
 
 const OFFLINE_MESSAGE = "You're offline. Some features may be unavailable.";
 const BACK_ONLINE_MESSAGE = "Back online";
-/** How long the offline banner stays before it slides away. */
-export const OFFLINE_BANNER_VISIBLE_MS = 4000;
 
 export function OfflineBanner() {
   const insets = useSafeAreaInsets();
@@ -52,8 +50,8 @@ export function OfflineBanner() {
   }, [isOffline]);
 
   // The banner floats over every screen's top bar (back, close, Reload), so it
-  // must not stay there for the whole time the device is offline: it hides
-  // after a few seconds or on a tap, and comes back on the next drop.
+  // has a dismiss button. It has no time limit (WCAG 2.2.1): it stays until
+  // dismissed or back online, and comes back on the next drop.
   const [hidden, setHidden] = useState(false);
   // Reset during render when connectivity flips, so the next drop shows the
   // banner again (React's "adjust state when a prop changes" pattern).
@@ -62,12 +60,6 @@ export function OfflineBanner() {
     setPrevOffline(isOffline);
     setHidden(false);
   }
-  useEffect(() => {
-    if (!isOffline) return;
-    const timer = setTimeout(() => setHidden(true), OFFLINE_BANNER_VISIBLE_MS);
-    return () => clearTimeout(timer);
-  }, [isOffline]);
-
   if (!isOffline || hidden) return null;
 
   const entering = reducedMotion

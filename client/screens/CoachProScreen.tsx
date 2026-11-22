@@ -95,7 +95,7 @@ export default function CoachProScreen() {
   // Checked on open, when a reply finishes, and on a later refocus (saves
   // made from the Ask Coach sheet show here).
   const notebookSaves = useNotebookSaves();
-  const { checkForSaves } = notebookSaves;
+  const { checkForSaves, confirm: confirmSaves } = notebookSaves;
   useEffect(() => {
     checkForSaves();
   }, [checkForSaves]);
@@ -124,6 +124,17 @@ export default function CoachProScreen() {
       logger.warn("[CoachProScreen] acknowledge failed", err);
     });
   }, [acknowledge]);
+
+  // The popup has no timer (WCAG 2.2.1): the user's next action — sending a
+  // message or leaving the screen — keeps the saves (Undo is the way out).
+  const handleSend = useCallback(() => {
+    confirmSaves();
+    handleMessageSent();
+  }, [confirmSaves, handleMessageSent]);
+  useEffect(
+    () => navigation.addListener("blur", confirmSaves),
+    [navigation, confirmSaves],
+  );
 
   const pinnedConversations = useMemo(
     () => coachConversations.filter((c) => c.isPinned),
@@ -403,7 +414,6 @@ export default function CoachProScreen() {
       </View>
       <SavedToNotebookPopup
         saves={notebookSaves.saves}
-        onConfirm={notebookSaves.confirm}
         onUndo={notebookSaves.undo}
         top={(threadBarBottom ?? insets.top + THREAD_BAR_FALLBACK_HEIGHT) + 4}
       />
@@ -412,7 +422,7 @@ export default function CoachProScreen() {
         onCreateConversation={handleCreateConversation}
         isCoachPro={isCoachPro}
         warmUpHook={warmUpHook}
-        onMessageSent={handleMessageSent}
+        onMessageSent={handleSend}
         inputBarStyle={{
           paddingBottom: keyboardVisible ? Spacing.sm : tabBarHeight,
         }}

@@ -19,9 +19,6 @@ export type CardUiState =
   | "replaced"
   | "expired";
 
-/** Undo shows this long after a save; the server allows 60 s. */
-export const UNDO_VISIBLE_MS = 6000;
-
 const MAX_COUNT = 20;
 
 /**

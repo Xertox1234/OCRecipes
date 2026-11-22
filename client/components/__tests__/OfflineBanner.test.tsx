@@ -2,7 +2,7 @@
 import React from "react";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
-import { OfflineBanner, OFFLINE_BANNER_VISIBLE_MS } from "../OfflineBanner";
+import { OfflineBanner } from "../OfflineBanner";
 
 const { mockUseNetworkStatus, mockToast, mockUseAccessibility } = vi.hoisted(
   () => ({
@@ -103,7 +103,7 @@ describe("OfflineBanner", () => {
     ).toBeDefined();
   });
 
-  describe("does not stay over the screen's top controls", () => {
+  describe("stays until dismissed or back online", () => {
     const OFFLINE_TEXT = "You're offline. Some features may be unavailable.";
     const offline = {
       isOffline: true,
@@ -118,19 +118,22 @@ describe("OfflineBanner", () => {
       vi.useRealTimers();
     });
 
-    it("hides itself a few seconds after going offline", () => {
+    it("stays until dismissed, with no time limit (WCAG 2.2.1)", () => {
       mockUseNetworkStatus.mockReturnValue(offline);
       renderComponent(<OfflineBanner />);
       expect(screen.getByText(OFFLINE_TEXT)).toBeDefined();
 
       act(() => {
-        vi.advanceTimersByTime(OFFLINE_BANNER_VISIBLE_MS - 1);
+        vi.advanceTimersByTime(10 * 60 * 1000);
       });
       expect(screen.queryByText(OFFLINE_TEXT)).not.toBeNull();
+    });
 
-      act(() => {
-        vi.advanceTimersByTime(1);
-      });
+    it("hides when the connection returns", () => {
+      mockUseNetworkStatus.mockReturnValue(offline);
+      const { rerender } = renderComponent(<OfflineBanner />);
+      mockUseNetworkStatus.mockReturnValue({ ...offline, isOffline: false });
+      rerender(<OfflineBanner />);
       expect(screen.queryByText(OFFLINE_TEXT)).toBeNull();
     });
 
@@ -150,9 +153,9 @@ describe("OfflineBanner", () => {
     it("shows again the next time the device goes offline", () => {
       mockUseNetworkStatus.mockReturnValue(offline);
       const { rerender } = renderComponent(<OfflineBanner />);
-      act(() => {
-        vi.advanceTimersByTime(OFFLINE_BANNER_VISIBLE_MS);
-      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Hide offline message" }),
+      );
       expect(screen.queryByText(OFFLINE_TEXT)).toBeNull();
 
       mockUseNetworkStatus.mockReturnValue({ ...offline, isOffline: false });

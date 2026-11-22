@@ -53,9 +53,22 @@ const block = (overrides: Partial<WriteCardBlock> = {}): WriteCardBlock => ({
 });
 
 /** The chat owns the edits; this harness plays that part. */
-function Harness({ initial }: { initial: WriteCardBlock }) {
+function Harness({
+  initial,
+  replyInFlight,
+}: {
+  initial: WriteCardBlock;
+  replyInFlight?: boolean;
+}) {
   const [edits, setEdits] = useState<WriteCardEdits>({});
-  return <WriteCard block={initial} edits={edits} onEdit={setEdits} />;
+  return (
+    <WriteCard
+      block={initial}
+      edits={edits}
+      onEdit={setEdits}
+      replyInFlight={replyInFlight}
+    />
+  );
 }
 
 const ok = (body: unknown) => ({ json: async () => body });
@@ -95,7 +108,9 @@ describe("FoodWriteCard", () => {
     );
   });
 
-  it("saved shows Undo, then hides it after 6s", async () => {
+  // WCAG 2.2.1 (owner decision 2026-11-22): no timer. Undo stays until the
+  // user sends the next message or leaves the screen.
+  it("saved shows Undo, and it does not time out", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockApiRequest.mockResolvedValue(
       ok({ status: "saved", receipt: "✓ Logged to Breakfast · 226 cal" }),
@@ -106,10 +121,26 @@ describe("FoodWriteCard", () => {
       expect(screen.getByRole("button", { name: "Undo" })).toBeDefined(),
     );
     await act(async () => {
-      vi.advanceTimersByTime(6100);
+      vi.advanceTimersByTime(10 * 60 * 1000);
     });
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDefined();
+  });
+
+  it("Undo goes when the user sends the next message", async () => {
+    mockApiRequest.mockResolvedValue(
+      ok({ status: "saved", receipt: "✓ Logged to Breakfast · 226 cal" }),
+    );
+    const { rerender } = renderComponent(<Harness initial={block()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log 226 cal" }));
+    await screen.findByRole("button", { name: "Undo" });
+
+    rerender(<Harness initial={block()} replyInFlight />);
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
     expect(screen.getByText("✓ Logged to Breakfast · 226 cal")).toBeDefined();
+
+    // The reply finishing does not bring it back.
+    rerender(<Harness initial={block()} replyInFlight={false} />);
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
 
   it("Undo puts the card back to live", async () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { AccessibilityInfo, Platform } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -30,7 +30,6 @@ import { GroceryWriteCard } from "./GroceryWriteCard";
 import { PantryWriteCard } from "./PantryWriteCard";
 import { PlanWriteCard } from "./PlanWriteCard";
 import {
-  UNDO_VISIBLE_MS,
   cardUiState,
   mealChipLabel,
   saveErrorMessage,
@@ -41,6 +40,8 @@ interface Props {
   /** The user's edits, owned by the chat so a chat reply can send them. */
   edits: WriteCardEdits;
   onEdit: (edits: WriteCardEdits) => void;
+  /** A chat reply is on its way: the user sent the next message. */
+  replyInFlight?: boolean;
 }
 
 function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
@@ -89,10 +90,16 @@ function lockedSummary(block: WriteCardBlock): string {
 
 /**
  * A Coach write card (spec 2026-11-09): the controls for its kind inside the
- * shared shell, with Save and a few seconds of Undo. Nothing is written until
- * the user taps Save.
+ * shared shell, with Save, then Undo. Nothing is written until the user taps
+ * Save. Undo has no timer (WCAG 2.2.1): it stays until the user sends the
+ * next message or leaves the screen (the server still refuses it after 60 s).
  */
-export default function WriteCard({ block, edits, onEdit }: Props) {
+export default function WriteCard({
+  block,
+  edits,
+  onEdit,
+  replyInFlight = false,
+}: Props) {
   const haptics = useHaptics();
   const { save, undo } = useWriteCard(block.cardId);
   // What this device just did (saved / undone). It wins over the block's
@@ -105,14 +112,13 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
   const [undoError, setUndoError] = useState<string | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
   const busyRef = useRef(false);
-  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (undoTimer.current) clearTimeout(undoTimer.current);
-    },
-    [],
-  );
+  // Sending the next message ends Undo. Adjusted during render when the
+  // prop flips (React's "adjust state when a prop changes" pattern).
+  const [prevReplyInFlight, setPrevReplyInFlight] = useState(replyInFlight);
+  if (prevReplyInFlight !== replyInFlight) {
+    setPrevReplyInFlight(replyInFlight);
+    if (replyInFlight) setUndoVisible(false);
+  }
 
   const handleSave = async () => {
     if (busyRef.current) return;
@@ -128,10 +134,6 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
         AccessibilityInfo.announceForAccessibility(result.receipt);
       }
       setUndoVisible(true);
-      undoTimer.current = setTimeout(
-        () => setUndoVisible(false),
-        UNDO_VISIBLE_MS,
-      );
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setError(saveErrorMessage(err));
@@ -145,7 +147,6 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
   const handleUndo = async () => {
     if (busyRef.current) return;
     busyRef.current = true;
-    if (undoTimer.current) clearTimeout(undoTimer.current);
     setUndoVisible(false);
     setUndoError(null);
     try {

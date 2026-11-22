@@ -1094,6 +1094,7 @@ export default function CoachChat({
                       : undefined
                   }
                   onWriteCardEdit={handleWriteCardEdit}
+                  replyInFlight={showLiveReply}
                 />
               );
             })}

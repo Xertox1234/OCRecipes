@@ -27,7 +27,7 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 function setup() {
-  const props = { saves, onConfirm: vi.fn(), onUndo: vi.fn(), top: 60 };
+  const props = { saves, onUndo: vi.fn(), top: 60 };
   const utils = renderComponent(<SavedToNotebookPopup {...props} />);
   return { ...utils, props };
 }
@@ -40,56 +40,46 @@ it("shows what was saved, with Undo", () => {
   expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
 });
 
-it("confirms on its own after 6 seconds", () => {
-  const { props } = setup();
+// WCAG 2.2.1 (owner decision 2026-11-22): no timer. The screen confirms the
+// saves on the user's next action (next message, or leaving the screen).
+it("keeps Undo with no time limit", () => {
+  setup();
   act(() => {
-    vi.advanceTimersByTime(5999);
+    vi.advanceTimersByTime(10 * 60 * 1000);
   });
-  expect(props.onConfirm).not.toHaveBeenCalled();
-  act(() => {
-    vi.advanceTimersByTime(1);
-  });
-  expect(props.onConfirm).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
 });
 
-it("Undo rejects instead, and the timer never confirms", () => {
+it("Undo rejects the saves", () => {
   const { props } = setup();
   fireEvent.click(screen.getByRole("button", { name: "Undo" }));
   expect(props.onUndo).toHaveBeenCalledTimes(1);
-  act(() => {
-    vi.advanceTimersByTime(10_000);
-  });
-  expect(props.onConfirm).not.toHaveBeenCalled();
 });
 
-it("announces the save politely to screen readers", () => {
-  const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+// Queued, so on iOS it waits for the reply's own finish announcement
+// instead of cutting it off (the popup appears as the reply ends).
+it("queues its announcement behind the reply's", () => {
+  const announce = vi.spyOn(
+    RN.AccessibilityInfo,
+    "announceForAccessibilityWithOptions",
+  );
   setup();
   expect(announce).toHaveBeenCalledWith(
     "Saved to your notebook: You avoid dairy. You aim for 120 g protein.",
+    { queue: true },
   );
 });
 
 it("renders nothing without saves", () => {
   const { container } = renderComponent(
-    <SavedToNotebookPopup
-      saves={[]}
-      onConfirm={vi.fn()}
-      onUndo={vi.fn()}
-      top={60}
-    />,
+    <SavedToNotebookPopup saves={[]} onUndo={vi.fn()} top={60} />,
   );
   expect(container.textContent).toBe("");
 });
 
 it("sits at the top offset it is given, under the thread bar", () => {
   renderComponent(
-    <SavedToNotebookPopup
-      saves={saves}
-      onConfirm={vi.fn()}
-      onUndo={vi.fn()}
-      top={120}
-    />,
+    <SavedToNotebookPopup saves={saves} onUndo={vi.fn()} top={120} />,
   );
   const style = Object.assign(
     {},
