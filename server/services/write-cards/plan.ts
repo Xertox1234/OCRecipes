@@ -1,3 +1,4 @@
+import { categorizeIngredient } from "@shared/lib/grocery-categories";
 import type {
   CoachWriteCard,
   CoachWriteCardSavedRefs,
@@ -35,10 +36,7 @@ import {
 } from "../../storage/grocery-lists";
 import { getPantryItems } from "../../storage/pantry";
 import type { WriteCardTx } from "../../storage/coach-write-cards";
-import {
-  categorizeIngredient,
-  generateGroceryItems,
-} from "../grocery-generation";
+import { generateGroceryItems } from "../grocery-generation";
 import { groupPantryByKey, matchKey, pantryVerdict } from "../pantry-deduction";
 import { autoGenerateRecipeImage } from "../recipe-auto-image";
 import { fireAndForget } from "../../lib/fire-and-forget";

@@ -1,3 +1,4 @@
+import { categorizeIngredient } from "@shared/lib/grocery-categories";
 import type { CoachWriteCard, CoachWriteCardSavedRefs } from "@shared/schema";
 import {
   groceryEditsSchema,
@@ -20,7 +21,6 @@ import {
 import { getPantryItems } from "../../storage/pantry";
 import type { WriteCardTx } from "../../storage/coach-write-cards";
 import {
-  categorizeIngredient,
   normalizeIngredientName,
   parseQuantityForSum,
 } from "../grocery-generation";

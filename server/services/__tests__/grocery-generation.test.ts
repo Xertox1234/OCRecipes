@@ -1,7 +1,7 @@
+import { categorizeIngredient } from "@shared/lib/grocery-categories";
 import { describe, it, expect } from "vitest";
 import {
   normalizeIngredientName,
-  categorizeIngredient,
   generateGroceryItems,
   parseQuantityForSum,
 } from "../grocery-generation";

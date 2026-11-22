@@ -1,3 +1,4 @@
+import { categorizeIngredient } from "@shared/lib/grocery-categories";
 import type {
   CoachWriteCard,
   CoachWriteCardSavedRefs,
@@ -29,11 +30,7 @@ import {
 import { getEffectiveTierForUser } from "../../storage/subscription-status";
 import type { WriteCardTx } from "../../storage/coach-write-cards";
 import { TIER_FEATURES } from "@shared/types/premium";
-import {
-  categorizeIngredient,
-  parseQuantityForSum,
-  roundQuantity,
-} from "../grocery-generation";
+import { parseQuantityForSum, roundQuantity } from "../grocery-generation";
 import { WriteCardEditError } from "./errors";
 import { matchKey, unitKey } from "./grocery";
 import type { UpdatePantryCardArgs } from "./tool-args";

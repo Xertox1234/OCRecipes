@@ -1,7 +1,7 @@
 /**
  * Master ingredient icon list — merged & deduplicated from:
  * - client/data/food-facts.json (36 ingredients)
- * - server/services/grocery-generation.ts CATEGORY_KEYWORDS (~160 keywords)
+ * - shared/lib/grocery-categories.ts CATEGORY_KEYWORDS (~160 keywords)
  * - server/services/cultural-food-map.ts CULTURAL_FOOD_MAP (~64 entries)
  *
  * Each entry has a human-readable name, a filename slug, and a category.
