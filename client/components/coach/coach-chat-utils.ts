@@ -4,6 +4,9 @@ import {
   type CoachBlock,
   type MealPlanDay,
 } from "@shared/schemas/coach-blocks";
+import { isFinderBlockType } from "@shared/schemas/recipe-finder";
+import type { ChatMessage } from "@/hooks/useChat";
+import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe-utils";
 
 /**
  * Validates and parses raw plan data from a block action into typed MealPlanDay[].
@@ -217,4 +220,68 @@ export function lockOlderWriteCards(
         )
       : blocks,
   );
+}
+
+// ── Per-message view (CoachChat rows) ────────────────────────────────
+
+/** The list-level state a message row's flags are derived from. */
+export interface MessageViewContext {
+  /** The message's saved blocks, locked for older write cards. */
+  savedBlocks: readonly CoachBlock[] | undefined;
+  heldReplyId: number | null;
+  showLiveReply: boolean;
+  lastAssistantMessageId: number | null;
+  /** Recipe ids saved this session, keyed by message id. */
+  savedRecipeIds: ReadonlyMap<number, number>;
+}
+
+export interface MessageView {
+  isAssistant: boolean;
+  /** A finder message's text is the old-client fallback; the block replaces it. */
+  hasFinderBlock: boolean;
+  /** The footer still shows this reply's other blocks, so the saved copy waits. */
+  isHeld: boolean;
+  blocksForMsg: readonly CoachBlock[] | undefined;
+  /** No Regenerate under a finder message or a held reply. */
+  isRetryTarget: boolean;
+  /** Visible memory R1: the server already kept only confirmed ids. */
+  memoryRefIds: number[] | null;
+  savedRecipeId: number | null;
+}
+
+/** Derives everything a chat row needs to decide what to render. */
+export function deriveMessageView(
+  msg: ChatMessage,
+  ctx: MessageViewContext,
+): MessageView {
+  const isAssistant = msg.role === "assistant";
+  const { savedBlocks } = ctx;
+  const hasFinderBlock =
+    savedBlocks?.some((b) => isFinderBlockType(b.type)) ?? false;
+  const isHeld = msg.id === ctx.heldReplyId;
+  const blocksForMsg = isHeld
+    ? savedBlocks?.filter((b) => isFinderBlockType(b.type))
+    : savedBlocks;
+  // handleRetry re-sends the last user text without its finderAction, so a
+  // finder message's own buttons are the next step, not Regenerate.
+  const isRetryTarget =
+    !ctx.showLiveReply &&
+    isAssistant &&
+    !hasFinderBlock &&
+    !isHeld &&
+    msg.id === ctx.lastAssistantMessageId;
+  const memoryRefBlock = savedBlocks?.find((b) => b.type === "memory_refs");
+  const memoryRefIds =
+    memoryRefBlock?.type === "memory_refs" ? memoryRefBlock.ids : null;
+  const savedRecipeId =
+    ctx.savedRecipeIds.get(msg.id) ?? savedRecipeIdFromMetadata(msg.metadata);
+  return {
+    isAssistant,
+    hasFinderBlock,
+    isHeld,
+    blocksForMsg,
+    isRetryTarget,
+    memoryRefIds,
+    savedRecipeId,
+  };
 }

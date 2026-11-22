@@ -1,6 +1,6 @@
 ---
 title: "Pull CoachChat's per-message derivation into deriveMessageView + CoachMessageRow"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-19
 updated: 2026-11-19
@@ -23,10 +23,10 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ## Acceptance Criteria
 
-- [ ] Pure `deriveMessageView(msg, ctx)` in the existing `client/components/coach/coach-chat-utils.ts`, with Vitest cases for each derived flag
-- [ ] A memoised `<CoachMessageRow>` renders one message from that view
-- [ ] `renderItem` shrinks to a call; streaming state stays out of its deps (docs/rules/hooks.md)
-- [ ] No visible or VoiceOver change
+- [x] Pure `deriveMessageView(msg, ctx)` in the existing `client/components/coach/coach-chat-utils.ts`, with Vitest cases for each derived flag
+- [x] A memoised `<CoachMessageRow>` renders one message from that view
+- [x] `renderItem` shrinks to a call; streaming state stays out of its deps (docs/rules/hooks.md)
+- [x] No visible or VoiceOver change
 
 ## Implementation Notes
 
@@ -49,3 +49,8 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 ### 2026-11-19
 
 - Filed from the 2026-11-19 maintainability audit (deferred at triage).
+
+### 2026-11-22
+
+- Criterion 3 evidence: renderItem now builds deriveMessageView + renders CoachMessageRow; its deps lose theme.textSecondary and gain nothing; CoachChat.render-item-stability test green.
+- Criterion 4 evidence: markup, a11y labels and styles moved verbatim; CoachChat.test/branches tests (Regenerate, held reply, finder) green.

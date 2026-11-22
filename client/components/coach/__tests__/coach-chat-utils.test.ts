@@ -10,6 +10,7 @@ import {
   filterValidBlocks,
   latestLiveWriteCard,
   lockOlderWriteCards,
+  deriveMessageView,
 } from "../coach-chat-utils";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
@@ -440,5 +441,102 @@ describe("write cards in the chat (spec 2026-11-09)", () => {
     const out = lockOlderWriteCards(lists);
     expect(out[0][0]).toMatchObject({ status: "saved" });
     expect(out[1][0]).toMatchObject({ status: "live" });
+  });
+});
+
+describe("deriveMessageView", () => {
+  const msg = (over: Record<string, unknown> = {}) =>
+    ({
+      id: 7,
+      conversationId: 1,
+      role: "assistant",
+      content: "hi",
+      metadata: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      ...over,
+    }) as Parameters<typeof deriveMessageView>[0];
+  const ctx = (over: Record<string, unknown> = {}) => ({
+    savedBlocks: undefined as CoachBlock[] | undefined,
+    heldReplyId: null as number | null,
+    showLiveReply: false,
+    lastAssistantMessageId: 7 as number | null,
+    savedRecipeIds: new Map<number, number>(),
+    ...over,
+  });
+  const quick = { type: "quick_replies", options: [] } as unknown as CoachBlock;
+  const finder = {
+    type: "recipe_results",
+  } as unknown as CoachBlock;
+  const memory = { type: "memory_refs", ids: [3, 4] } as unknown as CoachBlock;
+
+  it("plain last assistant message is a retry target with no blocks", () => {
+    const v = deriveMessageView(msg(), ctx());
+    expect(v).toMatchObject({
+      isAssistant: true,
+      hasFinderBlock: false,
+      isHeld: false,
+      isRetryTarget: true,
+      memoryRefIds: null,
+      savedRecipeId: null,
+    });
+    expect(v.blocksForMsg).toBeUndefined();
+  });
+
+  it("user messages are not assistant and never a retry target", () => {
+    const v = deriveMessageView(msg({ role: "user" }), ctx());
+    expect(v.isAssistant).toBe(false);
+    expect(v.isRetryTarget).toBe(false);
+  });
+
+  it("no retry while a live reply shows", () => {
+    expect(
+      deriveMessageView(msg(), ctx({ showLiveReply: true })).isRetryTarget,
+    ).toBe(false);
+  });
+
+  it("no retry on a message that is not the last assistant message", () => {
+    expect(
+      deriveMessageView(msg(), ctx({ lastAssistantMessageId: 9 }))
+        .isRetryTarget,
+    ).toBe(false);
+  });
+
+  it("finder block hides the bubble text path and the retry", () => {
+    const v = deriveMessageView(msg(), ctx({ savedBlocks: [finder, quick] }));
+    expect(v.hasFinderBlock).toBe(true);
+    expect(v.isRetryTarget).toBe(false);
+    expect(v.blocksForMsg).toEqual([finder, quick]);
+  });
+
+  it("a held reply keeps only finder blocks and no retry", () => {
+    const v = deriveMessageView(
+      msg(),
+      ctx({ savedBlocks: [finder, quick], heldReplyId: 7 }),
+    );
+    expect(v.isHeld).toBe(true);
+    expect(v.isRetryTarget).toBe(false);
+    expect(v.blocksForMsg).toEqual([finder]);
+  });
+
+  it("a held reply with no saved blocks stays undefined", () => {
+    const v = deriveMessageView(msg(), ctx({ heldReplyId: 7 }));
+    expect(v.isHeld).toBe(true);
+    expect(v.blocksForMsg).toBeUndefined();
+  });
+
+  it("reads memory ref ids from the memory_refs block", () => {
+    expect(
+      deriveMessageView(msg(), ctx({ savedBlocks: [quick, memory] }))
+        .memoryRefIds,
+    ).toEqual([3, 4]);
+  });
+
+  it("prefers the in-session saved recipe id over message metadata", () => {
+    const m = msg({ metadata: { savedRecipeId: 5 } });
+    expect(deriveMessageView(m, ctx()).savedRecipeId).toBe(5);
+    expect(
+      deriveMessageView(m, ctx({ savedRecipeIds: new Map([[7, 9]]) }))
+        .savedRecipeId,
+    ).toBe(9);
   });
 });
