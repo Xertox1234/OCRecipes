@@ -125,7 +125,7 @@ A live hint under the add box shows what the text will become ("Becomes Milk · 
 - Every new or changed route checks the list belongs to `req.userId` before reading or writing. **`deleteGroceryListItem(id, listId, userId?)` makes `userId` optional, and the ownership JOIN runs only when it's passed**, so the DELETE route must pass `req.userId`. The clear route does the same.
 - The defaults table is read and written only by `req.userId`. There is no endpoint that takes a user id.
 - Zod limits on every body, matching the existing add schema: name ≤ 200 characters, unit ≤ 50, numbers finite and positive with a sane upper bound (e.g. ≤ 9,999). The voice batch caps the number of items (e.g. ≤ 50) so one request stays small (compare #1649's request-size cap).
-- Each new route takes `crudRateLimit` inline, like every existing route in `server/routes/grocery.ts` (CodeQL's missing-rate-limiting check is required). No stricter limiter is needed: there's no AI or expensive work (`docs/rules/api.md`). No premium gate (owner ruling B).
+- Each new route takes `crudRateLimit` inline, like the existing list, item and delete routes in `server/routes/grocery.ts` (CodeQL's missing-rate-limiting check is required). No stricter limiter is needed: there's no AI or expensive work (`docs/rules/api.md`). No premium gate (owner ruling B).
 
 ## Client changes (summary)
 
