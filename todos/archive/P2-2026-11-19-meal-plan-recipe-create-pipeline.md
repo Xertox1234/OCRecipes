@@ -1,6 +1,6 @@
 ---
 title: "One prepareMealPlanRecipe pipeline for the two meal-plan recipe-create routes"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-19
 updated: 2026-11-19
@@ -23,10 +23,10 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ## Acceptance Criteria
 
-- [ ] `prepareMealPlanRecipe(input, userId)` service returns `{ ok:false, reason } | { ok:true, recipeData, mealTypes, imageKey }`
-- [ ] `afterRecipeCreated(...)` owns the image fire-and-forget
-- [ ] Both routes become validate → prepare → store → respond; response shapes and status codes unchanged
-- [ ] Route tests mock every `fireAndForget` service (docs/rules/testing.md)
+- [x] `prepareMealPlanRecipe(input, userId)` service returns `{ ok:false, reason } | { ok:true, recipeData, mealTypes, imageKey }`
+- [x] `afterRecipeCreated(...)` owns the image fire-and-forget
+- [x] Both routes become validate → prepare → store → respond; response shapes and status codes unchanged
+- [x] Route tests mock every `fireAndForget` service (docs/rules/testing.md)
 
 ## Implementation Notes
 
@@ -49,3 +49,6 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 ### 2026-11-19
 
 - Filed from the 2026-11-19 maintainability audit (deferred at triage).
+
+- Criterion 1 evidence: server/services/meal-plan-recipe-prepare.ts returns `{ok:false,reason}|{ok:true,recipeData,ingredients,sourceType,mealTypes,imageKey,sharedImageUrl}`; tests in server/services/**tests**/meal-plan-recipe-prepare.test.ts
+- Criterion 4 evidence: server/routes/**tests**/meal-plan.test.ts already mocks recipe-generation (the leaf service the background image job calls); unchanged and green (110 tests)

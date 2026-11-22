@@ -2,9 +2,9 @@ import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import {
-  autoGenerateRecipeImage,
-  sharedDishImage,
-} from "../services/recipe-auto-image";
+  afterRecipeCreated,
+  prepareMealPlanRecipe,
+} from "../services/meal-plan-recipe-prepare";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -39,7 +39,6 @@ import {
   EmptyPantryError,
 } from "../services/pantry-meal-plan";
 import { inferMealTypes } from "../services/meal-type-inference";
-import { validateRecipeQuality } from "../lib/recipe-validation";
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
 import {
@@ -92,22 +91,6 @@ async function audienceAllowed(
     }
   }
   return true;
-}
-
-/** Meal types inferred from the normalized title + ingredient names. */
-function inferRecipeMealTypes(
-  title: string,
-  ingredients:
-    | { name: string; quantity?: string | null; unit?: string | null }[]
-    | undefined,
-) {
-  // normalizeRecipeFields feeds inferMealTypes clean title/ingredient input;
-  // persistence normalization happens in storage.
-  const normalized = normalizeRecipeFields({ title, ingredients });
-  return inferMealTypes(
-    normalized.title ?? title,
-    normalized.ingredients?.map((i) => i.name),
-  );
 }
 
 export function register(app: Express): void {
@@ -173,37 +156,21 @@ export function register(app: Express): void {
           return;
         }
 
-        const {
-          ingredients,
-          sourceType,
-          sourceCommunityRecipeId,
-          ...recipeData
-        } = parsed.data;
+        const { sourceCommunityRecipeId, ...recipeInput } = parsed.data;
 
-        // Quality gate
-        const quality = validateRecipeQuality({
-          title: recipeData.title,
-          instructions: recipeData.instructions,
-          ingredients: ingredients ?? null,
-          sourceType,
-        });
-        if (!quality.valid) {
-          sendError(res, 400, quality.reason!, ErrorCode.VALIDATION_ERROR);
+        const prepared = await prepareMealPlanRecipe(recipeInput, req.userId);
+        if (!prepared.ok) {
+          sendError(res, 400, prepared.reason, ErrorCode.VALIDATION_ERROR);
           return;
         }
+        const { recipeData, ingredients, sourceType, mealTypes } = prepared;
 
-        // A quick entry reuses the picture already made for its dish name.
-        const shared = await sharedDishImage(
-          sourceType,
-          recipeData.title,
-          recipeData.imageUrl,
-        );
-
-        const mealTypes = inferRecipeMealTypes(recipeData.title, ingredients);
         const recipe = await storage.createMealPlanRecipe(
           {
             ...recipeData,
-            ...(shared.url ? { imageUrl: shared.url } : {}),
+            ...(prepared.sharedImageUrl
+              ? { imageUrl: prepared.sharedImageUrl }
+              : {}),
             userId: req.userId,
             sourceType,
             mealTypes,
@@ -227,12 +194,12 @@ export function register(app: Express): void {
         }
 
         // Auto-generate image if none provided (async, non-blocking)
-        if (!recipe.imageUrl) {
-          fireAndForget(
-            "recipe-image-gen",
-            autoGenerateRecipeImage(recipe, req.userId, shared.key),
-          );
-        }
+        afterRecipeCreated({
+          recipe,
+          userId: req.userId,
+          imageKey: prepared.imageKey,
+          hasImage: !!recipe.imageUrl,
+        });
 
         res.status(201).json(recipe);
       } catch (error) {
@@ -393,30 +360,25 @@ export function register(app: Express): void {
         }
 
         if (inlineRecipe) {
-          const { ingredients, sourceType, ...recipeData } = inlineRecipe;
-          const quality = validateRecipeQuality({
-            title: recipeData.title,
-            instructions: recipeData.instructions,
-            ingredients: ingredients ?? null,
-            sourceType,
-          });
-          if (!quality.valid) {
-            sendError(res, 400, quality.reason!, ErrorCode.VALIDATION_ERROR);
+          const prepared = await prepareMealPlanRecipe(
+            inlineRecipe,
+            req.userId,
+          );
+          if (!prepared.ok) {
+            sendError(res, 400, prepared.reason, ErrorCode.VALIDATION_ERROR);
             return;
           }
+          const { recipeData, ingredients, sourceType, mealTypes } = prepared;
+          const shared = {
+            key: prepared.imageKey,
+            url: prepared.sharedImageUrl,
+          };
           const normalized = normalizeRecipeFields({
             title: recipeData.title,
             description: recipeData.description,
             difficulty: recipeData.difficulty,
             instructions: recipeData.instructions,
           });
-          const mealTypes = inferRecipeMealTypes(recipeData.title, ingredients);
-          // A quick entry reuses the picture already made for its dish name.
-          const shared = await sharedDishImage(
-            sourceType,
-            recipeData.title,
-            recipeData.imageUrl,
-          );
           // Recipe + plan item in ONE transaction (a failed item insert leaves
           // no orphan recipe). Both rows are owned by req.userId only.
           const [created] = await storage.createMealPlanFromSuggestions([
@@ -450,21 +412,17 @@ export function register(app: Express): void {
               },
             },
           ]);
-          if (!recipeData.imageUrl && !shared.url) {
-            fireAndForget(
-              "recipe-image-gen",
-              autoGenerateRecipeImage(
-                {
-                  id: created.recipeId,
-                  title: recipeData.title,
-                  cuisine: recipeData.cuisine ?? null,
-                  mealTypes,
-                },
-                req.userId,
-                shared.key,
-              ),
-            );
-          }
+          afterRecipeCreated({
+            recipe: {
+              id: created.recipeId,
+              title: recipeData.title,
+              cuisine: recipeData.cuisine ?? null,
+              mealTypes,
+            },
+            userId: req.userId,
+            imageKey: shared.key,
+            hasImage: !!recipeData.imageUrl || !!shared.url,
+          });
           res.status(201).json({
             id: created.mealPlanItemId,
             recipeId: created.recipeId,
