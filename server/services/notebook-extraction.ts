@@ -59,14 +59,14 @@ function isAcknowledgementOnly(text: string): boolean {
   );
 }
 
-// Built per-call (like `buildSystemPrompt` in nutrition-coach.ts) rather than
+// Built per-call (like `buildSystemPrompt` in coach-prompt.ts) rather than
 // a static const, because it must state the CURRENT civil date. Without it,
 // the model has nothing to resolve a relative check-in phrase ("next week")
 // against, so it either guesses or omits `followUpDate` entirely. Model to
 // follow: PR #892's "Current time for this user" line.
 //
 // This prompt does NOT participate in `getSystemPromptTemplateVersion` /
-// `hashCoachCacheKey` (nutrition-coach.ts / coach-pro-chat.ts) — those hash
+// `hashCoachCacheKey` (coach-cache-keys.ts) — those hash
 // only `buildSystemPrompt`'s output. `extractNotebookEntries` makes its own,
 // uncached `aiChat` call, so editing this prompt's
 // text has no cache-invalidation consequence.
@@ -132,7 +132,7 @@ export async function extractNotebookEntries(
   // second, later `new Date()` computed after the SSE stream drains — it is
   // not guaranteed to be the identical instant the coach's own system prompt
   // rendered its date from (that is a separate, independently-defaulted
-  // `new Date()` in nutrition-coach.ts), just the closer and more correct of
+  // `new Date()` in coach-prompt.ts), just the closer and more correct of
   // the two available anchors.
   //
   // `wroteCard`: the coach answered this turn with a write card (see
