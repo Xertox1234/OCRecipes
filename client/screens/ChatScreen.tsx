@@ -61,6 +61,8 @@ import {
 import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { viewCoachConversation } from "@/hooks/useCoachUnreadReplies";
+import { useShowsCoachPro } from "@/hooks/useShowsCoachPro";
+import { shouldHandOffToCoachPro } from "@/navigation/coachConversationRoute";
 import {
   Spacing,
   FontFamily,
@@ -362,7 +364,41 @@ function ChatSkeleton() {
   );
 }
 
+/**
+ * The plain chat draws a reply's text only. A Coach Pro user's chats belong
+ * in CoachPro, which draws the write cards, so a Chat opened on a
+ * conversation hands over to it and draws nothing itself. This is what the
+ * `ocrecipes://chat/<id>` link reaches: its route is fixed in linking.ts
+ * before the plan can be read. `popTo` pops back to the stack's CoachPro, or
+ * — on a cold link, where the Coach stack holds only this Chat — replaces
+ * Chat with it.
+ */
 export default function ChatScreen() {
+  const navigation = useNavigation<ChatScreenNavigationProp>();
+  const route = useRoute<ChatScreenRouteProp>();
+  const showCoachPro = useShowsCoachPro();
+  // Decided once, from the params the screen opened with: a new chat gains
+  // its id from the first send (setParams) and must not be pulled away
+  // mid-reply.
+  const [handOffTo] = useState<number | null>(() => {
+    const openedId =
+      route.params && "conversationId" in route.params
+        ? route.params.conversationId
+        : null;
+    return shouldHandOffToCoachPro(openedId, showCoachPro) ? openedId : null;
+  });
+
+  useEffect(() => {
+    if (handOffTo !== null) {
+      navigation.popTo("CoachPro", { selectedConversationId: handOffTo });
+    }
+  }, [handOffTo, navigation]);
+
+  if (handOffTo !== null) return null;
+  return <PlainChatScreen />;
+}
+
+function PlainChatScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();

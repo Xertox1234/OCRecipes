@@ -74,6 +74,12 @@ vi.mock("@/navigation/openCoachConversation", () => ({
   openCoachConversation: mockOpenCoachConversation,
 }));
 
+// The plan-based route choice — mutable so a test can be a Coach Pro user.
+const mockShowsCoachPro = vi.hoisted(() => ({ value: false }));
+vi.mock("@/hooks/useShowsCoachPro", () => ({
+  useShowsCoachPro: () => mockShowsCoachPro.value,
+}));
+
 const { mockUseAcknowledgeReminders } = vi.hoisted(() => ({
   mockUseAcknowledgeReminders: vi.fn(() => ({ acknowledge: vi.fn() })),
 }));
@@ -347,7 +353,33 @@ describe("CoachOverlayContent — replies with cards", () => {
     fireEvent.click(link);
 
     expect(onDismiss).toHaveBeenCalled();
-    expect(mockOpenCoachConversation).toHaveBeenCalledWith(9);
+    expect(mockOpenCoachConversation).toHaveBeenCalledWith(9, false);
+  });
+
+  // The link is offered because the reply has cards; only CoachPro draws
+  // them, so a Coach Pro user's plan is passed on to the route.
+  it("opens the full reply in CoachPro for a Coach Pro user", async () => {
+    mockShowsCoachPro.value = true;
+    try {
+      messagesHolder.messages = [reply(21, { blocks: [card] })];
+      renderComponent(
+        <CoachOverlayContent
+          question={{ text: "Sides?", question: "sides" }}
+          screenContext="recipe"
+          onDismiss={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "See the full reply in Coach",
+        }),
+      );
+
+      expect(mockOpenCoachConversation).toHaveBeenCalledWith(9, true);
+    } finally {
+      mockShowsCoachPro.value = false;
+    }
   });
 
   it("a reply whose only block is the Checked: trail has no link", async () => {

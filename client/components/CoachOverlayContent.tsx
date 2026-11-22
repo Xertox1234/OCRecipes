@@ -22,6 +22,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
 import { useCoachStream } from "@/hooks/useCoachStream";
+import { useShowsCoachPro } from "@/hooks/useShowsCoachPro";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { filterValidBlocks } from "@/components/coach/coach-chat-utils";
@@ -66,6 +67,7 @@ export function CoachOverlayContent({
   const { reducedMotion } = useAccessibility();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const showCoachPro = useShowsCoachPro();
 
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [inputText, setInputText] = useState("");
@@ -461,7 +463,7 @@ export function CoachOverlayContent({
                 <Pressable
                   onPress={() => {
                     onDismiss();
-                    openCoachConversation(conversationId);
+                    openCoachConversation(conversationId, showCoachPro);
                   }}
                   style={({ pressed }) => [
                     styles.fullReplyLink,

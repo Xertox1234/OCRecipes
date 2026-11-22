@@ -59,6 +59,12 @@ const { mockReminders, mockToast, mockNavigationRef } = vi.hoisted(() => ({
   mockNavigationRef: { isReady: vi.fn(() => true), navigate: vi.fn() },
 }));
 
+// The plan-based route choice — mutable so a test can be a Coach Pro user.
+const mockShowsCoachPro = vi.hoisted(() => ({ value: false }));
+vi.mock("@/hooks/useShowsCoachPro", () => ({
+  useShowsCoachPro: () => mockShowsCoachPro.value,
+}));
+
 vi.mock("@/lib/coach-brief-seen", () => ({
   loadLastBriefSeenDate: vi.fn(() => Promise.resolve(null)),
 }));
@@ -410,6 +416,37 @@ describe("MainTabNavigator — Coach reply ready toast", () => {
       "Chat",
       expect.anything(),
     );
+  });
+
+  // The plain Chat screen draws no write cards, so a Coach Pro user's Open
+  // goes to CoachPro (which does), with the conversation selected.
+  it("tapping Open takes a Coach Pro user to that conversation in CoachPro", async () => {
+    mockShowsCoachPro.value = true;
+    try {
+      const { queryClient } = renderWithClient();
+      act(() => {
+        noteCoachReplyFinished(queryClient, 5);
+      });
+      await settle();
+
+      openAction().onPress();
+
+      expect(mockNavigationRef.navigate).toHaveBeenCalledOnce();
+      expect(mockNavigationRef.navigate).toHaveBeenCalledWith(
+        "Main",
+        {
+          screen: "CoachTab",
+          params: {
+            screen: "CoachPro",
+            params: { selectedConversationId: 5 },
+            pop: true,
+          },
+        },
+        { pop: true },
+      );
+    } finally {
+      mockShowsCoachPro.value = false;
+    }
   });
 
   // A mocked navigationRef cannot tell "return to the existing Main" from

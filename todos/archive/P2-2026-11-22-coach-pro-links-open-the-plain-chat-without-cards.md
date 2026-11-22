@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro links open the plain chat, which draws no cards"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-22
 updated: 2026-11-22
@@ -37,14 +37,14 @@ in code, not reproduced:
 
 ## Acceptance Criteria
 
-- [ ] A Coach Pro user who taps the overlay's full-reply link lands on the conversation in
+- [x] A Coach Pro user who taps the overlay's full-reply link lands on the conversation in
       `CoachPro`, with the card drawn.
-- [ ] The same for the "Coach replied" toast's Open.
-- [ ] `ocrecipes://chat/<id>` for a Coach Pro user shows the conversation's cards (or opens it
+- [x] The same for the "Coach replied" toast's Open.
+- [x] `ocrecipes://chat/<id>` for a Coach Pro user shows the conversation's cards (or opens it
       in `CoachPro`); a free user still gets `Chat`.
-- [ ] While the plan is still loading, the route follows the `AllConversationsScreen` rule
+- [x] While the plan is still loading, the route follows the `AllConversationsScreen` rule
       (assume `CoachPro`).
-- [ ] Tests cover the plan-based route choice.
+- [x] Tests cover the plan-based route choice.
 
 ## Implementation Notes
 
@@ -71,3 +71,17 @@ in code, not reproduced:
 ### 2026-11-22
 
 - Initial creation (deferred from the pantry-card simulator check).
+
+### 2026-11-22 (fix)
+
+- `openCoachConversation` now takes the plan (`useShowsCoachPro`) and routes a Coach Pro user to
+  `CoachPro` with `selectedConversationId`; a free user still gets `Chat`. Both callers (the
+  "Coach replied" toast and the overlay's full-reply link) pass it.
+- The `ocrecipes://chat/<id>` link: its route is fixed in `linking.ts` before the plan can be
+  read, so `ChatScreen` hands a Coach Pro user over to `CoachPro` (`popTo`) and draws nothing
+  itself. The decision is made once, from the params the screen opened with.
+- Risk settled: `openCoachWithMessage` (the Weekly Report's new chat) stays on `Chat` for every
+  plan. Only `Chat` takes an `initialMessage`, and a chat opened that way is not handed over when
+  its first send gives it an id.
+- Checked by unit tests, including the real `StackRouter` for the warm and cold stacks. Not seen
+  on a simulator or device.

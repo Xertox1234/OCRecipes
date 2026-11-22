@@ -24,6 +24,7 @@ import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePendingReminders } from "@/hooks/usePendingReminders";
+import { useShowsCoachPro } from "@/hooks/useShowsCoachPro";
 import { loadLastBriefSeenDate } from "@/lib/coach-brief-seen";
 import {
   subscribeToCoachReplyReady,
@@ -111,6 +112,10 @@ function AnimatedTabIcon({
  */
 function CoachReplyToastBridge(): null {
   const toast = useToast();
+  // Read when the toast is made. If the plan resolves to Coach Pro while the
+  // toast is still up and Open lands on Chat, ChatScreen hands over to
+  // CoachPro itself.
+  const showCoachPro = useShowsCoachPro();
 
   useEffect(
     () =>
@@ -118,11 +123,11 @@ function CoachReplyToastBridge(): null {
         toast.info("Coach replied — tap to open", {
           action: {
             label: "Open",
-            onPress: () => openCoachConversation(conversationId),
+            onPress: () => openCoachConversation(conversationId, showCoachPro),
           },
         });
       }),
-    [toast],
+    [toast, showCoachPro],
   );
 
   return null;
