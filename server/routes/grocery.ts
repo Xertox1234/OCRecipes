@@ -6,6 +6,10 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { MAX_GROCERY_LIST_ITEMS } from "@shared/constants/grocery";
+import {
+  categorizeIngredient,
+  isGroceryCategory,
+} from "@shared/lib/grocery-categories";
 import { TIER_FEATURES, applyStreakUnlocks } from "@shared/types/premium";
 import { resolveVerificationStreak } from "../services/verification-streak-cache";
 import { isValidCalendarDate } from "../utils/date-validation";
@@ -54,7 +58,7 @@ const addManualGroceryItemSchema = z.object({
   name: z.string().min(1).max(200),
   quantity: nullableNumericStringField,
   unit: z.string().max(50).optional().nullable(),
-  category: z.string().max(50).optional().default("other"),
+  category: z.string().max(50).optional(),
 });
 
 export function register(app: Express): void {
@@ -468,7 +472,11 @@ export function register(app: Express): void {
             name: parsed.data.name,
             quantity: parsed.data.quantity,
             unit: parsed.data.unit || null,
-            category: parsed.data.category || "other",
+            // A manual item goes under its aisle. A client may name one; any
+            // other value (older app versions send "food") is guessed here.
+            category: isGroceryCategory(parsed.data.category)
+              ? parsed.data.category
+              : categorizeIngredient(parsed.data.name),
             isManual: true,
           },
         ]);

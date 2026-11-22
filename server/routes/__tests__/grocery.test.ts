@@ -487,6 +487,39 @@ describe("Grocery Routes", () => {
       expect(res.status).toBe(201);
     });
 
+    it.each([
+      ["no category", { name: "Bread" }, "bakery"],
+      [
+        "a category that is not an aisle",
+        { name: "Milk", category: "food" },
+        "dairy",
+      ],
+      [
+        "an aisle the client chose",
+        { name: "Bread", category: "frozen" },
+        "frozen",
+      ],
+      ["a name no keyword knows", { name: "Bob's Red Sauce" }, "other"],
+    ])("files a manual item sent with %s", async (_label, body, category) => {
+      vi.mocked(storage.verifyGroceryListOwnership).mockResolvedValue(true);
+      vi.mocked(storage.insertGroceryListItemsUnderCap).mockResolvedValue({
+        created: [createMockGroceryListItem({ id: 2, name: body.name })],
+        skipped: 0,
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists/1/items")
+        .set("Authorization", "Bearer token")
+        .send(body);
+
+      expect(res.status).toBe(201);
+      expect(storage.insertGroceryListItemsUnderCap).toHaveBeenCalledWith(
+        1,
+        "1",
+        [expect.objectContaining({ name: body.name, category })],
+      );
+    });
+
     // L-obs-2: a list deleted between the route's ownership check and the
     // locked recheck is a 404, not a 500 + Sentry event.
     it("answers 404 when the list is gone by the time the item is inserted", async () => {
