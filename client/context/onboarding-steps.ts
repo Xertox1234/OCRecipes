@@ -3,15 +3,18 @@
  * shown to the user.
  *
  * OnboardingNavigator renders these screens in this order and
- * OnboardingContext walks through all of them. Welcome, AiSharing (privacy
- * audit H3: who the AI features send data to, asked before any of it is
- * sent) and HealthDataConsent are the intro; the rest are the questionnaire
+ * OnboardingContext walks through all of them. Welcome, FamilyIntro (one
+ * card about family planning, a premium feature; it asks nothing — owner
+ * ruling 2026-11-21), AiSharing (privacy audit H3: who the AI features send
+ * data to, asked before any of it is sent) and HealthDataConsent are the
+ * intro; the rest are the questionnaire
  * the Welcome copy calls
  * "6 quick steps". The badge, the progress bar and the Welcome copy all
  * derive from these values, so adding a screen here updates all of them.
  */
 export const ONBOARDING_SCREENS = [
   "Welcome",
+  "FamilyIntro",
   "AiSharing",
   "HealthDataConsent",
   "Allergies",
@@ -24,7 +27,7 @@ export const ONBOARDING_SCREENS = [
 
 export type OnboardingScreenName = (typeof ONBOARDING_SCREENS)[number];
 
-export const INTRO_SCREEN_COUNT = 3;
+export const INTRO_SCREEN_COUNT = 4;
 export const QUESTION_STEP_COUNT =
   ONBOARDING_SCREENS.length - INTRO_SCREEN_COUNT;
 
