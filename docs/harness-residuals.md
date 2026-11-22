@@ -492,3 +492,19 @@ Not changed here. The two files were mutated locally instead, where Postgres exi
 (`npm run mutation:explore -- <module> <test>`, about a minute each). If reopened: give the job a
 Postgres service, or select DB-backed tests out with their own summary note instead of a red row;
 and order the cap by something other than path so one directory is not always the one left out.
+
+### HIT IN REAL USE 2026-11-22 — merge-review-guard cannot merge a PR over 20,000 diff lines, from any session (#1974)
+
+`.claude/hooks/merge-review-guard.sh` reads the whole PR diff with `gh pr diff <n>` for the
+real-platform check, before either stage can allow. GitHub refuses a diff over 20,000 lines
+(`HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000)`, `PullRequest.diff
+too_large`), so the guard denies fail-closed. #1974 (tracking ~150k lines of plan docs) was
+reviewed and green on all 16 checks and still could not be merged by the agent. The only bypass,
+`SKIP_MERGE_REVIEW=1`, has to be set in the shell that launched Claude Code, so the owner merged
+it in the browser. `gh pr diff --name-only` fails the same way, so the review-stamp digest path
+may hit it too.
+
+Not changed here. If reopened: feed `platform-scope.sh` a diff assembled locally
+(`git diff origin/<base>...<head sha>` after a fetch) or a per-file list from
+`GET /pulls/<n>/files` (paginated, 3,000-file cap) when `gh pr diff` returns `too_large`, and keep
+denying on any other gh error.
