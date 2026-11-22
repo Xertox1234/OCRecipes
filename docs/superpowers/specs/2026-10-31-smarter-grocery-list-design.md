@@ -1,7 +1,7 @@
 # Smarter Grocery List — Design
 
 **Date:** 2026-10-31
-**Status:** Draft for owner approval — owner Q&A complete, builder check done; refreshed 2026-11-22 against `main` (see "Refresh 2026-11-22" at the end, which also lists the questions for the owner)
+**Status:** Draft for owner approval — owner Q&A complete, builder check done; refreshed 2026-11-22 against `main` (see "Refresh 2026-11-22" at the end); every open question answered by the owner on 2026-11-22
 **Mockups:** two throwaway browser mockups (not committed): the list overview and the voice listen → check flow. The owner approved both ("everything" / "that looks great"), and their content is described in full below.
 **Reviews:** builder check (questions folded in); an advisor review (bump ordering, both-empty bump, parser isolation, export coverage, all fixed); `/spec-review`, verdict approve-with-edits, all edits applied (race-safe bump under an advisory lock, offline scope removed, one amount formatter, security section, permission wording, work order, tests, verification). Calibrated against `2026-10-31-cookbook-ai-cover-studio-design.md`, `2026-10-25-form-fields-feel-and-behaviour-design.md` and `2026-06-12-offline-persistence-design.md`.
 
@@ -65,7 +65,7 @@ Every item has a **count** and, optionally, a **size**:
   - Anything else (`1 L` vs `2 cartons`) → **second line**.
   - Generated (meal-plan) rows are bumped like manual ones: it's the same shopping. **Ticked rows are bumped too, and the bump unticks them** (owner ruling A below).
 - Name matching for bumps ignores case, extra spaces and simple plurals (`apple`/`apples`, `tomato`/`tomatoes`). The server already has a name key and a unit key for this (`matchKey` and `unitKey` in `server/services/pantry-deduction.ts`, used by the pantry rule and the Coach grocery card). **Move those to `shared/` and reuse them; do not write a second matching rule.** If they prove too loose or too strict for a bump, change them in one place, with tests for the pantry rule too.
-- **Only typed and spoken adds bump** (Claude's call, owner question 2 in the refresh section). Generated lists, batch scan and the Coach grocery and plan cards keep inserting their own lines as they do today: each Coach card remembers the rows it created so its Undo can delete exactly those, and a bump into an existing row would break that.
+- **Only typed and spoken adds bump** (owner ruling D, 2026-11-22). Generated lists, batch scan and the Coach grocery and plan cards keep inserting their own lines as they do today: each Coach card remembers the rows it created so its Undo can delete exactly those, and a bump into an existing row would break that.
 - **The bump rules are one pure function in `shared/`** (Claude's call). The **server** uses it for the actual write. The **client** uses it **only to preview** what will happen: the voice check screen's "already on your list: makes it 2 L" note and the typed hint. Adds are not optimistic and are not queued offline today (`useAddManualGroceryItem` invalidates on success), and this design does not change that.
 - **The write is race-safe** (spec-review, `docs/rules/database.md` per-row derived value rule). The match is a per-row decision taken by comparing the new item against sibling rows, so it runs in **one transaction** whose **first statement is `pg_advisory_xact_lock`** keyed on the list id. **Use the per-list lock that already exists**: `insertGroceryListItemsUnderCap` in `server/storage/grocery-lists.ts` takes `grocery-list-items:<listId>` before it counts rows for the 500-item cap (#1930). The bump write takes that same key, so a bump and a capped insert on one list can never interleave; a second key would let them. It then SELECTs candidates under the lock and either INSERTs, or UPDATEs with a **relative** `count = count + n` / `quantity = quantity + n`. A voice batch runs as one transaction under one lock, and a batch that names the same item twice ("milk … and milk") merges inside the batch before matching. Without this, a double-tapped Return or two phones adding milk at once makes two lines or loses a bump.
 - **The 500-item cap** (`MAX_GROCERY_LIST_ITEMS`, #1930). A bump adds no row, so it works on a full list. A new line on a full list is refused with the existing `LIMIT_REACHED` answer and the existing "list is full" message. A voice batch on a nearly full list applies every bump, inserts the new lines that fit, in order, and reports how many were left out: the same "adds as many as fit" behaviour every other insert path has. The app then says how many were skipped.
@@ -93,7 +93,7 @@ A live hint under the add box shows what the text will become ("Becomes Milk · 
 ## Remembered amounts
 
 - **New per-user table**, for example `user_grocery_defaults`: user id, normalised item name, count, quantity, unit, updated at. Unique on (user, name).
-- **Written only** when the user picks from the **Amount ▾** drop-down. A later pick for the same name overwrites it. − / + taps and typed amounts do **not** write it. _Claude's call, owner can veto:_ the owner was asked whether typed amounts should also be learned (add "Milk 2L" often, then `milk` alone fills in 2 L). The answer described only the drop-down, so this design learns from the drop-down only.
+- **Written only** when the user picks from the **Amount ▾** drop-down. A later pick for the same name overwrites it. − / + taps and typed amounts do **not** write it. **Owner ruling E, 2026-11-22:** drop-down only. A typed amount ("Milk 2L") is never remembered, so a one-off amount can't become the default.
 - **Read** when an item is added with no amount (typed or spoken). If a saved amount exists, the item gets it straight away, and the voice check screen labels it "your usual: …".
 - The drop-down offers counts 1–6, common packs (1 jar, 1 bottle, 1 can, 1 pack, 1 bag, 1 box), common sizes (250 g, 500 g, 1 kg, 500 ml, 1 L, 2 L), and **Type an amount…**, which runs the same parser. _Builder's call:_ the exact list may be tuned. Tapping the amount on any item (not only ones without an amount) opens the same picker.
 - The amount is tied to the user's account, so it follows them to a new phone. Deleting the account removes these rows through the same `onDelete: "cascade"` foreign key to `users.id` that the other per-user tables use (`deleteUser` in `server/storage/users.ts`). The data export lists tables explicitly (`server/storage/export.ts`, which already covers grocery lists and items), so **the new table must be added there**.
@@ -102,7 +102,7 @@ A live hint under the add box shows what the text will become ("Becomes Milk · 
 ## Voice
 
 - Reuse `client/hooks/useSpeechToText.ts` (already used by Coach chat and `SimpleEntrySheet`). Don't add a new speech library. Only one field may own the microphone at a time; follow the ownership rule the voice fields use (`client/hooks/useVoiceField.ts`, #1735 and #1739).
-- **The add box already has a 🎤 button** (added since October). Today it dictates straight into the add box, replacing its text, and Return adds one item. In this design that same button opens the listening sheet instead (Claude's call, owner question 1 in the refresh section). There is one mic button, not two.
+- **The add box already has a 🎤 button** (added since October). Today it dictates straight into the add box, replacing its text, and Return adds one item. In this design that same button opens the listening sheet instead (owner ruling C, 2026-11-22). Quick one-item dictation into the box goes away. There is one mic button, not two.
 - **Listening sheet:** a large pulsing mic and the live transcript. Tap the mic to stop, or Cancel.
 - **Check sheet:** the parsed rows as in the mockup. Each row has ✕, the name, an optional note line (bump / "your usual"), and − / + controls (or **Amount ▾** if there's no amount). Then **Add N items** and **🎤 Say more**, which appends to the same list.
 - If permission is denied or nothing is heard, show the hook's existing error message in the sheet. The typed path is unaffected.
@@ -194,8 +194,8 @@ What changed in the code since 2026-10-31:
 
 Unchanged and still true: the parser files, `parseIngredientText` feeding only the recipe form, the item update route accepting only the tick and the pantry flag, manual adds defaulting to "Other", and the data export listing tables by name.
 
-Questions for the owner before approval:
+Owner rulings, 2026-11-22 (asked as three questions after the refresh; each is folded into its section):
 
-1. **The mic button.** Today it dictates into the add box. This design makes the same button open the listening sheet with the check screen. Confirm, or keep quick dictation and give the sheet its own button.
-2. **Coach and generated adds.** This design bumps only what the user types or says. Items added by a Coach card, a generated list or a batch scan still arrive as their own lines, so "Milk" from the Coach can sit beside the user's "Milk · 2 L". Confirm, or ask for those paths to bump too (a larger change: the Coach card's Undo would need a new design).
-3. **Still open from October:** remembered amounts are learned from the Amount ▾ drop-down only, not from typed amounts ("Remembered amounts" above). Veto if typed amounts should be learned too.
+- **C. The mic button opens the listening sheet.** One mic button; it no longer dictates into the add box.
+- **D. Only typed and spoken adds bump.** Items from a Coach card, a generated list or a batch scan keep arriving as their own lines, so a Coach "Milk" can sit beside the user's "Milk · 2 L".
+- **E. Remembered amounts come from the Amount ▾ drop-down only.** Typed amounts are not learned.
