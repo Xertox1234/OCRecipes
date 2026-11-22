@@ -206,6 +206,11 @@ export default function ScanScreen() {
   const releaseTempUri = useCallback((uri: string | undefined) => {
     if (uri) pendingTempUrisRef.current.delete(uri);
   }, []);
+  // A photo the user retook: delete it now rather than at abandon.
+  const discardTempUri = useCallback((uri: string) => {
+    pendingTempUrisRef.current.delete(uri);
+    deleteAsync(uri, { idempotent: true }).catch(() => {});
+  }, []);
   const cleanupPendingUris = useCallback(() => {
     pendingTempUrisRef.current.forEach((uri) => {
       deleteAsync(uri, { idempotent: true }).catch(() => {});
@@ -368,11 +373,9 @@ export default function ScanScreen() {
     haptics,
   ]);
 
-  // Navigating away to edit (onEditStep2/onEditStep3) sets isFocused false,
-  // which the existing "Reset when screen loses focus" effect above already
-  // turns into a RESET → IDLE dispatch — that phase-type change is what
-  // cancels this hook's pending timer (see useAutoAdvanceTimer's own cleanup),
-  // so no extra cancellation logic is needed here.
+  // A Retake (RETAKE_STEP) or a blur reset changes the phase type, which is
+  // what cancels this hook's pending timer (see useAutoAdvanceTimer's own
+  // cleanup), so no extra cancellation logic is needed here.
   useAutoAdvanceTimer(scanPhase, screenReaderEnabled, dispatch);
 
   const handleConfirmLog = useCallback(async () => {
@@ -940,35 +943,23 @@ export default function ScanScreen() {
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
         onProceedToLabel={() => dispatch({ type: "PROCEED_TO_LABEL" })}
         onStepConfirmed={() => dispatch({ type: "STEP_CONFIRMED" })}
-        onEditStep2={() => {
-          if (
-            scanPhase.type === "STEP2_REVIEWING" ||
-            scanPhase.type === "STEP2_CONFIRMED"
-          ) {
-            const imageUri =
-              scanPhase.type === "STEP2_REVIEWING"
-                ? scanPhase.imageUri
-                : scanPhase.nutritionImageUri;
-            // Ownership transfers to LabelAnalysis, which deletes it on its
-            // own unmount — release so the abandon-cleanup here doesn't also
-            // delete it once this blur triggers resetScan().
-            releaseTempUri(imageUri);
-            navigation.navigate("LabelAnalysis", { imageUri });
-          }
+        // Retake stays in the wizard (owner decision 2026-11-22): no
+        // navigate, so no blur reset — the barcode and earlier photos are
+        // kept. Only the discarded photo is deleted.
+        // The live ref, not the render closure: a tap landing as the 1 s
+        // auto-advance fires would otherwise delete a photo the next phase
+        // keeps (the reducer then no-ops the retake).
+        onRetakeStep2={() => {
+          const phase = scanPhaseRef.current;
+          if (phase.type !== "STEP2_REVIEWING") return;
+          discardTempUri(phase.imageUri);
+          dispatch({ type: "RETAKE_STEP" });
         }}
-        onEditStep3={() => {
-          if (scanPhase.type === "STEP3_REVIEWING") {
-            // Only frontImageUri transfers to FrontLabelConfirm here —
-            // nutritionImageUri stays pending and is cleaned up by the blur
-            // this navigate triggers (resetScan), same as any other abandon.
-            releaseTempUri(scanPhase.frontImageUri);
-            navigation.navigate("FrontLabelConfirm", {
-              imageUri: scanPhase.frontImageUri,
-              barcode: scanPhase.barcode,
-              sessionId: null,
-              data: EMPTY_FRONT_LABEL,
-            });
-          }
+        onRetakeStep3={() => {
+          const phase = scanPhaseRef.current;
+          if (phase.type !== "STEP3_REVIEWING") return;
+          discardTempUri(phase.frontImageUri);
+          dispatch({ type: "RETAKE_STEP" });
         }}
         onSmartPhotoConfirm={async () => {
           if (scanPhase.type !== "SMART_CONFIRMED") return;

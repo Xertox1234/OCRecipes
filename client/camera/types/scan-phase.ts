@@ -128,6 +128,8 @@ export type ScanAction =
   | { type: "PRODUCT_LOADED"; barcode: string; product: ProductSummary }
   | { type: "BARCODE_LOST" }
   | { type: "CONFIRM_PRODUCT" }
+  /** Re-photograph the step under review, keeping the wizard's progress. */
+  | { type: "RETAKE_STEP" }
   | { type: "PROCEED_TO_LABEL" }
   | { type: "STEP_PHOTO_CAPTURED"; imageUri: string; ocrText?: string }
   | { type: "STEP_CONFIRMED" }

@@ -502,3 +502,71 @@ describe("scanPhaseReducer", () => {
     });
   });
 });
+
+// Owner decision 2026-11-22: Retake keeps the wizard's progress — it re-arms
+// the camera for the same step, keeping the barcode and earlier photos.
+describe("scanPhaseReducer — RETAKE_STEP", () => {
+  const product = { name: "Oat milk" };
+
+  it("STEP2_REVIEWING → LABEL_PROMPTED, keeping barcode and product", () => {
+    const state: ScanPhase = {
+      type: "STEP2_REVIEWING",
+      barcode: "123",
+      product,
+      ocrText: "Calories 90",
+      imageUri: "file:///n.jpg",
+    };
+    expect(scanPhaseReducer(state, { type: "RETAKE_STEP" })).toEqual({
+      type: "LABEL_PROMPTED",
+      barcode: "123",
+      product,
+    });
+  });
+
+  it("STEP3_REVIEWING → STEP2_CONFIRMED, keeping the nutrition photo", () => {
+    const state: ScanPhase = {
+      type: "STEP3_REVIEWING",
+      barcode: "123",
+      product,
+      nutritionImageUri: "file:///n.jpg",
+      ocrText: null,
+      frontImageUri: "file:///f.jpg",
+    };
+    expect(scanPhaseReducer(state, { type: "RETAKE_STEP" })).toEqual({
+      type: "STEP2_CONFIRMED",
+      barcode: "123",
+      product,
+      nutritionImageUri: "file:///n.jpg",
+      ocrText: null,
+    });
+  });
+
+  it("a retaken label photo becomes the new step-2 review", () => {
+    const reviewing: ScanPhase = {
+      type: "STEP2_REVIEWING",
+      barcode: "123",
+      product,
+      ocrText: "Calories 90",
+      imageUri: "file:///n.jpg",
+    };
+    const prompted = scanPhaseReducer(reviewing, { type: "RETAKE_STEP" });
+    expect(
+      scanPhaseReducer(prompted, {
+        type: "STEP_PHOTO_CAPTURED",
+        imageUri: "file:///n2.jpg",
+        ocrText: "Calories 100",
+      }),
+    ).toEqual({
+      type: "STEP2_REVIEWING",
+      barcode: "123",
+      product,
+      ocrText: "Calories 100",
+      imageUri: "file:///n2.jpg",
+    });
+  });
+
+  it("is a no-op outside a review step", () => {
+    const state: ScanPhase = { type: "HUNTING" };
+    expect(scanPhaseReducer(state, { type: "RETAKE_STEP" })).toBe(state);
+  });
+});

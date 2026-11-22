@@ -50,8 +50,8 @@ const handlers = {
   onConfirm: noop,
   onProceedToLabel: noop,
   onStepConfirmed: noop,
-  onEditStep2: noop,
-  onEditStep3: noop,
+  onRetakeStep2: noop,
+  onRetakeStep3: noop,
   onSmartPhotoConfirm: noop,
   onRetry: noop,
 };
@@ -136,7 +136,7 @@ describe("ProductChip — barcode_lock offers two real actions, not a skip-only 
   // right alongside the same `paddingVertical: 12`) — so its rendered/tappable
   // height sat a few points under the 44pt floor docs/rules/react-native.md
   // requires unconditionally. That was a latent defect on the low-traffic
-  // step2/step3 screen-reader-only "Edit values" buttons; this task makes
+  // step2/step3 screen-reader-only Retake buttons; this task makes
   // `btnSecondary` the SOLE route to the barcode-only escape hatch on
   // `barcode_lock` — the highest-traffic phase in the app — which is what
   // makes the gap load-bearing rather than cosmetic. Asserts the real
@@ -152,7 +152,7 @@ describe("ProductChip — barcode_lock offers two real actions, not a skip-only 
 });
 
 describe("ProductChip — step2_review / step3_review auto-advance treatment", () => {
-  it("renders a single tappable review card (no separate Confirm/Edit buttons) when no screen reader is active", () => {
+  it("renders a single tappable review card (no separate Confirm/Retake buttons) when no screen reader is active", () => {
     render(
       <ProductChip
         phase={step2Review}
@@ -164,13 +164,13 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
     expect(screen.getByText(/nutrition label captured/i)).toBeTruthy();
   });
 
-  it("tapping the review card calls onEditStep2", () => {
+  it("tapping the review card calls onRetakeStep2", () => {
     let called = false;
     render(
       <ProductChip
         phase={step2Review}
         {...handlers}
-        onEditStep2={() => {
+        onRetakeStep2={() => {
           called = true;
         }}
         screenReaderEnabled={false}
@@ -180,7 +180,7 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
     expect(called).toBe(true);
   });
 
-  it("falls back to the explicit Confirm/Edit buttons when a screen reader is active", () => {
+  it("falls back to the explicit Confirm/Retake buttons when a screen reader is active", () => {
     render(
       <ProductChip
         phase={step2Review}
@@ -189,7 +189,7 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
       />,
     );
     expect(screen.getByText("Looks right →")).toBeTruthy();
-    expect(screen.getByText("Edit values")).toBeTruthy();
+    expect(screen.getByText("Retake photo")).toBeTruthy();
   });
 
   it("step3_review also gets the single tappable review card by default", () => {

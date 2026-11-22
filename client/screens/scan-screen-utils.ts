@@ -432,7 +432,7 @@ export function getShutterBlockedReason(phase: ScanPhase): string | null {
       return "Camera is still starting.";
     case "STEP2_REVIEWING":
     case "STEP3_REVIEWING":
-      return "Reviewing your photo. Confirm or edit it first.";
+      return "Reviewing your photo. Confirm or retake it first.";
     case "CLASSIFYING":
       return "Still working on the photo you just took.";
     case "SMART_CONFIRMED":
