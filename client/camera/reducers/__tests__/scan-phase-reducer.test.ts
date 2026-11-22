@@ -70,13 +70,33 @@ describe("scanPhaseReducer", () => {
       bounds: BOUNDS,
     };
     const product = { name: "Test Bar", brand: "Acme" };
-    const result = scanPhaseReducer(state, { type: "PRODUCT_LOADED", product });
+    const result = scanPhaseReducer(state, {
+      type: "PRODUCT_LOADED",
+      barcode: "123",
+      product,
+    });
     expect(result).toEqual({
       type: "BARCODE_LOCKED",
       barcode: "123",
       bounds: BOUNDS,
       product,
     });
+  });
+
+  // Camera audit 2026-11-21 M1: a slow lookup for barcode A must not attach
+  // A's name and allergen flags to a later lock on barcode B.
+  it("PRODUCT_LOADED for a different barcode leaves the locked state unchanged", () => {
+    const state: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "222",
+      bounds: BOUNDS,
+    };
+    const result = scanPhaseReducer(state, {
+      type: "PRODUCT_LOADED",
+      barcode: "111",
+      product: { name: "Stale Bar", brand: "Acme" },
+    });
+    expect(result).toBe(state);
   });
 
   it("BARCODE_LOST transitions BARCODE_TRACKING → HUNTING", () => {

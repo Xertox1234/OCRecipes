@@ -82,6 +82,10 @@ export default function ReceiptCaptureScreen() {
   // A capture's file exists before it joins `photos` (on-device OCR runs
   // first), so the unmount cleanup must see it here too.
   const pendingCaptureRef = useRef<string | null>(null);
+  // Set by the unmount cleanup. A takePicture still writing when the screen
+  // unmounts resolves after that cleanup ran, so its file must be deleted by
+  // handleCapture itself.
+  const unmountedRef = useRef(false);
 
   // Premium gate: the wall is only for a user known to be free. While the
   // status is unknown (loading, or the fetch failed) the screen shows neither
@@ -103,7 +107,11 @@ export default function ReceiptCaptureScreen() {
   // own files (handleRemovePhoto deletes immediately; handleDone hands the
   // set off to ReceiptReview via handedOffRef above).
   useEffect(() => {
+    // Reset on (re)mount: StrictMode's dev double-invoke runs this cleanup once
+    // before the real mount.
+    unmountedRef.current = false;
     return () => {
+      unmountedRef.current = true;
       if (handedOffRef.current) return;
       const uris = pendingCaptureRef.current
         ? [...photosRef.current, pendingCaptureRef.current]
@@ -121,6 +129,12 @@ export default function ReceiptCaptureScreen() {
     try {
       if (!cameraRef.current) return;
       const photo = await cameraRef.current.takePicture();
+      if (unmountedRef.current) {
+        if (photo?.uri) {
+          deleteAsync(photo.uri, { idempotent: true }).catch(() => {});
+        }
+        return;
+      }
       if (photo?.uri) {
         pendingCaptureRef.current = photo.uri;
         // OCR failure here is non-fatal — the capture succeeded and the

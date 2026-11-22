@@ -12,64 +12,67 @@ interface CameraPermissionGateProps {
   /** `"undetermined"` shows the ask; `"denied"` shows the Settings redirect. */
   status: "undetermined" | "denied";
   onRequestPermission: () => void;
-  /** Leave the scan screen (denied state only). */
+  /** Leave the scan screen. */
   onCancel: () => void;
 }
 
-/** Full-screen stand-in for the camera until permission is granted. */
+const COPY = {
+  undetermined: {
+    title: "Camera Access",
+    body: "OCRecipes needs your camera to scan barcodes and food labels.",
+    action: "Allow Camera",
+    actionLabel: "Allow camera access",
+  },
+  denied: {
+    title: "Camera Blocked",
+    body: "Enable camera access in Settings to scan products.",
+    action: "Open Settings",
+    actionLabel: "Open Settings to enable camera",
+  },
+} as const;
+
+/**
+ * Full-screen stand-in for the camera until permission is granted. It is the
+ * whole of the Scan screen (a headerless fullScreenModal) while shown, so both
+ * states keep a Cancel and trap VoiceOver focus (docs/rules/accessibility.md).
+ */
 export function CameraPermissionGate({
   status,
   onRequestPermission,
   onCancel,
 }: CameraPermissionGateProps) {
   const { theme } = useTheme();
-
-  if (status === "undetermined") {
-    return (
-      <View
-        style={[
-          styles.permissionContainer,
-          { backgroundColor: theme.backgroundDefault },
-        ]}
-      >
-        <Text style={[styles.permissionTitle, { color: theme.text }]}>
-          Camera Access
-        </Text>
-        <Text style={[styles.permissionBody, { color: theme.textSecondary }]}>
-          OCRecipes needs your camera to scan barcodes and food labels.
-        </Text>
-        <TouchableOpacity
-          style={styles.permissionBtn}
-          onPress={onRequestPermission}
-          accessibilityLabel="Allow camera access"
-          accessibilityRole="button"
-        >
-          <Text style={styles.permissionBtnText}>Allow Camera</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const copy = COPY[status];
+  const onAction =
+    status === "undetermined"
+      ? onRequestPermission
+      : () => {
+          void Linking.openSettings();
+        };
 
   return (
     <View
+      accessibilityViewIsModal
       style={[
         styles.permissionContainer,
         { backgroundColor: theme.backgroundDefault },
       ]}
     >
       <Text style={[styles.permissionTitle, { color: theme.text }]}>
-        Camera Blocked
+        {copy.title}
       </Text>
       <Text style={[styles.permissionBody, { color: theme.textSecondary }]}>
-        Enable camera access in Settings to scan products.
+        {copy.body}
       </Text>
       <TouchableOpacity
-        style={styles.permissionBtn}
-        onPress={() => Linking.openSettings()}
-        accessibilityLabel="Open Settings to enable camera"
+        style={[styles.permissionBtn, { backgroundColor: theme.accentSolid }]}
+        onPress={onAction}
+        accessibilityLabel={copy.actionLabel}
         accessibilityRole="button"
       >
-        <Text style={styles.permissionBtnText}>Open Settings</Text>
+        <Text style={[styles.permissionBtnText, { color: theme.buttonText }]}>
+          {copy.action}
+        </Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.permissionCancel}
@@ -97,14 +100,15 @@ const styles = StyleSheet.create({
   },
   permissionTitle: { fontSize: 22, fontWeight: "700", textAlign: "center" },
   permissionBody: { fontSize: 15, textAlign: "center", lineHeight: 22 },
+  // Fill and text colour come from the theme (accentSolid: 5.48:1 under
+  // white). The old hardcoded #007AFF was about 4:1, below AA for 16px text.
   permissionBtn: {
-    backgroundColor: "#007AFF", // hardcoded — iOS system blue, intentional
     borderRadius: 12,
     paddingHorizontal: 32,
     paddingVertical: 14,
     marginTop: 8,
   },
-  permissionBtnText: { color: "#FFF", fontWeight: "700", fontSize: 16 }, // hardcoded — camera overlay
+  permissionBtnText: { fontWeight: "700", fontSize: 16 },
   permissionCancel: { paddingVertical: 12 },
   permissionCancelText: { fontSize: 15 },
 });

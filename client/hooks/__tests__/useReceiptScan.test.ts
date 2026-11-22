@@ -10,7 +10,9 @@ const {
   mockCleanupImage,
   mockLogWarn,
   mockLogInfo,
+  mockNotifyIfSessionExpired,
 } = vi.hoisted(() => ({
+  mockNotifyIfSessionExpired: vi.fn(),
   mockTokenGet: vi.fn(),
   mockCompressImage: vi.fn(),
   mockCleanupImage: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock("@/lib/logger", () => ({
 vi.mock("@/lib/query-client", () => ({
   getApiUrl: () => "http://localhost:3000",
   apiRequest: vi.fn(),
+  notifyIfSessionExpired: (...args: unknown[]) =>
+    mockNotifyIfSessionExpired(...args),
 }));
 
 vi.mock("@/lib/token-storage", () => ({
@@ -121,6 +125,32 @@ describe("useReceiptScan", () => {
     });
 
     expect(await firstOutcome).toMatchObject({ name: "AbortError" });
+  });
+
+  // Camera audit 2026-11-21 M4: the receipt upload sends its own bearer, so
+  // a revoked token must reach the shared session-expiry check.
+  it("passes a 401 response to the session-expiry check", async () => {
+    const response = {
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "Token expired", code: "TOKEN_EXPIRED" }),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useReceiptScan(), { wrapper });
+    act(() => {
+      result.current.mutate(["file://a.jpg"]);
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mockNotifyIfSessionExpired).toHaveBeenCalledWith(
+      response,
+      "test-token",
+    );
   });
 
   it("appends each compressed photo as a file object expo/fetch can send", async () => {

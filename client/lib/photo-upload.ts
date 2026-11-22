@@ -1,7 +1,11 @@
 import { raiseIfAiSharingRequired } from "./ai-sharing-events";
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import { tokenStorage } from "./token-storage";
-import { getApiUrl } from "./query-client";
+import {
+  getApiUrl,
+  notifyIfSessionExpired,
+  notifyIfStreamSessionExpired,
+} from "./query-client";
 import { ApiError } from "./api-error";
 import { compressImage, cleanupImage } from "./image-compression";
 import type { PhotoIntent, FoodCategory } from "@shared/constants/preparation";
@@ -88,7 +92,14 @@ function throwIfAborted(signal?: AbortSignal): void {
  * the `Upload failed: <status>` shape and never leaks the raw server body to the
  * user (the screen renders static copy).
  */
-function uploadError(status: number, body: string): ApiError {
+async function uploadError(
+  status: number,
+  body: string,
+  sentToken: string,
+): Promise<ApiError> {
+  // uploadAsync never passes through apiRequest, so a dead token on the
+  // camera path must reach the shared session-expiry check from here.
+  await notifyIfStreamSessionExpired(status, body, sentToken);
   let code: string | undefined;
   try {
     const parsed: unknown = JSON.parse(body);
@@ -151,7 +162,7 @@ export async function uploadPhotoForAnalysis(
     throwIfAborted(signal);
 
     if (uploadResult.status !== 200) {
-      throw uploadError(uploadResult.status, uploadResult.body);
+      throw await uploadError(uploadResult.status, uploadResult.body, token);
     }
 
     try {
@@ -189,6 +200,8 @@ export async function lookupNutritionByPrep(
     },
   );
 
+  await notifyIfSessionExpired(response, token);
+
   if (!response.ok) {
     if (response.status === 404) return null;
     throw new Error(`Nutrition lookup failed: ${response.status}`);
@@ -222,6 +235,8 @@ export async function submitFollowUp(
     },
   );
 
+  await notifyIfSessionExpired(response, token);
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     raiseIfAiSharingRequired(errorData.code);
@@ -253,6 +268,8 @@ export async function confirmPhotoAnalysis(
     },
     body: JSON.stringify(request),
   });
+
+  await notifyIfSessionExpired(response, token);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -326,7 +343,7 @@ export async function uploadLabelForAnalysis(
     );
 
     if (uploadResult.status !== 200) {
-      throw uploadError(uploadResult.status, uploadResult.body);
+      throw await uploadError(uploadResult.status, uploadResult.body, token);
     }
 
     return JSON.parse(uploadResult.body) as LabelAnalysisResponse;
@@ -356,6 +373,8 @@ export async function confirmLabelAnalysis(
     },
     body: JSON.stringify({ sessionId, servingsConsumed, mealType }),
   });
+
+  await notifyIfSessionExpired(response, token);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -402,7 +421,7 @@ export async function uploadRecipePhotoForAnalysis(
     );
 
     if (uploadResult.status !== 200) {
-      throw uploadError(uploadResult.status, uploadResult.body);
+      throw await uploadError(uploadResult.status, uploadResult.body, token);
     }
 
     return JSON.parse(uploadResult.body) as RecipePhotoResult;
@@ -432,6 +451,8 @@ export async function uploadRecipeTextForAnalysis(
     },
     body: JSON.stringify({ pageTexts: [text] }),
   });
+
+  await notifyIfSessionExpired(response, token);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -563,7 +584,7 @@ export async function uploadFrontLabelPhoto(
     );
 
     if (uploadResult.status !== 200) {
-      throw uploadError(uploadResult.status, uploadResult.body);
+      throw await uploadError(uploadResult.status, uploadResult.body, token);
     }
 
     return JSON.parse(uploadResult.body) as FrontLabelAnalysisResponse;
@@ -595,6 +616,8 @@ export async function confirmFrontLabel(
       body: JSON.stringify({ sessionId, barcode }),
     },
   );
+
+  await notifyIfSessionExpired(response, token);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

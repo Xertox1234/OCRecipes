@@ -5,7 +5,17 @@ import { useMenuScan } from "../useMenuScan";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { File as MockExpoFile } from "../../../test/mocks/expo-file-system";
 
-const { mockGetApiUrl, mockTokenStorage, mockFetch } = vi.hoisted(() => ({
+const {
+  mockGetApiUrl,
+  mockTokenStorage,
+  mockFetch,
+  mockCompressImage,
+  mockCleanupImage,
+  mockNotifyIfSessionExpired,
+} = vi.hoisted(() => ({
+  mockNotifyIfSessionExpired: vi.fn(),
+  mockCompressImage: vi.fn(),
+  mockCleanupImage: vi.fn(),
   mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
   mockTokenStorage: {
     get: vi.fn(),
@@ -18,10 +28,17 @@ const { mockGetApiUrl, mockTokenStorage, mockFetch } = vi.hoisted(() => ({
 
 vi.mock("@/lib/query-client", () => ({
   getApiUrl: () => mockGetApiUrl(),
+  notifyIfSessionExpired: (...args: unknown[]) =>
+    mockNotifyIfSessionExpired(...args),
 }));
 
 vi.mock("@/lib/token-storage", () => ({
   tokenStorage: mockTokenStorage,
+}));
+
+vi.mock("@/lib/image-compression", () => ({
+  compressImage: (...args: unknown[]) => mockCompressImage(...args),
+  cleanupImage: (...args: unknown[]) => mockCleanupImage(...args),
 }));
 
 // `expo/fetch` (the global fetch since Expo SDK 57) only serializes FormData
@@ -43,6 +60,10 @@ afterAll(() => {
 describe("useMenuScan", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCompressImage.mockImplementation(async (uri: string) => ({
+      uri: uri.replace("/photos/", "/compressed/"),
+    }));
+    mockCleanupImage.mockResolvedValue(undefined);
   });
 
   it("sends FormData with photo and returns analysis result", async () => {
@@ -130,8 +151,71 @@ describe("useMenuScan", () => {
     expect(photoParts).toHaveLength(1);
     expect(photoParts[0][1]).toBeInstanceOf(MockExpoFile);
     expect((photoParts[0][1] as unknown as { uri: string }).uri).toBe(
-      "file:///photos/menu.jpg",
+      "file:///compressed/menu.jpg",
     );
     append.mockRestore();
+  });
+
+  // Camera audit 2026-11-21 M3: the menu photo went up full-size, so a
+  // high-resolution capture or gallery pick over the server's 5 MB cap failed.
+  it("compresses the photo before upload and deletes the compressed copy", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ menuItems: [] }),
+    });
+
+    const { result } = renderHook(() => useMenuScan(), { wrapper });
+    await act(async () => {
+      result.current.mutate("file:///photos/menu.jpg");
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockCompressImage).toHaveBeenCalledWith(
+      "file:///photos/menu.jpg",
+      expect.objectContaining({ targetSizeKB: expect.any(Number) }),
+    );
+    expect(mockCleanupImage).toHaveBeenCalledWith(
+      "file:///compressed/menu.jpg",
+    );
+  });
+
+  it("deletes the compressed copy when the upload fails", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    mockFetch.mockRejectedValue(new Error("network down"));
+
+    const { result } = renderHook(() => useMenuScan(), { wrapper });
+    await act(async () => {
+      result.current.mutate("file:///photos/menu.jpg");
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(mockCleanupImage).toHaveBeenCalledWith(
+      "file:///compressed/menu.jpg",
+    );
+  });
+
+  // Camera audit 2026-11-21 M4: the menu upload sends its own bearer, so a
+  // revoked token must reach the shared session-expiry check.
+  it("passes a 401 response to the session-expiry check", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    const response = {
+      ok: false,
+      status: 401,
+      text: () =>
+        Promise.resolve('{"error":"Token expired","code":"TOKEN_EXPIRED"}'),
+    };
+    mockFetch.mockResolvedValue(response);
+
+    const { result } = renderHook(() => useMenuScan(), { wrapper });
+    await act(async () => {
+      result.current.mutate("file:///photos/menu.jpg");
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(mockNotifyIfSessionExpired).toHaveBeenCalledWith(response, "token");
   });
 });

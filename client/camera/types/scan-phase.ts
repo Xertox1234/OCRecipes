@@ -123,7 +123,9 @@ export type ScanAction =
   | { type: "FIRST_BARCODE_DETECTED"; barcode: string; bounds: Bounds }
   | { type: "BARCODE_UPDATED"; bounds: Bounds }
   | { type: "BARCODE_LOCKED" }
-  | { type: "PRODUCT_LOADED"; product: ProductSummary }
+  // `barcode` names the lookup this answers; the reducer drops it unless it
+  // matches the barcode locked now (a slow reply must not land on a newer lock).
+  | { type: "PRODUCT_LOADED"; barcode: string; product: ProductSummary }
   | { type: "BARCODE_LOST" }
   | { type: "CONFIRM_PRODUCT" }
   | { type: "PROCEED_TO_LABEL" }

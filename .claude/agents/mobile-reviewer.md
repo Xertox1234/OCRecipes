@@ -242,13 +242,14 @@ The pre-commit script only catches: `Pressable`/`TouchableOpacity` with `onPress
 - [ ] Ref-based debouncing on EVERY scan handler — barcode callbacks fire rapidly: `lastScannedRef` same-code check + `isScanning` state gate to prevent duplicate triggers; reset after a delay
 - [ ] Haptic feedback on successful scan; scan result validated before navigation
 - [ ] `isFocused` (from `useIsFocused()`) is passed to `useScanClassification` at ALL call sites — a declared-but-not-passed `isFocused` silently disables the stale-navigation guard with no TypeScript warning (Ref: audit 2026-04-28 C1)
-- [ ] Any "reset scanner / re-initialize camera" logic that must fire while the screen stays focused (e.g. overlay dismiss) runs imperatively in the event handler — never relies on an `isFocused` effect re-firing, because that effect only fires on navigation transitions (Ref: audit 2026-05-02 C1)
+- [ ] Any "reset scanner / re-initialize camera" logic that must fire while the screen stays focused (e.g. overlay dismiss) runs imperatively in the event handler — never relies on an `isFocused` effect re-firing, because that effect only fires on navigation transitions (Ref: audit 2026-05-02 C1). Concretely on ScanScreen: `resetScan` (RESET → IDLE) is for abandonment only; a path where the user stays on Scan (retry, upsell close) must use `rearmScan`, which re-dispatches `CAMERA_READY` — `docs/solutions/logic-errors/reset-to-idle-strands-a-screen-that-stays-focused-2026-11-21.md` (camera audit 2026-11-21 H1)
 
 ### Image capture & upload
 
 - [ ] `takePicture()` used; FormData append uses `{ uri, type, name } as unknown as Blob`; image quality/compression configured appropriately; gallery picker provided as an alternative to the camera
 - [ ] User cancellation (`result.canceled` from the picker/camera) is a **silent return**, NOT an error — no error toast when the user intentionally backed out. Capture failure (`takePicture` throw) gets its own catch with a retry/gallery fallback
 - [ ] **Null-photo handling — both catch AND else:** `takePicture()` can return `null` or a photo without a `uri` without throwing; a `catch`-only handler silently drops the null-return case. Handle both paths with a "Capture failed — try again or pick from your gallery" alert (Ref: audit 2026-05-10 M7 / code-reviewer LOW)
+- [ ] **Every upload or raw `fetch` outside `apiRequest` runs the 401 session-expiry check** with the token it sent: `notifyIfSessionExpired(response, token)` for a `Response`, `notifyIfStreamSessionExpired(status, body, token)` for an `uploadAsync` result. Without it a revoked token on the camera path only ever shows "try again" — `docs/solutions/logic-errors/uploads-outside-apirequest-skip-the-session-expiry-check-2026-11-21.md` (camera audit 2026-11-21 M4)
 - Server-side file-upload magic-byte validation: `docs/legacy-patterns/security.md`
 
 ### OCR & frame processors
