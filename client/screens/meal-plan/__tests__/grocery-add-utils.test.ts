@@ -15,7 +15,7 @@ describe("buildGroceryAdd", () => {
       fields: { name: "Eggs", quantity: "12", unit: null },
       hint: "Becomes Eggs · 12, under Dairy",
     });
-    expect(buildGroceryAdd("half a kilo of cheese").fields).toEqual({
+    expect(buildGroceryAdd("half a kilo of cheese")?.fields).toEqual({
       name: "Cheese",
       quantity: "0.5",
       unit: "kg",
