@@ -59,6 +59,8 @@ interface BlockRendererProps {
   /** Coach write card: the user's edits (owned by the chat) and the setter. */
   writeCardEdits?: WriteCardEdits;
   onWriteCardEdit?: (cardId: string, edits: WriteCardEdits) => void;
+  /** A chat reply is on its way (the user sent the next message). */
+  replyInFlight?: boolean;
 }
 
 const noop = () => {};
@@ -105,6 +107,7 @@ function renderBlock(
     adjustChoices,
     writeCardEdits,
     onWriteCardEdit,
+    replyInFlight,
   }: Omit<BlockRendererProps, "animateEntry" | "entryDelayMs">,
   animateEntry: boolean,
   entryDelayMs: number,
@@ -145,6 +148,7 @@ function renderBlock(
           block={block}
           edits={writeCardEdits ?? block.edits ?? {}}
           onEdit={(e) => onWriteCardEdit?.(block.cardId, e)}
+          replyInFlight={replyInFlight}
         />
       );
     case "checked_trail":

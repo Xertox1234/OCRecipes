@@ -436,6 +436,7 @@ export const KeyboardAvoidingView = mockComponent(
 
 export const AccessibilityInfo = {
   announceForAccessibility: () => {},
+  announceForAccessibilityWithOptions: () => {},
   setAccessibilityFocus: () => {},
   isScreenReaderEnabled: () => Promise.resolve(false),
   addEventListener: () => ({ remove: () => {} }),

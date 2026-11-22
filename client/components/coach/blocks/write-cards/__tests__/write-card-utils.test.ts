@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
 import {
-  UNDO_VISIBLE_MS,
   cardUiState,
   dayChipLabel,
   mealChipLabel,
@@ -37,7 +36,6 @@ describe("labels", () => {
     expect(mealChipLabel("breakfast")).toBe("Breakfast");
     expect(dayChipLabel("today")).toBe("Today");
     expect(dayChipLabel("yesterday")).toBe("Yesterday");
-    expect(UNDO_VISIBLE_MS).toBe(6000);
   });
 });
 

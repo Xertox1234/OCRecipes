@@ -12,7 +12,14 @@ import { renderComponent } from "../../../../../test/utils/render-component";
 import BlockRenderer from "../index";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
-const { a11y } = vi.hoisted(() => ({ a11y: { reducedMotion: false } }));
+const { a11y, mockApiRequest } = vi.hoisted(() => ({
+  a11y: { reducedMotion: false },
+  mockApiRequest: vi.fn(),
+}));
+
+vi.mock("@/lib/query-client", () => ({
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+}));
 
 vi.mock("@/hooks/useAccessibility", () => ({
   useAccessibility: () => a11y,
@@ -251,6 +258,38 @@ describe("BlockRenderer write_card", () => {
       "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
       { counts: [3] },
     );
+  });
+});
+
+describe("BlockRenderer write_card Undo", () => {
+  it("passes replyInFlight on, so sending the next message ends Undo", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: async () => ({ status: "saved", receipt: "✓ Logged" }),
+    });
+    const block: CoachBlock = {
+      type: "write_card",
+      cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+      kind: "food",
+      status: "live",
+      payload: {
+        items: [
+          {
+            name: "Large eggs",
+            unitLabel: "egg",
+            perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+            count: 2,
+            source: "lookup",
+          },
+        ],
+        mealType: "breakfast",
+        day: "today",
+      },
+    };
+    const { rerender } = renderComponent(<BlockRenderer block={block} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log 144 cal" }));
+    await screen.findByRole("button", { name: "Undo" });
+    rerender(<BlockRenderer block={block} replyInFlight />);
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
 });
 

@@ -11,6 +11,7 @@ const {
   mockUsePremiumFeature,
   mockRefetchConversations,
   focusEffectCb,
+  mockAddListener,
   premiumContextState,
   conversationsState,
   mockCreateConversation,
@@ -30,6 +31,8 @@ const {
   // Captures the latest callback CoachProScreen's useRefreshOnFocus passes to
   // useFocusEffect, so tests can simulate a refocus by invoking it directly.
   focusEffectCb: { current: null as (() => void) | null },
+  // Stable, like the real navigation object; records "blur" listeners.
+  mockAddListener: vi.fn((_event: string, _cb: () => void) => () => {}),
   premiumContextState: { isPremiumResolved: true },
   // Mutable conversation list for useChatConversations — defaults to empty
   // (the original harness); the New-thread tests seed an existing thread.
@@ -85,7 +88,11 @@ vi.mock("@/hooks/useKeyboardVisible", () => ({
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: mockNavigate, setParams: vi.fn() }),
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    setParams: vi.fn(),
+    addListener: mockAddListener,
+  }),
   useRoute: () => ({ params: routeState.params }),
   useFocusEffect: (cb: () => void) => {
     focusEffectCb.current = cb;
@@ -501,6 +508,22 @@ describe("CoachProScreen — saved to your notebook", () => {
     expect(screen.getByText("You avoid dairy")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(savesState.undo).toHaveBeenCalledTimes(1);
+  });
+
+  // WCAG 2.2.1: no auto-confirm timer; the user's next action keeps them.
+  it("keeps the saves when the user sends the next message", () => {
+    renderComponent(<CoachProScreen />);
+    expect(savesState.confirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("mock-send"));
+    expect(savesState.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the saves when the user leaves the screen", () => {
+    renderComponent(<CoachProScreen />);
+    const blur = mockAddListener.mock.calls.findLast(([e]) => e === "blur");
+    expect(blur).toBeDefined();
+    act(() => blur![1]());
+    expect(savesState.confirm).toHaveBeenCalledTimes(1);
   });
 });
 

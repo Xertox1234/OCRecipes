@@ -18,7 +18,8 @@ const NOTEBOOK_KEY = ["/api/coach/notebook"] as const;
  * The "Saved to your notebook" moment (visible memory R2, spec 2026-11-08).
  * `checkForSaves()` after a reply ends (and on screen focus) fetches new saves
  * the user hasn't been shown; showing them marks them shown. `confirm()` —
- * the popup closing on its own — makes them memories the coach may mention;
+ * the user's next action (next message, leaving the screen) — makes them
+ * memories the coach may mention;
  * `undo()` rejects them so they're never re-saved. Best effort: a failed or
  * missing feed means no popup and no toast.
  */
