@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro links open the plain chat, which draws no cards"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-22
 updated: 2026-11-22
@@ -40,11 +40,11 @@ in code, not reproduced:
 - [ ] A Coach Pro user who taps the overlay's full-reply link lands on the conversation in
       `CoachPro`, with the card drawn.
 - [ ] The same for the "Coach replied" toast's Open.
-- [ ] `ocrecipes://chat/<id>` for a Coach Pro user shows the conversation's cards (or opens it
+- [x] `ocrecipes://chat/<id>` for a Coach Pro user shows the conversation's cards (or opens it
       in `CoachPro`); a free user still gets `Chat`.
-- [ ] While the plan is still loading, the route follows the `AllConversationsScreen` rule
+- [x] While the plan is still loading, the route follows the `AllConversationsScreen` rule
       (assume `CoachPro`).
-- [ ] Tests cover the plan-based route choice.
+- [x] Tests cover the plan-based route choice.
 
 ## Implementation Notes
 
@@ -71,3 +71,19 @@ in code, not reproduced:
 ### 2026-11-22
 
 - Initial creation (deferred from the pantry-card simulator check).
+
+### 2026-11-22 — done
+
+- `client/navigation/coachConversationRoute.ts` holds the route choice; `openCoachConversation`
+  takes the plan (`useShowsCoachPro`, assume-Pro while loading). The toast reads it at tap time;
+  `ChatScreen` hands a deep-linked conversation to CoachPro with `popTo` once the plan resolves
+  to Pro, keyed on the id it was opened with.
+- Simulator (iPhone 17 Pro, local server, demo = premium): `ocrecipes://chat/140255` cold and
+  `ocrecipes://chat/139704` from the Home tab both opened CoachPro with the pantry card drawn.
+- Criterion 1 needs a person: on a Coach Pro account, ask the coach from a recipe's overlay for
+  a pantry change and tap "See the full reply in Coach" — the reply should open in the Coach tab
+  with its card. Not run here: it needs a live (paid) AI reply. Unit-tested.
+- Criterion 2 needs a person: let a coach reply finish while on another screen and tap the
+  toast's Open — same expectation. Same reason; unit-tested, including the tap-time plan read.
+- `openCoachWithMessage` (Weekly Report) still opens Chat for a Pro user: CoachPro takes no
+  starting message. Filed as a follow-up todo.
