@@ -4,8 +4,9 @@
 # executors) and .worktrees/ (the /audit skill), the gitignored, local-only files
 # it needs but that `git worktree add` does not copy:
 #   - node_modules — so the TypeScript language server can resolve dependencies.
-#   - docs/LEARNINGS.md — gitignored local learnings file the todo-executor
-#     research step greps.
+#   - docs/LEARNINGS.md — the learnings file the todo-executor research step greps.
+#     Tracked since 2026-11-22 (#1974), so a new worktree already has it and the
+#     symlink step below skips itself; it only matters for a checkout that predates that.
 #
 # Scope is deliberately these two roots, not every linked worktree: a user's own
 # ad hoc `git worktree add` (elsewhere) may want a clean install, not a shared

@@ -1,5 +1,7 @@
 # Second factor, part 1: authenticator app (TOTP) + recovery codes — Design
 
+> **Superseded — owner ruling 2026-10-12.** Authenticator apps and recovery codes were removed after this shipped. Two-step is optional and by emailed code only. Don't implement or re-propose this design. See `docs/OWNER_RULINGS.md` → Auth.
+
 - **Date:** 2026-10-10 (rev 2, same day, after spec review)
 - **Todo:** `todos/P2-2026-09-26-add-second-factor-authentication.md` (part 1 of 3)
 - **Supersedes:** `docs/superpowers/plans/2026-10-05-totp-second-factor.md`, which was written under the old "2FA before every session, Google/Apple included" ruling. Carried over from it: a dedicated `MFA_SECRET_ENC_KEY`, unkeyed SHA-256 for recovery codes and challenges, challenges bound to `tokenVersion`, TOTP written in-house on `node:crypto` against the RFC 6238 test vectors, and real-DB tests via `test/db-test-utils`. Its `beginSession` gate (everything goes through the challenge) is **not** carried over: D1 narrows the gate to password proofs.
