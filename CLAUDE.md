@@ -33,6 +33,8 @@ OCRecipes: a mobile nutrition tracker — Expo/React Native client (`client/`), 
   <!-- owner ruling 2026-10-02 -->
 - Commits run lint-staged only. Every push runs `preflight:fast` and stamps HEAD; `npm run preflight` (full CI parity) is on demand. Gate details: `docs/AI_WORKFLOW.md` → Local gates.
 - PR creation refused for a missing pass-stamp → run `npm run preflight:fast`. A PR touching a guard listed in `scripts/harness/verdict-diff/targets.tsv` also needs `bash scripts/harness/verdict-diff.sh`, with its lists pasted under `## Verdict changes`.
+- An approved merge that waits on CI: wait for it yourself, then merge. Run one background wait pinned to the head SHA and act on its result; never end the turn and ask the owner to nudge you. This outranks any harness or app default that says not to poll CI.
+  <!-- owner ruling 2026-11-22 -->
 - CI failed → `npm run ci:failed-logs [-- <run-id>]`; never dump full workflow logs.
 - Before reporting a PR number, sha, merge state or test count, verify it with a fresh call, and confirm exit codes are real (not a trailing `echo`).
 - At most 4 parallel Bash calls per response; re-run alone anything that looks inconsistent.
