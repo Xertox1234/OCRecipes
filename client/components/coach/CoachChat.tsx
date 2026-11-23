@@ -627,14 +627,13 @@ export default function CoachChat({
   const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  useEffect(
-    () => () => {
-      if (photoAnnounceTimerRef.current) {
-        clearTimeout(photoAnnounceTimerRef.current);
-      }
-    },
-    [],
-  );
+  const cancelPhotoAnnouncement = useCallback(() => {
+    if (photoAnnounceTimerRef.current) {
+      clearTimeout(photoAnnounceTimerRef.current);
+      photoAnnounceTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => cancelPhotoAnnouncement, [cancelPhotoAnnouncement]);
   const { openPhotoChooser, isSendingPhoto, isPhotoBusy } = useCoachPhotoSend({
     disabled: isStreaming || isListening,
     canStart: () => !startingTurnRef.current,
@@ -653,6 +652,7 @@ export default function CoachChat({
       ttsStop();
       // The photo path has no stream to announce its start. Delayed so it is
       // not lost under the camera or picker closing.
+      cancelPhotoAnnouncement();
       photoAnnounceTimerRef.current = setTimeout(
         () =>
           AccessibilityInfo.announceForAccessibility("Looking at your photo"),
@@ -664,15 +664,16 @@ export default function CoachChat({
       try {
         return await onCreateConversation();
       } catch {
-        if (photoAnnounceTimerRef.current) {
-          clearTimeout(photoAnnounceTimerRef.current);
-        }
+        cancelPhotoAnnouncement();
         setOptimisticMessage(null);
         setStreamingError("Couldn't start the conversation. Please try again.");
         return null;
       }
     },
     onSettled: async (convId, failure, sentBrief) => {
+      // An upload that ends inside the delay (offline, a fast refusal) must
+      // not announce "Looking at your photo" over its own outcome.
+      cancelPhotoAnnouncement();
       activeConvIdRef.current = convId;
       if (failure?.atDailyLimit) setIsAtDailyLimit(true);
       else if (failure?.message) setStreamingError(failure.message);

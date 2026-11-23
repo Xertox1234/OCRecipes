@@ -45,6 +45,18 @@ const {
 
 // The camera button's send path (picker, compression, upload); the real
 // modules load Expo's native runtime.
+// The args CoachChat last passed to the photo hook, so a test can drive its
+// callbacks (onStart, onSettled) the way the real hook would.
+const photoHook = vi.hoisted(() => ({
+  args: null as null | {
+    onStart: () => void;
+    onSettled: (
+      conversationId: number,
+      failure: { atDailyLimit: boolean; message: string | null } | null,
+      sentBrief: boolean,
+    ) => void | Promise<void>;
+  },
+}));
 vi.mock("@/hooks/useCoachPhotoSend", () => {
   // One object for every render: the real hook's callbacks are stable.
   const value = {
@@ -52,7 +64,12 @@ vi.mock("@/hooks/useCoachPhotoSend", () => {
     isSendingPhoto: false,
     isPhotoBusy: () => false,
   };
-  return { useCoachPhotoSend: () => value };
+  return {
+    useCoachPhotoSend: (args: typeof photoHook.args) => {
+      photoHook.args = args;
+      return value;
+    },
+  };
 });
 
 vi.mock("@/hooks/useCoachStream", () => ({
@@ -921,5 +938,46 @@ describe("CoachChat — camera button", () => {
   it("is absent on the free tier", () => {
     renderCoachChat();
     expect(screen.queryByLabelText("Send a photo of your meal")).toBeNull();
+  });
+});
+
+// The photo path has no stream, so it announces its own start, after a delay
+// that lets the camera or picker close first.
+describe("CoachChat — photo announcement", () => {
+  const LINE = "Looking at your photo";
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    announceSpy.mockRestore();
+  });
+
+  it("announces once the delay passes while the photo is still on its way", () => {
+    renderCoachChat({ isCoachPro: true });
+    act(() => photoHook.args!.onStart());
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(announceSpy).toHaveBeenCalledWith(LINE);
+  });
+
+  it("stays silent when the upload settles inside the delay", async () => {
+    renderCoachChat({ isCoachPro: true });
+    act(() => photoHook.args!.onStart());
+    await act(async () => {
+      await photoHook.args!.onSettled(
+        1,
+        { atDailyLimit: false, message: "Couldn't send that photo." },
+        false,
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(announceSpy).not.toHaveBeenCalledWith(LINE);
   });
 });
