@@ -196,3 +196,106 @@ export function labelLogErrorMessage(code: string | undefined): string {
       return "Couldn't log this item. Please try again.";
   }
 }
+
+/** Upload/AI-reconcile state of the label screen (see useLabelAnalysisSession). */
+export interface LabelSessionState {
+  /**
+   * The on-device preview the screen mounted with; never rewritten. Every
+   * upload result and failure is judged against THIS, not against `labelData`
+   * or `dataSource` (which a first result changes) — the upload effect can run
+   * more than once, and the pre-hook screen read mount-time refs.
+   */
+  localPreview: LabelExtractionResult | null;
+  sessionId: string | null;
+  labelData: LabelExtractionResult | null;
+  dataSource: "local" | "ai" | null;
+  isAnalyzing: boolean;
+  error: string | null;
+  uploadFailed: boolean;
+  showUpdatedToast: boolean;
+}
+
+export type LabelSessionAction =
+  | { type: "uploadStarted" }
+  | {
+      type: "uploadSucceeded";
+      sessionId: string;
+      aiData: LabelExtractionResult;
+    }
+  | { type: "uploadFailed"; message: string }
+  | { type: "settled" }
+  | { type: "toastHidden" };
+
+export function initialLabelSessionState(
+  localPreview: LabelExtractionResult | null,
+): LabelSessionState {
+  return {
+    localPreview,
+    sessionId: null,
+    labelData: localPreview,
+    dataSource: localPreview ? "local" : null,
+    isAnalyzing: localPreview === null,
+    error: null,
+    uploadFailed: false,
+    showUpdatedToast: false,
+  };
+}
+
+/**
+ * One transition per upload event, so an AI result lands as a single state
+ * change (a single React commit) — the screen's merged announcer relies on
+ * sessionId, labelData and showUpdatedToast arriving together.
+ *
+ * A transition that changes nothing returns the SAME object, so useReducer
+ * skips the re-render (as the useState setters this replaced did). The upload
+ * effect dispatches on every run; without this, each re-run re-renders, and a
+ * `toast` whose identity changes per render makes that a loop.
+ */
+export function labelSessionReducer(
+  state: LabelSessionState,
+  action: LabelSessionAction,
+): LabelSessionState {
+  const next = nextLabelSessionState(state, action);
+  const keys = Object.keys(next) as (keyof LabelSessionState)[];
+  return keys.every((key) => Object.is(next[key], state[key])) ? state : next;
+}
+
+function nextLabelSessionState(
+  state: LabelSessionState,
+  action: LabelSessionAction,
+): LabelSessionState {
+  switch (action.type) {
+    case "uploadStarted":
+      return { ...state, uploadFailed: false };
+    case "uploadSucceeded": {
+      const next = { ...state, sessionId: action.sessionId };
+      if (state.localPreview) {
+        if (shouldReplaceWithAI(state.localPreview, action.aiData)) {
+          return {
+            ...next,
+            labelData: action.aiData,
+            dataSource: "ai",
+            showUpdatedToast: true,
+          };
+        }
+        // AI confirms local data — just record the session ID.
+        return { ...next, dataSource: "ai" };
+      }
+      // No local preview: use AI data directly. No error for a low-confidence
+      // result — the confidence banner is the warning.
+      return { ...next, labelData: action.aiData, dataSource: "ai" };
+    }
+    case "uploadFailed":
+      // With a local preview keep showing it and mark the failure retriable
+      // (the log button cannot work without a server sessionId); with none,
+      // set the full-screen error — which the screen draws only while there is
+      // no data, so a failed re-run after an AI result leaves logging alone.
+      return state.localPreview
+        ? { ...state, uploadFailed: true }
+        : { ...state, error: action.message };
+    case "settled":
+      return { ...state, isAnalyzing: false };
+    case "toastHidden":
+      return { ...state, showUpdatedToast: false };
+  }
+}

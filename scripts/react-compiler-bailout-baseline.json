@@ -41,7 +41,6 @@
   "client/screens/FrontLabelConfirmScreen.tsx",
   "client/screens/HistoryScreen.tsx",
   "client/screens/HomeScreen.tsx",
-  "client/screens/LabelAnalysisScreen.tsx",
   "client/screens/LoginScreen.tsx",
   "client/screens/MenuScanResultScreen.tsx",
   "client/screens/ReceiptCaptureScreen.tsx",
