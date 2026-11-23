@@ -87,6 +87,13 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
   printf '%s\n' "${FAKE_VIEW_JSON}"; exit 0
 fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
+  # GitHub refuses a diff over 20,000 lines in BOTH modes, with this text on stderr (measured on
+  # #1974, 2026-11-22). The guard must recognise exactly this and nothing broader.
+  if [ -n "${FAKE_PR_DIFF_TOO_LARGE:-}" ]; then
+    echo 'could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000) (https://api.github.com/repos/Xertox1234/OCRecipes/pulls/938)' >&2
+    echo 'PullRequest.diff too_large' >&2
+    exit 1
+  fi
   # --name-only is stage 3's changed-file read (FAKE_DIFF_FAIL); the full diff is the platform
   # check's (FAKE_PR_DIFF_FAIL). Kept apart so the stage-3 fail-closed rows still reach stage 3.
   # The full diff defaults to one header per file and no hunks: never in platform scope.
@@ -1756,6 +1763,102 @@ else
 fi
 unset _mrgcloser_hits _mrgcloser_prose
 
+# ── Large-diff fallback (2026-11-22, #1974) ──────────────────────────────────
+# GitHub refuses `gh pr diff` over 20,000 lines (HTTP 406 too_large), in full and --name-only
+# mode alike, so the guard used to deny every such PR from every session. On that one answer it
+# now diffs locally: fetch refs/pull/<n>/head and the base branch into a private namespace,
+# require the fetched head to BE the PR's head sha, then `git diff base...head`. Any other gh
+# failure still denies (P8, and the stage-3 FAKE_DIFF_FAIL rows).
+#
+# The guard takes its repo root from where the hook file sits, so a real fetch needs a copy of
+# the hook inside a throwaway repo whose `origin` is a local bare repo: no network, and nothing
+# is written to this checkout. Fixture: base commit on main; PR 938 edits client/a.ts (out of
+# platform scope); PR 939 adds FormData to client/up.ts (upload scope).
+LG=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-large-$$-XXXX")
+lgit() { git -C "$LG/repo" -c core.hooksPath=/dev/null -c commit.gpgsign=false \
+  -c user.email=t@example.com -c user.name=t "$@" >/dev/null 2>&1; }
+git init -q --bare "$LG/origin.git"
+git init -q "$LG/repo" && lgit checkout -b main
+mkdir -p "$LG/repo/client" && printf 'export const a = 1;\n' > "$LG/repo/client/a.ts"
+lgit add client/a.ts && lgit commit -m base
+lgit remote add origin "$LG/origin.git" && lgit push origin main
+LG_BASE=$(git -C "$LG/repo" rev-parse HEAD)
+lgit checkout -b pr938 && printf 'export const a = 2;\n' > "$LG/repo/client/a.ts"
+lgit commit -am safe && lgit push origin HEAD:refs/pull/938/head
+LG_SAFE=$(git -C "$LG/repo" rev-parse HEAD)
+lgit checkout -b pr939 main && printf 'const b = new FormData();\n' > "$LG/repo/client/up.ts"
+lgit add client/up.ts && lgit commit -m upload && lgit push origin HEAD:refs/pull/939/head
+LG_UP=$(git -C "$LG/repo" rev-parse HEAD)
+lgit checkout main
+mkdir -p "$LG/repo/.claude/hooks" "$LG/repo/scripts/harness"
+cp -R "$HOOKS_DIR/lib" "$LG/repo/.claude/hooks/"
+cp "$HOOK" "$LG/repo/.claude/hooks/merge-review-guard.sh"
+cp "$HOOKS_DIR/../../scripts/todo-automerge-guard.sh" "$HOOKS_DIR/../../scripts/verifier-record-status.sh" "$LG/repo/scripts/" 2>/dev/null
+cp "$HOOKS_DIR/../../scripts/harness/platform-scope.sh" "$LG/repo/scripts/harness/"
+run_lg() {
+  env PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" FAKE_PR_DIFF_TOO_LARGE=1 FAKE_FILES="client/a.ts" "$@" \
+    bash "$LG/repo/.claude/hooks/merge-review-guard.sh" 2>/dev/null
+}
+LG_DIGEST=$(printf 'client/a.ts\n' | shasum | cut -c1-16)
+lg_view() { printf '{"headRefName":"pr","headRefOid":"%s","baseRefName":"%s"}' "$1" "${2-main}"; }
+# Positive control on the fixture itself: both PR refs reached the bare origin.
+[ -n "$LG_SAFE" ] && [ -n "$LG_UP" ] && [ "$LG_SAFE" != "$LG_BASE" ] \
+  && git -C "$LG/origin.git" rev-parse -q --verify refs/pull/939/head >/dev/null \
+  || bad "large-diff fixture: PR refs were pushed to the local origin" "base=$LG_BASE safe=$LG_SAFE up=$LG_UP"
+
+# L1. ALLOW: too large for gh, out of platform scope, clean code-reviewer record whose digest is
+#     the LOCAL file list. Before the fix this denied ("could not read PR #938's diff").
+stamp "$LG_SAFE" "$LG_DIGEST" clean code-reviewer
+out=$(mcp_payload 938 | run_lg FAKE_VIEW_JSON="$(lg_view "$LG_SAFE")")
+assert_allowed "large diff: gh too_large falls back to a local diff and allows a reviewed, out-of-scope PR" "$out"
+
+# L2. DENY control for L1: same PR, record digest of a DIFFERENT file list. Proves the digest is
+#     computed from the local list rather than from an empty read that happens to pass.
+clear_stamps
+stamp "$LG_SAFE" "0000000000000000" clean code-reviewer
+out=$(mcp_payload 938 | run_lg FAKE_VIEW_JSON="$(lg_view "$LG_SAFE")")
+denied "$out" && ! reason "$out" | grep -q "could not" \
+  && ok "large diff: a record for a different file list still denies (digest comes from the local list)" \
+  || bad "large diff: a record for a different file list still denies (digest comes from the local list)" "$out"
+
+# L3. DENY: too large, and the local diff IS in upload scope -> the real-platform check applies.
+#     A deny naming the missing E2E run proves the fallback read real content, not just names.
+clear_stamps
+stamp "$LG_UP" "$(printf 'client/up.ts\n' | shasum | cut -c1-16)" clean code-reviewer
+out=$(mcp_payload 939 | run_lg FAKE_FILES="client/up.ts" FAKE_VIEW_JSON="$(lg_view "$LG_UP")" FAKE_RUN="")
+denied "$out" && reason "$out" | grep -q 'no completed E2E run' \
+  && ok "large diff: an upload change found by the local diff still needs the real-platform check" \
+  || bad "large diff: an upload change found by the local diff still needs the real-platform check" "$out"
+
+# L4. DENY: the PR's head sha is not what refs/pull/938/head fetched (a push raced the merge, or
+#     the wrong repo). Never diff a commit other than the one the review is bound to.
+clear_stamps
+stamp "$LG_BASE" "$LG_DIGEST" clean code-reviewer
+out=$(mcp_payload 938 | run_lg FAKE_VIEW_JSON="$(lg_view "$LG_BASE")")
+denied "$out" && reason "$out" | grep -q 'diff for the real-platform check' \
+  && ok "large diff: a fetched head that is not the PR's head sha denies" \
+  || bad "large diff: a fetched head that is not the PR's head sha denies" "$out"
+
+# L5. DENY: no base branch name, so there is nothing to diff against.
+out=$(mcp_payload 938 | run_lg FAKE_VIEW_JSON="$(lg_view "$LG_SAFE" "")")
+denied "$out" && reason "$out" | grep -q 'diff for the real-platform check' \
+  && ok "large diff: a PR with no base branch name denies" \
+  || bad "large diff: a PR with no base branch name denies" "$out"
+
+# L6. DENY: a `-diff` attribute in the checkout must not hide an upload line. Without --text,
+#     git prints "Binary files ... differ" for the file, platform-scope.sh sees no +/- lines,
+#     and the platform check is skipped (security review, 2026-11-22). Same PR as L3.
+clear_stamps
+stamp "$LG_UP" "$(printf 'client/up.ts\n' | shasum | cut -c1-16)" clean code-reviewer
+printf 'client/up.ts -diff\n' > "$LG/repo/.gitattributes"
+out=$(mcp_payload 939 | run_lg FAKE_FILES="client/up.ts" FAKE_VIEW_JSON="$(lg_view "$LG_UP")" FAKE_RUN="")
+denied "$out" && reason "$out" | grep -q 'no completed E2E run' \
+  && ok "large diff: a -diff attribute does not hide an upload line from the real-platform check" \
+  || bad "large diff: a -diff attribute does not hide an upload line from the real-platform check" "$out"
+rm -f "$LG/repo/.gitattributes"
+clear_stamps
+rm -rf "$LG"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1791,7 +1894,9 @@ unset _mrgcloser_hits _mrgcloser_prose
 # 202 -> 207 (2026-11-01, code-reviewer record required): +5 rows (9c-1, 9c-2, 9c-2b, 9c-3, 9c-4).
 # 207 -> 219 (2026-11-01, harness N6 real-platform check): +12 = rows P1-P10 and P8b (P9 asserts twice).
 # 219 -> 220 (2026-11-01, harness N8 exemption note): +1 = stage 1's exemption names the todo/* route.
-EXPECTED_TOTAL=221
+# 221 -> 226 (2026-11-22, large-diff fallback): +5 = rows L1-L5 (the fixture control only reports on failure).
+# 226 -> 227 (2026-11-22, security review): +1 = row L6 (a -diff attribute must not hide an upload line).
+EXPECTED_TOTAL=227
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

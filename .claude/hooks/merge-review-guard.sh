@@ -633,10 +633,47 @@ cd "$ROOT" 2>/dev/null \
 command -v gh >/dev/null 2>&1 \
   || deny "Blocked: merge-review-guard needs \`gh\` to classify PR #$PR and it is not on PATH. Fail-closed. $BYPASS"
 
-VIEW=$(gh pr view "$PR" --json headRefName,headRefOid 2>/dev/null) \
+VIEW=$(gh pr view "$PR" --json headRefName,headRefOid,baseRefName 2>/dev/null) \
   || deny "Blocked: could not read PR #$PR (gh error — wrong repository, no such PR, or auth/network). Fail-closed. $BYPASS"
 BRANCH=$(printf '%s' "$VIEW" | jq -r '.headRefName // empty' 2>/dev/null)
 HEAD_SHA=$(printf '%s' "$VIEW" | jq -r '.headRefOid // empty' 2>/dev/null)
+BASE_REF=$(printf '%s' "$VIEW" | jq -r '.baseRefName // empty' 2>/dev/null)
+
+# `gh pr diff`, with a local fallback for GitHub's size cap. GitHub refuses a diff over 20,000
+# lines (HTTP 406, "PullRequest.diff too_large") in full and --name-only mode alike, which made
+# every such PR unmergeable from any session (#1974, 2026-11-22). On THAT answer only, diff
+# locally: fetch the PR head and base branch into a private ref namespace, refuse unless the
+# fetched head IS $HEAD_SHA (the commit the review is bound to), then `git diff base...head` —
+# the same three-dot merge-base diff gh serves. Every other gh failure still returns non-zero,
+# and the callers deny. Prefixes, colour, external diff and textconv are pinned so user config
+# (diff.noprefix, diff.external) cannot change the shape platform-scope.sh and the digest parse,
+# and --text keeps a `-diff`/`binary` attribute (.gitattributes, info/attributes or
+# core.attributesFile) from collapsing a file to "Binary files ... differ", which would hide its
+# upload and SDK lines from platform-scope.sh.
+# usage: pr_diff [--name-only]
+pr_diff() {
+  local err out
+  err=$(mktemp "${TMPDIR:-/tmp}/merge-guard-diff-err-XXXXXX") || return 1
+  if out=$(gh pr diff "$PR" "$@" 2>"$err"); then
+    rm -f "$err"; printf '%s\n' "$out"; return 0
+  fi
+  if ! grep -q 'PullRequest.diff too_large' "$err"; then rm -f "$err"; return 1; fi
+  rm -f "$err"
+  [ -n "$BASE_REF" ] && git check-ref-format --branch "$BASE_REF" >/dev/null 2>&1 || return 1
+  local head_ref="refs/merge-review-guard/pr-$PR-head" base_ref="refs/merge-review-guard/pr-$PR-base"
+  local rc=1
+  if git fetch -q --no-tags origin "+refs/pull/$PR/head:$head_ref" "+refs/heads/$BASE_REF:$base_ref" \
+       >/dev/null 2>&1 \
+     && [ "$(git rev-parse -q --verify "$head_ref^{commit}" 2>/dev/null)" = "$HEAD_SHA" ]; then
+    rc=0
+    git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --text -M \
+      --src-prefix=a/ --dst-prefix=b/ "$@" "$base_ref...$HEAD_SHA" 2>/dev/null || rc=1
+  fi
+  # The refs only pin the fetch; drop them so runs leave nothing behind in the user's repo.
+  git update-ref -d "$head_ref" >/dev/null 2>&1
+  git update-ref -d "$base_ref" >/dev/null 2>&1
+  return "$rc"
+}
 [ -n "$HEAD_SHA" ] \
   || deny "Blocked: PR #$PR has no resolvable head sha, so no review can be bound to it. Fail-closed. $BYPASS"
 
@@ -653,8 +690,8 @@ HEAD_SHA=$(printf '%s' "$VIEW" | jq -r '.headRefOid // empty' 2>/dev/null)
 PSCOPE="$ROOT/scripts/harness/platform-scope.sh"
 [ -f "$PSCOPE" ] \
   || deny "Blocked: merge-review-guard could not locate scripts/harness/platform-scope.sh, so it cannot tell whether PR #$PR needs a real-platform check. Fail-closed. $BYPASS"
-PDIFF=$(gh pr diff "$PR" 2>/dev/null) \
-  || deny "Blocked: could not read PR #$PR's diff for the real-platform check (gh error, or a diff too large for gh). Fail-closed. $BYPASS"
+PDIFF=$(pr_diff) \
+  || deny "Blocked: could not read PR #$PR's diff for the real-platform check (a gh error, or a diff too large for gh whose local fallback failed: base branch, fetch, or a fetched head other than ${HEAD_SHA:0:7}). Fail-closed. $BYPASS"
 P_RC=0
 P_WHY=$(printf '%s' "$PDIFF" | bash "$PSCOPE") || P_RC=$?
 case "$P_RC" in
@@ -732,7 +769,7 @@ RECORDS=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null | sort)
 # failed `gh pr diff` straight into shasum yields the digest of the EMPTY STRING, which is
 # a perfectly well-formed value that simply matches nothing, so the real cause (gh failed)
 # would surface as a scope-mismatch denial pointing at the wrong thing.
-CHANGED=$(gh pr diff "$PR" --name-only 2>/dev/null | sed '/^$/d' | sort -u)
+CHANGED=$(pr_diff --name-only | sed '/^$/d' | sort -u)
 [ -n "$CHANGED" ] \
   || deny "Blocked: could not re-read PR #$PR's changed files, so merge-review-guard cannot verify that the recorded review covered them. Fail-closed. $BYPASS"
 WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum 2>/dev/null | cut -c1-16)
