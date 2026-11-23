@@ -98,12 +98,15 @@ docs/plans/
 
 # AI-workflow history: kept locally, not synced to GitHub.
 # (todos/ stays tracked on purpose — it feeds Copilot work assignment.)
-# docs/superpowers/specs/ is the exception: tracked so cloud Claude Code sessions get the specs.
+# Exceptions, tracked so cloud Claude Code sessions get them: docs/superpowers/specs/,
+# docs/superpowers/plans/ and docs/LEARNINGS.md (secrets-scanned 2026-11-22). The repo is
+# PUBLIC — never put keys, prod account details or user data in a plan.
+# docs/audits/ stays local on purpose: audit write-ups list exploitable findings.
 docs/superpowers/*
 !docs/superpowers/specs/
+!docs/superpowers/plans/
 docs/audits/
 docs/research/
-docs/LEARNINGS.md
 
 # Dev workaround: symlink for Metro entry resolution
 /index.js

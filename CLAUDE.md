@@ -82,3 +82,4 @@ npm run update:production -- --message "ship it"
 - Environment variables: `server/CLAUDE.md` (loads when you work in `server/`).
 - iOS Simulator and device setup: `docs/DEV_SETUP.md`.
 - Structured audits: `/audit [scope]`.
+- Settled owner decisions (don't re-ask or re-propose): `docs/OWNER_RULINGS.md`. Plans and past learnings: `docs/superpowers/plans/`, `docs/LEARNINGS.md`.
