@@ -381,4 +381,39 @@ describe("labelSessionReducer", () => {
     );
     expect(t.showUpdatedToast).toBe(false);
   });
+
+  // useReducer skips the re-render only when the reducer hands back the SAME
+  // object. The upload effect dispatches on every run, so a transition that
+  // changes nothing must not produce a new state — otherwise any re-run of the
+  // effect re-renders, and a caller whose toast identity changes per render
+  // (every screen test's mock) loops until the heap runs out.
+  it("returns the same state object when a transition changes nothing", () => {
+    const fresh = initialLabelSessionState(baseLabelData);
+    expect(labelSessionReducer(fresh, { type: "uploadStarted" })).toBe(fresh);
+    expect(labelSessionReducer(fresh, { type: "settled" })).toBe(fresh);
+    expect(labelSessionReducer(fresh, { type: "toastHidden" })).toBe(fresh);
+
+    const succeeded = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: sameAi,
+    });
+    expect(succeeded.labelData).toBe(sameAi);
+    // The effect re-ran and the server answered the same again.
+    expect(
+      labelSessionReducer(succeeded, {
+        type: "uploadSucceeded",
+        sessionId: "s1",
+        aiData: sameAi,
+      }),
+    ).toBe(succeeded);
+
+    const failed = labelSessionReducer(fresh, {
+      type: "uploadFailed",
+      message: "x",
+    });
+    expect(
+      labelSessionReducer(failed, { type: "uploadFailed", message: "x" }),
+    ).toBe(failed);
+  });
 });

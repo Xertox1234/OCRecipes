@@ -237,8 +237,22 @@ export function initialLabelSessionState(
  * One transition per upload event, so an AI result lands as a single state
  * change (a single React commit) — the screen's merged announcer relies on
  * sessionId, labelData and showUpdatedToast arriving together.
+ *
+ * A transition that changes nothing returns the SAME object, so useReducer
+ * skips the re-render (as the useState setters this replaced did). The upload
+ * effect dispatches on every run; without this, each re-run re-renders, and a
+ * `toast` whose identity changes per render makes that a loop.
  */
 export function labelSessionReducer(
+  state: LabelSessionState,
+  action: LabelSessionAction,
+): LabelSessionState {
+  const next = nextLabelSessionState(state, action);
+  const keys = Object.keys(next) as (keyof LabelSessionState)[];
+  return keys.every((key) => Object.is(next[key], state[key])) ? state : next;
+}
+
+function nextLabelSessionState(
   state: LabelSessionState,
   action: LabelSessionAction,
 ): LabelSessionState {
