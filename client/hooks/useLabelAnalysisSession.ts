@@ -15,6 +15,22 @@ import {
 const UPDATED_TOAST_MS = 3000;
 
 /**
+ * The upload helper only casts the parsed body, so a 200 with no label data
+ * reaches the hook. It must fail inside the upload's try: the reducer compares
+ * the preview against the result during render, where a throw is a crash.
+ * A separate function because React Compiler cannot compile a `throw` written
+ * inside a try block.
+ */
+function requireLabelData(
+  labelData: LabelExtractionResult | null | undefined,
+): LabelExtractionResult {
+  if (!labelData || typeof labelData !== "object") {
+    throw new Error("Label analysis returned no label data");
+  }
+  return labelData;
+}
+
+/**
  * Upload the label photo for AI analysis (always, even with a local preview)
  * and reconcile the result with the preview. State transitions live in
  * labelSessionReducer.
@@ -57,16 +73,10 @@ export function useLabelAnalysisSession({
       try {
         const result = await uploadLabelForAnalysis(imageUri, barcode);
         if (cancelled) return;
-        // The upload helper only casts the parsed body. A 200 with no label
-        // data must fail HERE, inside the try: the reducer compares the
-        // preview against it during render, where a throw is a crash.
-        if (!result.labelData || typeof result.labelData !== "object") {
-          throw new Error("Label analysis returned no label data");
-        }
         dispatch({
           type: "uploadSucceeded",
           sessionId: result.sessionId,
-          aiData: result.labelData,
+          aiData: requireLabelData(result.labelData),
         });
       } catch (err) {
         if (cancelled) return;
