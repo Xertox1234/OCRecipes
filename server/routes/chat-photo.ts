@@ -4,7 +4,8 @@
  * food log card; nothing is logged until the user taps the card. The photo
  * is analyzed in memory and never stored.
  */
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -23,7 +24,7 @@ import {
 } from "./_helpers";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { saveOpeningBrief } from "./chat-admit";
-import { photoRateLimit } from "./_rate-limiters";
+import { ipKeyGenerator, resolveRateLimitMax } from "./_rate-limiters";
 import { upload } from "./_upload";
 import { CONVERSATION_CONFIG } from "../services/chat-turn";
 import { isRecipeOfferEnabled } from "../services/recipe-finder";
@@ -51,7 +52,20 @@ export function register(app: Express): void {
   app.post(
     "/api/chat/conversations/:id/photo",
     requireAuth,
-    photoRateLimit,
+    // Inline, not the photoRateLimit factory const: CodeQL's
+    // js/missing-rate-limiting query cannot trace the factory. Same limits
+    // as photoRateLimit: 10/min, keyed by user with the IP fallback.
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: resolveRateLimitMax(10, process.env),
+      message: {
+        error: "Too many photo uploads. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     upload.single("photo"),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
