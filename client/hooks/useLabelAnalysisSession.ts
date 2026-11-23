@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 
 import { useToast } from "@/context/ToastContext";
 import { ApiError } from "@/lib/api-error";
@@ -36,12 +36,10 @@ export function useLabelAnalysisSession({
   );
   const [retryToken, bumpRetryToken] = useReducer((t: number) => t + 1, 0);
 
-  // Read at failure time so the upload effect does not depend on labelData.
-  const hasLabelData = state.labelData !== null;
-  const hasLabelDataRef = useRef(hasLabelData);
-  useEffect(() => {
-    hasLabelDataRef.current = hasLabelData;
-  }, [hasLabelData]);
+  // The preview the screen mounted with. It never changes, so depending on it
+  // never re-runs the upload; it decides the failure toast exactly as the
+  // reducer decides `uploadFailed`.
+  const hasLocalPreview = state.localPreview !== null;
 
   // Clear the failed state in the tap's own commit (as the pre-hook screen
   // did), not one render later when the effect re-runs.
@@ -59,6 +57,12 @@ export function useLabelAnalysisSession({
       try {
         const result = await uploadLabelForAnalysis(imageUri, barcode);
         if (cancelled) return;
+        // The upload helper only casts the parsed body. A 200 with no label
+        // data must fail HERE, inside the try: the reducer compares the
+        // preview against it during render, where a throw is a crash.
+        if (!result.labelData || typeof result.labelData !== "object") {
+          throw new Error("Label analysis returned no label data");
+        }
         dispatch({
           type: "uploadSucceeded",
           sessionId: result.sessionId,
@@ -75,7 +79,7 @@ export function useLabelAnalysisSession({
               ? "Too many requests. Please wait a moment and try again."
               : "Couldn't read this label. Try again with better lighting.",
         });
-        if (hasLabelDataRef.current) {
+        if (hasLocalPreview) {
           toast.error(
             "Couldn't verify this label with AI. Retry before logging.",
             { action: { label: "Retry", onPress: retry } },
@@ -91,7 +95,7 @@ export function useLabelAnalysisSession({
     return () => {
       cancelled = true;
     };
-  }, [imageUri, barcode, retryToken, toast, retry]);
+  }, [imageUri, barcode, retryToken, toast, retry, hasLocalPreview]);
 
   // Auto-hide the "Updated with AI analysis" toast.
   useEffect(() => {

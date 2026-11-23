@@ -199,6 +199,13 @@ export function labelLogErrorMessage(code: string | undefined): string {
 
 /** Upload/AI-reconcile state of the label screen (see useLabelAnalysisSession). */
 export interface LabelSessionState {
+  /**
+   * The on-device preview the screen mounted with; never rewritten. Every
+   * upload result and failure is judged against THIS, not against `labelData`
+   * or `dataSource` (which a first result changes) — the upload effect can run
+   * more than once, and the pre-hook screen read mount-time refs.
+   */
+  localPreview: LabelExtractionResult | null;
   sessionId: string | null;
   labelData: LabelExtractionResult | null;
   dataSource: "local" | "ai" | null;
@@ -223,6 +230,7 @@ export function initialLabelSessionState(
   localPreview: LabelExtractionResult | null,
 ): LabelSessionState {
   return {
+    localPreview,
     sessionId: null,
     labelData: localPreview,
     dataSource: localPreview ? "local" : null,
@@ -261,8 +269,8 @@ function nextLabelSessionState(
       return { ...state, uploadFailed: false };
     case "uploadSucceeded": {
       const next = { ...state, sessionId: action.sessionId };
-      if (state.dataSource === "local" && state.labelData) {
-        if (shouldReplaceWithAI(state.labelData, action.aiData)) {
+      if (state.localPreview) {
+        if (shouldReplaceWithAI(state.localPreview, action.aiData)) {
           return {
             ...next,
             labelData: action.aiData,
@@ -278,10 +286,11 @@ function nextLabelSessionState(
       return { ...next, labelData: action.aiData, dataSource: "ai" };
     }
     case "uploadFailed":
-      // With local data keep showing it and mark the failure retriable (the
-      // log button cannot work without a server sessionId); with none, show
-      // the full-screen error.
-      return state.labelData
+      // With a local preview keep showing it and mark the failure retriable
+      // (the log button cannot work without a server sessionId); with none,
+      // set the full-screen error — which the screen draws only while there is
+      // no data, so a failed re-run after an AI result leaves logging alone.
+      return state.localPreview
         ? { ...state, uploadFailed: true }
         : { ...state, error: action.message };
     case "settled":

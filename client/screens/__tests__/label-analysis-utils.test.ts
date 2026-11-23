@@ -281,6 +281,7 @@ describe("labelSessionReducer", () => {
 
   it("starts analyzing with no data when there is no local preview", () => {
     expect(initialLabelSessionState(null)).toEqual({
+      localPreview: null,
       sessionId: null,
       labelData: null,
       dataSource: null,
@@ -380,6 +381,53 @@ describe("labelSessionReducer", () => {
       { type: "toastHidden" },
     );
     expect(t.showUpdatedToast).toBe(false);
+  });
+
+  // The upload effect can run again after a result (its `toast` dependency
+  // changes identity when Reduce Motion is toggled). The pre-hook screen
+  // judged every run against the preview it MOUNTED with, held in refs it
+  // never rewrote. These two cases pin that.
+  it("judges a second AI result against the mounted local preview, not the first result", () => {
+    const confirmed = labelSessionReducer(
+      initialLabelSessionState(baseLabelData),
+      { type: "uploadSucceeded", sessionId: "s1", aiData: sameAi },
+    );
+    expect(confirmed.labelData).toBe(baseLabelData);
+
+    // Confirmed again: the shown values stay the local ones.
+    const again = labelSessionReducer(confirmed, {
+      type: "uploadSucceeded",
+      sessionId: "s2",
+      aiData: sameAi,
+    });
+    expect(again.labelData).toBe(baseLabelData);
+    expect(again.showUpdatedToast).toBe(false);
+
+    // Materially different this time: replaced, with the toast.
+    const replaced = labelSessionReducer(confirmed, {
+      type: "uploadSucceeded",
+      sessionId: "s2",
+      aiData: ai,
+    });
+    expect(replaced.labelData).toBe(ai);
+    expect(replaced.showUpdatedToast).toBe(true);
+  });
+
+  it("a failed re-run after an AI-only result does not block logging", () => {
+    const loaded = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: ai,
+    });
+    const failed = labelSessionReducer(loaded, {
+      type: "uploadFailed",
+      message: "boom",
+    });
+    // No mounted preview: the failure is the full-screen error, which the
+    // screen draws only when there is no data. The session still logs.
+    expect(failed.uploadFailed).toBe(false);
+    expect(failed.sessionId).toBe("s1");
+    expect(failed.labelData).toBe(ai);
   });
 
   // useReducer skips the re-render only when the reducer hands back the SAME
