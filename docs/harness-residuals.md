@@ -523,3 +523,23 @@ Still open, reviewer side: the review-dispatch mod's `pr=<n>` form and
 `scripts/review-record-status.sh` read the file list with `gh pr diff --name-only`, which fails
 the same way on a too-large PR. Workaround: dispatch with `base=origin/<base>` (the mod then uses
 `git diff`), as #1974's review did. If reopened: give both the same local fallback.
+
+### Review-record digest sorts the file list in the caller's locale (constructed 2026-11-23, not hit by the guard)
+
+`.claude/hooks/review-stamp-writer.sh` and `.claude/hooks/merge-review-guard.sh` both hash the
+changed-file list after a bare `sort -u`, so the digest depends on `LC_COLLATE`. Measured on this
+machine: `printf 'b\nB\na\n_x\n' | sort -u` gives `_x a b B` under `en_CA.UTF-8` and
+`B _x a b` under `LC_ALL=C`. A list with mixed-case names or names starting with `_` or `.`
+therefore hashes to two different values.
+
+The writer and the guard have so far run in the same shell environment, so their digests agree and
+no merge was denied. Where it did bite: a by-hand recompute of the digest with `LC_ALL=C sort`
+while checking the records for #1988–#1990 did not match the stored value, and looked like a
+scope mismatch. If the two hooks ever ran under different locales (a remote session, a CI
+shell), every gated merge would deny. That is fail-closed: it cannot let an unreviewed file
+through.
+
+Not changed here. Until it is: recompute by hand with a bare `sort -u`, in the same shell that
+runs the hooks. If reopened: put `LC_ALL=C` on the `sort` in both hooks in the same PR. Changing
+one alone makes every record mismatch, and records written before the change stop matching for
+any PR whose list sorts differently.
