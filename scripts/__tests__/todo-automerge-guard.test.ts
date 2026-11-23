@@ -26,6 +26,11 @@ if [ -n "\${FAKE_GH_DIFF_FILES_FILE:-}" ]; then
   FAKE_GH_DIFF_FILES="$(cat "$FAKE_GH_DIFF_FILES_FILE")"
 fi
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  # A Claude Code cloud session: \`gh pr view\` is GraphQL and is refused there, while REST answers.
+  if [ -n "\${FAKE_GH_GRAPHQL_BLOCKED:-}" ]; then
+    echo "HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API" >&2
+    exit 1
+  fi
   # The guard compares its file-list read against the PR's DECLARED changed-file count so it can
   # refuse a truncated list. Default to the number of lines this test supplied, keeping the
   # completeness check a no-op unless a row sets FAKE_GH_CHANGED_FILES to model truncation.
@@ -61,9 +66,19 @@ if [ "$1" = "api" ]; then
     case "$a" in
       */pulls/*/files) _ep="files" ;;
       */pulls/*/commits*) _ep="commits" ;;
+      # The bare PR resource: the REST fallback for the declared changed-file count.
+      */pulls/[0-9]*) _ep="pr" ;;
     esac
   done
   case "\$_ep" in
+    pr)
+      if [ -n "\${FAKE_GH_REST_PR_FAIL:-}" ]; then
+        echo "fake-gh: simulated pulls/{n} failure" >&2
+        exit 1
+      fi
+      printf '%s\\n' "\${FAKE_GH_CHANGED_FILES:-$(printf '%s\\n' "$FAKE_GH_DIFF_FILES" | grep -c . || true)}"
+      exit 0
+      ;;
     commits)
       # The verifier gate (scripts/verifier-record-status.sh) lists the PR's commits, oldest
       # first. Default: the one commit the runners below give a passing verifier record.
@@ -1329,6 +1344,41 @@ describe("todo-automerge-guard.sh (a truncated file list is refused, not gated)"
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).not.toBe(2);
+  });
+
+  // \`gh pr view\` is GraphQL, which a Claude Code cloud session is refused (HTTP 403). The count
+  // then comes from the REST PR resource. These repeat the two rows above with GraphQL refused:
+  // the fallback must give the same verdicts, and must still fail closed when REST fails too.
+  it("with GraphQL refused, still ERRORs on a truncated list (count read over REST)", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_GRAPHQL_BLOCKED: "1",
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+      FAKE_GH_CHANGED_FILES: "9",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("truncated");
+  });
+
+  it("with GraphQL refused, an agreeing count read over REST is gated normally", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_GRAPHQL_BLOCKED: "1",
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
+  });
+
+  it("with GraphQL refused AND the REST read failing, ERRORs (fail-closed)", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_GRAPHQL_BLOCKED: "1",
+      FAKE_GH_REST_PR_FAIL: "1",
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("could not read the declared changed-file count");
   });
 
   it("control — a rename SOURCE pushing the count ABOVE the declared total is not mistaken for truncation", () => {

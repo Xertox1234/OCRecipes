@@ -417,7 +417,10 @@ fi
 # drop the third row to model truncation and 2 destinations + 1 rename source = 3 lines >= 3
 # declared, so the guard returned OK and the protected markdown went from HOLD to a merge-gate
 # pass -- the exact bypass this detector exists to prevent.
-declared_files="$(gh pr view "$PR" --json changedFiles --jq .changedFiles)" || {
+# `gh pr view` is GraphQL, refused in Claude Code cloud sessions (see merge-review-guard.sh's
+# PR read); the REST PR resource carries the same count as `changed_files`.
+declared_files="$(gh pr view "$PR" --json changedFiles --jq .changedFiles 2>/dev/null)" \
+  || declared_files="$(gh api "repos/{owner}/{repo}/pulls/$PR" --jq .changed_files)" || {
   echo "guard: ERROR PR #$PR — could not read the declared changed-file count. Fail-closed."
   exit 2
 }

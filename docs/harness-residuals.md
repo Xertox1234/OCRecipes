@@ -523,3 +523,28 @@ Still open, reviewer side: the review-dispatch mod's `pr=<n>` form and
 `scripts/review-record-status.sh` read the file list with `gh pr diff --name-only`, which fails
 the same way on a too-large PR. Workaround: dispatch with `base=origin/<base>` (the mod then uses
 `git diff`), as #1974's review did. If reopened: give both the same local fallback.
+
+### HIT IN REAL USE 2026-11-23 — merge-review-guard cannot read any PR from a Claude Code cloud session (#1985)
+
+`.claude/hooks/merge-review-guard.sh` read the PR's head and base with `gh pr view <n> --json …`.
+`gh pr view` goes through GraphQL, and a cloud session is refused it
+(`HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API`), so the
+guard denied every merge fail-closed as "could not read PR". #1985 was reviewed on its final head
+and green on all checks, the owner had said "merge them", and the agent still could not merge it;
+the owner merged in the browser. REST (`gh api repos/{owner}/{repo}/…`) and `gh pr diff` both
+answer from a cloud session (measured the same day).
+
+**FIXED 2026-11-23 (branch `claude/kind-babbage-8av10x`).** The three `gh pr view` reads on the
+merge path retry once over the REST PR resource (`gh api repos/{owner}/{repo}/pulls/<n>`): head
+ref, head sha and base ref, and the PR body for the platform check, in the guard; the declared
+changed-file count (`.changed_files`) in `scripts/todo-automerge-guard.sh`. Same PR, same
+repository (the placeholders resolve from cwd as `gh pr view` does); both routes failing still
+denies. Rows G1-G7 in `test-merge-review-guard.sh` and three cases in
+`scripts/__tests__/todo-automerge-guard.test.ts`; checked live from a cloud session against #1986
+(the guard reads the PR and reaches a verdict).
+
+Still open, same cause, none of them on the merge path: `pr-verify.sh` (its "could not verify PR
+state" warning fires after every PR creation in a cloud session), `git-safety.sh`'s merged-PR
+lookup, `scripts/review-record-status.sh` and `scripts/verify-branch-merged.sh` all call
+`gh pr view --json`. If reopened: give each the same REST retry, or move the read into one shared
+`lib/` helper.
