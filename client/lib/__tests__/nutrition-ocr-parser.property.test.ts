@@ -17,10 +17,10 @@
  * glued or spaced unit, with or without a % Daily Value)
  *   B1 round-trip   the parse equals the label: all ten values, the serving
  *                   text, confidence 1, all ten fields in directReads.
- *   B2 noise        badge lines and bare number lines dropped between the panel
- *                   lines change nothing (one known gap: nameSpansTwoLines). The lines are the ones the parser's
- *                   comments record from device captures ("GLUTEN FREE",
- *                   "LOW SODIUM", "15", …).
+ *   B2 noise        badge lines and bare number lines inserted anywhere in the
+ *                   panel change nothing (one known gap: nameSpansTwoLines).
+ *                   The lines are the ones the parser's comments record from
+ *                   device captures ("GLUTEN FREE", "LOW SODIUM", "15", …).
  *
  * LAYER C — the same label with the recogniser's g -> 9 substitution applied
  *   C1 spaced       "12 9": the value is still the label's, but the field is
@@ -200,6 +200,9 @@ const anyTextArb = fc.oneof(
   { weight: 1, arbitrary: fc.string({ unit: "grapheme", maxLength: 80 }) },
 );
 
+// Exact equality with `confidence` is safe only because the parser computes it
+// by the same division (extracted / 10). If that changes, compare with a
+// tolerance instead.
 const CONFIDENCE_STEPS = Array.from({ length: 11 }, (_, n) => n / 10);
 
 function nonNullFields(result: LocalNutritionData): NumericField[] {
@@ -419,7 +422,8 @@ function withNoise(
 // until the parser holds a name to one line; drop this guard when it does.
 function nameSpansTwoLines(lines: readonly string[]): boolean {
   return lines.some(
-    (line, i) => /trans$/i.test(line) && /^fat\b/i.test(lines[i + 1] ?? ""),
+    (line, i) =>
+      /(?:trans|saturated)$/i.test(line) && /^fat\b/i.test(lines[i + 1] ?? ""),
   );
 }
 
@@ -543,7 +547,7 @@ describe("parseNutritionFromOCR properties", () => {
       );
     });
 
-    it("B2: badge and bare-number lines between the panel lines change nothing", () => {
+    it("B2: badge and bare-number lines anywhere in the panel change nothing", () => {
       fc.assert(
         fc.property(panelArb(cleanFormatsArb), noiseArb, (panel, noise) => {
           const lines = renderLines(panel);
@@ -577,6 +581,9 @@ describe("parseNutritionFromOCR properties", () => {
       );
     });
 
+    // C2 passes if the parser declines every glued form. That it also RESOLVES
+    // the forced ones ("Glucides 09" -> 0, "saturés 19" under 11 g of fat -> 1)
+    // is pinned by the "glued g→9" examples in nutrition-ocr-parser.test.ts.
     it("C2: a glued substituted unit is declined or resolved to the label's value", () => {
       fc.assert(
         fc.property(
