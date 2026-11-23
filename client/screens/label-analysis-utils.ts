@@ -196,3 +196,83 @@ export function labelLogErrorMessage(code: string | undefined): string {
       return "Couldn't log this item. Please try again.";
   }
 }
+
+/** Upload/AI-reconcile state of the label screen (see useLabelAnalysisSession). */
+export interface LabelSessionState {
+  sessionId: string | null;
+  labelData: LabelExtractionResult | null;
+  dataSource: "local" | "ai" | null;
+  isAnalyzing: boolean;
+  error: string | null;
+  uploadFailed: boolean;
+  showUpdatedToast: boolean;
+}
+
+export type LabelSessionAction =
+  | { type: "uploadStarted" }
+  | {
+      type: "uploadSucceeded";
+      sessionId: string;
+      aiData: LabelExtractionResult;
+    }
+  | { type: "uploadFailed"; message: string }
+  | { type: "settled" }
+  | { type: "toastHidden" };
+
+export function initialLabelSessionState(
+  localPreview: LabelExtractionResult | null,
+): LabelSessionState {
+  return {
+    sessionId: null,
+    labelData: localPreview,
+    dataSource: localPreview ? "local" : null,
+    isAnalyzing: localPreview === null,
+    error: null,
+    uploadFailed: false,
+    showUpdatedToast: false,
+  };
+}
+
+/**
+ * One transition per upload event, so an AI result lands as a single state
+ * change (a single React commit) — the screen's merged announcer relies on
+ * sessionId, labelData and showUpdatedToast arriving together.
+ */
+export function labelSessionReducer(
+  state: LabelSessionState,
+  action: LabelSessionAction,
+): LabelSessionState {
+  switch (action.type) {
+    case "uploadStarted":
+      return { ...state, uploadFailed: false };
+    case "uploadSucceeded": {
+      const next = { ...state, sessionId: action.sessionId };
+      if (state.dataSource === "local" && state.labelData) {
+        if (shouldReplaceWithAI(state.labelData, action.aiData)) {
+          return {
+            ...next,
+            labelData: action.aiData,
+            dataSource: "ai",
+            showUpdatedToast: true,
+          };
+        }
+        // AI confirms local data — just record the session ID.
+        return { ...next, dataSource: "ai" };
+      }
+      // No local preview: use AI data directly. No error for a low-confidence
+      // result — the confidence banner is the warning.
+      return { ...next, labelData: action.aiData, dataSource: "ai" };
+    }
+    case "uploadFailed":
+      // With local data keep showing it and mark the failure retriable (the
+      // log button cannot work without a server sessionId); with none, show
+      // the full-screen error.
+      return state.labelData
+        ? { ...state, uploadFailed: true }
+        : { ...state, error: action.message };
+    case "settled":
+      return { ...state, isAnalyzing: false };
+    case "toastHidden":
+      return { ...state, showUpdatedToast: false };
+  }
+}

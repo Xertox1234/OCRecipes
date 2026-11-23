@@ -6,6 +6,8 @@ import {
   getLogButtonPresentation,
   scaleByServings,
   labelLogErrorMessage,
+  labelSessionReducer,
+  initialLabelSessionState,
 } from "../label-analysis-utils";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { LabelExtractionResult } from "@/lib/photo-upload";
@@ -270,5 +272,113 @@ describe("labelLogErrorMessage", () => {
     expect(labelLogErrorMessage(undefined)).toBe(
       "Couldn't log this item. Please try again.",
     );
+  });
+});
+
+describe("labelSessionReducer", () => {
+  const ai = { ...baseLabelData, calories: 400 };
+  const sameAi = { ...baseLabelData };
+
+  it("starts analyzing with no data when there is no local preview", () => {
+    expect(initialLabelSessionState(null)).toEqual({
+      sessionId: null,
+      labelData: null,
+      dataSource: null,
+      isAnalyzing: true,
+      error: null,
+      uploadFailed: false,
+      showUpdatedToast: false,
+    });
+  });
+
+  it("shows the local preview immediately, not analyzing", () => {
+    const s = initialLabelSessionState(baseLabelData);
+    expect(s.labelData).toBe(baseLabelData);
+    expect(s.dataSource).toBe("local");
+    expect(s.isAnalyzing).toBe(false);
+  });
+
+  it("uses AI data directly when there is no local preview", () => {
+    const s = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: ai,
+    });
+    expect(s).toMatchObject({
+      sessionId: "s1",
+      labelData: ai,
+      dataSource: "ai",
+      showUpdatedToast: false,
+    });
+  });
+
+  it("replaces a materially different local preview and raises the toast", () => {
+    const s = labelSessionReducer(initialLabelSessionState(baseLabelData), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: ai,
+    });
+    expect(s).toMatchObject({
+      sessionId: "s1",
+      labelData: ai,
+      dataSource: "ai",
+      showUpdatedToast: true,
+    });
+  });
+
+  it("keeps the local data when the AI confirms it", () => {
+    const s = labelSessionReducer(initialLabelSessionState(baseLabelData), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: sameAi,
+    });
+    expect(s.labelData).toBe(baseLabelData);
+    expect(s.dataSource).toBe("ai");
+    expect(s.sessionId).toBe("s1");
+    expect(s.showUpdatedToast).toBe(false);
+  });
+
+  it("clears uploadFailed when an upload starts", () => {
+    const failed = labelSessionReducer(
+      initialLabelSessionState(baseLabelData),
+      {
+        type: "uploadFailed",
+        message: "x",
+      },
+    );
+    expect(failed.uploadFailed).toBe(true);
+    expect(
+      labelSessionReducer(failed, { type: "uploadStarted" }).uploadFailed,
+    ).toBe(false);
+  });
+
+  it("sets the full-screen error only when there is no data", () => {
+    const s = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadFailed",
+      message: "boom",
+    });
+    expect(s.error).toBe("boom");
+    expect(s.uploadFailed).toBe(false);
+  });
+
+  it("marks a retriable failure, not an error, when local data exists", () => {
+    const s = labelSessionReducer(initialLabelSessionState(baseLabelData), {
+      type: "uploadFailed",
+      message: "boom",
+    });
+    expect(s.error).toBeNull();
+    expect(s.uploadFailed).toBe(true);
+  });
+
+  it("stops analyzing on settle and hides the toast on demand", () => {
+    const a = labelSessionReducer(initialLabelSessionState(null), {
+      type: "settled",
+    });
+    expect(a.isAnalyzing).toBe(false);
+    const t = labelSessionReducer(
+      { ...a, showUpdatedToast: true },
+      { type: "toastHidden" },
+    );
+    expect(t.showUpdatedToast).toBe(false);
   });
 });

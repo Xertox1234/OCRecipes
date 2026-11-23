@@ -1,9 +1,9 @@
 ---
 title: "Move LabelAnalysisScreen's upload/AI-reconcile state into useLabelAnalysisSession"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-19
-updated: 2026-11-19
+updated: 2026-11-22
 assignee:
 labels: [deferred, maintainability, client, camera]
 github_issue:
@@ -23,10 +23,10 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ## Acceptance Criteria
 
-- [ ] `useLabelAnalysisSession({ imageUri, barcode, localPreview })` returns `{ sessionId, labelData, dataSource, isAnalyzing, error, uploadFailed, showUpdatedToast, retry }`
-- [ ] The dataSource × labelData reconciliation is one reducer with Vitest cases
-- [ ] The merged a11y announcer effect (`:166-205`) is kept intact as one effect (its comment explains why)
-- [ ] Screen under 750 lines; no visible or VoiceOver change
+- [x] `useLabelAnalysisSession({ imageUri, barcode, localPreview })` returns `{ sessionId, labelData, dataSource, isAnalyzing, error, uploadFailed, showUpdatedToast, retry }`
+- [x] The dataSource × labelData reconciliation is one reducer with Vitest cases
+- [x] The merged a11y announcer effect (`:166-205`) is kept intact as one effect (its comment explains why)
+- [x] Screen under 750 lines; no visible or VoiceOver change
 
 ## Implementation Notes
 
@@ -49,3 +49,7 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 ### 2026-11-19
 
 - Filed from the 2026-11-19 maintainability audit (deferred at triage).
+
+### 2026-11-22
+
+- Done: `useLabelAnalysisSession` hook + `labelSessionReducer` (9 Vitest cases in label-analysis-utils.test.ts); announcer effect kept as one effect. The screen needed the serving and nutrition-facts cards extracted (LabelServingsCard, LabelNutritionFactsCard) to get under 750 lines (1013 → 698) — beyond the scope contract's file list, same extract-component pattern.
