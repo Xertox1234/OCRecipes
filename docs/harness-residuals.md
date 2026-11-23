@@ -548,3 +548,8 @@ state" warning fires after every PR creation in a cloud session), `git-safety.sh
 lookup, `scripts/review-record-status.sh` and `scripts/verify-branch-merged.sh` all call
 `gh pr view --json`. If reopened: give each the same REST retry, or move the read into one shared
 `lib/` helper.
+
+Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable folder (chmod 000)"
+row asserted a deny that cannot happen for root, and cloud sessions run as root, so
+`scripts/run-hook-tests.sh` failed there and `preflight:fast` could not stamp any hook change. The
+row now asserts the verdict that is true for the running user (allow for root, deny otherwise).
