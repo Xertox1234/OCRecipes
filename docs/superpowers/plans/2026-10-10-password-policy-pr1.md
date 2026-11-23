@@ -1,5 +1,7 @@
 # Password policy — PR 1 (rule, hashing, breach check, reset, disable) Implementation Plan
 
+> **STATUS: PARTLY SUPERSEDED.** The 15-character minimum in this plan was overruled: the minimum is 8 for everyone (`PASSWORD_MIN` in `shared/constants/password-policy.ts`), and the breach check stays. Don't re-propose a 15-character policy or authenticator apps. See `docs/OWNER_RULINGS.md` → Auth (2026-10-12).
+
 > **Execution:** superpowers:executing-plans, in-session only (`/todo-fast` Step 2b gate override; auth work is never delegated to implementer subagents). Review roster at the final head. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every new password follows one shared rule (15 characters, or 8 on a two-step account; no composition rule; breached passwords refused), every character of a password counts, and turning two-step off can no longer leave a short password-only account.

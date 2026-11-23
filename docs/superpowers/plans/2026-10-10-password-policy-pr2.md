@@ -1,5 +1,7 @@
 # Password policy — PR 2 (upgrade pass, sign-up switch, sign-in gate) Implementation Plan
 
+> **STATUS: SUPERSEDED — do not implement or re-propose.** The sign-in gate and forced upgrade for passwords under 15 characters were overruled: no forced stop at sign-in, ever, and the minimum is 8 for everyone. See `docs/OWNER_RULINGS.md` → Auth (2026-10-12).
+
 > **Execution:** superpowers:executing-plans, in-session only (`/todo-fast` Step 2b gate override — the todo is `human_led`; auth work is never delegated to implementer subagents). **DB-serial:** touches `shared/schema.ts` and `migrations/`. Review roster at the final head: `code-reviewer` + `security-auditor` + `server-reviewer` + `mobile-reviewer`. The PR is `security`-labelled and merges only on the owner's explicit yes. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A password under 15 characters can no longer sign in on its own. An account without two-step that signs in (or answers the Google/Apple Connect prompt) with one gets a short-lived restricted pass instead of a session. With that pass it can either turn on two-step or choose a longer password. Sign-up gains a "Use two-step verification" switch that lowers the minimum to 8.
@@ -343,13 +345,11 @@ it("completePasswordUpgrade: new hash, version bump, trusted phones gone, staged
     .update(users)
     .set({ pendingEmail: "new@test.invalid" })
     .where(eq(users.id, testUser.id));
-  await tx
-    .insert(mfaTrustedDevices)
-    .values({
-      userId: testUser.id,
-      keyHash: "k",
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+  await tx.insert(mfaTrustedDevices).values({
+    userId: testUser.id,
+    keyHash: "k",
+    expiresAt: new Date(Date.now() + 60_000),
+  });
   await passes.createUpgradePass(pass());
   const v = await passes.completePasswordUpgrade({
     idHash: "hash-a",
