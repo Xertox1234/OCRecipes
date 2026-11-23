@@ -974,7 +974,23 @@ describe("fields must not assemble themselves across lines", () => {
     expect(
       parseNutritionFromOCR("LOW IN SATURATED\nFat 8g").saturatedFat,
     ).toBeNull();
-    expect(parseNutritionFromOCR("DIETARY\nFibre 4 g").dietaryFiber).toBe(4);
+  });
+
+  it("gives up a sub-fat name the recogniser split over two lines", () => {
+    // The price of the rule above: this used to read 3, but only by taking
+    // whatever followed "Fat" on the next line.
+    expect(parseNutritionFromOCR("Saturated\nFat 3g").saturatedFat).toBeNull();
+    // The other two-word names lose nothing: their second word is a bare form
+    // of the same field.
+    expect(parseNutritionFromOCR("Total\nFat 8g").totalFat).toBe(8);
+    expect(parseNutritionFromOCR("Dietary\nFibre 4 g").dietaryFiber).toBe(4);
+  });
+
+  it("still joins a name's words across a non-breaking space", () => {
+    expect(parseNutritionFromOCR("Total\u00a0Fat 8g").totalFat).toBe(8);
+    expect(
+      parseNutritionFromOCR("Total Fat 8g\nSaturated\u00a0Fat 3g").saturatedFat,
+    ).toBe(3);
   });
 
   it("does not take the word Fat as a sub-fat line's value", () => {

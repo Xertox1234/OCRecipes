@@ -114,17 +114,26 @@ interface FieldPattern {
 //      refuse whenever a unit its siblings would have consumed is still
 //      sitting there: a real "g", or a lone "9" further along the line.
 //
-//   7. `[ \t]+` BETWEEN the words of a two-word name ("total fat", "saturated
-//      fat", "trans fat", "dietary fiber", …), never `\s+`. The one-line rule
-//      below covers the name as well as the value and the unit: a badge line
-//      ENDING in the first word, directly above a bare "Fat …" line, otherwise
-//      spells the name across the break. "LOW IN SATURATED\nFat / Lipides 11 g"
-//      read saturatedFat = 11 — total fat's value, as a direct read.
-//   8. `(?![ \t]+fat\b)` on the bare "saturated" / "trans" forms. The bare
-//      branch starts at the newline, one character before the two-word branch
-//      can, so on "…\nSaturated Fat 9 9" it won the match, captured the word
-//      "Fat" as the value and the first "9" as a substituted unit, and the
-//      field was dropped. A bare form followed by "Fat" is the two-word form.
+//   7. `[^\S\r\n]+` BETWEEN the words of a two-word name ("total fat",
+//      "saturated fat", "trans fat", "dietary fiber", …), never `\s+`: any
+//      whitespace except a line break, so a non-breaking space still joins
+//      the words. The one-line rule below covers the name as well as the
+//      value and the unit: a badge line ENDING in the first word, directly
+//      above a bare "Fat …" line, otherwise spells the name across the break.
+//      "LOW IN SATURATED\nFat / Lipides 11 g" read saturatedFat = 11 — total
+//      fat's value, as a direct read.
+//      Only "saturated fat" and "trans fat" could be MISREAD that way. For the
+//      other four names the second word is itself a bare form of the same
+//      field ("Total\nFat 8g" reads totalFat = 8 either way), so the change
+//      there is for consistency. The cost: a sub-fat name the recogniser
+//      really did split ("Saturated\nFat 3g") is now unread — it used to read
+//      3 only by taking whatever followed "Fat", which is the same hole.
+//   8. `(?![^\S\r\n]+fat\b)` on the bare "saturated" / "trans" forms. After a
+//      line break the bare branch starts at the newline, one character before
+//      the two-word branch can, so on "…\nSaturated Fat 9 9" it won the match,
+//      captured the word "Fat" as the value and the first "9" as a substituted
+//      unit, and the field was dropped. A bare form followed by "Fat" is the
+//      two-word form.
 //
 // ── Why a field may not assemble itself across lines ─────────────────────────
 // `\s` matches newlines and `g` matches the leading letter of any word, so
@@ -221,12 +230,12 @@ const FIELD_PATTERNS: FieldPattern[] = [
   {
     key: "totalFat",
     pattern:
-      /(?:total[ \t]+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:total[^\S\r\n]+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "saturatedFat",
     pattern:
-      /(?:saturated[ \t]+fat|(?:^|\n)\s*(?:saturated|satur[ée]s)(?![ \t]+fat\b))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:saturated[^\S\r\n]+fat|(?:^|\n)\s*(?:saturated|satur[ée]s)(?![^\S\r\n]+fat\b))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "transFat",
@@ -236,7 +245,7 @@ const FIELD_PATTERNS: FieldPattern[] = [
     // it while keeping the line anchor that stops "NO TRANSFAT" and
     // "SANS GRASTRANS" badges from matching.
     pattern:
-      /(?:trans[ \t]+fat|(?:^|\n)[\s+]*trans(?![ \t]+fat\b))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:trans[^\S\r\n]+fat|(?:^|\n)[\s+]*trans(?![^\S\r\n]+fat\b))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "cholesterol",
@@ -250,7 +259,7 @@ const FIELD_PATTERNS: FieldPattern[] = [
   {
     key: "totalCarbs",
     pattern:
-      /(?:total[ \t]+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:total[^\S\r\n]+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "dietaryFiber",
@@ -259,12 +268,12 @@ const FIELD_PATTERNS: FieldPattern[] = [
     // work here: Canadian panels carry "Not a significant source of fibre,
     // potassium, calcium or iron." in running text a few lines below.
     pattern:
-      /(?:dietary[ \t]+fib(?:er|re)|(?:^|\n)\s*fib(?:er|re)s?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:dietary[^\S\r\n]+fib(?:er|re)|(?:^|\n)\s*fib(?:er|re)s?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "totalSugars",
     pattern:
-      /(?:total[ \t]+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:total[^\S\r\n]+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "protein",
