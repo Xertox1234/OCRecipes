@@ -1,5 +1,7 @@
 # expo-iap 3.4.8 → 6.x Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: `package.json` has `expo-iap` 6.x. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move `expo-iap` from 3.4.8 to the latest 6.x with purchase, restore, trial display and server validation behaving exactly as today.

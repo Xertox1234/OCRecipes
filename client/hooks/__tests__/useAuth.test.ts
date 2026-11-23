@@ -27,6 +27,7 @@ const {
   mockClearOfflineQueue,
   mockClearHomeActionsState,
   mockClearFeatureTipsState,
+  mockClearBriefSeen,
   mockClearScheduledCoachReminders,
   mockClearImportBrowserData,
   mockClearDeviceImageLeftovers,
@@ -56,6 +57,7 @@ const {
     mockClearOfflineQueue: vi.fn().mockResolvedValue(true),
     mockClearHomeActionsState: vi.fn().mockResolvedValue(true),
     mockClearFeatureTipsState: vi.fn().mockResolvedValue(true),
+    mockClearBriefSeen: vi.fn().mockResolvedValue(true),
     mockClearScheduledCoachReminders: vi.fn().mockResolvedValue(true),
     mockClearImportBrowserData: vi.fn().mockResolvedValue(true),
     mockClearDeviceImageLeftovers: vi.fn().mockResolvedValue(undefined),
@@ -127,6 +129,9 @@ vi.mock("@/lib/offline-queue", () => ({
 
 vi.mock("@/lib/feature-tips-storage", () => ({
   clearFeatureTipsState: () => mockClearFeatureTipsState(),
+}));
+vi.mock("@/lib/coach-brief-seen", () => ({
+  clearBriefSeen: () => mockClearBriefSeen(),
 }));
 
 vi.mock("@/lib/home-actions-storage", () => ({
@@ -1448,6 +1453,7 @@ describe("useAuth", () => {
       expect(mockClearHomeActionsState).toHaveBeenCalled();
       // ...and which teaching tips were seen / features used (same chokepoint).
       expect(mockClearFeatureTipsState).toHaveBeenCalled();
+      expect(mockClearBriefSeen).toHaveBeenCalled();
       // ...and the OS-scheduled coach reminders (journal text) plus their global
       // id map (auth audit M2) — same chokepoint, so one path proves all five.
       expect(mockClearScheduledCoachReminders).toHaveBeenCalled();

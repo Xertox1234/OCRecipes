@@ -19,7 +19,8 @@ for env_file in .env .env.local .env.development .env.production .env.test; do
   fi
 done
 
-# Gitignored local learnings file the todo-executor research step greps.
+# Learnings file the todo-executor research step greps. Tracked since 2026-11-22 (#1974), so
+# this only fires for a worktree checked out at an older commit that lacks the file.
 if [ -f "$MAIN_REPO/docs/LEARNINGS.md" ] && [ ! -e "./docs/LEARNINGS.md" ]; then
   mkdir -p ./docs
   ln -s "$MAIN_REPO/docs/LEARNINGS.md" "./docs/LEARNINGS.md"

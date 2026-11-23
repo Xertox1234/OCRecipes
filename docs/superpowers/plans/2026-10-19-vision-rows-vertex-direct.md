@@ -1,5 +1,9 @@
 # Vision features on Vertex AI direct — Implementation Plan
 
+> **STATUS: PARTLY SHIPPED — history, not instructions.** Checked 2026-11-23: the Vertex-first plumbing (`primary: "vertex"`) is on `main` in `server/lib/ai-models.ts` and `server/lib/ai-client.ts`, but no row uses it. Superseded: the vision rows use Vertex direct as the backup route instead (ruling 2026-11-02). The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
+> References below to memory files (names like `project_*.md`, `feedback_*`, `reference_*`, `user_*`) point at the owner's local agent memory, which cloud sessions can't read. Lasting decisions from it are in `docs/OWNER_RULINGS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Route the 9 vision rows of `AI_FEATURES` to Google Vertex AI directly,

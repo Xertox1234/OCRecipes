@@ -1,5 +1,7 @@
 # Expo SDK Upgrade — Step 0 (JavaScript-only prep on SDK 54) Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: `package.json` is on Expo SDK 58, so this prep step is long past. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove the React Native 0.85/0.87 breaking APIs and pin foreground-notification behaviour while the app is still on SDK 54, so the later native steps carry no JavaScript rewrites and this step reaches the owner's phone over the air.

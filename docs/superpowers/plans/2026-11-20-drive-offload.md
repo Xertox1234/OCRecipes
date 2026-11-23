@@ -1,5 +1,9 @@
 # Drive Offload Implementation Plan
 
+> **STATUS: LOCAL MACHINE SETUP — not verifiable from the repo.** This plan builds a disk-scan tool under `~/.local/share/` on the owner's Mac, outside this repo. Don't act on it in a cloud session; ask the owner whether it was built.
+
+> References below to memory files (names like `project_*.md`, `feedback_*`, `reference_*`, `user_*`) point at the owner's local agent memory, which cloud sessions can't read. Lasting decisions from it are in `docs/OWNER_RULINGS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Redirect the remaining tool caches to U34Bolt and add a weekly laptop-wide scan that reports anything ≥ 100 MB and clears only an exact allowlist of download-cache leftovers.

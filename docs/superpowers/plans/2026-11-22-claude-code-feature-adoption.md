@@ -1,5 +1,9 @@
 # Claude Code feature adoption: implementation plan
 
+> **STATUS: PR A AND PR B MERGED** (#1969 and #1971, 2026-11-22). Task 5, the write-block trial, has no recorded outcome here. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
+> References below to memory files (names like `project_*.md`, `feedback_*`, `reference_*`, `user_*`) point at the owner's local agent memory, which cloud sessions can't read. Lasting decisions from it are in `docs/OWNER_RULINGS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (recommended here) or superpowers:subagent-driven-development to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Adopt the four Claude Code features from the 2026-11-22 research that fit OCRecipes:

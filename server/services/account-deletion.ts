@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { invalidateTokenVersionCache } from "../middleware/auth";
 import { deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { logger, toError } from "../lib/logger";
 import { revokeAppleIdentities } from "./auth-session";
 
 /**
@@ -18,12 +19,14 @@ import { revokeAppleIdentities } from "./auth-session";
  *
  * The caller owns re-auth and the second-factor gate; this function assumes
  * both passed. `awaitCleanup` makes step 5 finish before this returns — for
- * `server/scripts/delete-account.ts`, never for a request.
+ * `server/scripts/delete-account.ts`, never for a request — and the result
+ * then counts the cleanup steps that failed (always 0 when not awaited), so
+ * a script run by hand can say that stored pictures were left behind.
  */
 export async function deleteAccount(
   user: Pick<User, "id" | "avatarUrl">,
   options: { awaitCleanup?: boolean } = {},
-): Promise<void> {
+): Promise<{ cleanupFailures: number }> {
   // Revoke Apple tokens BEFORE the delete cascades the identity rows
   // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
   await revokeAppleIdentities(await storage.listIdentities(user.id));
@@ -56,16 +59,44 @@ export async function deleteAccount(
   // Filter AFTER the delete: any reference left belongs to another
   // account (a shared copy, or a crafted meal-plan imageUrl), and
   // deleteImage keeps its per-kind prefix guard.
-  const imageCleanup = storage
+  // Each failed delete is logged with its url and kind: the rows that named
+  // these pictures are gone, so this log is the only record of which ones
+  // were left behind.
+  const imageDeletes = storage
     .filterUnreferencedImageUrls(ownedImages)
-    .then((images) =>
-      Promise.all(images.map((i) => deleteImage(i.url, i.kind))),
-    );
-  fireAndForget("account-deletion-image-cleanup", imageCleanup);
+    .then(async (images) => {
+      const results = await Promise.allSettled(
+        images.map((i) => deleteImage(i.url, i.kind)),
+      );
+      results.forEach((result, index) => {
+        if (result.status !== "rejected") return;
+        logger.error(
+          {
+            err: toError(result.reason),
+            url: images[index].url,
+            kind: images[index].kind,
+          },
+          "account-deletion: a stored picture was not deleted",
+        );
+      });
+      return results;
+    });
+  // Catches (and logs) a failed reference check; the deletes log themselves.
+  fireAndForget("account-deletion-image-cleanup", imageDeletes);
 
   // A script exits when this returns, so it waits; a failure is already
-  // logged above and never fails the deletion.
-  if (options.awaitCleanup) {
-    await Promise.allSettled([avatarCleanup, imageCleanup]);
-  }
+  // logged above and never fails the deletion, but it is counted: the rows
+  // that named these pictures are gone, so nothing can find them later.
+  if (!options.awaitCleanup) return { cleanupFailures: 0 };
+  const [avatar, images] = await Promise.allSettled([
+    avatarCleanup,
+    imageDeletes,
+  ]);
+  return {
+    cleanupFailures:
+      (avatar.status === "rejected" ? 1 : 0) +
+      (images.status === "rejected"
+        ? 1 // the reference check itself failed: nothing was tried
+        : images.value.filter((r) => r.status === "rejected").length),
+  };
 }

@@ -37,7 +37,7 @@ beforeEach(() => {
   deps = {
     findByEmail: vi.fn().mockResolvedValue(account),
     findByUsername: vi.fn().mockResolvedValue(account),
-    deleteAccount: vi.fn().mockResolvedValue(undefined),
+    deleteAccount: vi.fn().mockResolvedValue({ cleanupFailures: 0 }),
     cleanupGaps: vi.fn().mockReturnValue([]),
     print: (line: string) => lines.push(line),
   };
@@ -115,6 +115,19 @@ describe("runDeleteAccount", () => {
       awaitCleanup: true,
     });
     expect(lines.join("\n")).toContain("Deleted account user-123");
+  });
+
+  it("says so and exits non-zero when stored pictures could not be removed", async () => {
+    deps.deleteAccount.mockResolvedValue({ cleanupFailures: 2 });
+    const code = await runDeleteAccount(
+      ["--username", "sam", "--confirm-delete", "user-123"],
+      deps,
+    );
+
+    expect(code).toBe(2);
+    const out = lines.join("\n");
+    expect(out).toContain("Deleted account user-123");
+    expect(out).toContain("2 stored-picture cleanup steps failed");
   });
 
   it("refuses a confirmation that is not the account's id", async () => {

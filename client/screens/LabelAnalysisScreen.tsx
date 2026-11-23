@@ -10,7 +10,6 @@ import {
   View,
   ScrollView,
   ActivityIndicator,
-  Pressable,
   AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,13 +28,15 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { LabelServingsCard } from "@/components/LabelServingsCard";
+import { LabelNutritionFactsCard } from "@/components/LabelNutritionFactsCard";
+import { useLabelAnalysisSession } from "@/hooks/useLabelAnalysisSession";
 import {
   getConfidenceTier,
   getConfidenceHapticType,
@@ -43,7 +44,6 @@ import {
 } from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
-  uploadLabelForAnalysis,
   confirmLabelAnalysis,
   type LabelExtractionResult,
 } from "@/lib/photo-upload";
@@ -60,7 +60,6 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   buildNutrientRows,
   localDataToExtractionResult,
-  shouldReplaceWithAI,
   getLogButtonPresentation,
   scaleByServings,
   labelLogErrorMessage,
@@ -99,25 +98,19 @@ export default function LabelAnalysisScreen() {
       : null;
   });
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [labelData, setLabelData] = useState<LabelExtractionResult | null>(
-    localPreview,
-  );
   const [servings, setServings] = useState(1);
-  const [isAnalyzing, setIsAnalyzing] = useState(localPreview === null);
-  const [error, setError] = useState<string | null>(null);
   const [showMicros, setShowMicros] = useState(false);
-  const [dataSource, setDataSource] = useState<"local" | "ai" | null>(
-    localPreview ? "local" : null,
-  );
-  const [showUpdatedToast, setShowUpdatedToast] = useState(false);
-  const [uploadFailed, setUploadFailed] = useState(false);
-  const [retryToken, setRetryToken] = useState(0);
+  const {
+    sessionId,
+    labelData,
+    dataSource,
+    isAnalyzing,
+    error,
+    uploadFailed,
+    showUpdatedToast,
+    retry: retryUpload,
+  } = useLabelAnalysisSession({ imageUri, barcode, localPreview });
 
-  const dataSourceRef = useRef<"local" | "ai" | null>(
-    localPreview ? "local" : null,
-  );
-  const labelDataRef = useRef<LabelExtractionResult | null>(localPreview);
   const prevSessionIdRef = useRef<string | null>(null);
   const prevShowUpdatedToastRef = useRef(false);
 
@@ -138,12 +131,11 @@ export default function LabelAnalysisScreen() {
   // Announce the Verifying → Ready transition, any "Updated with AI
   // analysis" upgrade, and the confidence banner showing alongside them, for
   // screen readers. Merged into ONE effect/utterance rather than separate
-  // announcers because all of it can land in the SAME React commit: the upload
-  // effect below calls setSessionId(...), setLabelData(...) (which puts an AI
+  // announcers because all of it can land in the SAME React commit: the session
+  // hook's labelSessionReducer applies sessionId, labelData (which puts an AI
   // result's banner on screen) and (when the AI photo materially disagrees
-  // with the local OCR preview) setShowUpdatedToast(true) synchronously, one
-  // after another, with no `await` between them — React batches that into a
-  // single commit, and iOS's `UIAccessibility.post(.announcement, ...)` does
+  // with the local OCR preview) showUpdatedToast in ONE dispatch — a single
+  // commit — and iOS's `UIAccessibility.post(.announcement, ...)` does
   // not queue two posts in the same tick (it silently drops one). See
   // docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md.
   // Announced on BOTH platforms, ungated — none of the log button, the toast
@@ -204,78 +196,6 @@ export default function LabelAnalysisScreen() {
       deleteAsync(imageUri, { idempotent: true }).catch(() => {});
     };
   }, [imageUri]);
-
-  const retryUpload = useCallback(() => {
-    toast.dismiss();
-    setUploadFailed(false);
-    setRetryToken((t) => t + 1);
-  }, [toast]);
-
-  // Upload to OpenAI (always, even with local preview)
-  useEffect(() => {
-    let cancelled = false;
-    let toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-    async function analyze() {
-      setUploadFailed(false);
-      try {
-        const result = await uploadLabelForAnalysis(imageUri, barcode);
-        if (cancelled) return;
-        setSessionId(result.sessionId);
-
-        if (dataSourceRef.current === "local" && labelDataRef.current) {
-          // Compare local vs AI: if significantly different, replace
-          const aiData = result.labelData;
-          if (shouldReplaceWithAI(labelDataRef.current, aiData)) {
-            setLabelData(aiData);
-            setDataSource("ai");
-            setShowUpdatedToast(true);
-            toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
-          } else {
-            // AI confirms local data — just record the session ID
-            setDataSource("ai");
-          }
-        } else {
-          // No local preview or low confidence — use AI data directly. No
-          // setError for a low-confidence AI result: with labelData set, the
-          // `error && !labelData` view below can never render it, and the
-          // confidence banner is the warning.
-          setLabelData(result.labelData);
-          setDataSource("ai");
-        }
-      } catch (err) {
-        if (cancelled) return;
-        // If we have local data, keep showing it; only set the full-screen
-        // error if there's no data at all. Otherwise this is still a real
-        // failure — the button can't log without a server sessionId, so
-        // surface it as a retriable state instead of leaving the button
-        // silently (and indefinitely) disabled.
-        if (!labelDataRef.current) {
-          // Never surface the raw error.message — the upload helper throws
-          // ApiError("Upload failed: <status>", code). Show static copy.
-          setError(
-            err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
-              ? "Too many requests. Please wait a moment and try again."
-              : "Couldn't read this label. Try again with better lighting.",
-          );
-        } else {
-          setUploadFailed(true);
-          toast.error(
-            "Couldn't verify this label with AI. Retry before logging.",
-            { action: { label: "Retry", onPress: retryUpload } },
-          );
-        }
-      } finally {
-        if (!cancelled) setIsAnalyzing(false);
-      }
-    }
-
-    void analyze();
-    return () => {
-      cancelled = true;
-      if (toastTimer) clearTimeout(toastTimer);
-    };
-  }, [imageUri, barcode, retryToken, toast, retryUpload]);
 
   // The variables are the session and servings count at tap time, so the POST
   // and the success toast agree even if the stepper moves while the request is
@@ -512,176 +432,20 @@ export default function LabelAnalysisScreen() {
           </ThemedText>
         )}
 
-        {/* Serving Size */}
-        <Card elevation={1} style={styles.servingCard}>
-          <View style={styles.servingSizeRow}>
-            <ThemedText type="body" style={{ fontWeight: "600" }}>
-              Serving Size
-            </ThemedText>
-            <ThemedText type="body" style={{ color: theme.textSecondary }}>
-              {labelData?.servingSize || "—"}
-            </ThemedText>
-          </View>
+        <LabelServingsCard
+          servingSize={labelData?.servingSize}
+          servings={servings}
+          onAdjust={adjustServings}
+        />
 
-          <View style={styles.servingAdjuster}>
-            <ThemedText type="body" style={{ fontWeight: "600" }}>
-              Servings consumed
-            </ThemedText>
-            <View style={styles.servingControls}>
-              <Pressable
-                onPress={() => adjustServings(-0.5)}
-                accessibilityLabel="Decrease servings"
-                accessibilityRole="button"
-                hitSlop={4}
-                style={[
-                  styles.servingButton,
-                  { backgroundColor: withOpacity(theme.link, 0.1) },
-                ]}
-              >
-                <Feather name="minus" size={18} color={theme.link} />
-              </Pressable>
-              <ThemedText
-                type="h3"
-                style={styles.servingValue}
-                accessibilityLabel={`${servings} servings`}
-              >
-                {servings}
-              </ThemedText>
-              <Pressable
-                onPress={() => adjustServings(0.5)}
-                accessibilityLabel="Increase servings"
-                accessibilityRole="button"
-                hitSlop={4}
-                style={[
-                  styles.servingButton,
-                  { backgroundColor: withOpacity(theme.link, 0.1) },
-                ]}
-              >
-                <Feather name="plus" size={18} color={theme.link} />
-              </Pressable>
-            </View>
-          </View>
-        </Card>
-
-        {/* Nutrition Table */}
-        <Card elevation={1} style={styles.nutritionCard}>
-          <View style={styles.nutritionTitleRow}>
-            <ThemedText type="h3" style={styles.nutritionTitle}>
-              Nutrition Facts
-            </ThemedText>
-            {dataSource === "local" && (
-              <View
-                style={[
-                  styles.sourceBadge,
-                  { backgroundColor: withOpacity(theme.info, 0.12) },
-                ]}
-              >
-                <Feather name="smartphone" size={12} color={theme.info} />
-                <ThemedText
-                  type="small"
-                  style={{ color: theme.badgeInfoText, fontWeight: "600" }}
-                >
-                  Scanned locally
-                </ThemedText>
-              </View>
-            )}
-          </View>
-          <View
-            style={[styles.dividerThick, { backgroundColor: theme.text }]}
-          />
-
-          {macroRows.map((row, index) => {
-            const scaledValue = scaleByServings(row.value, servings, 1);
-            return (
-              <Animated.View
-                key={row.label}
-                entering={
-                  reducedMotion
-                    ? undefined
-                    : FadeInUp.delay(index * 30).duration(250)
-                }
-              >
-                <View
-                  style={[
-                    styles.nutrientRow,
-                    row.bold && styles.nutrientRowBold,
-                    { borderBottomColor: withOpacity(theme.text, 0.1) },
-                  ]}
-                >
-                  <ThemedText
-                    type="body"
-                    style={[
-                      row.indented && styles.indented,
-                      row.bold && { fontWeight: "700" },
-                    ]}
-                  >
-                    {row.label}
-                  </ThemedText>
-                  <ThemedText
-                    type="body"
-                    style={row.bold ? { fontWeight: "700" } : undefined}
-                  >
-                    {scaledValue != null ? `${scaledValue}${row.unit}` : "—"}
-                  </ThemedText>
-                </View>
-              </Animated.View>
-            );
-          })}
-
-          {/* Micronutrients (collapsible) */}
-          {microRows.some((r) => r.value != null) && (
-            <>
-              <Pressable
-                onPress={() => setShowMicros(!showMicros)}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  showMicros
-                    ? "Hide vitamins and minerals"
-                    : "Show vitamins and minerals"
-                }
-                style={[
-                  styles.microToggle,
-                  { borderBottomColor: withOpacity(theme.text, 0.1) },
-                ]}
-              >
-                <ThemedText
-                  type="body"
-                  style={{ color: theme.link, fontWeight: "600" }}
-                >
-                  Vitamins & Minerals
-                </ThemedText>
-                <Feather
-                  name={showMicros ? "chevron-up" : "chevron-down"}
-                  size={18}
-                  color={theme.link}
-                />
-              </Pressable>
-
-              {showMicros &&
-                microRows.map((row) => {
-                  const scaledValue = scaleByServings(row.value, servings, 1);
-                  return (
-                    <View
-                      key={row.label}
-                      style={[
-                        styles.nutrientRow,
-                        {
-                          borderBottomColor: withOpacity(theme.text, 0.1),
-                        },
-                      ]}
-                    >
-                      <ThemedText type="body">{row.label}</ThemedText>
-                      <ThemedText type="body">
-                        {scaledValue != null
-                          ? `${scaledValue}${row.unit}`
-                          : "—"}
-                      </ThemedText>
-                    </View>
-                  );
-                })}
-            </>
-          )}
-        </Card>
+        <LabelNutritionFactsCard
+          macroRows={macroRows}
+          microRows={microRows}
+          servings={servings}
+          dataSource={dataSource}
+          showMicros={showMicros}
+          onToggleMicros={() => setShowMicros(!showMicros)}
+        />
 
         {dataSource === "local" && !sessionId && !uploadFailed && (
           <View style={styles.aiProgressRow}>
@@ -886,61 +650,6 @@ const styles = StyleSheet.create({
   productName: {
     marginBottom: Spacing.md,
   },
-  servingCard: {
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
-    gap: Spacing.md,
-  },
-  servingSizeRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  servingAdjuster: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  servingControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-    // RN clips hitSlop to the parent view's bounds — this row had no padding,
-    // so it was exactly button-edge-to-button-edge and the +/- buttons'
-    // hitSlop={4} (below) had nowhere to expand into on any axis. Padding
-    // gives it that room without changing the visible 36x36 button size.
-    padding: Spacing.xs,
-  },
-  servingButton: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.full,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  servingValue: {
-    minWidth: 32,
-    textAlign: "center",
-  },
-  nutritionCard: {
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
-  nutritionTitleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
-  nutritionTitle: {},
-  sourceBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-  },
   updatedToast: {
     flexDirection: "row",
     alignItems: "center",
@@ -957,30 +666,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: Spacing.sm,
     marginBottom: Spacing.md,
-  },
-  dividerThick: {
-    height: 3,
-    marginBottom: Spacing.sm,
-  },
-  nutrientRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  nutrientRowBold: {
-    borderBottomWidth: 1,
-  },
-  indented: {
-    paddingLeft: Spacing.lg,
-  },
-  microToggle: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   warningBanner: {
     flexDirection: "row",
