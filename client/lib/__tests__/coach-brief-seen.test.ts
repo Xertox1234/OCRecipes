@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockAsyncStorage = vi.hoisted(() => ({
   getItem: vi.fn(),
   setItem: vi.fn(),
+  removeItem: vi.fn(),
 }));
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
@@ -75,5 +76,25 @@ describe("coach-brief-seen", () => {
     m.markBriefSeen("2026-11-08");
     resolve("2026-11-07");
     expect(await pending).toBe("2026-11-08");
+  });
+
+  it("clearing forgets the date in memory and on disk (sign-out)", async () => {
+    mockAsyncStorage.getItem.mockResolvedValue("2026-11-08");
+    mockAsyncStorage.removeItem.mockResolvedValue(undefined);
+    const m = await load();
+    await m.loadLastBriefSeenDate();
+    expect(await m.clearBriefSeen()).toBe(true);
+    expect(m.getCachedLastBriefSeenDate()).toBeNull();
+    expect(mockAsyncStorage.removeItem).toHaveBeenCalledWith(
+      m.COACH_BRIEF_SEEN_KEY,
+    );
+  });
+
+  it("a failed disk clear still forgets in memory and reports false", async () => {
+    mockAsyncStorage.removeItem.mockRejectedValue(new Error("disk"));
+    const m = await load();
+    m.markBriefSeen("2026-11-08");
+    expect(await m.clearBriefSeen()).toBe(false);
+    expect(m.getCachedLastBriefSeenDate()).toBeNull();
   });
 });
