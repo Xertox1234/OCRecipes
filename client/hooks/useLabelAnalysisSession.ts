@@ -81,9 +81,10 @@ export function useLabelAnalysisSession({
             { action: { label: "Retry", onPress: retry } },
           );
         }
-      } finally {
-        if (!cancelled) dispatch({ type: "settled" });
       }
+      // Not a `finally`: React Compiler cannot compile try/finally yet. Both
+      // early returns above fire only when cancelled, so this is equivalent.
+      if (!cancelled) dispatch({ type: "settled" });
     }
 
     void analyze();
