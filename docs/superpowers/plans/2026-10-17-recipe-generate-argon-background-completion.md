@@ -1,5 +1,7 @@
 # Recipe Generation on Argon with Background Completion — Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`, and the `recipe-generate` row in `server/lib/ai-models.ts` uses Gemini 4 Argon. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Tapping Generate closes the sheet at once; the recipe finishes in the background and the user is told by a toast and a Profile-tab dot; then `recipe-generate` moves to Gemini 4 Argon.

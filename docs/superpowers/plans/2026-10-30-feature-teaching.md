@@ -1,5 +1,7 @@
 # Feature Teaching Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: merged as #1632. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the Home Discover carousel with in-context tooltips, two action toasts and Coach teaching prompts that push camera, voice and import over typing.

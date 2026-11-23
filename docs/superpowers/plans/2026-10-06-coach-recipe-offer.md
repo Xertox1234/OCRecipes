@@ -1,5 +1,7 @@
 # Coach Recipe Offer Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Coach Pro and RecipeChef always ask before making a recipe (an offer with [Yes] [Search] [No]). Every new generation goes through a prefilled adjust card: servings, spice, time, locked allergies and 1–2 dish follow-ups. In Coach Pro, the model decides "this is a recipe ask" through a terminal `offer_recipe` tool instead of a regex.

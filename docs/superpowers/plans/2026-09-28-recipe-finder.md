@@ -1,5 +1,7 @@
 # Recipe Finder Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: 37 of the 39 files this plan creates are on `main`. Partly superseded: Spoonacular results are never shown to users now; only titles feed inspired-recipe prompts (rulings → AI providers, 2026-10-12/19). The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A recipe request in Coach Pro or RecipeChef first offers close community recipes, then Spoonacular, then generation, with one short clarifying round, entirely inside the chat — and Spoonacular results (in Recipe Browser, Coach's recipe card and the finder) open a real preview with Save.
