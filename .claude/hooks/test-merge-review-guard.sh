@@ -67,6 +67,12 @@ printf '%s\n' "$*" >> "$GH_LOG"
 # would look identical to one that anchors itself.
 if [ -n "${FAKE_PIN_PWD:-}" ] && [ "$PWD" != "$FAKE_PIN_PWD" ]; then exit 1; fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
+  # A Claude Code cloud session: `gh pr view` goes through GraphQL, which is refused there with
+  # this text (measured 2026-11-23 on #1985). REST (`gh api repos/...`) and `gh pr diff` still work.
+  if [ -n "${FAKE_GRAPHQL_BLOCKED:-}" ]; then
+    echo 'HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API (gh api repos/{owner}/{repo}/...). (https://api.github.com/graphql)' >&2
+    exit 1
+  fi
   # todo-automerge-guard.sh asks this endpoint for the PR's DECLARED changed-file count, so it
   # can refuse a truncated file list. Answer that query with a count that agrees with FAKE_FILES
   # by default, keeping the completeness check a no-op here so only the merge-gate behaviour
@@ -109,6 +115,22 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
   exit 0
 fi
 if [ "${1:-}" = "api" ]; then
+  # The REST fallback for a refused `gh pr view`: the bare PR resource, read three ways. What the
+  # guard's --jq would print is answered from the same FAKE_* values the `pr view` branch uses,
+  # so a row differs only in WHICH route supplied them.
+  for a in "$@"; do
+    case "$a" in
+      'repos/{owner}/{repo}/pulls/'*[!0-9]*) ;;
+      'repos/{owner}/{repo}/pulls/'[0-9]*)
+        [ -n "${FAKE_REST_PR_FAIL:-}" ] && exit 1
+        case "$*" in
+          *changed_files*) printf '%s\n' "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}" ;;
+          *'.body'*) printf '%s\n' "${FAKE_BODY:-}" ;;
+          *) printf '%s\n' "${FAKE_VIEW_JSON}" ;;
+        esac
+        exit 0 ;;
+    esac
+  done
   # The platform check's run lookup. FAKE_RUN is what the guard's --jq would print:
   # "<run id> <conclusion>", or empty for no completed run on the head.
   case "$*" in
@@ -1443,6 +1465,65 @@ out=$(mcp_payload 938 | run)
 denied "$out" && ok "unreadable PR denies (fail-closed)" || bad "unreadable PR denies (fail-closed)" "$out"
 write_gh
 
+# ── GraphQL refused (Claude Code cloud sessions) ─────────────────────────────
+# `gh pr view` fails there with HTTP 403 while REST and `gh pr diff` work, so every merge was
+# denied as "could not read PR" whatever its review state (measured on #1985, 2026-11-23). The
+# guard now re-reads the same three values over REST. The verdict must be the one the GraphQL
+# route would have given — these rows repeat 6, 8, P4 and the truncation hold with it refused.
+clear_stamps
+export FAKE_FILES="$FILES_ONE"
+
+# G1. DENY, and for the RIGHT reason: no record. Before the fallback this said "could not read".
+out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1)
+if denied "$out" && ! reason "$out" | grep -q 'could not read PR'; then
+  ok "graphql refused: a PR with no review record denies on the record, not on the read"
+else
+  bad "graphql refused: a PR with no review record denies on the record, not on the read" "$out"
+fi
+
+# G2. ALLOW. A valid clean record for the head the REST route reports.
+stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
+out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1)
+assert_allowed "graphql refused: a valid record allows via the REST read" "$out"
+
+# G3. DENY. Both routes failing is still unreadable — the fallback must not turn into an allow.
+out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1 FAKE_REST_PR_FAIL=1)
+denied "$out" && reason "$out" | grep -q 'could not read PR' \
+  && ok "graphql refused and REST failing: unreadable PR denies (fail-closed)" \
+  || bad "graphql refused and REST failing: unreadable PR denies (fail-closed)" "$out"
+
+# G4. ALLOW, the platform check: its body read takes the REST route too.
+out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1 FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY="$P_BODY_OK")
+assert_allowed "graphql refused: the platform check reads the PR body via REST" "$out"
+
+# G5. DENY, the platform check, same route: a body with no section still denies.
+out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1 FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY=$'## Summary\nrun 777')
+denied "$out" && reason "$out" | grep -q "no '## Platform check' section" \
+  && ok "graphql refused: a body without a Platform check section still denies" \
+  || bad "graphql refused: a body without a Platform check section still denies" "$out"
+
+# G6. DENY. todo-automerge-guard.sh's declared-file count comes over REST as well, so a
+#     truncated file list is still refused (declared 5, listed 1). Safe paths and no record
+#     wanted: the only thing that can deny here is the completeness check. G6c is the same
+#     PR with an honest count — it must be exempt, or G6 would prove nothing.
+clear_stamps
+out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1 FAKE_FILES="$FILES_SAFE" FAKE_CHANGED_FILES=5)
+denied "$out" && ok "graphql refused: a truncated file list still denies" \
+              || bad "graphql refused: a truncated file list still denies" "$out"
+out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1 FAKE_FILES="$FILES_SAFE")
+assert_exempt "graphql refused: the same safe-path PR with an honest count is exempt (control)" "$out" "--paths-only"
+stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
+
+# G7. CONTROL. With GraphQL answering, the REST PR resource is never read: the fallback is a
+#     fallback, not a second lookup on every merge.
+: > "$GH_LOG"
+out=$(mcp_payload 938 | run)
+assert_allowed "graphql answering: valid record allows (control)" "$out"
+grep -Eq '^api repos/\{owner\}/\{repo\}/pulls/938( |$)' "$GH_LOG" \
+  && bad "graphql answering: no REST read of the PR resource" "$(cat "$GH_LOG")" \
+  || ok "graphql answering: no REST read of the PR resource"
+clear_stamps
+
 # 37. DENY. lib/cmd-detect.sh unsourceable => deny, never a silent allow. Run the hook from
 #     a copy whose lib/ lacks it.
 BROKEN=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-broken-$$-XXXX")
@@ -1896,7 +1977,8 @@ rm -rf "$LG"
 # 219 -> 220 (2026-11-01, harness N8 exemption note): +1 = stage 1's exemption names the todo/* route.
 # 221 -> 226 (2026-11-22, large-diff fallback): +5 = rows L1-L5 (the fixture control only reports on failure).
 # 226 -> 227 (2026-11-22, security review): +1 = row L6 (a -diff attribute must not hide an upload line).
-EXPECTED_TOTAL=227
+# 227 -> 236 (2026-11-23, REST fallback for a refused `gh pr view`): +9 = rows G1-G7 (G6 and G7 assert twice).
+EXPECTED_TOTAL=236
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

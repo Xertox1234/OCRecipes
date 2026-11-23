@@ -633,7 +633,17 @@ cd "$ROOT" 2>/dev/null \
 command -v gh >/dev/null 2>&1 \
   || deny "Blocked: merge-review-guard needs \`gh\` to classify PR #$PR and it is not on PATH. Fail-closed. $BYPASS"
 
+# `gh pr view` goes through GraphQL, which a Claude Code cloud session is refused (HTTP 403,
+# measured on #1985, 2026-11-23) while REST and `gh pr diff` still answer. Left alone, every
+# merge from such a session denied here as "could not read PR", whatever its review state.
+# So a failed read is retried once over REST, reshaped to the same three keys. It is the same PR
+# in the same repository — `{owner}/{repo}` resolves from cwd exactly as `gh pr view` does, and
+# cwd is $ROOT by now — so the fallback changes which API answers, never what is asked. Both
+# routes failing is still a deny. The body read below and the declared-file count in
+# scripts/todo-automerge-guard.sh carry the same fallback.
 VIEW=$(gh pr view "$PR" --json headRefName,headRefOid,baseRefName 2>/dev/null) \
+  || VIEW=$(gh api "repos/{owner}/{repo}/pulls/$PR" \
+       --jq '{headRefName: .head.ref, headRefOid: .head.sha, baseRefName: .base.ref}' 2>/dev/null) \
   || deny "Blocked: could not read PR #$PR (gh error — wrong repository, no such PR, or auth/network). Fail-closed. $BYPASS"
 BRANCH=$(printf '%s' "$VIEW" | jq -r '.headRefName // empty' 2>/dev/null)
 HEAD_SHA=$(printf '%s' "$VIEW" | jq -r '.headRefOid // empty' 2>/dev/null)
@@ -705,6 +715,7 @@ case "$P_RC" in
     P_ID=${P_RUN%% *}
     P_CONC=${P_RUN#* }
     P_BODY=$(gh pr view "$PR" --json body --jq '.body // ""' 2>/dev/null) \
+      || P_BODY=$(gh api "repos/{owner}/{repo}/pulls/$PR" --jq '.body // ""' 2>/dev/null) \
       || deny "Blocked: could not read PR #$PR's body for the real-platform check. Fail-closed. $BYPASS"
     P_SECTION=$(printf '%s\n' "$P_BODY" | awk '/^## /{on = ($0 ~ /^## Platform check[[:space:]]*$/); next} on')
     [ -n "$P_SECTION" ] \

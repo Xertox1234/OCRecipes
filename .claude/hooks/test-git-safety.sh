@@ -1130,8 +1130,18 @@ assert_deny "leading cd: missing folder, then & git commit, is not honored" \
 # A folder that exists but cannot be entered (no search permission) also fails the cd (review of
 # #1553, measured), so "exists" means a folder the cd can enter: -d and -x.
 mkdir "$RWT2/locked" "$RWT2/open"; chmod 000 "$RWT2/locked"
-assert_deny "leading cd: unenterable folder (chmod 000), then ; git commit, is not honored" \
-  "$(json "$SESSION" "$MAIN" "cd $RWT2/locked && : ; git commit -m x")"
+# root ignores mode bits, so for root the cd into a mode-000 folder really does succeed and the
+# guard's -x test says so: honoring it is the CORRECT verdict there, and the deny row could never
+# pass. Claude Code cloud sessions run as root (measured 2026-11-23: this one row failed the whole
+# hook run, so no hook change made from a cloud session could get a preflight pass-stamp). Assert
+# whichever verdict is true for the user running the suite; the total stays the same either way.
+if [ "$(id -u)" = "0" ]; then
+  assert_allow "leading cd: mode-000 folder as root (root can enter it), then ; git commit, is honored" \
+    "$(json "$SESSION" "$MAIN" "cd $RWT2/locked && : ; git commit -m x")"
+else
+  assert_deny "leading cd: unenterable folder (chmod 000), then ; git commit, is not honored" \
+    "$(json "$SESSION" "$MAIN" "cd $RWT2/locked && : ; git commit -m x")"
+fi
 assert_allow "leading cd: enterable subfolder, then ; git commit, is honored (control)" \
   "$(json "$SESSION" "$MAIN" "cd $RWT2/open && : ; git commit -m x")"
 chmod 700 "$RWT2/locked"; rmdir "$RWT2/locked" "$RWT2/open"
