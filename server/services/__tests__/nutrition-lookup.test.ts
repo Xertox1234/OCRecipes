@@ -1110,6 +1110,54 @@ describe("lookupNutrition", () => {
     });
   });
 
+  describe("USDA search query characters", () => {
+    it('sends a name with an inch mark and a slash (trimmed to 1/8" fat) without the characters USDA rejects', async () => {
+      // Measured live 2026-11-23: USDA's search answers 400 when the query
+      // holds any of " / ( ) [ ] { }. Photo analysis writes lookup names the
+      // way USDA lists foods, and USDA's own descriptions carry `1/8"`.
+      const description =
+        'Beef, short loin, top loin, steak, separable lean and fat, trimmed to 1/8" fat, all grades, raw';
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () => {
+          const [url] = mockFetch.mock.calls.at(-1) as [string];
+          const sent = new URL(url).searchParams.get("query") ?? "";
+          if (/["/()[\]{}]/.test(sent)) {
+            return Promise.resolve({
+              ok: false,
+              status: 400,
+              json: async () => ({}),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [
+                {
+                  description,
+                  dataType: "SR Legacy",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 228, unitName: "KCAL" },
+                  ],
+                },
+              ],
+            }),
+          });
+        },
+        "api-ninjas": ninjasNoMatch,
+      });
+
+      const result = await lookupNutrition(
+        'beef, top loin, steak, separable lean and fat, trimmed to 1/8" fat (raw)',
+      );
+
+      expect(result!.name).toBe(description);
+      expect(result!.calories).toBe(228);
+      expect(result!.source).toBe("usda");
+    });
+  });
+
   describe("USDA branded candidate filter (todo P2-2026-09-27)", () => {
     it("skips a Branded candidate whose head names a different product, picks the next", async () => {
       // "GYOZA DIPPING SAUCE, GYOZA" passes plain word coverage (it contains
