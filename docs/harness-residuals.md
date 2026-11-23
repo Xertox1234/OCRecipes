@@ -508,3 +508,11 @@ Not changed here. If reopened: feed `platform-scope.sh` a diff assembled locally
 (`git diff origin/<base>...<head sha>` after a fetch) or a per-file list from
 `GET /pulls/<n>/files` (paginated, 3,000-file cap) when `gh pr diff` returns `too_large`, and keep
 denying on any other gh error.
+
+**FIXED 2026-11-22 (branch `fix/merge-guard-large-diff`).** `pr_diff` in the guard falls back to a
+local `git diff base...head` on `PullRequest.diff too_large` only, for both the platform check and
+the digest. It fetches `refs/pull/<n>/head` plus the base branch into `refs/merge-review-guard/`
+(deleted after use), refuses unless the fetched head is the PR's head sha, and pins diff
+prefixes/colour/ext-diff/textconv against user config. The per-file API was not used: its `patch`
+fields are truncated on large files, which would let an upload line slip past platform-scope.sh.
+Rows L1-L5 in `test-merge-review-guard.sh`; checked live against #1974 (allow, no refs left).
