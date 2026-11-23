@@ -124,5 +124,8 @@ export function useCoachPhotoSend(args: Args) {
     );
   }, [blocked, send]);
 
-  return { openPhotoChooser, isSendingPhoto };
+  /** True from the tap on a source until the send settles (picker included). */
+  const isPhotoBusy = useCallback(() => sendingRef.current, []);
+
+  return { openPhotoChooser, isSendingPhoto, isPhotoBusy };
 }

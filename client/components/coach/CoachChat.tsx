@@ -622,7 +622,20 @@ export default function CoachChat({
   // True while a typed send is still creating its conversation: no rendered
   // state shows that yet, and a photo started then would create a second one.
   const startingTurnRef = useRef(false);
-  const { openPhotoChooser, isSendingPhoto } = useCoachPhotoSend({
+  // The pending "Looking at your photo" announcement, so a send that never
+  // starts (the conversation could not be created) or an unmount cancels it.
+  const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      if (photoAnnounceTimerRef.current) {
+        clearTimeout(photoAnnounceTimerRef.current);
+      }
+    },
+    [],
+  );
+  const { openPhotoChooser, isSendingPhoto, isPhotoBusy } = useCoachPhotoSend({
     disabled: isStreaming || isListening,
     canStart: () => !startingTurnRef.current,
     openingBriefForm:
@@ -640,7 +653,7 @@ export default function CoachChat({
       ttsStop();
       // The photo path has no stream to announce its start. Delayed so it is
       // not lost under the camera or picker closing.
-      setTimeout(
+      photoAnnounceTimerRef.current = setTimeout(
         () =>
           AccessibilityInfo.announceForAccessibility("Looking at your photo"),
         500,
@@ -651,6 +664,9 @@ export default function CoachChat({
       try {
         return await onCreateConversation();
       } catch {
+        if (photoAnnounceTimerRef.current) {
+          clearTimeout(photoAnnounceTimerRef.current);
+        }
         setOptimisticMessage(null);
         setStreamingError("Couldn't start the conversation. Please try again.");
         return null;
@@ -684,7 +700,9 @@ export default function CoachChat({
       const content = (
         typeof text === "string" ? text : inputTextRef.current
       ).trim();
-      if (!content || isStreaming || isSendingPhoto) return;
+      // isPhotoBusy covers the time the camera or picker is open, before
+      // isSendingPhoto is set: a voice transcript can still finalize then.
+      if (!content || isStreaming || isSendingPhoto || isPhotoBusy()) return;
 
       // Only a tap or the return key buzzes. String callers (voice, quick
       // replies, retry, suggestion hand-off) get feedback from their trigger.
@@ -756,6 +774,7 @@ export default function CoachChat({
       // handleQuickReply, renderItem) stays stable across keystrokes.
       isStreaming,
       isSendingPhoto,
+      isPhotoBusy,
       conversationId,
       onCreateConversation,
       warmUpHook,

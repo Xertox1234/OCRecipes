@@ -150,6 +150,33 @@ describe("useCoachPhotoSend", () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
+  it("is busy while the picker is open, before any upload starts", async () => {
+    let release: (uri: string | null) => void = () => undefined;
+    vi.mocked(pickCoachPhoto).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const { result } = setup();
+    expect(result.current.isPhotoBusy()).toBe(false);
+
+    const alertSpy = vi.spyOn(Alert, "alert");
+    act(() => result.current.openPhotoChooser());
+    const buttons = alertSpy.mock.calls.at(-1)?.[2] as AlertButton[];
+    let done: unknown;
+    act(() => {
+      done = buttons.find((b) => b.text === "Take Photo")?.onPress?.();
+    });
+    expect(result.current.isPhotoBusy()).toBe(true);
+    expect(result.current.isSendingPhoto).toBe(false);
+
+    await act(async () => {
+      release(null);
+      await done;
+    });
+    expect(result.current.isPhotoBusy()).toBe(false);
+  });
+
   it("does not open while disabled", () => {
     const { result } = setup({ disabled: true });
     const alertSpy = vi.spyOn(Alert, "alert");
