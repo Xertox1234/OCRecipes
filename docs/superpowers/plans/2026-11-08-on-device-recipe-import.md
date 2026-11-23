@@ -1,5 +1,7 @@
 # On-device Recipe Import Fallback Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: merged as #1808. The device checks are parked until the owner brings them up (rulings → Don't raise unprompted). The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** When the server can't import a recipe URL, the phone loads the page in a hidden WebView, extracts its JSON-LD and the server validates it; if that fails too, the user can sign in in a visible in-app browser and import from there.

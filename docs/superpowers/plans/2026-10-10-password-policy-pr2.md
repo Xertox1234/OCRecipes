@@ -2,6 +2,8 @@
 
 > **STATUS: SUPERSEDED — do not implement or re-propose.** The sign-in gate and forced upgrade for passwords under 15 characters were overruled: no forced stop at sign-in, ever, and the minimum is 8 for everyone. See `docs/OWNER_RULINGS.md` → Auth (2026-10-12).
 
+> References below to memory files (names like `project_*.md`, `feedback_*`, `reference_*`, `user_*`) point at the owner's local agent memory, which cloud sessions can't read. Lasting decisions from it are in `docs/OWNER_RULINGS.md`.
+
 > **Execution:** superpowers:executing-plans, in-session only (`/todo-fast` Step 2b gate override — the todo is `human_led`; auth work is never delegated to implementer subagents). **DB-serial:** touches `shared/schema.ts` and `migrations/`. Review roster at the final head: `code-reviewer` + `security-auditor` + `server-reviewer` + `mobile-reviewer`. The PR is `security`-labelled and merges only on the owner's explicit yes. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A password under 15 characters can no longer sign in on its own. An account without two-step that signs in (or answers the Google/Apple Connect prompt) with one gets a short-lived restricted pass instead of a session. With that pass it can either turn on two-step or choose a longer password. Sign-up gains a "Use two-step verification" switch that lowers the minimum to 8.

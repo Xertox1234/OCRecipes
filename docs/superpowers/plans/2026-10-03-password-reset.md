@@ -1,5 +1,7 @@
 # Password Reset and Sign-In by Email — Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans (inline). **Do NOT use subagent-driven-development for this plan.** Auth is a hard-exclusion path in this repo (`server/routes/auth.ts`, never delegated), so every task is implemented inline in the main session, and only the final _review_ is dispatched. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a user who forgot their password reset it with a 6-digit emailed code, and let any user sign in with their email instead of their username.

@@ -1,5 +1,7 @@
 # OpenRouter Model Routing Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`. Partly superseded: there is no OpenAI-direct fallback any more; the backup route is Vertex direct (ruling 2026-11-02). The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Route every AI chat/vision call through OpenRouter via a per-feature model table and one `aiChat` helper. If OpenRouter fails, the call silently falls back to today's OpenAI path. Model behavior does not change until the owner switches a feature.

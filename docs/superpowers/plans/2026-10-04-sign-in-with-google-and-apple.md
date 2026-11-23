@@ -1,5 +1,7 @@
 # Sign in with Google and Apple Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Users can create an account or sign in with Google or Apple; the server verifies every provider ID token, links identities only under the spec's safe-linking rules, and revokes Apple tokens on account deletion.
