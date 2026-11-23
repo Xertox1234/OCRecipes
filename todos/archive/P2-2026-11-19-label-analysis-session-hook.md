@@ -52,4 +52,4 @@ Source: `docs/audits/2026-11-19-maintainability.md` (local manifest).
 
 ### 2026-11-22
 
-- Done: `useLabelAnalysisSession` hook + `labelSessionReducer` (9 Vitest cases in label-analysis-utils.test.ts); announcer effect kept as one effect. The screen needed the serving and nutrition-facts cards extracted (LabelServingsCard, LabelNutritionFactsCard) to get under 750 lines (1013 → 698) — beyond the scope contract's file list, same extract-component pattern.
+- Done: `useLabelAnalysisSession` hook + `labelSessionReducer` (12 Vitest cases in label-analysis-utils.test.ts, three of them from the review fixes); announcer effect kept as one effect. The screen needed the serving and nutrition-facts cards extracted (LabelServingsCard, LabelNutritionFactsCard) to get under 750 lines (1013 → 698) — beyond the scope contract's file list, same extract-component pattern.
