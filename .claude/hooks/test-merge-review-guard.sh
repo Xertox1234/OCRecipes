@@ -1844,6 +1844,18 @@ out=$(mcp_payload 938 | run_lg FAKE_VIEW_JSON="$(lg_view "$LG_SAFE" "")")
 denied "$out" && reason "$out" | grep -q 'diff for the real-platform check' \
   && ok "large diff: a PR with no base branch name denies" \
   || bad "large diff: a PR with no base branch name denies" "$out"
+
+# L6. DENY: a `-diff` attribute in the checkout must not hide an upload line. Without --text,
+#     git prints "Binary files ... differ" for the file, platform-scope.sh sees no +/- lines,
+#     and the platform check is skipped (security review, 2026-11-22). Same PR as L3.
+clear_stamps
+stamp "$LG_UP" "$(printf 'client/up.ts\n' | shasum | cut -c1-16)" clean code-reviewer
+printf 'client/up.ts -diff\n' > "$LG/repo/.gitattributes"
+out=$(mcp_payload 939 | run_lg FAKE_FILES="client/up.ts" FAKE_VIEW_JSON="$(lg_view "$LG_UP")" FAKE_RUN="")
+denied "$out" && reason "$out" | grep -q 'no completed E2E run' \
+  && ok "large diff: a -diff attribute does not hide an upload line from the real-platform check" \
+  || bad "large diff: a -diff attribute does not hide an upload line from the real-platform check" "$out"
+rm -f "$LG/repo/.gitattributes"
 clear_stamps
 rm -rf "$LG"
 
@@ -1883,7 +1895,8 @@ rm -rf "$LG"
 # 207 -> 219 (2026-11-01, harness N6 real-platform check): +12 = rows P1-P10 and P8b (P9 asserts twice).
 # 219 -> 220 (2026-11-01, harness N8 exemption note): +1 = stage 1's exemption names the todo/* route.
 # 221 -> 226 (2026-11-22, large-diff fallback): +5 = rows L1-L5 (the fixture control only reports on failure).
-EXPECTED_TOTAL=226
+# 226 -> 227 (2026-11-22, security review): +1 = row L6 (a -diff attribute must not hide an upload line).
+EXPECTED_TOTAL=227
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

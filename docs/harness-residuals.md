@@ -513,6 +513,13 @@ denying on any other gh error.
 local `git diff base...head` on `PullRequest.diff too_large` only, for both the platform check and
 the digest. It fetches `refs/pull/<n>/head` plus the base branch into `refs/merge-review-guard/`
 (deleted after use), refuses unless the fetched head is the PR's head sha, and pins diff
-prefixes/colour/ext-diff/textconv against user config. The per-file API was not used: its `patch`
+prefixes/colour/ext-diff/textconv against user config, plus `--text` so a `-diff`/`binary`
+attribute cannot collapse a file to "Binary files … differ" and hide its upload lines (security
+review, row L6). The per-file API was not used: its `patch`
 fields are truncated on large files, which would let an upload line slip past platform-scope.sh.
-Rows L1-L5 in `test-merge-review-guard.sh`; checked live against #1974 (allow, no refs left).
+Rows L1-L6 in `test-merge-review-guard.sh`; checked live against #1974 (allow, no refs left).
+
+Still open, reviewer side: the review-dispatch mod's `pr=<n>` form and
+`scripts/review-record-status.sh` read the file list with `gh pr diff --name-only`, which fails
+the same way on a too-large PR. Workaround: dispatch with `base=origin/<base>` (the mod then uses
+`git diff`), as #1974's review did. If reopened: give both the same local fallback.

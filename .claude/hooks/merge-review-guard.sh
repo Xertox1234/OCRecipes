@@ -646,7 +646,10 @@ BASE_REF=$(printf '%s' "$VIEW" | jq -r '.baseRefName // empty' 2>/dev/null)
 # fetched head IS $HEAD_SHA (the commit the review is bound to), then `git diff base...head` —
 # the same three-dot merge-base diff gh serves. Every other gh failure still returns non-zero,
 # and the callers deny. Prefixes, colour, external diff and textconv are pinned so user config
-# (diff.noprefix, diff.external) cannot change the shape platform-scope.sh and the digest parse.
+# (diff.noprefix, diff.external) cannot change the shape platform-scope.sh and the digest parse,
+# and --text keeps a `-diff`/`binary` attribute (.gitattributes, info/attributes or
+# core.attributesFile) from collapsing a file to "Binary files ... differ", which would hide its
+# upload and SDK lines from platform-scope.sh.
 # usage: pr_diff [--name-only]
 pr_diff() {
   local err out
@@ -663,7 +666,7 @@ pr_diff() {
        >/dev/null 2>&1 \
      && [ "$(git rev-parse -q --verify "$head_ref^{commit}" 2>/dev/null)" = "$HEAD_SHA" ]; then
     rc=0
-    git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv -M \
+    git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --text -M \
       --src-prefix=a/ --dst-prefix=b/ "$@" "$base_ref...$HEAD_SHA" 2>/dev/null || rc=1
   fi
   # The refs only pin the fetch; drop them so runs leave nothing behind in the user's repo.
