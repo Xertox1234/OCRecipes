@@ -68,7 +68,7 @@ describe("useCoachPhotoSend", () => {
       7,
       "short",
     );
-    expect(args.onSettled).toHaveBeenCalledWith(7, null);
+    expect(args.onSettled).toHaveBeenCalledWith(7, null, true);
     expect(result.current.isSendingPhoto).toBe(false);
   });
 
@@ -91,10 +91,11 @@ describe("useCoachPhotoSend", () => {
     );
     const { result, args } = setup();
     await choose(result, "Take Photo");
-    expect(args.onSettled).toHaveBeenCalledWith(7, {
-      atDailyLimit: true,
-      message: null,
-    });
+    expect(args.onSettled).toHaveBeenCalledWith(
+      7,
+      { atDailyLimit: true, message: null },
+      false,
+    );
     expect(result.current.isSendingPhoto).toBe(false);
   });
 
@@ -107,6 +108,46 @@ describe("useCoachPhotoSend", () => {
     expect(uploadPhotoToCoach).not.toHaveBeenCalled();
     expect(args.onSettled).not.toHaveBeenCalled();
     expect(result.current.isSendingPhoto).toBe(false);
+  });
+
+  // The host's own state moves on while the conversation is created: the
+  // brief flag must be the one from when the photo was picked.
+  it("reports the brief as sent even after the host drops the brief form", async () => {
+    vi.mocked(pickCoachPhoto).mockResolvedValue("file:///meal.jpg");
+    vi.mocked(uploadPhotoToCoach).mockResolvedValue(undefined);
+    const onSettled = vi.fn();
+    const base = {
+      disabled: false,
+      onStart: vi.fn(),
+      onSettled,
+      onPickFailure: vi.fn(),
+    };
+    let form: "full" | undefined = "full";
+    const hook = renderHook(() =>
+      useCoachPhotoSend({
+        ...base,
+        openingBriefForm: form,
+        ensureConversation: async () => {
+          form = undefined;
+          hook.rerender();
+          return 7;
+        },
+      }),
+    );
+    await choose(hook.result, "Take Photo");
+    expect(uploadPhotoToCoach).toHaveBeenCalledWith(
+      "file:///meal.jpg",
+      7,
+      "full",
+    );
+    expect(onSettled).toHaveBeenCalledWith(7, null, true);
+  });
+
+  it("does not open while another turn is starting", () => {
+    const { result } = setup({ canStart: () => false });
+    const alertSpy = vi.spyOn(Alert, "alert");
+    act(() => result.current.openPhotoChooser());
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 
   it("does not open while disabled", () => {

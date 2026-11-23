@@ -158,6 +158,23 @@ describe("buildPhotoFoodCard", () => {
     expect(result.skipped).toBe(0);
   });
 
+  it("looks up at most 12 foods however many the photo lists", async () => {
+    vi.mocked(analyzePhoto).mockResolvedValue({
+      foods: Array.from({ length: 30 }, (_, i) =>
+        food({ name: `food ${i}`, lookupName: `food ${i}` }),
+      ),
+      overallConfidence: 0.9,
+      followUpQuestions: [],
+    });
+    vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
+    const result = await buildPhotoFoodCard("BASE64", {
+      tz: "UTC",
+      now: new Date(),
+    });
+    expect(vi.mocked(batchNutritionLookup).mock.calls[0][0]).toHaveLength(12);
+    expect(result.skipped).toBe(30);
+  });
+
   it("returns no payload when no food has nutrition", async () => {
     vi.mocked(analyzePhoto).mockResolvedValue({
       foods: [],

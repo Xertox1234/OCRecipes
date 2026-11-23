@@ -619,8 +619,12 @@ export default function CoachChat({
   // A meal photo sent from the message box (Coach roadmap S1). The server
   // stores the turn and its reply (a food card) in one request, so there is
   // no stream: show the user's turn, upload, then refetch.
+  // True while a typed send is still creating its conversation: no rendered
+  // state shows that yet, and a photo started then would create a second one.
+  const startingTurnRef = useRef(false);
   const { openPhotoChooser, isSendingPhoto } = useCoachPhotoSend({
-    disabled: isStreaming,
+    disabled: isStreaming || isListening,
+    canStart: () => !startingTurnRef.current,
     openingBriefForm:
       !conversationId && openingBrief ? openingBrief.form : undefined,
     onPickFailure: (message) => toast.error(message),
@@ -634,6 +638,13 @@ export default function CoachChat({
       setStreamingError(null);
       setIsAtDailyLimit(false);
       ttsStop();
+      // The photo path has no stream to announce its start. Delayed so it is
+      // not lost under the camera or picker closing.
+      setTimeout(
+        () =>
+          AccessibilityInfo.announceForAccessibility("Looking at your photo"),
+        500,
+      );
     },
     ensureConversation: async () => {
       if (conversationId) return conversationId;
@@ -645,9 +656,8 @@ export default function CoachChat({
         return null;
       }
     },
-    onSettled: async (convId, failure) => {
+    onSettled: async (convId, failure, sentBrief) => {
       activeConvIdRef.current = convId;
-      const sentBrief = !conversationId && !!openingBrief;
       if (failure?.atDailyLimit) setIsAtDailyLimit(true);
       else if (failure?.message) setStreamingError(failure.message);
       // Refetch on failure too: the server may have stored the turn before
@@ -698,9 +708,11 @@ export default function CoachChat({
       // Only the send that creates the conversation carries the brief form.
       const briefForm = !convId && openingBrief ? openingBrief.form : undefined;
       if (!convId) {
+        startingTurnRef.current = true;
         try {
           convId = await onCreateConversation();
         } catch {
+          startingTurnRef.current = false;
           // The input was already cleared and the optimistic bubble was
           // already shown above — a bare catch here left the user with no
           // feedback and their typed message gone. Restore what they typed
@@ -715,6 +727,7 @@ export default function CoachChat({
         }
       }
 
+      startingTurnRef.current = false;
       activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
       const live = latestLiveWriteCard(writeCardLists);
@@ -1259,7 +1272,7 @@ export default function CoachChat({
           {isCoachPro ? (
             <CoachCameraButton
               onPress={openPhotoChooser}
-              disabled={isStreaming || isSendingPhoto}
+              disabled={isStreaming || isSendingPhoto || isListening}
             />
           ) : null}
           {hasVoice ? (

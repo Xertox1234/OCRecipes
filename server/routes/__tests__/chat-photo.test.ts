@@ -237,24 +237,31 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(res.status).toBe(400);
   });
 
-  it("429s when the daily photo analysis cap is spent, storing nothing", async () => {
+  it("answers in the chat, with no analysis, when the daily photo cap is spent", async () => {
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(false);
     const res = await post(app);
-    expect(res.status).toBe(429);
+    expect(res.status).toBe(201);
     expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
       "1",
       "photoAnalysis",
       expect.any(Number),
     );
-    expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
     expect(buildPhotoFoodCard).not.toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "1",
+      "assistant",
+      expect.stringMatching(/photo limit/i),
+      null,
+    );
   });
 
-  it("429s with DAILY_LIMIT_REACHED at the daily message limit, before analysis", async () => {
+  it("429s at the daily message limit without spending a photo credit", async () => {
     vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(null);
     const res = await post(app);
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+    expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
     expect(buildPhotoFoodCard).not.toHaveBeenCalled();
   });
 
@@ -276,9 +283,10 @@ describe("POST /api/chat/conversations/:id/photo", () => {
   it("saves no brief when none was shown, and rejects an unknown form", async () => {
     await post(app);
     expect(saveOpeningBrief).not.toHaveBeenCalled();
+    vi.mocked(storage.claimDailyAiCall).mockClear();
     const res = await post(app).send({ openingBrief: "<script>" });
     expect(res.status).toBe(400);
-    expect(storage.claimDailyAiCall).toHaveBeenCalledTimes(1);
+    expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
   });
 
   it("400s on a bad conversation id", async () => {

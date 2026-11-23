@@ -20,6 +20,7 @@ import type { FoodCardPayload } from "@shared/schemas/coach-write-cards";
 export { COACH_PHOTO_USER_TEXT } from "@shared/lib/coach-photo";
 
 const MAX_CARD_ITEMS = 8;
+const MAX_LOOKUP_FOODS = 12;
 const MAX_NAME = 200;
 const MAX_UNIT_LABEL = 60;
 
@@ -104,10 +105,15 @@ export async function buildPhotoFoodCard(
   ctx: { tz: string; now: Date },
 ): Promise<{ payload: FoodCardPayload | null; skipped: number }> {
   const analysis = await analyzePhoto(imageBase64, "log");
+  // Bounded before the lookups: a photo of a long food list would otherwise
+  // fan out to one paid lookup per name. A few spare past the card's 8 rows
+  // cover foods with no match.
+  const foods = analysis.foods.slice(0, MAX_LOOKUP_FOODS);
   const nutrition = await batchNutritionLookup([
-    ...new Set(analysis.foods.map(lookupKey)),
+    ...new Set(foods.map(lookupKey)),
   ]);
-  const { items, skipped } = photoFoodsToCardItems(analysis.foods, nutrition);
+  const { items, skipped: unshown } = photoFoodsToCardItems(foods, nutrition);
+  const skipped = unshown + (analysis.foods.length - foods.length);
   if (items.length === 0) return { payload: null, skipped };
   return {
     payload: {

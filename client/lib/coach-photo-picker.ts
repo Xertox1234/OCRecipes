@@ -15,7 +15,9 @@ const SOURCES = {
   library: {
     subject: "Photo Library",
     failure: "Couldn't open your photos. Please try again.",
-    request: () => ImagePicker.requestMediaLibraryPermissionsAsync(),
+    // The system photo picker needs no grant (as the app's other library
+    // pickers assume); asking first would lock out a user who once said no.
+    request: null,
     recheck: () => ImagePicker.getMediaLibraryPermissionsAsync(),
     launch: () =>
       ImagePicker.launchImageLibraryAsync({
@@ -50,10 +52,12 @@ export async function pickCoachPhoto(
   const s = SOURCES[source];
   let result: ImagePicker.ImagePickerResult;
   try {
-    const { status } = await s.request();
-    if (status !== "granted") {
-      showPermissionDenied(s.subject);
-      return null;
+    if (s.request) {
+      const { status } = await s.request();
+      if (status !== "granted") {
+        showPermissionDenied(s.subject);
+        return null;
+      }
     }
     result = await s.launch();
   } catch {

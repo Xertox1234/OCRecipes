@@ -40,11 +40,12 @@ describe("pickCoachPhoto", () => {
   });
 
   it("returns the photo chosen from the library", async () => {
-    vi.mocked(
-      ImagePicker.requestMediaLibraryPermissionsAsync,
-    ).mockResolvedValue(granted);
     vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue(picked);
     expect(await pickCoachPhoto("library", onFailure)).toBe("file:///meal.jpg");
+    // The system picker needs no grant; asking would lock out a past "no".
+    expect(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).not.toHaveBeenCalled();
     expect(ImagePicker.launchCameraAsync).not.toHaveBeenCalled();
   });
 

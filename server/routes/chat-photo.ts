@@ -19,9 +19,9 @@ import {
   checkAiSharing,
   parsePositiveIntParam,
   requireValidImage,
-  claimAiCallOrReject,
   formatZodError,
 } from "./_helpers";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { saveOpeningBrief } from "./chat-admit";
 import { photoRateLimit } from "./_rate-limiters";
 import { upload } from "./_upload";
@@ -38,6 +38,8 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const ANALYSIS_FAILED_TEXT =
   "I couldn't read that photo just now. Please try again in a moment.";
+const PHOTO_CAP_TEXT =
+  "You've reached today's photo limit. Tell me what you ate and I'll log it for you.";
 
 // The one non-file form field (server/routes/_upload.ts allows exactly one):
 // which opening brief the new chat showed, as on a typed first message.
@@ -109,18 +111,6 @@ export function register(app: Express): void {
         const imageBase64 = requireValidImage(req, res);
         if (!imageBase64) return;
 
-        // Same daily cap as the Scan screen's analysis; claimed after every
-        // cheap refusal and before anything is stored.
-        if (
-          !(await claimAiCallOrReject(
-            req,
-            res,
-            "photoAnalysis",
-            "photo analysis",
-          ))
-        )
-          return;
-
         if (fields.data.openingBrief) {
           await saveOpeningBrief(req, id, features, fields.data.openingBrief);
         }
@@ -158,20 +148,32 @@ export function register(app: Express): void {
         let text = ANALYSIS_FAILED_TEXT;
         let blocks: CoachBlock[] = [];
         try {
-          const { payload, skipped } = await buildPhotoFoodCard(imageBase64, {
-            tz,
-            now: new Date(),
-          });
-          const card = payload
-            ? await createWriteCardBlock(
-                photoCardProposal(payload),
-                { conversationId: id, userId: req.userId, tz },
-                payload,
-              )
-            : null;
-          if (card) blocks = [card];
-          // A card that could not be stored reads as "nothing to show".
-          text = photoReplyText(card ? payload!.items.length : 0, skipped);
+          // Same daily cap as the Scan screen's analysis, claimed last: a
+          // turn refused above (message limit) must not spend a photo credit.
+          const claimed = await storage.claimDailyAiCall(
+            req.userId,
+            "photoAnalysis",
+            AI_DAILY_CAPS.photoAnalysis,
+          );
+          if (!claimed) {
+            text = PHOTO_CAP_TEXT;
+          } else {
+            const { payload, skipped } = await buildPhotoFoodCard(imageBase64, {
+              tz,
+              now: new Date(),
+            });
+            const card = payload
+              ? await createWriteCardBlock(
+                  photoCardProposal(payload),
+                  { conversationId: id, userId: req.userId, tz },
+                  payload,
+                )
+              : null;
+            if (card) blocks = [card];
+            // A card that could not be stored reads as "nothing to show".
+            const shown = card ? (payload?.items.length ?? 0) : 0;
+            text = photoReplyText(shown, skipped);
+          }
         } catch (err) {
           logger.error({ err: toError(err) }, "coach photo analysis failed");
         }
