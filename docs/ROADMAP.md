@@ -108,6 +108,8 @@ Badge tier system (Newcomer → Platinum) displayed on ProfileScreen and via Ver
 
 See active brainstorms in `docs/brainstorms/` and plans in `docs/plans/` for upcoming work.
 
+**Coach chat:** the checklist toward a Coach that can run the whole app from the chat is [`COACH_ROADMAP.md`](./COACH_ROADMAP.md).
+
 ---
 
 ## Backlog
