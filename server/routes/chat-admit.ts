@@ -223,7 +223,7 @@ export async function admitTurn({
  * supplies assistant text. Only into an empty conversation; a failure is
  * logged and the user's message goes through without it.
  */
-async function saveOpeningBrief(
+export async function saveOpeningBrief(
   req: AuthenticatedRequest,
   conversationId: number,
   features: TurnFeatures,

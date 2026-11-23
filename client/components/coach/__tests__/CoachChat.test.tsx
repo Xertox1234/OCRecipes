@@ -43,6 +43,15 @@ const {
   mockToastError: vi.fn(),
 }));
 
+// The camera button's send path (picker, compression, upload); the real
+// modules load Expo's native runtime.
+vi.mock("@/hooks/useCoachPhotoSend", () => ({
+  useCoachPhotoSend: () => ({
+    openPhotoChooser: vi.fn(),
+    isSendingPhoto: false,
+  }),
+}));
+
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
     onError: (message: string, code?: string) => void;
@@ -152,7 +161,11 @@ const warmUpHook = {
 };
 
 function renderCoachChat(
-  overrides: { onMessageSent?: () => void; initialMessage?: string } = {},
+  overrides: {
+    onMessageSent?: () => void;
+    initialMessage?: string;
+    isCoachPro?: boolean;
+  } = {},
 ) {
   return renderComponent(
     <CoachChat
@@ -892,5 +905,18 @@ describe("CoachChat — 'Coach responded' announcement", () => {
   it("announces a dead-socket abort that kept partial text", () => {
     streamThenEnd(() => coachStreamRef.onDone?.("Here is half"));
     expect(announceSpy).toHaveBeenCalledWith("Here is half");
+  });
+});
+
+// Coach roadmap S1: the reply to a photo is a write card, which is Coach Pro's.
+describe("CoachChat — camera button", () => {
+  it("is in the message box for Coach Pro", () => {
+    renderCoachChat({ isCoachPro: true });
+    expect(screen.getByLabelText("Send a photo of your meal")).toBeDefined();
+  });
+
+  it("is absent on the free tier", () => {
+    renderCoachChat();
+    expect(screen.queryByLabelText("Send a photo of your meal")).toBeNull();
   });
 });

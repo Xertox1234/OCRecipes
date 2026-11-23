@@ -26,6 +26,9 @@ import { ChatBubble } from "@/components/ChatBubble";
 import { InlineError } from "@/components/InlineError";
 import { useTTS } from "@/hooks/useTTS";
 import CoachMicButton from "@/components/coach/CoachMicButton";
+import CoachCameraButton from "@/components/coach/CoachCameraButton";
+import { useCoachPhotoSend } from "@/hooks/useCoachPhotoSend";
+import { COACH_PHOTO_USER_TEXT } from "@shared/lib/coach-photo";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
 import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
@@ -613,13 +616,65 @@ export default function CoachChat({
     }
   }, [isListening, transcript, isCoachPro, warmUpHook, setInputText]);
 
+  // A meal photo sent from the message box (Coach roadmap S1). The server
+  // stores the turn and its reply (a food card) in one request, so there is
+  // no stream: show the user's turn, upload, then refetch.
+  const { openPhotoChooser, isSendingPhoto } = useCoachPhotoSend({
+    disabled: isStreaming,
+    openingBriefForm:
+      !conversationId && openingBrief ? openingBrief.form : undefined,
+    onPickFailure: (message) => toast.error(message),
+    onStart: () => {
+      turnEpochRef.current += 1;
+      followLatest();
+      setPendingSave(null);
+      setOptimisticAfter(lastSavedIdRef.current);
+      setOptimisticMessage(COACH_PHOTO_USER_TEXT);
+      setStreamBlocks([]);
+      setStreamingError(null);
+      setIsAtDailyLimit(false);
+      ttsStop();
+    },
+    ensureConversation: async () => {
+      if (conversationId) return conversationId;
+      try {
+        return await onCreateConversation();
+      } catch {
+        setOptimisticMessage(null);
+        setStreamingError("Couldn't start the conversation. Please try again.");
+        return null;
+      }
+    },
+    onSettled: async (convId, failure) => {
+      activeConvIdRef.current = convId;
+      const sentBrief = !conversationId && !!openingBrief;
+      if (failure?.atDailyLimit) setIsAtDailyLimit(true);
+      else if (failure?.message) setStreamingError(failure.message);
+      // Refetch on failure too: the server may have stored the turn before
+      // the response was lost.
+      const epoch = turnEpochRef.current;
+      await queryClient
+        .invalidateQueries({ queryKey: chatMessagesKey(convId) })
+        .catch(() => undefined);
+      if (turnEpochRef.current === epoch) setOptimisticMessage(null);
+      if (failure) return;
+      if (sentBrief) {
+        // The server saved the brief and cleared its reminders.
+        void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
+        void queryClient.invalidateQueries({ queryKey: COACH_BRIEF_KEY });
+      } else {
+        onMessageSent?.();
+      }
+    },
+  });
+
   const handleSend = useCallback(
     async (text?: string) => {
       // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
       const content = (
         typeof text === "string" ? text : inputTextRef.current
       ).trim();
-      if (!content || isStreaming) return;
+      if (!content || isStreaming || isSendingPhoto) return;
 
       // Only a tap or the return key buzzes. String callers (voice, quick
       // replies, retry, suggestion hand-off) get feedback from their trigger.
@@ -687,6 +742,7 @@ export default function CoachChat({
       // transitively depends on it: handleRetry, handleBlockAction,
       // handleQuickReply, renderItem) stays stable across keystrokes.
       isStreaming,
+      isSendingPhoto,
       conversationId,
       onCreateConversation,
       warmUpHook,
@@ -1098,11 +1154,11 @@ export default function CoachChat({
 
   const streamingFooter = useMemo(
     () =>
-      showLiveReply || streamBlocks.length > 0 ? (
+      showLiveReply || isSendingPhoto || streamBlocks.length > 0 ? (
         <StreamingBubble
           streamingContent={streamingContent}
-          statusText={statusText}
-          isStreaming={showLiveReply}
+          statusText={isSendingPhoto ? "Looking at your photo..." : statusText}
+          isStreaming={showLiveReply || isSendingPhoto}
           streamBlocks={lockedStreamBlocks}
           writeCardEdits={writeCardEdits}
           onWriteCardEdit={handleWriteCardEdit}
@@ -1116,6 +1172,7 @@ export default function CoachChat({
       ) : null,
     [
       showLiveReply,
+      isSendingPhoto,
       streamingContent,
       statusText,
       streamBlocks,
@@ -1193,16 +1250,37 @@ export default function CoachChat({
     [isCoachPro, warmUpHook, setInputText],
   );
 
+  // Shown while the input is empty; the send button takes their place on
+  // the first keystroke. The camera is Coach Pro's: its reply is a write card.
   const micAdornment = useMemo(
     () =>
-      hasVoice ? (
-        <CoachMicButton
-          isListening={isListening}
-          volume={volume}
-          onPress={handleMicPress}
-        />
+      hasVoice || isCoachPro ? (
+        <View style={styles.adornments}>
+          {isCoachPro ? (
+            <CoachCameraButton
+              onPress={openPhotoChooser}
+              disabled={isStreaming || isSendingPhoto}
+            />
+          ) : null}
+          {hasVoice ? (
+            <CoachMicButton
+              isListening={isListening}
+              volume={volume}
+              onPress={handleMicPress}
+            />
+          ) : null}
+        </View>
       ) : null,
-    [hasVoice, isListening, volume, handleMicPress],
+    [
+      hasVoice,
+      isCoachPro,
+      isListening,
+      volume,
+      handleMicPress,
+      openPhotoChooser,
+      isStreaming,
+      isSendingPhoto,
+    ],
   );
 
   const prevIsAtDailyLimitRef = useRef(false);
@@ -1271,7 +1349,7 @@ export default function CoachChat({
       inputText={inputText}
       onChangeText={handleChangeText}
       onSend={handleSend}
-      isStreaming={isStreaming}
+      isStreaming={isStreaming || isSendingPhoto}
       inputAdornment={micAdornment}
       // Multiline like RecipeChef and the Coach overlay: iOS offered no Paste
       // in the single-line input's long-press menu (user report 2026-09-30).
@@ -1321,6 +1399,7 @@ export default function CoachChat({
 }
 
 const styles = StyleSheet.create({
+  adornments: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   messageList: { flex: 1 },
   messageContent: { padding: Spacing.md, paddingBottom: Spacing.lg },
   historyError: {

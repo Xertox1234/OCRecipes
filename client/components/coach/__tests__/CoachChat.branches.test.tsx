@@ -88,6 +88,15 @@ const state = vi.hoisted(() => ({
   addFavourite: vi.fn(),
 }));
 
+// The camera button's send path (picker, compression, upload); the real
+// modules load Expo's native runtime.
+vi.mock("@/hooks/useCoachPhotoSend", () => ({
+  useCoachPhotoSend: () => ({
+    openPhotoChooser: vi.fn(),
+    isSendingPhoto: false,
+  }),
+}));
+
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
     onDone: (fullText: string, blocks?: unknown[]) => void;

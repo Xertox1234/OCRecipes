@@ -8,6 +8,7 @@ import {
 } from "./query-client";
 import { ApiError } from "./api-error";
 import { compressImage, cleanupImage } from "./image-compression";
+import { getDeviceTimezone } from "./timezone";
 import type { PhotoIntent, FoodCategory } from "@shared/constants/preparation";
 import type {
   PhotoIntentOrAuto,
@@ -173,6 +174,53 @@ export async function uploadPhotoForAnalysis(
     }
   } finally {
     // Clean up compressed image
+    if (compressedUri) {
+      await cleanupImage(compressedUri);
+    }
+  }
+}
+
+/**
+ * Send a meal photo into a Coach conversation (Coach roadmap S1). The server
+ * stores the turn and the Coach's reply (a food log card); the caller then
+ * refetches the conversation's messages. Rejects with an `ApiError` whose
+ * `code` is the server's (e.g. DAILY_LIMIT_REACHED).
+ */
+export async function uploadPhotoToCoach(
+  uri: string,
+  conversationId: number,
+  /** Set on the send that opens a new chat which showed the opening brief. */
+  openingBrief?: "full" | "short",
+): Promise<void> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  let compressedUri: string | null = null;
+  try {
+    const compressed = await compressImage(uri);
+    compressedUri = compressed.uri;
+    const uploadResult = await uploadAsync(
+      `${getApiUrl()}/api/chat/conversations/${conversationId}/photo`,
+      compressedUri,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystemUploadType.MULTIPART,
+        fieldName: "photo",
+        // Form-field limit: MULTIPART_LIMITS.fields (server/routes/_upload.ts)
+        ...(openingBrief && { parameters: { openingBrief } }),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // The card's meal (breakfast, lunch…) is set from the user's clock.
+          "X-Timezone": getDeviceTimezone(),
+        },
+      },
+    );
+    if (uploadResult.status < 200 || uploadResult.status >= 300) {
+      throw await uploadError(uploadResult.status, uploadResult.body, token);
+    }
+  } finally {
     if (compressedUri) {
       await cleanupImage(compressedUri);
     }

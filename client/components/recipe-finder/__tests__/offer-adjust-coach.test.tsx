@@ -12,6 +12,15 @@ const { chat } = vi.hoisted(() => ({
   chat: { messages: [] as unknown[], startStream: vi.fn() },
 }));
 
+// The camera button's send path (picker, compression, upload); the real
+// modules load Expo's native runtime.
+vi.mock("@/hooks/useCoachPhotoSend", () => ({
+  useCoachPhotoSend: () => ({
+    openPhotoChooser: vi.fn(),
+    isSendingPhoto: false,
+  }),
+}));
+
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: () => ({
     startStream: chat.startStream,
