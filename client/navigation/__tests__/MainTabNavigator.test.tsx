@@ -449,6 +449,37 @@ describe("MainTabNavigator — Coach reply ready toast", () => {
     }
   });
 
+  // While the plan is loading the route assumes Coach Pro. A toast raised
+  // then can be tapped after the plan resolves to free: Open must use the
+  // plan as it is at the tap, not as it was when the toast was raised.
+  it("tapping Open uses the plan as it is at the tap, not when the toast was raised", async () => {
+    mockShowsCoachPro.value = true;
+    try {
+      const { queryClient, rerender } = renderWithClient();
+      act(() => {
+        noteCoachReplyFinished(queryClient, 5);
+      });
+      await settle();
+
+      mockShowsCoachPro.value = false;
+      rerender(<MainTabNavigator />);
+      await settle();
+      openAction().onPress();
+
+      expect(mockNavigationRef.navigate).toHaveBeenCalledOnce();
+      expect(mockNavigationRef.navigate).toHaveBeenCalledWith(
+        "Main",
+        {
+          screen: "CoachTab",
+          params: { screen: "Chat", params: { conversationId: 5 }, pop: true },
+        },
+        { pop: true },
+      );
+    } finally {
+      mockShowsCoachPro.value = false;
+    }
+  });
+
   // A mocked navigationRef cannot tell "return to the existing Main" from
   // "push a second Main": both are one navigate() call. So run the exact
   // arguments the tap produced through the REAL root StackRouter (a pure

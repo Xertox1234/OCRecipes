@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
@@ -112,10 +112,14 @@ function AnimatedTabIcon({
  */
 function CoachReplyToastBridge(): null {
   const toast = useToast();
-  // Read when the toast is made. If the plan resolves to Coach Pro while the
-  // toast is still up and Open lands on Chat, ChatScreen hands over to
-  // CoachPro itself.
+  // Read when Open is tapped, not when the toast was raised: a toast raised
+  // while the plan is loading (which routes as Coach Pro) can be tapped after
+  // the plan resolves to free.
   const showCoachPro = useShowsCoachPro();
+  const showCoachProRef = useRef(showCoachPro);
+  useEffect(() => {
+    showCoachProRef.current = showCoachPro;
+  }, [showCoachPro]);
 
   useEffect(
     () =>
@@ -123,11 +127,12 @@ function CoachReplyToastBridge(): null {
         toast.info("Coach replied — tap to open", {
           action: {
             label: "Open",
-            onPress: () => openCoachConversation(conversationId, showCoachPro),
+            onPress: () =>
+              openCoachConversation(conversationId, showCoachProRef.current),
           },
         });
       }),
-    [toast, showCoachPro],
+    [toast],
   );
 
   return null;
