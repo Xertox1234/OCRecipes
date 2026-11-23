@@ -1,6 +1,6 @@
 ---
 title: "Nutrition OCR parser drops a 9 g saturated or trans fat read through a spaced g→9 unit"
-status: backlog
+status: done
 priority: low
 created: 2026-11-23
 updated: 2026-11-23
@@ -31,10 +31,10 @@ The field is lost, not misread, so nothing wrong reaches the food log; the cost 
 
 ## Acceptance Criteria
 
-- [ ] `"Total Fat 12g\nSaturated Fat 9 9"` parses `saturatedFat` to 9, outside `directReads`
-- [ ] `"Total Fat 12g\nTrans Fat 9 9"` parses `transFat` to 9, outside `directReads`
-- [ ] `isDroppedSubFatNine` and its use in property C1 are removed, and C1 passes without it
-- [ ] The existing example suite passes unchanged
+- [x] `"Total Fat 12g\nSaturated Fat 9 9"` parses `saturatedFat` to 9, outside `directReads`
+- [x] `"Total Fat 12g\nTrans Fat 9 9"` parses `transFat` to 9, outside `directReads`
+- [x] `isDroppedSubFatNine` and its use in property C1 are removed, and C1 passes without it
+- [x] The existing example suite passes unchanged
 
 ## Implementation Notes
 
@@ -61,3 +61,5 @@ A related, more serious defect in the same patterns was reported to the owner on
 ### 2026-11-23
 
 - Initial creation
+- Fixed on branch `claude/nutrition-ocr-name-one-line` together with the cross-line name defect (owner ruling 2026-11-23: one separate PR for both). The bare `saturated` / `trans` forms now refuse a following `Fat`, so the two-word branch takes the line.
+- Criterion 2 is covered by property C1 (no Daily Value) and by the example `"Total Fat 12g\nTrans Fat 9 9 0%"`.

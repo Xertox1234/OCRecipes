@@ -18,13 +18,13 @@
  *   B1 round-trip   the parse equals the label: all ten values, the serving
  *                   text, confidence 1, all ten fields in directReads.
  *   B2 noise        badge lines and bare number lines inserted anywhere in the
- *                   panel change nothing (one known gap: nameSpansTwoLines).
+ *                   panel change nothing.
  *                   The lines are the ones the parser's comments record from
  *                   device captures ("GLUTEN FREE", "LOW SODIUM", "15", …).
  *
  * LAYER C — the same label with the recogniser's g -> 9 substitution applied
  *   C1 spaced       "12 9": the value is still the label's, but the field is
- *                   NOT in directReads. (One known drop: isDroppedSubFatNine.)
+ *                   NOT in directReads.
  *   C2 glued        "129": the field is null or the label's value, never
  *                   anything else, and NOT in directReads.
  *   C3 mixed        any mix of clean, spaced and glued units, with a % Daily
@@ -389,6 +389,14 @@ const NOISE_LINES = [
   "SANS GLUTEN",
   "NO TRANSFAT",
   "SANS GRASTRANS",
+  // Lines ENDING in the first word of a two-word field name. Directly above a
+  // bare "Fat …" line they once spelled "trans fat" / "saturated fat" across
+  // the line break and handed that field total fat's value.
+  "SANS GRAS TRANS",
+  "NO TRANS",
+  "LOW IN SATURATED",
+  "TOTAL",
+  "DIETARY",
   "LOW SODIUM",
   "REDUCED CALORIES",
   "Amount per serving",
@@ -412,33 +420,6 @@ function withNoise(
     out.splice(at % (out.length + 1), 0, line);
   }
   return out;
-}
-
-// KNOWN DEFECT (found by B2, 2026-11-23; not fixed here). The two-word names
-// are matched with `\s+` between the words, which crosses a newline, so a line
-// ENDING in "trans" or "saturated" directly above a bare "Fat …" line spells
-// the name across the two: "SANS GRASTRANS\nFat / Lipides 44g" reads
-// transFat = 44 as a direct read. B2 leaves that adjacency out of its noise
-// until the parser holds a name to one line; drop this guard when it does.
-function nameSpansTwoLines(lines: readonly string[]): boolean {
-  return lines.some(
-    (line, i) =>
-      /(?:trans|saturated)$/i.test(line) && /^fat\b/i.test(lines[i + 1] ?? ""),
-  );
-}
-
-// KNOWN DEFECT (found by C1, 2026-11-23; not fixed here — see
-// todos/P3-2026-11-23-nutrition-ocr-us-sub-fat-nine-dropped.md). On a US panel
-// "Saturated Fat 9 9" and "Trans Fat 9 9" parse to null: the bare-name branch
-// starts one character earlier (at the newline), takes the word "Fat" as the
-// value and the first "9" as its unit. The field is lost, not misread, so C1
-// lets exactly this case come back null and still rejects any other value.
-function isDroppedSubFatNine(panel: Panel, key: NumericField): boolean {
-  return (
-    panel.style === "us" &&
-    (key === "saturatedFat" || key === "transFat") &&
-    panel.label[key] === 9
-  );
 }
 
 describe("parseNutritionFromOCR properties", () => {
@@ -552,7 +533,6 @@ describe("parseNutritionFromOCR properties", () => {
         fc.property(panelArb(cleanFormatsArb), noiseArb, (panel, noise) => {
           const lines = renderLines(panel);
           const noisy = withNoise(lines, noise);
-          fc.pre(!nameSpansTwoLines(noisy));
           expect(parseNutritionFromOCR(noisy.join("\n"))).toEqual(
             parseNutritionFromOCR(lines.join("\n")),
           );
@@ -567,12 +547,7 @@ describe("parseNutritionFromOCR properties", () => {
       fc.assert(
         fc.property(panelArb(gramFormatsArb(["spaced9"], ANY_DVS)), (panel) => {
           const result = parseNutritionFromOCR(renderLines(panel).join("\n"));
-          for (const key of NUMERIC_FIELDS) {
-            if (result[key] === null && isDroppedSubFatNine(panel, key)) {
-              continue;
-            }
-            expect(result[key]).toBe(panel.label[key]);
-          }
+          expect(numbersOf(result)).toEqual(panel.label);
           for (const key of GRAM_FIELDS) {
             expect(result.directReads).not.toContain(key);
           }
