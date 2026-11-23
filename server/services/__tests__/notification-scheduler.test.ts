@@ -359,6 +359,32 @@ describe("startNotificationScheduler", () => {
     errorSpy.mockRestore();
   });
 
+  // noOverlap drops a tick while the previous run is still going. node-cron
+  // reports that as execution:overlap, not execution:missed.
+  it("logs an error naming the job when a tick is dropped because the last run is still going", () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    startNotificationScheduler();
+
+    const results = vi.mocked(cron.schedule).mock.results;
+    const names = vi.mocked(cron.schedule).mock.calls.map((c) => c[2]?.name);
+    results.forEach((result, i) => {
+      const on = vi.mocked(
+        (result.value as ReturnType<typeof cron.schedule>).on,
+      );
+      const overlap = on.mock.calls.find((c) => c[0] === "execution:overlap");
+      expect(overlap).toBeDefined();
+      errorSpy.mockClear();
+      (overlap![1] as unknown as (ctx: { date: Date }) => void)({
+        date: new Date("2026-11-15T19:00:00Z"),
+      });
+      expect(errorSpy).toHaveBeenCalledWith(
+        { jobName: names[i], skippedSlot: "2026-11-15T19:00:00.000Z" },
+        expect.stringContaining("still running"),
+      );
+    });
+    errorSpy.mockRestore();
+  });
+
   it("pins every job to UTC and forbids overlapping runs (N5)", () => {
     startNotificationScheduler();
 
@@ -995,6 +1021,34 @@ describe("weekly report schedule", () => {
         .mockResolvedValueOnce([]);
       vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
       vi.mocked(generateWeeklyReportForUser).mockResolvedValue("exists");
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)).toEqual([]);
+      expect(withMessage(error, ALL_FAILED)).toEqual([]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    // Plan and setting are checked before "already has one", so a free or
+    // report-off user comes back skipped on every tick of the window.
+    it("stays quiet in a catch-up hour when the rest are skipped for their plan or setting", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["has-one", "free", "off"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      const outcome: Record<string, string> = {
+        "has-one": "exists",
+        free: "skipped-not-pro",
+        off: "skipped-disabled",
+      };
+      vi.mocked(generateWeeklyReportForUser).mockImplementation(
+        async (userId) =>
+          outcome[userId] as Awaited<
+            ReturnType<typeof generateWeeklyReportForUser>
+          >,
+      );
 
       await runWeeklyReports(now);
 

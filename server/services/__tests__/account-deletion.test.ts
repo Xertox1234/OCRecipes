@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { logger } from "../../lib/logger";
 
 const calls: string[] = [];
 
@@ -112,6 +113,30 @@ describe("deleteAccount", () => {
     await expect(
       deleteAccount({ id: "u1", avatarUrl: "a" }, { awaitCleanup: true }),
     ).resolves.toEqual({ cleanupFailures: 2 });
+  });
+
+  // The script tells the operator "the log above has the errors". The rows
+  // naming these pictures are already gone, so the log is the only place left
+  // that says WHICH pictures were left behind.
+  it("logs every picture that was not deleted, with its url and kind", async () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    storage.filterUnreferencedImageUrls.mockResolvedValue(ownedImages);
+    deleteImage.mockImplementation(async (url: string | null) => {
+      if (url !== "a") throw new Error("r2 down");
+    });
+
+    await expect(
+      deleteAccount({ id: "u1", avatarUrl: "a" }, { awaitCleanup: true }),
+    ).resolves.toEqual({ cleanupFailures: 2 });
+
+    const logged = errorSpy.mock.calls
+      .map((c) => c[0] as { url?: string; kind?: string })
+      .filter((o) => o.url !== undefined);
+    expect(logged.map((o) => [o.url, o.kind])).toEqual([
+      ["https://cdn/x/recipe.jpg", "recipe"],
+      ["https://cdn/x/shared.jpg", "recipe"],
+    ]);
+    errorSpy.mockRestore();
   });
 
   it("a waited deletion with every image removed reports no failures", async () => {

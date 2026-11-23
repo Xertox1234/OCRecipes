@@ -415,8 +415,11 @@ export async function runWeeklyReports(now: Date): Promise<void> {
       "notification-scheduler: failed to page users for weekly report",
     );
   }
-  // A catch-up hour where everyone already has the report says nothing.
-  if (counts.inWindow > counts.exists) {
+  // A tick that wrote nothing and failed nothing says nothing: a catch-up
+  // hour where everyone already has the report or is skipped for their plan
+  // or setting (those are checked before "already has one", so they recur on
+  // every tick of the window).
+  if (counts.created + counts.failed > 0) {
     logger.info(counts, "notification-scheduler: weekly report run");
     // Users skipped for their plan or setting, or already done, were not tried.
     const tried =
@@ -504,7 +507,11 @@ let localHourTask: ReturnType<typeof cron.schedule> | null = null;
  */
 const MISSED_EXECUTION_TOLERANCE_MS = 5 * 60_000;
 
-/** A tick later than the tolerance is dropped by node-cron: make it loud. */
+/**
+ * node-cron drops a tick in two ways, and neither is retried: make both loud.
+ * `execution:missed` is a tick later than the tolerance; `execution:overlap`
+ * is a tick `noOverlap` blocked because the previous run was still going.
+ */
 function logMissedExecutions(
   task: ReturnType<typeof cron.schedule>,
   jobName: string,
@@ -513,6 +520,12 @@ function logMissedExecutions(
     logger.error(
       { jobName, missedSlot: ctx.date.toISOString() },
       "notification-scheduler: missed a scheduled run",
+    );
+  });
+  task.on("execution:overlap", (ctx) => {
+    logger.error(
+      { jobName, skippedSlot: ctx.date.toISOString() },
+      "notification-scheduler: skipped a scheduled run, the previous one was still running",
     );
   });
 }
