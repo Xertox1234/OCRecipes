@@ -1,5 +1,7 @@
 # TOTP Second Factor (Part 1) Implementation Plan
 
+> **STATUS: SUPERSEDED — do not implement or re-propose.** Authenticator apps, recovery codes and the rest of this design were removed after it shipped. Two-step is optional and by emailed code only. See `docs/OWNER_RULINGS.md` → Auth (2026-10-12).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let an account with a password turn on an authenticator-app second factor (with recovery codes and 90-day trusted phones), required on every PASSWORD proof of identity, never on a Google/Apple proof.

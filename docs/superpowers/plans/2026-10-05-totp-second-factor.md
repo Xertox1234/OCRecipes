@@ -1,5 +1,7 @@
 # Authenticator-App Second Factor (TOTP) Implementation Plan
 
+> **STATUS: SUPERSEDED — do not implement or re-propose.** Replaced by `2026-10-10-totp-second-factor.md`, which was itself overruled: authenticator apps and recovery codes were removed. Two-step is optional and by emailed code only. See `docs/OWNER_RULINGS.md` → Auth (2026-10-12).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let any account turn on a second factor (a 6-digit code from an authenticator app, with one-time recovery codes), and require it before ANY session is issued: password login, Google/Apple sign-in, and linking a provider to an existing account.

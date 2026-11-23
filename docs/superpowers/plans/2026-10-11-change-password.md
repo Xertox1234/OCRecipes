@@ -1,5 +1,7 @@
 # Change Password (signed in) Implementation Plan
 
+> **STATUS: PARTLY SUPERSEDED.** The password rule in this plan (15 characters, or 8 with two-step) was overruled: the minimum is 8 for everyone. Read the current code for the rule, not this plan. See `docs/OWNER_RULINGS.md` → Auth (2026-10-12).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A signed-in person can set a new password by proving who they are with their current password, a fresh Google/Apple confirmation, or a code emailed to them — and a stranger who knows only their email cannot block it.
@@ -477,13 +479,11 @@ async function seed() {
       resetCodeExpiresAt: sql`now() + interval '10 minutes'`,
     })
     .where(eq(users.id, user.id));
-  await tx
-    .insert(mfaTrustedDevices)
-    .values({
-      userId: user.id,
-      keyHash: `k-${user.id}`,
-      expiresAt: sql`now() + interval '30 days'`,
-    });
+  await tx.insert(mfaTrustedDevices).values({
+    userId: user.id,
+    keyHash: `k-${user.id}`,
+    expiresAt: sql`now() + interval '30 days'`,
+  });
   return user;
 }
 
