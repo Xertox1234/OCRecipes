@@ -27,6 +27,15 @@ const { captured } = vi.hoisted(() => ({
   captured: {} as Record<string, Record<string, unknown>>,
 }));
 
+// The Coach camera button's send path (picker, compression, upload); the
+// real modules load Expo's native runtime.
+vi.mock("@/hooks/useCoachPhotoSend", () => ({
+  useCoachPhotoSend: () => ({
+    openPhotoChooser: vi.fn(),
+    isSendingPhoto: false,
+  }),
+}));
+
 vi.mock("@/hooks/usePurchase", () => ({
   usePurchase: () => ({
     state: { status: "idle" },
