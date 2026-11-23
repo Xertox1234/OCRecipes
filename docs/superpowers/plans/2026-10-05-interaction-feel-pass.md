@@ -1,5 +1,7 @@
 # Interaction-Feel Pass — Plan & Checklist
 
+> **STATUS: COMPLETED — history, not instructions.** All 33 checklist items below are ticked. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 **Origin:** 2026-10-05 read-only interaction-feel audit (4 `mobile-reviewer` slices: scan→log, Home/Plan, Coach/chat, Profile/forms) against the inventory in `.claude/skills/interaction-feel/SKILL.md`. User complaint: "UI interactions are flat and unexciting."
 
 **Diagnosis:** the motion/haptics infrastructure exists (`client/constants/animations.ts`, `client/hooks/useHaptics.ts`, `useSuccessPop` in `client/hooks/useSuccessAnimation.ts`, reduced-motion gating) — screens just don't use it. Fix by **extending shared primitives first**, then adopting at call sites.

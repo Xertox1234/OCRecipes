@@ -1,5 +1,9 @@
 # External Drive (U34Bolt) Implementation Plan
 
+> **STATUS: LOCAL MACHINE SETUP — history, not instructions.** This plan configures the owner's Mac and external drive. The repo part is on `main`; the rest can't be checked from the repo. Don't act on it in a cloud session.
+
+> References below to memory files (names like `project_*.md`, `feedback_*`, `reference_*`, `user_*`) point at the owner's local agent memory, which cloud sessions can't read. Lasting decisions from it are in `docs/OWNER_RULINGS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Free ~46 GB of internal disk and keep it free by moving OCRecipes build output, ad-hoc worktrees and laptop-wide caches onto the U34Bolt SSD, with every redirect safe when the drive is unplugged.

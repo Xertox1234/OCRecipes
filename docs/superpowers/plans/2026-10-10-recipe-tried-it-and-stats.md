@@ -1,5 +1,7 @@
 # Recipe "I tried it" + Community Stats Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let users mark a public community recipe "I tried it" from a sticky bottom bar, and show a small "Community" stats section (Tried it · Favourited · Community variants) near the bottom of the recipe, with a list screen of public remixes.

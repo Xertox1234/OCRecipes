@@ -1,5 +1,7 @@
 # Session Coordination v2 Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add WIP checkpoints before risky actions, per-agent same-run visibility, Bash-write coverage, and a collision `ask` prompt to the existing pg-lab session-coordination layer.

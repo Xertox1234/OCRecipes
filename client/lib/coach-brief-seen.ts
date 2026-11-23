@@ -5,8 +5,9 @@ import { logger } from "@/lib/logger";
  * The last local date (YYYY-MM-DD) a full Coach opening brief was shown on
  * this device. It decides whether opening the Coach tab is the first visit
  * of the day (open a fresh chat with the brief) and whether a later new chat
- * gets the short form. A device display memory, like the theme: losing it
- * only means one extra full brief.
+ * gets the short form. Losing it only means one extra full brief. It is
+ * cleared at sign-out (clearBriefSeen), so the next account on this phone
+ * gets its own first full brief of the day.
  */
 export const COACH_BRIEF_SEEN_KEY = "@ocrecipes/coach_brief_seen_date";
 
@@ -38,4 +39,18 @@ export function markBriefSeen(localDate: string): void {
   AsyncStorage.setItem(COACH_BRIEF_SEEN_KEY, localDate).catch((err: unknown) =>
     logger.warn("Failed to save the Coach brief date", err),
   );
+}
+
+/**
+ * Forgets the date, in memory and on disk — part of the sign-out wipe
+ * (clearDurableLocalState). Never throws; false when the disk clear failed.
+ */
+export async function clearBriefSeen(): Promise<boolean> {
+  cache = null;
+  try {
+    await AsyncStorage.removeItem(COACH_BRIEF_SEEN_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }

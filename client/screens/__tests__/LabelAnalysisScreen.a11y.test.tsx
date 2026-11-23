@@ -211,6 +211,22 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
         container.querySelectorAll('[data-icon="alert-circle"]').length,
       ).toBe(1);
     });
+
+    it("treats a 200 response with no label data as a failed upload, not a crash", async () => {
+      mockRoute.params = {
+        imageUri: IMAGE_URI,
+        barcode: BARCODE,
+        localOCRText: LOCAL_OCR_TEXT,
+      };
+      // uploadLabelForAnalysis only casts the parsed body, so a malformed 200
+      // reaches the hook. Comparing the preview against a missing result
+      // throws; that has to stay inside the upload's try/catch.
+      mockUpload.mockResolvedValue({ sessionId: "session-1" });
+
+      renderComponent(<LabelAnalysisScreen />);
+
+      expect(await screen.findByText("Retry Analysis")).toBeTruthy();
+    });
   });
 
   describe("verification result", () => {

@@ -130,7 +130,7 @@ export interface DeleteAccountDeps {
   deleteAccount: (
     user: FoundAccount,
     options: { awaitCleanup: boolean },
-  ) => Promise<void>;
+  ) => Promise<{ cleanupFailures: number }>;
   /** What a deletion run here would leave behind; empty when nothing. */
   cleanupGaps: () => string[];
   print: (line: string) => void;
@@ -200,10 +200,21 @@ export async function runDeleteAccount(
     return 1;
   }
 
-  await deps.deleteAccount(account, { awaitCleanup: true });
+  const { cleanupFailures } = await deps.deleteAccount(account, {
+    awaitCleanup: true,
+  });
   deps.print("");
   deps.print(`Deleted account ${account.id}.`);
   if (gaps.length > 0) printGaps("Left behind:");
+  if (cleanupFailures > 0) {
+    // The account is gone either way; the exit code says the job is not done.
+    deps.print("");
+    deps.print(
+      `${cleanupFailures} stored-picture cleanup step${cleanupFailures === 1 ? "" : "s"} failed: ` +
+        "pictures were left in storage. The log above has the errors.",
+    );
+    return 2;
+  }
   return 0;
 }
 

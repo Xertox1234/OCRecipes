@@ -953,6 +953,60 @@ describe("fields must not assemble themselves across lines", () => {
     expect(parseNutritionFromOCR("Total Fat 5 Gras").totalFat).toBeNull();
   });
 
+  it("does not spell a two-word field name across a line break", () => {
+    // Found by property B2 (2026-11-23). A badge line ENDING in the first word
+    // of a name, directly above a bare "Fat …" line, read as that name and
+    // took total fat's value — as a direct read, which for saturated fat is
+    // what may condemn a database record.
+    const saturated = parseNutritionFromOCR(
+      "LOW IN SATURATED\nFat / Lipides 11 g\nSaturated / saturés 1 g",
+    );
+    expect(saturated.totalFat).toBe(11);
+    expect(saturated.saturatedFat).toBe(1);
+
+    const trans = parseNutritionFromOCR(
+      "SANS GRAS TRANS\nFat / Lipides 11 g\n+ Trans / trans 0 g",
+    );
+    expect(trans.totalFat).toBe(11);
+    expect(trans.transFat).toBe(0);
+
+    expect(parseNutritionFromOCR("NO TRANS\nFat 8g").transFat).toBeNull();
+    expect(
+      parseNutritionFromOCR("LOW IN SATURATED\nFat 8g").saturatedFat,
+    ).toBeNull();
+  });
+
+  it("gives up a sub-fat name the recogniser split over two lines", () => {
+    // The price of the rule above: this used to read 3, but only by taking
+    // whatever followed "Fat" on the next line.
+    expect(parseNutritionFromOCR("Saturated\nFat 3g").saturatedFat).toBeNull();
+    // The other two-word names lose nothing: their second word is a bare form
+    // of the same field.
+    expect(parseNutritionFromOCR("Total\nFat 8g").totalFat).toBe(8);
+    expect(parseNutritionFromOCR("Dietary\nFibre 4 g").dietaryFiber).toBe(4);
+  });
+
+  it("still joins a name's words across a non-breaking space", () => {
+    expect(parseNutritionFromOCR("Total\u00a0Fat 8g").totalFat).toBe(8);
+    expect(
+      parseNutritionFromOCR("Total Fat 8g\nSaturated\u00a0Fat 3g").saturatedFat,
+    ).toBe(3);
+  });
+
+  it("does not take the word Fat as a sub-fat line's value", () => {
+    // Found by property C1 (2026-11-23). The bare "Saturated" / "Trans" branch
+    // starts at the newline, one character before the two-word branch can, so
+    // it won the match, captured "Fat" as the value and the first "9" as a
+    // substituted unit — and a 9 g reading was dropped.
+    const saturated = parseNutritionFromOCR("Total Fat 12g\nSaturated Fat 9 9");
+    expect(saturated.saturatedFat).toBe(9);
+    expect(saturated.directReads).not.toContain("saturatedFat");
+
+    const trans = parseNutritionFromOCR("Total Fat 12g\nTrans Fat 9 9 0%");
+    expect(trans.transFat).toBe(9);
+    expect(trans.directReads).not.toContain("transFat");
+  });
+
   it("still reads every legitimate same-line form", () => {
     // The guard must not cost recall on real labels.
     expect(parseNutritionFromOCR("Total Fat 12g").totalFat).toBe(12);

@@ -6,6 +6,8 @@ import {
   getLogButtonPresentation,
   scaleByServings,
   labelLogErrorMessage,
+  labelSessionReducer,
+  initialLabelSessionState,
 } from "../label-analysis-utils";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { LabelExtractionResult } from "@/lib/photo-upload";
@@ -270,5 +272,196 @@ describe("labelLogErrorMessage", () => {
     expect(labelLogErrorMessage(undefined)).toBe(
       "Couldn't log this item. Please try again.",
     );
+  });
+});
+
+describe("labelSessionReducer", () => {
+  const ai = { ...baseLabelData, calories: 400 };
+  const sameAi = { ...baseLabelData };
+
+  it("starts analyzing with no data when there is no local preview", () => {
+    expect(initialLabelSessionState(null)).toEqual({
+      localPreview: null,
+      sessionId: null,
+      labelData: null,
+      dataSource: null,
+      isAnalyzing: true,
+      error: null,
+      uploadFailed: false,
+      showUpdatedToast: false,
+    });
+  });
+
+  it("shows the local preview immediately, not analyzing", () => {
+    const s = initialLabelSessionState(baseLabelData);
+    expect(s.labelData).toBe(baseLabelData);
+    expect(s.dataSource).toBe("local");
+    expect(s.isAnalyzing).toBe(false);
+  });
+
+  it("uses AI data directly when there is no local preview", () => {
+    const s = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: ai,
+    });
+    expect(s).toMatchObject({
+      sessionId: "s1",
+      labelData: ai,
+      dataSource: "ai",
+      showUpdatedToast: false,
+    });
+  });
+
+  it("replaces a materially different local preview and raises the toast", () => {
+    const s = labelSessionReducer(initialLabelSessionState(baseLabelData), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: ai,
+    });
+    expect(s).toMatchObject({
+      sessionId: "s1",
+      labelData: ai,
+      dataSource: "ai",
+      showUpdatedToast: true,
+    });
+  });
+
+  it("keeps the local data when the AI confirms it", () => {
+    const s = labelSessionReducer(initialLabelSessionState(baseLabelData), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: sameAi,
+    });
+    expect(s.labelData).toBe(baseLabelData);
+    expect(s.dataSource).toBe("ai");
+    expect(s.sessionId).toBe("s1");
+    expect(s.showUpdatedToast).toBe(false);
+  });
+
+  it("clears uploadFailed when an upload starts", () => {
+    const failed = labelSessionReducer(
+      initialLabelSessionState(baseLabelData),
+      {
+        type: "uploadFailed",
+        message: "x",
+      },
+    );
+    expect(failed.uploadFailed).toBe(true);
+    expect(
+      labelSessionReducer(failed, { type: "uploadStarted" }).uploadFailed,
+    ).toBe(false);
+  });
+
+  it("sets the full-screen error only when there is no data", () => {
+    const s = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadFailed",
+      message: "boom",
+    });
+    expect(s.error).toBe("boom");
+    expect(s.uploadFailed).toBe(false);
+  });
+
+  it("marks a retriable failure, not an error, when local data exists", () => {
+    const s = labelSessionReducer(initialLabelSessionState(baseLabelData), {
+      type: "uploadFailed",
+      message: "boom",
+    });
+    expect(s.error).toBeNull();
+    expect(s.uploadFailed).toBe(true);
+  });
+
+  it("stops analyzing on settle and hides the toast on demand", () => {
+    const a = labelSessionReducer(initialLabelSessionState(null), {
+      type: "settled",
+    });
+    expect(a.isAnalyzing).toBe(false);
+    const t = labelSessionReducer(
+      { ...a, showUpdatedToast: true },
+      { type: "toastHidden" },
+    );
+    expect(t.showUpdatedToast).toBe(false);
+  });
+
+  // The upload effect can run again after a result (its `toast` dependency
+  // changes identity when Reduce Motion is toggled). The pre-hook screen
+  // judged every run against the preview it MOUNTED with, held in refs it
+  // never rewrote. These two cases pin that.
+  it("judges a second AI result against the mounted local preview, not the first result", () => {
+    const confirmed = labelSessionReducer(
+      initialLabelSessionState(baseLabelData),
+      { type: "uploadSucceeded", sessionId: "s1", aiData: sameAi },
+    );
+    expect(confirmed.labelData).toBe(baseLabelData);
+
+    // Confirmed again: the shown values stay the local ones.
+    const again = labelSessionReducer(confirmed, {
+      type: "uploadSucceeded",
+      sessionId: "s2",
+      aiData: sameAi,
+    });
+    expect(again.labelData).toBe(baseLabelData);
+    expect(again.showUpdatedToast).toBe(false);
+
+    // Materially different this time: replaced, with the toast.
+    const replaced = labelSessionReducer(confirmed, {
+      type: "uploadSucceeded",
+      sessionId: "s2",
+      aiData: ai,
+    });
+    expect(replaced.labelData).toBe(ai);
+    expect(replaced.showUpdatedToast).toBe(true);
+  });
+
+  it("a failed re-run after an AI-only result does not block logging", () => {
+    const loaded = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: ai,
+    });
+    const failed = labelSessionReducer(loaded, {
+      type: "uploadFailed",
+      message: "boom",
+    });
+    // No mounted preview: the failure is the full-screen error, which the
+    // screen draws only when there is no data. The session still logs.
+    expect(failed.uploadFailed).toBe(false);
+    expect(failed.sessionId).toBe("s1");
+    expect(failed.labelData).toBe(ai);
+  });
+
+  // useReducer skips the re-render only when the reducer hands back the SAME
+  // object. The upload effect dispatches on every run, so a transition that
+  // changes nothing must not produce a new state — otherwise any re-run of the
+  // effect re-renders, and a caller whose toast identity changes per render
+  // (every screen test's mock) loops until the heap runs out.
+  it("returns the same state object when a transition changes nothing", () => {
+    const fresh = initialLabelSessionState(baseLabelData);
+    expect(labelSessionReducer(fresh, { type: "uploadStarted" })).toBe(fresh);
+    expect(labelSessionReducer(fresh, { type: "settled" })).toBe(fresh);
+    expect(labelSessionReducer(fresh, { type: "toastHidden" })).toBe(fresh);
+
+    const succeeded = labelSessionReducer(initialLabelSessionState(null), {
+      type: "uploadSucceeded",
+      sessionId: "s1",
+      aiData: sameAi,
+    });
+    expect(succeeded.labelData).toBe(sameAi);
+    // The effect re-ran and the server answered the same again.
+    expect(
+      labelSessionReducer(succeeded, {
+        type: "uploadSucceeded",
+        sessionId: "s1",
+        aiData: sameAi,
+      }),
+    ).toBe(succeeded);
+
+    const failed = labelSessionReducer(fresh, {
+      type: "uploadFailed",
+      message: "x",
+    });
+    expect(
+      labelSessionReducer(failed, { type: "uploadFailed", message: "x" }),
+    ).toBe(failed);
   });
 });

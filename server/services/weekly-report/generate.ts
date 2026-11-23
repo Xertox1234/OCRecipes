@@ -1,6 +1,6 @@
 import { storage } from "../../storage";
 import { TIER_FEATURES } from "@shared/types/premium";
-import { logger } from "../../lib/logger";
+import { logger, toError } from "../../lib/logger";
 import { isAiSharingAllowedFor } from "../../lib/ai-sharing-gate";
 import { civilDateString, civilDateToInstant } from "../../lib/civil-date";
 import { notify } from "../notifications/notify";
@@ -95,7 +95,10 @@ export async function generateWeeklyReportForUser(
   // this user: check their AI-sharing permission here. Without it the report
   // still saves, with the template text and no AI call.
   const aiAllowed = await isAiSharingAllowedFor(userId);
-  const { content, source } = await writeWeeklyReport(facts, { aiAllowed });
+  const { content, source } = await writeWeeklyReport(facts, {
+    aiAllowed,
+    userId,
+  });
   const row = await storage.insertWeeklyReport(userId, {
     weekStart: week.weekStart,
     weekEnd: week.weekEnd,
@@ -138,16 +141,31 @@ export async function sendDueWeeklyReportPushes(now: Date): Promise<number> {
       });
       if (pushDelivered) {
         sent++;
-      } else {
-        await storage.releaseWeeklyReportDelivery(p.userId, p.id);
+        continue;
       }
     } catch (err) {
       logger.error(
-        { err, userId: p.userId, reportId: p.id },
+        { err: toError(err), userId: p.userId, reportId: p.id },
         "weekly report: push failed, handing to the popup",
       );
-      await storage.releaseWeeklyReportDelivery(p.userId, p.id);
     }
+    await releaseDelivery(p.userId, p.id);
   }
   return sent;
+}
+
+/**
+ * Hand an unsent report back to the popup. A failed release must not stop the
+ * loop: the remaining pushes still go out this tick. The row it could not
+ * release keeps deliveredVia = 'push' and is logged, since nothing retries it.
+ */
+async function releaseDelivery(userId: string, reportId: number) {
+  try {
+    await storage.releaseWeeklyReportDelivery(userId, reportId);
+  } catch (err) {
+    logger.error(
+      { err: toError(err), userId, reportId },
+      "weekly report: could not release the push claim; report is stranded as pushed",
+    );
+  }
 }

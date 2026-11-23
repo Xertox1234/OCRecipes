@@ -2,6 +2,8 @@
 
 > **STATUS: SUPERSEDED — do not implement or re-propose.** Replaced by `2026-10-10-totp-second-factor.md`, which was itself overruled: authenticator apps and recovery codes were removed. Two-step is optional and by emailed code only. See `docs/OWNER_RULINGS.md` → Auth (2026-10-12).
 
+> References below to memory files (names like `project_*.md`, `feedback_*`, `reference_*`, `user_*`) point at the owner's local agent memory, which cloud sessions can't read. Lasting decisions from it are in `docs/OWNER_RULINGS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let any account turn on a second factor (a 6-digit code from an authenticator app, with one-time recovery codes), and require it before ANY session is issued: password login, Google/Apple sign-in, and linking a provider to an existing account.

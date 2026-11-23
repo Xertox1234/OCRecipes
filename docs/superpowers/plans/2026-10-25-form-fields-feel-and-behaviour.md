@@ -1,5 +1,7 @@
 # Form Fields: Feel and Behaviour — Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: the files this plan creates are on `main`. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every text field answers a tap with look B (2px ring on the visible field + warm fill + floating label where the spec says), and fields help you fill them in (checking on leave, live password/username checklist, counters, explained number refusals, working Return keys, locked while saving).

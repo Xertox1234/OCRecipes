@@ -1,5 +1,7 @@
 # Expo SDK Upgrade — Steps 1–4 (SDK 55 → 58) Runbook
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: `package.json` is on Expo SDK 58. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **This is a runbook, not a TDD plan.** Each step is a dependency move whose breakages are only known once the build runs, so each task is: bump → fix what the compiler/build names → run the fixed checks → ship (or not). Where a step adds behaviour (push), it has a test.

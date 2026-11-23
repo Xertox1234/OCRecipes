@@ -13,6 +13,7 @@ import {
   sendDueWeeklyReportPushes,
 } from "../weekly-report/generate";
 import { storage } from "../../storage";
+import { logger } from "../../lib/logger";
 import {
   createMockCoachNotebookEntry,
   createMockDailyLog,
@@ -46,7 +47,7 @@ vi.mock("../weekly-report/generate", () => ({
 
 vi.mock("node-cron", () => ({
   default: {
-    schedule: vi.fn().mockReturnValue({ stop: vi.fn() }),
+    schedule: vi.fn().mockReturnValue({ stop: vi.fn(), on: vi.fn() }),
   },
 }));
 
@@ -58,9 +59,14 @@ beforeEach(() => {
   vi.resetAllMocks();
   // resetAllMocks wipes the cron.schedule return value set in vi.mock above;
   // re-establish it so startNotificationScheduler() gets a stoppable task.
-  vi.mocked(cron.schedule).mockReturnValue({
-    stop: vi.fn(),
-  } as unknown as ReturnType<typeof cron.schedule>);
+  // A fresh task per call, so each job's `on` listeners can be read back.
+  vi.mocked(cron.schedule).mockImplementation(
+    () =>
+      ({
+        stop: vi.fn(),
+        on: vi.fn(),
+      }) as unknown as ReturnType<typeof cron.schedule>,
+  );
   // Default tz map is empty → every user falls back to "UTC" via parseTimezone.
   // resetAllMocks would otherwise leave getUserTimezones returning undefined,
   // which makes the scheduler's tzMap.get(...) throw. Tests that assert on a
@@ -312,6 +318,71 @@ describe("startNotificationScheduler", () => {
       expect.any(Function),
       expect.anything(),
     );
+  });
+
+  it("tolerates a tick a few minutes late, well inside the half-hour slot rounding", () => {
+    startNotificationScheduler();
+
+    const calls = vi.mocked(cron.schedule).mock.calls;
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      const tolerance = call[2]?.missedExecutionTolerance;
+      expect(tolerance).toBeGreaterThanOrEqual(60_000);
+      // schedulerRunSlot rounds to the nearest hour: a run 30 min late would
+      // claim the NEXT hour's slot.
+      expect(tolerance).toBeLessThanOrEqual(10 * 60_000);
+    }
+  });
+
+  it("logs an error naming the job when node-cron drops a tick", () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    startNotificationScheduler();
+
+    const results = vi.mocked(cron.schedule).mock.results;
+    const names = vi.mocked(cron.schedule).mock.calls.map((c) => c[2]?.name);
+    expect(names).toEqual(["commitment-reminders", "local-hour-reminders"]);
+    results.forEach((result, i) => {
+      const on = vi.mocked(
+        (result.value as ReturnType<typeof cron.schedule>).on,
+      );
+      const missed = on.mock.calls.find((c) => c[0] === "execution:missed");
+      expect(missed).toBeDefined();
+      errorSpy.mockClear();
+      (missed![1] as unknown as (ctx: { date: Date }) => void)({
+        date: new Date("2026-11-15T18:00:00Z"),
+      });
+      expect(errorSpy).toHaveBeenCalledWith(
+        { jobName: names[i], missedSlot: "2026-11-15T18:00:00.000Z" },
+        expect.stringContaining("missed"),
+      );
+    });
+    errorSpy.mockRestore();
+  });
+
+  // noOverlap drops a tick while the previous run is still going. node-cron
+  // reports that as execution:overlap, not execution:missed.
+  it("logs an error naming the job when a tick is dropped because the last run is still going", () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    startNotificationScheduler();
+
+    const results = vi.mocked(cron.schedule).mock.results;
+    const names = vi.mocked(cron.schedule).mock.calls.map((c) => c[2]?.name);
+    results.forEach((result, i) => {
+      const on = vi.mocked(
+        (result.value as ReturnType<typeof cron.schedule>).on,
+      );
+      const overlap = on.mock.calls.find((c) => c[0] === "execution:overlap");
+      expect(overlap).toBeDefined();
+      errorSpy.mockClear();
+      (overlap![1] as unknown as (ctx: { date: Date }) => void)({
+        date: new Date("2026-11-15T19:00:00Z"),
+      });
+      expect(errorSpy).toHaveBeenCalledWith(
+        { jobName: names[i], skippedSlot: "2026-11-15T19:00:00.000Z" },
+        expect.stringContaining("still running"),
+      );
+    });
+    errorSpy.mockRestore();
   });
 
   it("pins every job to UTC and forbids overlapping runs (N5)", () => {
@@ -859,5 +930,147 @@ describe("weekly report schedule", () => {
       .mock.calls.find((c) => c[0] === "0 * * * *");
     await (call![1] as unknown as () => Promise<unknown>)();
     expect(sendDueWeeklyReportPushes).toHaveBeenCalled();
+  });
+
+  describe("run summary", () => {
+    const SUMMARY = "notification-scheduler: weekly report run";
+    const ALL_FAILED =
+      "notification-scheduler: weekly report failed for every user it tried";
+    const now = new Date("2026-11-15T18:00:00Z"); // Sun 18:00 UTC
+
+    function spies() {
+      return {
+        info: vi.spyOn(logger, "info").mockImplementation(() => {}),
+        error: vi.spyOn(logger, "error").mockImplementation(() => {}),
+      };
+    }
+    const withMessage = (
+      spy: { mock: { calls: unknown[][] } },
+      message: string,
+    ) => spy.mock.calls.filter((c) => c[1] === message);
+
+    it("logs one line of counts per tick, across pages", async () => {
+      const { info, error } = spies();
+      const firstPage = Array.from({ length: 500 }, (_, i) => `u${i}`);
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(firstPage)
+        .mockResolvedValueOnce(["pro", "has-one", "free", "off", "broken"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      const outcome: Record<string, string> = {
+        "has-one": "exists",
+        free: "skipped-not-pro",
+        off: "skipped-disabled",
+      };
+      vi.mocked(generateWeeklyReportForUser).mockImplementation(
+        async (userId) => {
+          if (userId === "broken") throw new Error("boom");
+          return (outcome[userId] ?? "created") as Awaited<
+            ReturnType<typeof generateWeeklyReportForUser>
+          >;
+        },
+      );
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)).toEqual([
+        [
+          {
+            inWindow: 505,
+            created: 501,
+            exists: 1,
+            skippedNotPro: 1,
+            skippedDisabled: 1,
+            failed: 1,
+          },
+          SUMMARY,
+        ],
+      ]);
+      expect(withMessage(error, ALL_FAILED)).toEqual([]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    it("logs an error when every user it tried failed", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["a", "b", "free"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      vi.mocked(generateWeeklyReportForUser).mockImplementation(
+        async (userId) => {
+          if (userId === "free") return "skipped-not-pro";
+          throw new Error("boom");
+        },
+      );
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)).toHaveLength(1);
+      expect(withMessage(error, ALL_FAILED)).toEqual([
+        [{ inWindow: 3, tried: 2, failed: 2 }, ALL_FAILED],
+      ]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    it("stays quiet in a catch-up hour where everyone already has the report", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["a", "b"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      vi.mocked(generateWeeklyReportForUser).mockResolvedValue("exists");
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)).toEqual([]);
+      expect(withMessage(error, ALL_FAILED)).toEqual([]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    // Plan and setting are checked before "already has one", so a free or
+    // report-off user comes back skipped on every tick of the window.
+    it("stays quiet in a catch-up hour when the rest are skipped for their plan or setting", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["has-one", "free", "off"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      const outcome: Record<string, string> = {
+        "has-one": "exists",
+        free: "skipped-not-pro",
+        off: "skipped-disabled",
+      };
+      vi.mocked(generateWeeklyReportForUser).mockImplementation(
+        async (userId) =>
+          outcome[userId] as Awaited<
+            ReturnType<typeof generateWeeklyReportForUser>
+          >,
+      );
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)).toEqual([]);
+      expect(withMessage(error, ALL_FAILED)).toEqual([]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    it("logs nothing on a tick with nobody in the report window", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["a", "b"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+
+      await runWeeklyReports(new Date("2026-11-18T12:00:00Z")); // Wednesday
+
+      expect(generateWeeklyReportForUser).not.toHaveBeenCalled();
+      expect(withMessage(info, SUMMARY)).toEqual([]);
+      info.mockRestore();
+      error.mockRestore();
+    });
   });
 });

@@ -1,5 +1,9 @@
 # Inspired Recipes Implementation Plan
 
+> **STATUS: SHIPPED — history, not instructions.** Checked 2026-11-22: 13 of the 14 files this plan creates are on `main`. The current code and `docs/OWNER_RULINGS.md` win over anything below.
+
+> References below to memory files (names like `project_*.md`, `feedback_*`, `reference_*`, `user_*`) point at the owner's local agent memory, which cloud sessions can't read. Lasting decisions from it are in `docs/OWNER_RULINGS.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Users never see or save Spoonacular content; Spoonacular titles only inspire AI-written, personalised suggestion cards (with generated photos), and "Make this mine" turns a card into the user's own OCRecipes recipe.
