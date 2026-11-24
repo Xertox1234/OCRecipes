@@ -6838,6 +6838,18 @@ cmd-detect.sh|grep() { exit 0; }
 cmd-detect.sh|read() { read -r "$@"; }
 fastpath-filter.sh|shopt() { exit 0; }
 SPECS
+# ND3b. `wc` (security review of this change, pre-existing on main): shadowed, the occurrence
+#      counters read an empty count as 0 and two families reached the final allow. The eas
+#      rows above cannot see it; these use a PR merge and a REST merge.
+for shadow in 'wc() { :; }' 'wc() { exit 0; }'; do
+  T=$(nd_tree cmd-detect.sh "$shadow"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" 'gh pr merge 12 --squash'
+  n="ND3b cmd-detect.sh + '$shadow': a PR merge denies, rc 0"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+  nd_run "$T" 'gh api -X PUT repos/o/r/pulls/1/merge'
+  n="ND3b cmd-detect.sh + '$shadow': a REST merge denies, rc 0"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+done
 # ND4. A signal mid-run (a lib function sends it here). An outward command: the static deny,
 #      rc 0. A command that does not smell outward: silent, rc 0.
 for sig in TERM PIPE ALRM USR1 USR2 HUP XCPU PROF IO; do
@@ -6856,6 +6868,25 @@ ND_PAYLOAD=$(jsonc "$ND_OUTWARD")
 ND_OUT=$(PATH="$ND_JQ:$PATH" bash "$HOOK" 2>/dev/null <<<"$ND_PAYLOAD"); ND_RC=$?; ND_ERR=""
 n="ND5 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
 nd_only_deny && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+# ND5b. A command too large to evaluate inside the 15 s hook timeout (same review): above
+#      300000 characters with an outward word it denies at once. Payloads go to the hook on
+#      stdin from jq -Rs (one --arg over 128 KB is E2BIG).
+nd_big() {  # $1=first line  $2=padding bytes ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ printf '%s\n' "$1"; head -c "$2" /dev/zero | tr '\0' 'b' | fold -w 78 | sed 's/^/# /'; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_big "$ND_OUTWARD" 600000
+n="ND5b a 600 KB command that starts with an outward command: too-large deny in under 5 s"
+nd_only_deny && nd_reason_has 'characters long' && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_big 'ls -la' 600000
+n="ND5b control: a 600 KB command with no outward word is allowed, rc 0"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+nd_big "$ND_OUTWARD" 100000
+n="ND5b control: a 100 KB outward command still gets the precise reason, not the size one"
+nd_only_deny && ! nd_reason_has 'characters long' && nd_ok "$n" || nd_bad "$n"
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -6928,7 +6959,8 @@ rm -rf $ND_TREES
 # 1322 -> 1360 (2026-11-24, the hook cannot end without a decision): +38 = ND1 (four), ND2
 # (four), ND3 (sixteen), ND4 (ten), ND5, ND6 (three). RED before the guard change: 20 of them
 # (ND1 and ND2 outward rows, the exit-1 ordinary row, four ND3 rows, all of ND4, ND5).
-EXPECTED_TOTAL=1360
+# 1360 -> 1367 (2026-11-24, security review of that change): +7 = ND3b (four), ND5b (three).
+EXPECTED_TOTAL=1367
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

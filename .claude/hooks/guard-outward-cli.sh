@@ -2058,7 +2058,11 @@ deny() {
   j=$(jq -n --arg r "$r" \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}' 2>/dev/null) || j=""
   case "$j" in
-    *'"permissionDecision": "deny"'*) DECIDED=1; printf '%s\n' "$j" >&9 ;;
+    *'"permissionDecision": "deny"'*)
+      # Signals are ignored from here to the exit: one that landed between the mark and the
+      # print ran the handler, which saw DECIDED set and left with nothing printed.
+      trap '' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+      DECIDED=1; printf '%s\n' "$j" >&9 ;;
   esac
   exit 0
 }
@@ -2087,8 +2091,10 @@ no_decision() {
 }
 trap no_decision EXIT
 # A trapped signal would otherwise RETURN to the interrupted command; end the shell instead.
-# Names macOS bash lacks (PWR, STKFLT) are left out so this line never fails there.
+# PWR and STKFLT do not exist in macOS bash, so each is set on its own line that may fail.
 trap 'no_decision; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+trap 'no_decision; exit 0' PWR 2>/dev/null || :
+trap 'no_decision; exit 0' STKFLT 2>/dev/null || :
 
 # lib_loads <file>: source it in a subshell first. A lib that exits, fails under this file's
 # `set -u`, changes the shell options (errexit left on), or leaves a function named like a
@@ -2097,7 +2103,7 @@ trap 'no_decision; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ 
 # called `builtin` defeats it (listed as open in docs/harness-residuals.md).
 _OUT_NO_SHADOW=(. : '[' break builtin cd command compgen continue declare echo eval exec exit
   export false kill local printf pwd read readonly return set shift shopt source test trap true
-  type typeset unset wait cat ls grep jq awk sed tr sort dirname head)
+  type typeset unset wait cat ls grep jq awk sed tr sort dirname head wc tail)
 _out_no_shadow() {
   for _out_f in "${_OUT_NO_SHADOW[@]}"; do
     builtin declare -F -- "$_out_f" >/dev/null 2>&1 && builtin return 1
@@ -2337,6 +2343,16 @@ if :; then
       *) allow ;;
     esac
   fi
+fi
+# A command too large to read in time (2026-11-24). The quote-aware renderings below are
+# quadratic in the command's length: measured on a quiet machine, 200 KB takes 3.7 s, 400 KB
+# 13.7 s and 480 KB 19.9 s, against a 15 s hook timeout (.claude/settings.json). Past that the
+# hook is killed before it answers. Everything that reaches this line either holds one of the
+# fast path's needles or a span that could build one, so above 300000 characters this denies
+# rather than start an evaluation it cannot finish. Ordinary commands of any size left by the
+# fast path above.
+if [ "${#CMD}" -gt 300000 ]; then
+  deny "guard-outward-cli: this command is ${#CMD} characters long and names (or could build) an outward-facing CLI word; above 300000 characters the hook cannot finish reading it inside its timeout, so it fails closed instead of timing out. Write the large content to a file with a file tool and run a short command, or bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # If the shared lib is unsourceable (broken install), jq IS available here
 # (the no-jq branch above already returned) and deny() is already defined —
@@ -5108,6 +5124,11 @@ if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
     _gh_api_cut_n=$(printf '%s' "$_gh_api_r" | grep -oiE "$_GH_API_CUT" | wc -l | tr -d '[:space:]')
     for _gh_api_re in "$GH_API_RE" "$GH_API_RE_SEPSAFE"; do
       _gh_api_seen=$(printf '%s' "$_gh_api_r" | grep -oiE "$_gh_api_re" | wc -l | tr -d '[:space:]')
+      # A count that is not a number means the counter itself is broken (a shadowed or missing
+      # wc gave an empty count, which the comparison below read as 0 occurrences: an allow).
+      case "${_gh_api_cut_n:-x}${_gh_api_seen:-x}" in
+        *[!0-9]*) deny "guard-outward-cli: could not count the command-position 'gh api' occurrences (the counter returned '${_gh_api_cut_n}' and '${_gh_api_seen}', not numbers) - failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)." ;;
+      esac
       [ "${_gh_api_cut_n:-0}" -ge "${_gh_api_seen:-0}" ] || \
         deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
     done

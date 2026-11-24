@@ -657,17 +657,30 @@ before it is sourced (exit, changed shell options, a shadowing function: the exi
 "unsourceable" fallback); `deny()` builds first and cuts the reason at 8000 characters; and
 an EXIT/signal trap answers when the shell ends undecided. The trap denies only when the
 command passes the crude smell test the hook already uses on its degraded paths, so a broken
-hook does not block ordinary commands. Cost: one fork, about 1-2 ms per Bash call. Large
-commands were NOT a bypass here (100 KB and 400 KB tails after an `eas update`, a PR merge
-and a `gh api -X PUT` all denied on `main`): its conditions already read here-strings. Its
-nine remaining `printf | grep -q` conditions (seven over short constants, two over a `gh`
-clause) were converted all the same. Still open in `guard-outward-cli.sh`: the same list as
-for `git-safety.sh` below (a lib that replaces the trap, sets `DECIDED`, assigns a variable
-the hook reads such as `CMD`, redefines a function defined before the libs are sourced,
-defines `builtin`, or closes fd 9; SIGKILL, fault, stop and real-time signals); the ambient
-`ALLOW_OUTWARD_CLI` exit and the no-`jq` arm run before the trap; a shell that ends undecided
-on an outward command the crude smell test does not recognise is allowed. Not tested on bash
-3.2 (macOS).
+hook does not block ordinary commands. Cost: one fork, about 1-2 ms per Bash call.
+Found by the security review of that change, both on `main` too, both fixed with it (rows
+ND3b, ND5b): (a) a lib function named `wc` made the occurrence counters read an empty count
+as 0, and a PR merge and a REST merge reached the final allow; `wc` and `tail` joined the
+names a lib may not shadow, and the `gh api` counters deny when a count is not a number.
+(b) LARGE commands: the piped-grep bypass of `git-safety.sh` does not exist here (100 KB
+tails after an OTA update, a PR merge and a REST merge all denied on `main`; the conditions
+already read here-strings, and the nine `printf | grep -q` conditions left were converted),
+but the quote-aware renderings are quadratic: 200 KB takes 3.7 s, 400 KB 13.7 s, 480 KB
+19.9 s, against a 15 s hook timeout, so above about 450 KB the hook was killed before it
+answered. A command over 300000 characters that holds a fast-path needle now denies at once.
+Still open in `guard-outward-cli.sh`: the same list as for `git-safety.sh` below (a lib that
+replaces the trap, sets `DECIDED`, assigns a variable the hook reads such as `CMD` or `PATH`,
+redefines a function defined before the libs are sourced, defines `builtin`, or closes fd 9;
+SIGKILL, the fault signals, which print the deny but leave rc 132-139, the real-time and stop
+signals); the ambient `ALLOW_OUTWARD_CLI` exit, the no-`jq` arm and the read of stdin run
+before the trap; a command between about 250 KB and 300000 characters on a busy machine can
+still run past the timeout; and the trap and the "unsourceable" fallback are only as wide as
+`crude_smells_outward`, which misses families the precise matcher denies: `npx eas-cli
+update`, `yarn dlx`/`pnpm dlx`/`bunx eas-cli update`, `node node_modules/eas-cli/bin/run
+update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with a global
+flag before the subcommand (`gh -R o/r pr merge 1 --squash`, `gh -R o/r api -X PUT x`,
+`gh -R o/r release create v1`). With `cmd-detect.sh` broken, or a signal mid-run, those are
+allowed (measured). Not tested on bash 3.2 (macOS).
 `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
 (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
 finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
