@@ -5,14 +5,12 @@ import {
 } from "../nutrition-coach";
 import {
   matchesDisorderedEating,
-  matchesSelfHarm,
   type CoachIntent,
 } from "../coach-intent-classifier";
 import { plainStatusLabel, toolStep } from "../coach-step-labels";
 import {
   STANDARD_SAFETY_MESSAGE,
   SAFETY_REFUSAL_FALLBACK_MESSAGE,
-  SAFETY_CRISIS_FALLBACK_MESSAGE,
   isFlatModelRefusal,
 } from "../../lib/ai-safety";
 import {
@@ -309,15 +307,13 @@ export async function* streamReply(
     !isAborted() &&
     isFlatModelRefusal(reply.fullResponse)
   ) {
-    // Suicide or self-harm comes first, and gets the crisis message even when
-    // the same message also mentions purging. The warm fallback is worded for
-    // distress about eating; other safety turns (medical, injection, ...) get
-    // the generic referral message.
-    const replacement = matchesSelfHarm(content)
-      ? SAFETY_CRISIS_FALLBACK_MESSAGE
-      : matchesDisorderedEating(content)
-        ? SAFETY_REFUSAL_FALLBACK_MESSAGE
-        : STANDARD_SAFETY_MESSAGE;
+    // The warm fallback is worded for distress about eating; other safety
+    // turns (medical, injection, ...) get the generic referral message. A
+    // suicide or self-harm message never gets here: handleCoachChat answers
+    // it with the crisis message before any model call.
+    const replacement = matchesDisorderedEating(content)
+      ? SAFETY_REFUSAL_FALLBACK_MESSAGE
+      : STANDARD_SAFETY_MESSAGE;
     reply.fullResponse = replacement;
     reply.safetyOverridden = true;
     yield { type: "safety_override", message: replacement };

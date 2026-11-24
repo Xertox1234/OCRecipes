@@ -88,6 +88,73 @@ const SELF_HARM_RE = new RegExp(
   "i",
 );
 
+/**
+ * Purging, said about oneself or as a way to undo eating: "make myself throw
+ * up", "purge after dinner", "throw up to undo those calories". The bare
+ * words are everyday kitchen and family talk ("purge my pantry of junk food",
+ * "my son vomited after dinner", "throw up some ideas"), and one match also
+ * turns that user's weekly report into the safety template (audit
+ * 2026-11-24, M31).
+ */
+const PURGING =
+  "\\bma(?:ke|king|de)\\s+my\\s?self\\s+(?:throw\\s+up|vomit|sick|puke)\\b" +
+  "|\\b(?:purg(?:e|ing)|throw(?:ing)?\\s+up|vomit(?:ing)?|puk(?:e|ing))\\s+(?:up\\s+)?(?:after\\b|to\\s+(?:undo|get\\s+rid|lose|make\\s+up|cancel)\\b|(?:my|a|the)\\s+(?:food|meals?|dinner|lunch|breakfast|binge)\\b|what\\s+i\\s+(?:ate|eat)\\b|everything\\s+i\\s+(?:ate|eat)\\b)" +
+  // "want to throw up" as distress; not "the smell makes me want to vomit"
+  // and not "want to purge my pantry".
+  "|(?<!ma(?:kes?|de|king)\\s+me\\s+)\\b(?:want|need|have|trying|going)\\s+to\\s+(?:throw\\s+up|purge|vomit)\\b(?!\\s+(?:my|the|some|a|an|out)\\b)";
+
+const DISORDERED_EATING_RE = new RegExp(
+  `${PURGING}|${SELF_HARM_RE.source}`,
+  "i",
+);
+
+/** A fast of 24 hours or longer, as a number of hours. */
+const LONG_FAST_HOURS = "(?:2[4-9]|[3-9]\\d|\\d{3,})";
+/** A count of days or weeks for a fast, as digits or a number word. */
+const FAST_COUNT =
+  "(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|several|a\\s+few|multi)";
+
+/**
+ * Extended fasting: a water fast, or any fast of 24 hours or longer. A 12-18
+ * hour window is ordinary intermittent fasting, the coach's own safe
+ * alternative, and must not load the refusal bundle (audit 2026-11-24, M31).
+ * "I drink water fast after workouts" and "a 2 day fast-food detox" are not
+ * fasts.
+ */
+const EXTREME_FASTING_RE = new RegExp(
+  [
+    "\\bwater[\\s-](?:only[\\s-])?fast(?:s|ing)?\\b(?!\\s+(?:after|when|during|before|at|with|while)\\b)",
+    `\\b${LONG_FAST_HOURS}[\\s-]?(?:hours?|hrs?)[\\s-]+(?:water[\\s-]+)?fast`,
+    `\\b${FAST_COUNT}[\\s-]days?[\\s-]+(?:water[\\s-]+)?fast(?![\\s-]food)`,
+    `\\bfast(?:ing)?\\s+for\\s+(?:${LONG_FAST_HOURS}\\s*(?:hours?|hrs?)|${FAST_COUNT}\\s+(?:days?|weeks?))\\b`,
+    "\\bweek[\\s-]long\\s+(?:water[\\s-](?:only[\\s-])?)?fast",
+  ].join("|"),
+  "i",
+);
+
+/**
+ * "Ignore / disregard / forget ... <the assistant's rules>". The gap keeps
+ * the 2000-char bound (the message cap), so padding cannot push the object
+ * out of range; the object has to name the assistant's own instructions
+ * ("your", "all", "previous", "system", "safety"), so "ignore the cooking
+ * instructions on the box" and "ignore the sugar guidelines on cheat days"
+ * stay ordinary (audit 2026-11-24, M31).
+ */
+const INJECTION_IGNORE_RE =
+  /\b(?:ignore|disregard|forget|override)\b[\s\S]{0,2000}?(?:\b(?:your|all|any|previous|prior|above|earlier|system|safety)\s+(?:\w+\s+){0,2}(?:instructions?|rules?|guidelines?|prompts?|restrictions?)\b|\bthe\s+(?:instructions?|rules?|guidelines?)\b(?!\s+(?:on|of|for|in|from)\b)|\beverything\s+you\s+(?:were|have\s+been|\'ve\s+been)\s+told\b)/i;
+
+/**
+ * Laxatives, diuretics or diet pills used for weight control. A question
+ * about constipation or whether coffee is a diuretic is ordinary.
+ */
+const WEIGHT_CONTROL =
+  "(?:los(?:e|ing)\\s+(?:weight|pounds|lbs)|weight\\s+loss|drop\\s+(?:a\\s+few\\s+)?(?:pounds|lbs|weight)|stay\\s+(?:thin|skinny)|slim(?:mer)?\\s+down|after\\s+(?:every|each)\\s+meal|weigh[\\s-]in)";
+const PILLS = "(?:laxatives?|diuretics?|water\\s+pills?|diet\\s+pills?)";
+const PILL_MISUSE_RE = new RegExp(
+  `\\b${PILLS}\\b[\\s\\S]{0,2000}?\\b${WEIGHT_CONTROL}\\b|\\b${WEIGHT_CONTROL}\\b[\\s\\S]{0,2000}?\\b${PILLS}\\b`,
+  "i",
+);
+
 const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
   {
     // Medical conditions — cardiovascular, diabetes, kidney, thyroid, etc.
@@ -115,26 +182,25 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     // Disordered eating / self-harm signals. The self-harm half is
     // SELF_HARM_RE itself, so every wording that routes here also selects the
     // crisis message (matchesSelfHarm) and none gets the eating-focused text.
-    pattern: new RegExp(`throw up|purge|vomit|${SELF_HARM_RE.source}`, "i"),
+    pattern: DISORDERED_EATING_RE,
     name: "disordered_eating",
   },
   {
-    // Supplement megadose — catches "50,000 IU", "megadose", "toxic dose"
-    pattern: /(\d{3,}\s*iu\b|mega.?dose|toxic dose)/i,
+    // Supplement megadose by name. A dose in IU is judged by its size, in
+    // isIuMegadose: "600 IU of vitamin D" is a standard dose.
+    pattern: /(mega.?dose|toxic dose)/i,
     name: "megadose",
   },
   {
-    // Prompt injection via "ignore" keyword — [\s\S]{0,2000} matches across
-    // newlines. The bound equals the 2000-char message cap (chat.ts Zod schema
-    // + sanitizeUserInput slice), so the whole sanitized message is always in
-    // range. A smaller bound would let a padded injection push the trigger
-    // keyword past the gap and bypass detection.
-    pattern: /ignore[\s\S]{0,2000}(instruction|rule|guidelines?|safety)/i,
+    pattern: PILL_MISUSE_RE,
+    name: "pill_misuse",
+  },
+  {
+    pattern: INJECTION_IGNORE_RE,
     name: "prompt_injection_ignore",
   },
   {
-    // Extended fasting protocols — "water fast", "72-hour fast", "3-day fast"
-    pattern: /(water fast|\d+[\s-](hour|hr|day)s?\s*(water\s*)?fast)/i,
+    pattern: EXTREME_FASTING_RE,
     name: "extreme_fasting",
   },
   {
@@ -167,23 +233,66 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     // newlines; the bound equals the 2000-char message cap (see above) so a
     // padded injection cannot push the keyword past the gap.
     pattern:
-      /(unrestricted[\s\S]{0,2000}(fitness|nutrition|diet|health|ai)|no safety guidelines|you are now \w+bot)/i,
+      /(unrestricted[\s\S]{0,2000}\b(?:ai|assistant|coach|bot|chatbot|model|mode|persona|guru|expert|advis[eo]r|trainer|nutritionist|dietitian)\b|no safety guidelines|you are now \w+bot)/i,
     name: "jailbreak_persona",
   },
 ];
 
+/** Above this, a dose in IU is past the usual adult upper limits. */
+const IU_UPPER_LIMIT = 4000;
+
+/** "50,000 IU", "20000 IU": a dose in IU above the upper limit. */
+function isIuMegadose(message: string): boolean {
+  for (const m of message.matchAll(/(\d[\d,]*)\s*iu\b/gi)) {
+    if (Number(m[1].replace(/,/g, "")) > IU_UPPER_LIMIT) return true;
+  }
+  return false;
+}
+
+/** A calorie figure with its unit: "900 calories", "1100 kcal", "600 calorie". */
+const CALORIE_FIGURE_RE =
+  /(?<![\d.])(\d{2,4})(?!\d)\s*-?\s*(?:k?cal(?:orie)?s?|kilocalories)\b/gi;
+/** Right after the figure: "per day", "a day", "daily", "/day". */
+const DAILY_AFTER_RE =
+  /^(?:\s*\/\s*day\b|[\s-]+(?:(?:per|a|each|every)[\s-]+day|daily)\b)/i;
+/** Before the figure: an amount to change by or burned, not an intake. */
+const CALORIE_CHANGE_BEFORE_RE =
+  /\b(?:cut(?:ting)?|trim(?:ming)?|burn(?:s|ed|ing)?|add(?:ing)?|sav(?:e|ing)|deficit\s+of|surplus\s+of|by|extra|another)\s+(?:(?:about|around|roughly|up\s+to)\s+)*$/i;
+
 /**
- * Matches "NNN cal/calorie* ... day/daily" where NNN < 1200.
- * Uses \d{2,3} per the plan spec — catches 3-digit unsafe targets (500, 800, etc.)
- * while leaving realistic plans (1500 cal/day) unaffected.
- * Negative lookbehind (?<!\d) ensures "500" inside "1500" is never extracted.
+ * True when the message asks for a daily intake under 1,200 calories: the
+ * figure has to be followed directly by its daily marker ("800 kcal a day",
+ * "900 cal/day", "a 1,199 calorie daily limit"). A per-meal figure followed
+ * later by "today" or "Monday" is ordinary food talk (audit 2026-11-24,
+ * M32 + M33).
  */
-const CALORIE_RESTRICTION_RE =
-  /(?<!\d)(\d{2,3})(?!\d)\s*(?:cal(?:orie)?s?)[^\d]*(?:day|daily)/i;
+function asksForLowDailyCalories(message: string): boolean {
+  // "1,100" → "1100" so the figure is read whole.
+  const s = message.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+  for (const m of s.matchAll(CALORIE_FIGURE_RE)) {
+    if (Number(m[1]) >= 1200) continue;
+    const after = s.slice(m.index + m[0].length);
+    if (!DAILY_AFTER_RE.test(after)) continue;
+    if (CALORIE_CHANGE_BEFORE_RE.test(s.slice(0, m.index))) continue;
+    return true;
+  }
+  return false;
+}
 
 // ── Vague request ─────────────────────────────────────────────────────────────
 
 const VAGUE_EXACT_RE = /^(help|hi|hey|hello|idk|i don.?t know)$/i;
+
+/**
+ * A short message that answers the coach's last question or tells it what to
+ * do: "Yes please", "The second one", "Log 2 eggs". These are not vague, and
+ * the vague bundle ("ask ONE clarifying question, never guess") would stop
+ * the coach acting on them (audit 2026-11-24, M34).
+ */
+const SHORT_ANSWER_RE =
+  /^(?:yes|yeah|yep|yup|sure|ok|okay|no|nope|nah|please|thanks|thank\s+you|go\s+ahead|sounds\s+good|do\s+it|that\s+works|perfect|great|both|neither|either|the\s+\w+|that\s+one|this\s+one|option\s+\w+|first|second|third|last|(?:\d+|one|two|three|four|five|six)\s+\w+)\b|\binstead$/i;
+const SHORT_COMMAND_RE =
+  /^(?:log|add|plan|save|remove|delete|swap|make|change|show|find|use|skip|replace|set|track|undo|try|keep|cancel|start|stop)\b/i;
 
 // ── General fact ─────────────────────────────────────────────────────────────
 
@@ -296,8 +405,7 @@ function wordCount(message: string): number {
  * over the week's coach messages). One regex, no copy.
  */
 export function matchesDisorderedEating(text: string): boolean {
-  const entry = SAFETY_PATTERNS.find((p) => p.name === "disordered_eating");
-  return entry ? entry.pattern.test(text) : false;
+  return DISORDERED_EATING_RE.test(text);
 }
 
 /**
@@ -329,11 +437,11 @@ export function classifyIntent(
     }
   }
 
-  // Strip thousand-separator commas ("1,500" → "1500") before calorie check to
-  // prevent false-positive on realistic targets like "1,500 cal/day".
-  const normalizedForCalorie = trimmed.replace(/(\d),(\d{3})/g, "$1$2");
-  const calorieMatch = normalizedForCalorie.match(CALORIE_RESTRICTION_RE);
-  if (calorieMatch && parseInt(calorieMatch[1], 10) < 1200) {
+  if (isIuMegadose(trimmed)) {
+    return { intent: "safety_refusal", matchedRule: "megadose" };
+  }
+
+  if (asksForLowDailyCalories(trimmed)) {
     return {
       intent: "safety_refusal",
       matchedRule: "calorie_restriction_below_1200",
@@ -356,7 +464,10 @@ export function classifyIntent(
   const hasQuestion = trimmed.includes("?");
   if (
     VAGUE_EXACT_RE.test(trimmed) ||
-    (wordCount(trimmed) <= 3 && !hasQuestion)
+    (wordCount(trimmed) <= 3 &&
+      !hasQuestion &&
+      !SHORT_ANSWER_RE.test(trimmed) &&
+      !SHORT_COMMAND_RE.test(trimmed))
   ) {
     return { intent: "vague_request", matchedRule: "vague_exact_or_short" };
   }

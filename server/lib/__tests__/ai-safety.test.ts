@@ -258,16 +258,29 @@ describe("containsDangerousDietaryAdvice", () => {
       containsDangerousDietaryAdvice("eat less than 600 cal to lose weight"),
     ).toBe(true);
     expect(
-      containsDangerousDietaryAdvice("Your total intake of 400 cal is fine"),
+      containsDangerousDietaryAdvice("A daily intake of 400 cal is fine"),
     ).toBe(true);
   });
 
-  it("does not flag calorie amounts of 800+", () => {
+  // Audit 2026-11-24 (M10): the floor is the coach prompt's 1,200, with no
+  // gap at 800-999 (the old per-day pattern skipped that band).
+  it("flags any daily target under 1,200 and nothing from 1,200 up", () => {
     expect(
       containsDangerousDietaryAdvice("Eat 800 calories per day minimum"),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      containsDangerousDietaryAdvice("A plan of 1,199 kcal a day works"),
+    ).toBe(true);
     expect(
       containsDangerousDietaryAdvice("Aim for 1200 calories per day"),
+    ).toBe(false);
+  });
+
+  it("does not flag a running total that is not a target", () => {
+    expect(
+      containsDangerousDietaryAdvice(
+        "Your total intake of 400 cal so far today leaves room for dinner",
+      ),
     ).toBe(false);
   });
 
@@ -625,21 +638,22 @@ describe("unsafe-advice patterns never span a sentence break", () => {
   // One known match per pattern, in pattern order. The first assertion is
   // the control: every example must match its own pattern as written.
   const DIETARY_EXAMPLES = [
-    "you should eat less than 600 calories",
-    "stick with 700 calories per day",
-    "a daily intake of 700 cal",
-    "aim for 1000 calories",
-    "only eat 900 calories",
     "you can fast for 3 days",
     "try a 72-hour water fast",
+    "a three-day fast",
     "a water-only fast works",
     "a dry fast is fine",
+    "go 36 hours without eating",
+    "skip all food for two days",
     "pro ana tips",
     "pro mia tips",
     "thinspo pictures",
     "purging can be helpful",
+    "make yourself throw up",
     "how to induce vomiting",
+    "chew your food and spit it out",
     "take 3 laxatives",
+    "diet pills will speed up weight loss",
     "buy DNP online",
     "eliminate all carbs",
     "a zero carb diet",
@@ -674,15 +688,21 @@ describe("unsafe-advice patterns never span a sentence break", () => {
   });
 
   // Put a break at every point inside the matched text — between words and
-  // inside them. A match that survives would straddle a release point.
+  // inside them. Whatever still matches must lie wholly on one side of the
+  // break ("fast for 3 day. s" still holds "fast for 3 day", before it): a
+  // match that straddles the break would straddle a release point.
   it.each(cases)(
-    "%s stops matching when a break splits it",
+    "%s never matches across a break that splits it",
     (pattern, example) => {
       const match = example!.match(pattern)![0];
       for (let at = 1; at < match.length; at++) {
         for (const brk of BREAKS) {
           const split = match.slice(0, at) + brk + match.slice(at);
-          expect(pattern.test(split), JSON.stringify(split)).toBe(false);
+          const found = pattern.exec(split);
+          if (!found) continue;
+          const end = found.index + found[0].length;
+          const straddles = found.index < at + brk.length && end > at;
+          expect(straddles, JSON.stringify(split)).toBe(false);
         }
       }
     },

@@ -13,26 +13,59 @@ import { logger } from "./logger";
 // These catch obvious attempts to manipulate AI behavior. Intentionally kept
 // lightweight to avoid false positives on normal food-related queries.
 
+/** Modes a jailbreak asks for. "keto mode", "saute mode" and "dark mode" are not these. */
+const JAILBREAK_MODE =
+  "(?:developer|dev|debug|admin|administrator|god|dan|unrestricted|jailbreak|sudo|root|unfiltered|uncensored|evil)";
+/** What an injected persona is: an AI, not "my go-to for dinner ideas". */
+const AI_NOUN = "(?:ai|assistant|bot|chatbot|model|persona)";
+/** Verbs that ask for the prompt to be shown. */
+const EXTRACT_VERB =
+  "(?:reveal|show(?:\\s+me)?|repeat|output|print|display|tell\\s+me|what\\s+(?:is|are))";
+
+// Both sides are pinned by
+// server/lib/__tests__/fixtures/sanitize-user-input-corpus.json: a match is
+// rewritten in the user's own message, so "show me the instructions for the
+// lasagna" and "switch to keto mode" must come through untouched.
 const INJECTION_PATTERNS: RegExp[] = [
   // Attempts to override system instructions
   /ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)/i,
   /disregard\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)/i,
   /forget\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)/i,
 
-  // Role-play / identity manipulation
-  /you\s+are\s+now\s+(?!a\s+nutrition|a\s+food)/i, // "you are now X" (but allow "you are now a nutrition...")
-  /pretend\s+(to\s+be|you\s+are)\s+/i,
-  /act\s+as\s+(if\s+you\s+are|a\s+different)/i,
-  /switch\s+to\s+(\w+\s+)?mode/i,
-  /enter\s+(\w+\s+)?mode/i,
+  // Role-play / identity manipulation: "you are now a pirate", "you are now
+  // DAN". "you are now a nutrition ..." is allowed, and so are "you are now
+  // my go-to for dinner ideas" and "you are now showing net carbs".
+  new RegExp(
+    `you\\s+are\\s+now\\s+(?!a\\s+nutrition|a\\s+food)(?:an?\\s+[\\w-]+|\\w*bot\\b|\\w*gpt\\b|dan\\b)`,
+    "i",
+  ),
+  // An instruction, at the start of a sentence: not "my son likes to pretend
+  // to be a chef" or "let's not pretend you are going to ...".
+  /(?:^|[.!?:]\s+|\bplease\s+|\bnow\s+)pretend\s+(?:to\s+be|you\s+are|you['’]re)\s+(?!going\b)/i,
+  new RegExp(
+    `\\bact\\s+as\\s+(?:if\\s+you\\s+(?:are|were)\\s+(?:an?\\s+)?(?:[\\w-]+\\s+){0,2}${AI_NOUN}\\b|a\\s+different\\s+${AI_NOUN}\\b)`,
+    "i",
+  ),
+  new RegExp(
+    `\\b(?:switch\\s+to|enter|enable|activate)\\s+${JAILBREAK_MODE}\\s+mode\\b`,
+    "i",
+  ),
 
-  // System prompt extraction
-  /reveal\s+(your|the|system)\s+(system\s+)?(prompt|instructions|rules)/i,
-  /show\s+(me\s+)?(your|the|system)\s+(system\s+)?(prompt|instructions|rules)/i,
-  /what\s+(are|is)\s+your\s+(system\s+)?(prompt|instructions|rules)/i,
-  /repeat\s+(your|the)\s+(system\s+)?(prompt|instructions|initial\s+instructions)/i,
-  /output\s+(your|the)\s+(system\s+)?(prompt|instructions)/i,
-  /print\s+(your|the)\s+(system\s+)?(prompt|instructions)/i,
+  // System prompt extraction: "the system prompt", any "prompt" of yours, or
+  // "your instructions / rules" with nothing after them. "Your instructions
+  // for the sourdough starter" and "the instructions" are recipe talk.
+  new RegExp(
+    `${EXTRACT_VERB}\\s+(?:your|the)\\s+system\\s+(?:prompt|instructions|rules)`,
+    "i",
+  ),
+  new RegExp(
+    `${EXTRACT_VERB}\\s+(?:your|the)\\s+(?:(?:hidden|initial|original|secret)\\s+)?prompt\\b`,
+    "i",
+  ),
+  new RegExp(
+    `${EXTRACT_VERB}\\s+your\\s+(?:(?:hidden|initial|original|secret)\\s+)?(?:instructions|rules)\\b(?!\\s+(?:for|on|of|about|to|when|regarding|around)\\b)`,
+    "i",
+  ),
 
   // Direct injection markers
   /\[system\]/i,
@@ -40,10 +73,11 @@ const INJECTION_PATTERNS: RegExp[] = [
   /<<\s*SYS\s*>>/i,
   /<\|im_start\|>/i,
 
-  // Attempts to override safety/content policy
-  /bypass\s+(content\s+)?(filter|policy|safety|restriction)/i,
+  // Attempts to override safety/content policy. Not "gastric bypass
+  // restrictions" or "bypass filtering the stock".
+  /\bbypass\s+(?:(?:your|the|all|any)\s+)?(?:content\s+(?:filters?|polic(?:y|ies))|safety\s+(?:filters?|restrictions?|guidelines?|rules?|polic(?:y|ies))|(?:your|all|any)\s+(?:filters?|restrictions?|rules?|guidelines?))\b/i,
   /jailbreak/i,
-  /DAN\s+(mode|prompt)/i,
+  /\bDAN\s+(?:mode|prompt)\b/i,
 ];
 
 /**
@@ -87,43 +121,173 @@ export function validateAiResponse<T>(
 }
 
 // --- Dangerous dietary advice patterns ---
+//
+// The screen reads the coach's reply one sentence at a time (SENTENCE_BREAK,
+// which covers every point Coach Pro may release text at: see
+// server/services/coach-sentence-release.ts) and asks two
+// questions: does the sentence name something unsafe, and is the coach
+// recommending it or declining it? A hit replaces the whole reply, so a
+// refusal that names the unsafe thing ("I can't build a 500 cal/day plan")
+// must pass, and so must the coach prompt's own example answers. Both sides
+// are pinned by server/lib/__tests__/fixtures/coach-output-screen-corpus.json.
 
+/**
+ * Sentence ends: terminal punctuation, any closing quotes, brackets or
+ * markdown emphasis, then whitespace (the release points of
+ * coach-sentence-release.ts), and line breaks, so one list item cannot
+ * excuse the next.
+ */
+const SENTENCE_BREAK = /(?<=[.!?]["'”’)\]*_]*)\s+|\s*\n+\s*/;
+
+/** Below this daily intake the coach must not recommend a plan. */
+const MIN_SAFE_DAILY_CALORIES = 1200;
+
+/** A fast of 24 hours or longer, as a number of hours. */
+const LONG_HOURS = "(?:2[4-9]|[3-9]\\d|\\d{3,})";
+/** A count of days or weeks, as digits or a number word. */
+const DAY_COUNT =
+  "(?:\\d+|a|an|one|two|three|four|five|six|seven|several|a\\s+few|multi)";
+
+/**
+ * Unsafe things other than a low calorie target. Exported for the tests that
+ * list them; use `containsDangerousDietaryAdvice` to screen text.
+ */
 export const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
-  // Extreme calorie restriction
-  /eat\s+(less\s+than|under|only)\s+[1-7]\d{2}\s*cal/i, // under 800 cal
-  /\b(?:1[01]\d{2}|[1-7]\d{2})\s*calories?\s*(per\s+)?day\b/i, // 100-799 or 1000-1199 cal per day
-  /(?:total|daily)\s+intake\s+(?:of\s+)?[1-7]\d{2}\s*cal/i,
-  /(?:aim|target|stay|stick|keep)\s+(?:(?:at|to|for|under|around|below)\s+)?(?:1[01]\d{2}|[1-9]\d{2})\s*cal/i, // aim/target 100-1199 cal (with optional preposition)
-  /(?:only|just)\s+(?:eat|consume|have)\s+(?:[1-9]\d{2}|1[01]\d{2})\s*cal/i, // "only eat 900 cal" or "just consume 1100 cal" (100-1199 range)
+  // Extreme fasting (24 hours or longer; 12-18 hour windows are ordinary).
+  // "the 16-hour fast for 5 days" is a schedule, not a 5-day fast.
+  new RegExp(
+    `(?<!(?:hour|hr)s?[- ])\\bfast(?:ing)?\\s+for\\s+${DAY_COUNT}\\s+(?:days?|weeks?)\\b`,
+    "i",
+  ),
+  new RegExp(`\\b${LONG_HOURS}[- ]?(?:hour|hr)s?[- ](?:water[- ])?fast`, "i"),
+  new RegExp(`\\b${DAY_COUNT}[- ]day\\s+(?:water[- ](?:only[- ])?)?fast`, "i"),
+  /\bwater[- ]only\s+fast/i,
+  // "herbs dry fast in a low oven" is not a dry fast.
+  /\bdry[- ]fast(?:ing|s)?\b(?!\s+(?:in|on|at|under|when|if|enough)\b)/i,
+  new RegExp(
+    `\\b${LONG_HOURS}\\s*(?:hours?|hrs?)\\s+without\\s+(?:eating|food)\\b`,
+    "i",
+  ),
+  new RegExp(
+    `\\b(?:don['’]?t|do\\s+not|stop|skip)\\s+(?:eat(?:ing)?\\s+)?(?:(?:all\\s+food|any\\s+food|anything|food|meals|eating)\\s+)?(?:and\\s+drinking\\s+)?for\\s+(?:${LONG_HOURS}\\s*(?:hours?|hrs?)|${DAY_COUNT}\\s+(?:days?|weeks?))\\b`,
+    "i",
+  ),
 
-  // Extreme fasting (beyond normal IF — catches 24+ hour fasts)
-  /fast\s+for\s+\d+\s+days/i, // any multi-day fasting (1+ days)
-  /(?:2[4-9]|[3-9]\d|\d{3,})[- ](?:hour|hr)\s+(?:water\s+)?fast/i, // "72-hour fast", "48-hr water fast" (24+ hours only, excludes 16/18hr IF)
-  /water[- ]only\s+fast/i, // water-only fast of any duration
-  /dry\s+fast/i, // no water fasting is dangerous
-
-  // Eating disorder promotion
-  /pro[- ]?ana/i,
-  /pro[- ]?mia/i,
-  /thin\s*sp[io]/i, // thinspo/thinspi
-  /purging\s+(is|can\s+be)\s+(good|effective|helpful)/i,
-  /induce\s+vomiting/i,
+  // Eating disorder promotion. Word-bounded: "pro-anabolic", "Coach Pro
+  // analysis" and "a thin spinach omelette" are not these.
+  /\bpro[- ]?ana\b/i,
+  /\bpro[- ]?mia\b/i,
+  /\bthinsp(?:o|i|iration)\b/i,
+  /\bpurging\s+(?:is|can\s+be)\s+(?:an?\s+)?(?:good|great|effective|helpful|easy|quick)/i,
+  /\bmak(?:e|ing)\s+yourself\s+(?:throw\s+up|vomit|sick|puke)\b/i,
+  // Addressed to the user, or an instruction: "Raw kidney beans can induce
+  // vomiting" is a food-safety fact.
+  /\b(?:you|yourself)(?:\s+[\w'’-]+){0,4}\s+induc(?:e|ing)\s+vomiting|^induce\s+vomiting|\bhow\s+to\s+induce\s+vomiting/i,
+  /\bchew(?:\s+[\w'’-]+){0,5}\s+spit\b/i,
 
   // Dangerous supplement/substance advice
-  /take\s+(\d+\s*)?(laxatives|diuretics|diet\s+pills)/i,
-  /DNP|dinitrophenol/i,
+  /\btake\s+(?:an?\s+|some\s+|\d+\s*)?(?:laxatives?|diuretics?|diet\s+pills?|water\s+pills?)\b/i,
+  /\b(?:diet\s+pills?|laxatives?(?:\s+teas?)?|diuretics?)(?:\s+[\w'’-]+){0,5}\s+(?:will|can|to)\s+(?:help\s+(?:you\s+)?)?(?:speed|lose|drop|slim|boost|shed|burn)/i,
+  /\bDNP\b|dinitrophenol/i,
 
   // Extreme elimination without medical supervision
-  /eliminate\s+all\s+(carbs|fats|proteins)/i,
-  /zero[- ]?(carb|fat|protein)\s+diet/i,
+  /\beliminate\s+all\s+(?:carbs|fats|proteins)\b/i,
+  /\bzero[- ]?(?:carb|fat|protein)\s+diet/i,
 ];
 
 /**
- * Check if AI-generated text contains dangerous dietary advice.
- * Returns true if any dangerous patterns are detected.
+ * Wording that shows the coach is declining, warning against or correcting
+ * the unsafe thing in the same sentence. Read on the sentence with the
+ * matched phrase removed, so "Don't eat anything for 24 hours" is not excused
+ * by its own "Don't".
+ */
+const DECLINING_RE =
+  /\b(?:can(?:['’]|\s+no)?t|cannot|won['’]?t|will\s+not|don['’]?t|do\s+not|shouldn['’]?t|should\s+not|isn['’]?t|is\s+not|aren['’]?t|not\s+safe|unsafe|never|avoid|risks?|risky|dangerous|harm(?:s|ful)?|damag(?:e|es|ing)|toxic|fatal|illegal|steer\s+clear|let['’]?s\s+not|not\s+something|too\s+low|below\s+the|medical\s+supervision|medically\s+supervised|mak(?:e|es)\s+(?:things|it)\s+(?:harder|worse)|mute|unfollow)\b/i;
+
+/** A calorie figure with its unit: "900 calories", "1100 kcal", "700-calorie". */
+const CALORIE_FIGURE_RE =
+  /(?<![\d.])(\d{3,4})(?!\d)[\s-]*(?:k?cal(?:orie)?s?|kilocalories)\b/gi;
+/** Right after the figure: "per day", "a day", "daily", "/day", "-a-day". */
+const DAILY_AFTER_RE =
+  /^(?:\s*\/\s*day\b|[\s-]+(?:(?:per|a|each|every)[\s-]+day|daily)\b)/i;
+/** Before the figure: "daily target at", "total for the day under". */
+const DAILY_BEFORE_RE =
+  /\b(?:daily|per\s+day|for\s+the\s+day|each\s+day|every\s+day)\b[^.!?]{0,25}$/i;
+/** Before the figure: an amount to change by, or burned, not an intake. */
+const CHANGE_BEFORE_RE =
+  /(?:\b(?:deficit|surplus)\s+of|\b(?:add(?:s|ing)?|trim(?:s|ming)?|cut(?:s|ting)?|burn(?:s|ed|ing)?|sav(?:e|es|ing)|by|extra|another)|\b(?:sugars?|fats?|carbs?|alcohol|snacks?|drinks?)\s+(?:under|below|to|at))\s+(?:(?:about|around|roughly|up\s+to|nearly|just)\s+)*~?$/i;
+/** After the daily phrase: "per day less", "a day over your goal". */
+const CHANGE_AFTER_RE = /^\s*(?:less|fewer|more|extra|over|above|under)\b/i;
+/** A meal or snack named just before the figure: "a daily snack of 200 calories". */
+const MEAL_BEFORE_RE =
+  /\b(?:snacks?|breakfast|lunch|dinner|meal|serving|dessert)\b[^.!?]{0,15}$/i;
+/** A verb that sets an intake: "eat only 600 cal", "aim for 900 calories". */
+const INTAKE_VERB_BEFORE_RE =
+  /\b(?:eat|consume|have|aim|target|stay|stick|keep|limit\s+yourself)\b[^.!?\d]{0,25}$/i;
+/** After the figure: the amount belongs to a meal, or is a running total. */
+const PARTIAL_AFTER_RE =
+  /^\s*(?:at|for|per|of|in|before|after|from|over|under|left|remaining|so\s+far|today|to\s+spare)\b/i;
+
+/** The first low daily calorie target the sentence recommends, as [start, end). */
+function lowCalorieTargetSpan(sentence: string): [number, number] | null {
+  // "1,100" → "1100" keeps the figure whole; the offsets below are into `s`.
+  const s = sentence.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+  for (const m of s.matchAll(CALORIE_FIGURE_RE)) {
+    const value = Number(m[1]);
+    if (value < 100 || value >= MIN_SAFE_DAILY_CALORIES) continue;
+    const start = m.index;
+    const end = start + m[0].length;
+    const before = s.slice(Math.max(0, start - 40), start);
+    const after = s.slice(end, end + 30);
+
+    const dailyAfter = DAILY_AFTER_RE.exec(after);
+    const isDaily = dailyAfter !== null || DAILY_BEFORE_RE.test(before);
+    if (isDaily) {
+      const tail = dailyAfter ? after.slice(dailyAfter[0].length) : after;
+      if (
+        CHANGE_BEFORE_RE.test(before) ||
+        CHANGE_AFTER_RE.test(tail) ||
+        MEAL_BEFORE_RE.test(before)
+      ) {
+        continue;
+      }
+      return [start, end + (dailyAfter ? dailyAfter[0].length : 0)];
+    }
+    // No "per day": still a target when a verb sets it and nothing says the
+    // amount is for one meal ("Aim for 900 calories." vs "... at dinner").
+    if (INTAKE_VERB_BEFORE_RE.test(before) && !PARTIAL_AFTER_RE.test(after)) {
+      return [start, end];
+    }
+  }
+  return null;
+}
+
+/** True when the sentence, without the flagged phrase, declines or warns. */
+function declines(sentence: string, start: number, end: number): boolean {
+  return DECLINING_RE.test(
+    `${sentence.slice(0, start)} ${sentence.slice(end)}`,
+  );
+}
+
+function isDangerousDietarySentence(sentence: string): boolean {
+  for (const pattern of DANGEROUS_DIETARY_PATTERNS) {
+    const m = pattern.exec(sentence);
+    if (m && !declines(sentence, m.index, m.index + m[0].length)) return true;
+  }
+  const s = sentence.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+  const span = lowCalorieTargetSpan(sentence);
+  return span !== null && !declines(s, span[0], span[1]);
+}
+
+/**
+ * Check if AI-generated text contains dangerous dietary advice: a sentence
+ * that recommends an unsafe practice or a daily intake under 1,200 calories,
+ * and does not itself decline or warn against it.
  */
 export function containsDangerousDietaryAdvice(text: string): boolean {
-  return DANGEROUS_DIETARY_PATTERNS.some((pattern) => pattern.test(text));
+  return text
+    .split(SENTENCE_BREAK)
+    .some((sentence) => isDangerousDietarySentence(sentence.trim()));
 }
 
 export const UNSAFE_MEDICAL_ADVICE_PATTERNS: RegExp[] = [
@@ -227,8 +391,8 @@ export const SAFETY_REFUSAL_FALLBACK_MESSAGE =
   "That sounds really hard, and I'm glad you said it out loud. I can't help with making up for what you ate, and you don't need to. Eating doesn't have to be undone or earned back. If this feels hard to carry, please talk to a doctor or a registered dietitian who can support you. If you ever feel unsafe, contact local emergency services or a crisis line right away.";
 
 /**
- * Shown, and saved, in place of a bare model refusal when the user wrote
- * about suicide or self-harm: urgent help first, and nothing about food.
+ * Shown, and saved, as the whole reply when the user wrote
+ * about suicide or self-harm (the model is not called): urgent help first, and nothing about food.
  * The server has no country for a user, so the message names the national
  * line for each launch country: 988 (US and Canada, call or text) and Línea
  * de la Vida (Mexico, call). Checked 2026-11-14 against samhsa.gov,
