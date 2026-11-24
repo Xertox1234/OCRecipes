@@ -14,6 +14,10 @@ interface Props {
   min?: number;
   max?: number;
   onChange: (next: number) => void;
+  /** The value one step up or down; default is ±1. The result is clamped. */
+  next?: (value: number, delta: 1 | -1) => number;
+  /** The value as shown and read out, when it is not the bare number. */
+  display?: string;
 }
 
 /**
@@ -28,11 +32,16 @@ export function CardStepper({
   min = 0,
   max = 20,
   onChange,
+  next: nextOf,
+  display,
 }: Props) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const step = (delta: 1 | -1) => {
-    const next = Math.min(max, Math.max(min, value + delta));
+    const next = Math.min(
+      max,
+      Math.max(min, nextOf ? nextOf(value, delta) : value + delta),
+    );
     if (next === value) return;
     haptics.selection();
     onChange(next);
@@ -65,7 +74,9 @@ export function CardStepper({
       accessible
       accessibilityRole="adjustable"
       accessibilityLabel={name}
-      accessibilityValue={{ min, max, now: value }}
+      accessibilityValue={
+        display ? { text: display } : { min, max, now: value }
+      }
       accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
       onAccessibilityAction={(e) =>
         step(e.nativeEvent.actionName === "increment" ? 1 : -1)
@@ -78,7 +89,7 @@ export function CardStepper({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        {value}
+        {display ?? value}
       </ThemedText>
       {button(1)}
     </View>

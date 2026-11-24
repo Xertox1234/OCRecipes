@@ -46,6 +46,16 @@ vi.mock("../QuickReplies", () => ({
     />
   ),
 }));
+vi.mock("../FormBlock", () => ({
+  default: (p: { live?: boolean; busy?: boolean; blockKey?: string }) => (
+    <div
+      data-testid="r-form"
+      data-live={String(p.live)}
+      data-busy={String(!!p.busy)}
+      data-key={p.blockKey ?? ""}
+    />
+  ),
+}));
 vi.mock("../RecipeCard", () => ({
   default: () => <div data-testid="r-recipe" />,
 }));
@@ -290,6 +300,46 @@ describe("BlockRenderer write_card Undo", () => {
     await screen.findByRole("button", { name: "Undo" });
     rerender(<BlockRenderer block={block} replyInFlight />);
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  });
+});
+
+describe("BlockRenderer — form", () => {
+  const form = {
+    type: "form",
+    fields: [{ kind: "choice", label: "Which meal?", options: ["a", "b"] }],
+  } as CoachBlock;
+  const attrs = () => {
+    const el = screen.getByTestId("r-form");
+    return {
+      live: el.getAttribute("data-live"),
+      busy: el.getAttribute("data-busy"),
+      key: el.getAttribute("data-key"),
+    };
+  };
+
+  it("is live where no message row says otherwise (the just-finished reply)", () => {
+    renderComponent(<BlockRenderer block={form} />);
+    expect(attrs()).toEqual({ live: "true", busy: "false", key: "" });
+  });
+
+  it("is live on the latest reply, with its block key", () => {
+    renderComponent(<BlockRenderer block={form} isActive blockKey="7-0" />);
+    expect(attrs()).toEqual({ live: "true", busy: "false", key: "7-0" });
+  });
+
+  it("is closed on an older reply, and once answered", () => {
+    const { unmount } = renderComponent(
+      <BlockRenderer block={form} isActive={false} />,
+    );
+    expect(attrs().live).toBe("false");
+    unmount();
+    renderComponent(<BlockRenderer block={form} isActive isUsed />);
+    expect(attrs().live).toBe("false");
+  });
+
+  it("waits while a reply is on its way", () => {
+    renderComponent(<BlockRenderer block={form} isActive replyInFlight />);
+    expect(attrs().busy).toBe("true");
   });
 });
 

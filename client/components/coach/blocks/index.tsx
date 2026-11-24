@@ -6,6 +6,7 @@ import SuggestionList from "./SuggestionList";
 import InlineChart from "./InlineChart";
 import CommitmentCard from "./CommitmentCard";
 import QuickReplies from "./QuickReplies";
+import FormBlock from "./FormBlock";
 import RecipeCard from "./RecipeCard";
 import MealPlanCard from "./MealPlanCard";
 import CheckedTrail from "./CheckedTrail";
@@ -136,6 +137,18 @@ function renderBlock(
           used={isUsed}
           animateEntry={animateEntry}
           entryDelayMs={entryDelayMs}
+        />
+      );
+    case "form":
+      // Live on the latest reply only (a row passes isActive; the copy of a
+      // just-finished reply passes nothing), and until it is answered.
+      return (
+        <FormBlock
+          block={block}
+          onSubmit={onQuickReply}
+          blockKey={blockKey}
+          live={isActive !== false && !isUsed}
+          busy={replyInFlight}
         />
       );
     case "recipe_card":

@@ -156,6 +156,33 @@ describe("Coach Blocks Service", () => {
   });
 });
 
+describe("form block", () => {
+  const form = {
+    type: "form",
+    fields: [
+      { kind: "choice", label: "Which meal?", options: ["Lunch", "Dinner"] },
+      { kind: "number", label: "Servings", min: 1, max: 8, step: 1, value: 2 },
+    ],
+  };
+
+  it("keeps a form the model wrote, and drops one that breaks the field rules", () => {
+    expect(validateBlocks([form])).toHaveLength(1);
+    expect(
+      validateBlocks([
+        { type: "form", fields: [{ ...form.fields[1], value: 99 }] },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("the prompt describes the form, says it saves nothing, and frees it from quick_replies", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/- form: \{ type: "form"/);
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/form only asks/i);
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /must contain a quick_replies block[^\n]*unless it contains a form/i,
+    );
+  });
+});
+
 describe("server-only finder blocks", () => {
   const flow = {
     flowId: "11111111-1111-4111-8111-111111111111",
