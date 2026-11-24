@@ -647,13 +647,65 @@ for sig in TERM PIPE ALRM USR1 USR2 HUP XCPU PROF IO; do
   nd_only_deny && { nd_reason_has 'ended before it reached a decision' || nd_reason_has 'detached'; } && nd_ok "$n" || nd_bad "$n"
 done
 # ND5. deny() cannot print: a jq on PATH that reads the envelope but prints nothing for
-#      `jq -n`. The trap's static deny answers, and this row pins its text.
+#      `jq -n`. deny() prints a static deny itself (the verdict is already known there).
 ND_JQ=$(mktemp -d); ND_TREES="$ND_TREES $ND_JQ"
 printf '#!/usr/bin/env bash\n[ "$1" = -n ] && exit 0\nexec %q "$@"\n' "$(command -v jq)" > "$ND_JQ/jq"; chmod +x "$ND_JQ/jq"
 ND_INPUT=$("$(command -v jq)" -n --arg c 'git commit -m x' '{"tool_name":"Bash","tool_input":{"command":$c}}')
 ND_OUT=$(printf '%s' "$ND_INPUT" | env -u GIT_DIR -u GIT_WORK_TREE PATH="$ND_JQ:$PATH" bash -c 'cd "$1" && bash "$2"' _ "$REPO_DETACHED" "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
-n="ND5 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
-nd_only_deny && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+n="ND5 deny() cannot render its reason: a static deny, rc 0"
+nd_only_deny && nd_reason_has 'could not render its reason' && nd_ok "$n" || nd_bad "$n"
+
+# ND6. Security review of this change: the degraded paths decided by TEXT, and the text test
+#      missed spellings the lib denies. `git --no-pager commit` is one; each row below was an
+#      allow on a detached HEAD.
+ND_ODD='git --no-pager commit -m x'
+nd_run "$(dirname "$HOOK")" "$REPO_DETACHED" "$ND_ODD"
+n="ND6 control: the healthy hook denies '$ND_ODD' on a detached HEAD"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+for spec in 'cmd-detect.sh|exit 0' 'cmd-detect.sh|cmd_is_git_commit() { exit 0; }' 'cmd-detect.sh|cmd_is_git_commit() { return 2; }'; do
+  T=$(nd_tree "${spec%%|*}" "${spec#*|}"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$REPO_DETACHED" "$ND_ODD"
+  n="ND6 ${spec#*|}: the fallback still denies '$ND_ODD'"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+  nd_run "$T" "$REPO" "$ND_ODD"
+  n="ND6 ${spec#*|}: and allows it on a named branch"
+  nd_silent && nd_ok "$n" || nd_bad "$n"
+done
+while IFS= read -r odd; do
+  T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$REPO_DETACHED" "$odd"
+  n="ND6 fallback spelling: $odd"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+done <<'ODD'
+git -p commit -m x
+git --literal-pathspecs commit -m x
+2>/dev/null git commit -m x
+"git" commit -m x
+git comm""it -m x
+A="b c" git commit -m x
+ODD
+T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" 'git status && echo commit'
+n="ND6 control: the wide test does not join words across a separator"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+T=$(nd_tree cmd-detect.sh "cmd_git_repo_dir() { kill -TERM \$\$; sleep 1; printf .; }"); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" "$ND_ODD"
+n="ND6 a signal mid-run on '$ND_ODD': one deny, rc 0"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+ND_INPUT=$("$(command -v jq)" -n --arg c "$ND_ODD" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+ND_OUT=$(printf '%s' "$ND_INPUT" | env -u GIT_DIR -u GIT_WORK_TREE PATH="$ND_JQ:$PATH" bash -c 'cd "$1" && bash "$2"' _ "$REPO_DETACHED" "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+n="ND6 deny() cannot render its reason for '$ND_ODD': the static deny, rc 0"
+nd_only_deny && nd_reason_has 'could not render its reason' && nd_ok "$n" || nd_bad "$n"
+# ND7. cmd_git_repo_dir broken (rc 127 from a missing helper): a plain detached-HEAD commit
+#      was allowed, on main too. Only a clean rc 1 means "cannot place".
+T=$(nd_tree cmd-detect.sh 'cmd_git_repo_dir() { no_such_helper "$@"; }'); ND_TREES="$ND_TREES $T"
+nd_trio "ND7 cmd_git_repo_dir calls a missing helper" "$T"
+# ND8. A lib that PRINTS when sourced: its text landed ahead of the deny JSON.
+T=$(nd_tree cmd-detect.sh 'echo "cmd-detect loaded"'); ND_TREES="$ND_TREES $T"
+nd_trio "ND8 cmd-detect.sh prints when sourced" "$T"
+# ND9. A lib that defines its own `deny` or `allow` does not replace the hook's.
+T=$(nd_tree cmd-detect.sh 'deny() { :; }; allow() { :; }'); ND_TREES="$ND_TREES $T"
+nd_trio "ND9 a lib defines deny() and allow()" "$T"
 # shellcheck disable=SC2086
 rm -rf $ND_TREES
 

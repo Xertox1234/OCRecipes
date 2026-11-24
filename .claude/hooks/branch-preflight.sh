@@ -45,10 +45,21 @@ GIT_COMMIT_RE='^[[:space:]]*[`{(!]?[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:spac
 COMPOUND_COMMIT_RE='(&&|\|\||\||&|;|[`{(!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
 exec 9>&1
 DECIDED=""
-allow() { DECIDED=1; exit 0; }
+# Named with the hook's prefix: a lib that happened to define `deny` or `allow` would replace
+# a plain-named one (the hook's are defined before the libs are sourced).
+_bp_allow() { DECIDED=1; exit 0; }
 # deny builds its JSON inside `$(...)` first and marks the decision only when the text holds
 # the deny; the reason is cut at 8000 characters (one argv entry over 128 KB is E2BIG).
-deny() {
+# When jq cannot render it, a static deny is printed instead: the verdict is already known
+# here, so it must not be handed back to the trap's text test (which misses some spellings).
+_BP_SIGS='TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO'
+_bp_ignore_signals() {
+  # shellcheck disable=SC2086
+  trap '' $_BP_SIGS
+  trap '' PWR 2>/dev/null || :
+  trap '' STKFLT 2>/dev/null || :
+}
+_bp_deny() {
   local j r="$1"
   [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
   j=$(jq -n --arg r "$r" '{
@@ -58,19 +69,40 @@ deny() {
     "permissionDecisionReason": $r
   }
 }' 2>/dev/null) || j=""
+  _bp_ignore_signals
+  DECIDED=1
   case "$j" in
-    *'"permissionDecision": "deny"'*)
-      trap '' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
-      trap '' PWR 2>/dev/null || :
-      trap '' STKFLT 2>/dev/null || :
-      DECIDED=1; printf '%s\n' "$j" >&9 ;;
+    *'"permissionDecision": "deny"'*) builtin printf '%s\n' "$j" >&9 ;;
+    *) builtin printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"branch-preflight: this command is blocked, and the hook could not render its reason (jq failed). The two checks are: a git commit on a detached HEAD (check: git symbolic-ref --short HEAD; fix: git switch -c <branch-name>), and creating a branch while the current one is behind its upstream (fix: git pull --ff-only). Bypass (emergencies only): SKIP_BRANCH_PREFLIGHT=1 in the shell that launched Claude Code."}}' >&9 ;;
   esac
   exit 0
 }
+# _bp_looks_like_commit: the text test used when the lib cannot answer (the fallback in Check
+# 1) and by the trap. The two regexes above model a command position but only the `-c k=v`
+# global, so they miss spellings the lib denies: `git --no-pager commit`, `git -C <dir>
+# commit`, a redirect before `git`, a quoted `"git"` or `comm""it`, `A="b c" git commit`
+# (security review, 2026-11-24, each measured as an allow on these degraded paths). The wide
+# test reads the command with quotes and backslashes removed and asks for the word `git`, then
+# any number of option words (each may carry one value word), then `commit`. Only options may
+# sit between the two: `git status -m commit` is not a commit and stays silent (pinned by the
+# lib-missing rows). It can over-match (`git -p status commit` reads `status` as a value),
+# which on these paths costs a false deny on a detached HEAD while the lib is broken, never an
+# allow. Still missed: a global whose value holds a space (`git -c "a=b c" commit`), and `git`
+# reached through a path or a wrapper the lib also misses (docs/harness-residuals.md).
+_BP_WIDE_COMMIT_RE='(^|[^A-Za-z0-9_./-])git([[:space:]]+-[^[:space:]]+([[:space:]]+[^[:space:]-][^[:space:]]*)?)*[[:space:]]+commit([^A-Za-z0-9_-]|$)'
+_bp_looks_like_commit() {
+  grep -qE "$GIT_COMMIT_RE" <<<"$CMD" && return 0
+  grep -qE "$COMPOUND_COMMIT_RE" <<<"$CMD" && return 0
+  local t; t=$(tr -d "\"'\\\\" <<<"$CMD")
+  grep -qE "$_BP_WIDE_COMMIT_RE" <<<"$t"
+}
 no_decision() {
   [ -n "$DECIDED" ] && return 0
+  # Signals are ignored from here: a second one landing while the test below ran saw DECIDED
+  # set and left with nothing printed.
+  _bp_ignore_signals
   DECIDED=1
-  if grep -qE "$GIT_COMMIT_RE" <<<"$CMD" || grep -qE "$COMPOUND_COMMIT_RE" <<<"$CMD"; then
+  if _bp_looks_like_commit; then
     builtin printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"branch-preflight: the hook ended before it reached a decision (a helper under .claude/hooks/lib/ ended the hook, or the hook was interrupted) on a command that looks like a git commit, so it cannot say HEAD is on a named branch. Fail-closed. Check with: git symbolic-ref --short HEAD. Bypass (emergencies only): SKIP_BRANCH_PREFLIGHT=1 in the shell that launched Claude Code."}}' >&9
   fi
   exit 0
@@ -78,7 +110,8 @@ no_decision() {
 trap no_decision EXIT
 # A trapped signal would otherwise RETURN to the interrupted command; end the shell instead.
 # PWR and STKFLT do not exist in macOS bash, so each is set on its own line that may fail.
-trap 'no_decision; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+# shellcheck disable=SC2086
+trap 'no_decision; exit 0' $_BP_SIGS
 trap 'no_decision; exit 0' PWR 2>/dev/null || :
 trap 'no_decision; exit 0' STKFLT 2>/dev/null || :
 
@@ -125,7 +158,7 @@ case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esa
 _BP_FP_RC=$(_o="$-:$SHELLOPTS"; { . "$HERE/lib/fastpath-filter.sh"; } >/dev/null 2>&1
   _bp_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && declare -F cmd_fastpath_has >/dev/null || exit 0
   cmd_fastpath_has "$CMD" '*commit*' '*checkout*' '*switch*' >/dev/null 2>&1; printf '%s' "$?")
-[ "$_BP_FP_RC" = 1 ] && allow
+[ "$_BP_FP_RC" = 1 ] && _bp_allow
 
 LIB_OK=0
 # Probe EVERY function the primary path calls, not just the first one. Check 1 now depends on
@@ -134,7 +167,10 @@ LIB_OK=0
 # `git commit -m x` on a detached HEAD — the fail-CLOSED promise in this file's header
 # quietly bypassed (security review, 2026-09-01; verified against a lib with that one
 # function renamed away). Add to this list whenever the primary path grows a dependency.
-if lib_loads "$HERE/lib/cmd-detect.sh" && . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+# The real source discards stdout as well as stderr (2026-11-24): a lib that prints when
+# sourced put its text ahead of the deny JSON, and a reader that wants ONE JSON value reads
+# that as no decision. The decisions themselves go to fd 9.
+if lib_loads "$HERE/lib/cmd-detect.sh" && . "$HERE/lib/cmd-detect.sh" >/dev/null 2>&1 \
    && declare -F cmd_is_git_commit >/dev/null \
    && declare -F cmd_git_repo_dir >/dev/null; then
   LIB_OK=1
@@ -164,7 +200,16 @@ _BP_FALLBACK=0
 if [ "$LIB_OK" = 1 ]; then
   _BP_IS_COMMIT=$(cmd_is_git_commit "$CMD" >/dev/null 2>&1; printf '%s' "$?")
   case "$_BP_IS_COMMIT" in
-    0) REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") && IS_COMMIT=1 || REPO_COMMIT="." ;;
+    0) # rc 0 = the repo dir; rc 1 = a redirect it cannot place (not judged, as before). Any
+       # other rc (127 from a missing helper, a signal) is a broken function, not an answer,
+       # and takes the fallback. A function that fails with exactly 1 still reads as "cannot
+       # place" (docs/harness-residuals.md).
+       REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT"); _BP_DIR_RC=$?
+       case "$_BP_DIR_RC" in
+         0) IS_COMMIT=1 ;;
+         1) REPO_COMMIT="." ;;
+         *) REPO_COMMIT="."; _BP_FALLBACK=1 ;;
+       esac ;;
     1) ;;
     *) _BP_FALLBACK=1 ;;
   esac
@@ -234,7 +279,7 @@ if [ "$_BP_FALLBACK" = 1 ]; then
   # class), so it is out of this todo's Scope Contract; tracked as a residual for
   # todos/P2-2026-08-29-branch-preflight-fallback-parity-gaps.md's follow-up rather than fixed
   # here.
-  if grep -qE "$GIT_COMMIT_RE" <<<"$CMD" || grep -qE "$COMPOUND_COMMIT_RE" <<<"$CMD"; then
+  if _bp_looks_like_commit; then
     IS_COMMIT=1
   fi
 fi
@@ -353,6 +398,6 @@ if [ "$_BP_IS_CREATE" = 0 ] \
   fi
 fi
 
-[ -n "$REASON" ] || allow
+[ -n "$REASON" ] || _bp_allow
 
-deny "$REASON"
+_bp_deny "$REASON"
