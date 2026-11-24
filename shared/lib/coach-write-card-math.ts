@@ -1,6 +1,9 @@
 import type {
   FoodCardEdits,
   FoodCardPayload,
+  GoalKey,
+  GoalsCardEdits,
+  GoalsCardPayload,
   GroceryCardEdits,
   GroceryCardPayload,
   PantryCardEdits,
@@ -120,6 +123,28 @@ function planNoun(rows: KeptPlanRow[]): string {
   return plural(rows.length, word);
 }
 
+/** The goals card's value per row: the user's edit, else the proposal. */
+export function goalsValues(p: GoalsCardPayload, e: GoalsCardEdits): number[] {
+  return p.rows.map((row, i) => e.values?.[i] ?? row.proposed);
+}
+
+const GOAL_SHORT: Record<GoalKey, string> = {
+  calories: "cal",
+  protein: "g protein",
+  carbs: "g carbs",
+  fat: "g fat",
+};
+
+/** "2,000 cal · 150 g protein" for the goals card's rows. */
+export function goalsSummary(p: GoalsCardPayload, e: GoalsCardEdits): string {
+  const values = goalsValues(p, e);
+  return p.rows
+    .map(
+      (row, i) => `${values[i].toLocaleString("en-US")} ${GOAL_SHORT[row.key]}`,
+    )
+    .join(" · ");
+}
+
 export function writeCardButtonLabel(
   kind: WriteCardKind,
   p: WriteCardPayload,
@@ -139,6 +164,8 @@ export function writeCardButtonLabel(
       return `Add ${planNoun(planKept(p as PlanCardPayload, e as PlanCardEdits))} to plan`;
     case "pantry":
       return "Update pantry";
+    case "goals":
+      return "Update goals";
   }
 }
 
@@ -167,5 +194,7 @@ export function writeCardReceipt(
     // (write-cards/pantry.ts); this is the line when no counts exist.
     case "pantry":
       return "✓ Pantry updated";
+    case "goals":
+      return `✓ Goals updated · ${goalsSummary(p as GoalsCardPayload, e as GoalsCardEdits)}`;
   }
 }

@@ -78,6 +78,8 @@ export type { CookingSession } from "./sessions";
 export const storage = {
   // Users & profiles
   getUser: users.getUser,
+  getUserGoals: users.getUserGoals,
+  setUserGoals: users.setUserGoals,
   getUserByUsername: users.getUserByUsername,
   getUserByEmail: users.getUserByEmail,
   getUserForAuth: users.getUserForAuth,

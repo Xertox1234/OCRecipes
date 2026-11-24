@@ -16,9 +16,12 @@ import {
   isFlatModelRefusal,
 } from "../../lib/ai-safety";
 import {
+  buildGoalsPayload,
+  describeGoals,
   pantryRowLine,
   planGroceryCard,
   planPantryCard,
+  WriteCardEditError,
   type WriteCardOutcome,
   type WriteCardProposal,
 } from "../write-cards";
@@ -49,6 +52,7 @@ interface StreamArgs {
   offerOn: boolean;
   writeCards: boolean;
   pantryCard: boolean;
+  goalsCard: boolean;
 }
 
 function emptyReply(): ReplyResult {
@@ -88,7 +92,8 @@ async function* replayCached(
 async function* streamProReply(
   a: StreamArgs,
 ): AsyncGenerator<CoachChatEvent, ReplyResult> {
-  const { params, turn, intent, offerOn, writeCards, pantryCard } = a;
+  const { params, turn, intent, offerOn, writeCards, pantryCard, goalsCard } =
+    a;
   const { userId, isAborted, abortSignal } = params;
   const reply = emptyReply();
 
@@ -111,6 +116,25 @@ async function* streamProReply(
         onWriteCardProposal: async (
           p: WriteCardProposal,
         ): Promise<void | WriteCardOutcome> => {
+          if (p.kind === "goals") {
+            // Worked out now, so the reply never points at a card for goals
+            // the user already has. With no card, an earlier proposal stays.
+            try {
+              const payload = await buildGoalsPayload(p.args, userId);
+              reply.writeCardProposal = p;
+              reply.writeCardPrepared = payload;
+              return {
+                kind: "goals",
+                shown: true,
+                rows: describeGoals(payload, {}),
+              };
+            } catch (err) {
+              if (err instanceof WriteCardEditError) {
+                return { kind: "goals", shown: false, rows: "" };
+              }
+              throw err;
+            }
+          }
           if (p.kind !== "grocery" && p.kind !== "pantry") {
             reply.writeCardProposal = p;
             reply.writeCardPrepared = null;
@@ -165,6 +189,8 @@ async function* streamProReply(
         // Only when the app can draw the pantry card and the plan has the
         // pantry: otherwise the model never gets update_pantry.
         ...(pantryCard && { pantryCard: true }),
+        // Not on a safety turn: the Coach is refusing, not setting goals.
+        ...(goalsCard && intent !== "safety_refusal" && { goalsCard: true }),
       }),
     },
   )) {

@@ -14,6 +14,8 @@ import {
 import type {
   FoodCardEdits,
   FoodCardPayload,
+  GoalsCardEdits,
+  GoalsCardPayload,
   GroceryCardEdits,
   GroceryCardPayload,
   PantryCardEdits,
@@ -26,6 +28,7 @@ import type {
 } from "@shared/schemas/coach-write-cards";
 import { WriteCardShell } from "./WriteCardShell";
 import { FoodWriteCard } from "./FoodWriteCard";
+import { GoalsWriteCard } from "./GoalsWriteCard";
 import { GroceryWriteCard } from "./GroceryWriteCard";
 import { PantryWriteCard } from "./PantryWriteCard";
 import { PlanWriteCard } from "./PlanWriteCard";
@@ -68,6 +71,10 @@ function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
         pantryKept(block.payload as PantryCardPayload, edits as PantryCardEdits)
           .length > 0
       );
+    // Every row always holds a value in bounds; the server refuses a save
+    // that changes nothing.
+    case "goals":
+      return true;
   }
 }
 
@@ -83,6 +90,10 @@ function lockedSummary(block: WriteCardBlock): string {
   if (block.kind === "pantry") {
     const n = (block.payload as PantryCardPayload).rows.length;
     return `${n} pantry change${n === 1 ? "" : "s"}`;
+  }
+  if (block.kind === "goals") {
+    const n = (block.payload as GoalsCardPayload).rows.length;
+    return `${n} daily goal${n === 1 ? "" : "s"}`;
   }
   const n = (block.payload as PlanCardPayload).rows.length;
   return `${n} planned meal${n === 1 ? "" : "s"}`;
@@ -101,7 +112,7 @@ export default function WriteCard({
   replyInFlight = false,
 }: Props) {
   const haptics = useHaptics();
-  const { save, undo } = useWriteCard(block.cardId);
+  const { save, undo } = useWriteCard(block.cardId, block.kind);
   // What this device just did (saved / undone). It wins over the block's
   // status until a refetch catches up — except that a newer card locking
   // this one (replaced / expired) always wins.
@@ -201,6 +212,12 @@ export default function WriteCard({
         <PantryWriteCard
           payload={block.payload as PantryCardPayload}
           edits={edits as PantryCardEdits}
+          onEdit={onEdit}
+        />
+      ) : block.kind === "goals" ? (
+        <GoalsWriteCard
+          payload={block.payload as GoalsCardPayload}
+          edits={edits as GoalsCardEdits}
           onEdit={onEdit}
         />
       ) : (

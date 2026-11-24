@@ -10,7 +10,13 @@ import { z } from "zod";
  * or ids of its own. Every edit schema is strict for that reason.
  */
 
-export const WRITE_CARD_KINDS = ["food", "grocery", "plan", "pantry"] as const;
+export const WRITE_CARD_KINDS = [
+  "food",
+  "grocery",
+  "plan",
+  "pantry",
+  "goals",
+] as const;
 export type WriteCardKind = (typeof WRITE_CARD_KINDS)[number];
 
 export const WRITE_CARD_STATUSES = [
@@ -131,6 +137,52 @@ export const pantryCardPayloadSchema = z.object({
 });
 export type PantryCardPayload = z.infer<typeof pantryCardPayloadSchema>;
 
+/**
+ * The goals card (Coach roadmap T1): one row per daily goal the Coach proposes
+ * to change. `current` is the goal when the card was built (null: none set).
+ * The bounds are GOAL_LIMITS; calories never go under the 1,200 floor the goal
+ * calculator uses, though the Goals screen itself accepts less.
+ */
+export const GOAL_KEYS = ["calories", "protein", "carbs", "fat"] as const;
+export type GoalKey = (typeof GOAL_KEYS)[number];
+
+export const GOAL_LIMITS: Record<
+  GoalKey,
+  { min: number; max: number; step: number }
+> = {
+  calories: { min: 1200, max: 10000, step: 50 },
+  protein: { min: 0, max: 500, step: 5 },
+  carbs: { min: 0, max: 1000, step: 5 },
+  fat: { min: 0, max: 500, step: 5 },
+};
+
+/** Whether `value` is a whole number inside the goal's bounds. */
+export function isGoalValue(key: GoalKey, value: number): boolean {
+  const { min, max } = GOAL_LIMITS[key];
+  return Number.isInteger(value) && value >= min && value <= max;
+}
+
+export const goalsCardPayloadSchema = z.object({
+  rows: z
+    .array(
+      z
+        .object({
+          key: z.enum(GOAL_KEYS),
+          current: z.number().int().min(0).nullable(),
+          proposed: z.number().int(),
+        })
+        .refine((r) => isGoalValue(r.key, r.proposed), {
+          message: "proposed is outside the goal's bounds.",
+        }),
+    )
+    .min(1)
+    .max(GOAL_KEYS.length)
+    .refine((rows) => new Set(rows.map((r) => r.key)).size === rows.length, {
+      message: "One row per goal.",
+    }),
+});
+export type GoalsCardPayload = z.infer<typeof goalsCardPayloadSchema>;
+
 // ── Edits (client-sent, strict) ─────────────────────────────────────
 
 export const foodEditsSchema = z
@@ -168,11 +220,20 @@ export const pantryEditsSchema = z
   .strict();
 export type PantryCardEdits = z.infer<typeof pantryEditsSchema>;
 
+/** The value each row holds now, by row; bounds are checked against the row's
+ *  goal at save (the row's key is the server's, not the app's). */
+export const goalsEditsSchema = z
+  .object({ values: z.array(z.number().int()).max(GOAL_KEYS.length) })
+  .partial()
+  .strict();
+export type GoalsCardEdits = z.infer<typeof goalsEditsSchema>;
+
 export const WRITE_CARD_EDITS_SCHEMAS = {
   food: foodEditsSchema,
   grocery: groceryEditsSchema,
   plan: planEditsSchema,
   pantry: pantryEditsSchema,
+  goals: goalsEditsSchema,
 } as const;
 
 export const WRITE_CARD_PAYLOAD_SCHEMAS = {
@@ -180,18 +241,21 @@ export const WRITE_CARD_PAYLOAD_SCHEMAS = {
   grocery: groceryCardPayloadSchema,
   plan: planCardPayloadSchema,
   pantry: pantryCardPayloadSchema,
+  goals: goalsCardPayloadSchema,
 } as const;
 
 export type WriteCardPayload =
   | FoodCardPayload
   | GroceryCardPayload
   | PlanCardPayload
-  | PantryCardPayload;
+  | PantryCardPayload
+  | GoalsCardPayload;
 export type WriteCardEdits =
   | FoodCardEdits
   | GroceryCardEdits
   | PlanCardEdits
-  | PantryCardEdits;
+  | PantryCardEdits
+  | GoalsCardEdits;
 
 // ── Block ───────────────────────────────────────────────────────────
 
@@ -210,6 +274,7 @@ export const writeCardBlockObjectSchema = z.object({
     groceryCardPayloadSchema,
     planCardPayloadSchema,
     pantryCardPayloadSchema,
+    goalsCardPayloadSchema,
   ]),
   status: z.enum(WRITE_CARD_STATUSES),
   replacesCardId: z.string().uuid().optional(),

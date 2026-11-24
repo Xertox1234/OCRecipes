@@ -24,6 +24,7 @@ import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { createHash } from "crypto";
 import { logger } from "../lib/logger";
 import type { UserProfile } from "@shared/schema";
+import { GOALS_TOOLS } from "./coach-tools/goals";
 import { GROCERY_TOOLS } from "./coach-tools/grocery";
 import { NUTRITION_TOOLS } from "./coach-tools/nutrition";
 import { PANTRY_TOOLS } from "./coach-tools/pantry";
@@ -59,6 +60,7 @@ const ALL_TOOLS: CoachToolEntry[] = [
   ...PANTRY_TOOLS,
   ...GROCERY_TOOLS,
   ...PLAN_TOOLS,
+  ...GOALS_TOOLS,
 ];
 
 const TOOL_ORDER = [
@@ -75,6 +77,7 @@ const TOOL_ORDER = [
   "get_my_recipes",
   "find_plan_recipes",
   "update_pantry",
+  "set_nutrition_goals",
 ] as const;
 
 const TOOL_REGISTRY: CoachToolEntry[] = TOOL_ORDER.map((name) => {
@@ -88,11 +91,15 @@ const TOOL_REGISTRY: CoachToolEntry[] = TOOL_ORDER.map((name) => {
  * `writeCards` (the app sent `writeCards: true` — it can show write cards,
  * spec 2026-11-09) swaps the three write tools for their card-building forms
  * and adds the two recipe-id tools a plan card needs; `pantryCard` adds
- * update_pantry. Without them the list is exactly the original ten, so an
+ * update_pantry; `goalsCard` adds set_nutrition_goals. Without them the list is exactly the original ten, so an
  * older app is unaffected.
  */
 export function getToolDefinitions(
-  opts: { writeCards?: boolean; pantryCard?: boolean } = {},
+  opts: {
+    writeCards?: boolean;
+    pantryCard?: boolean;
+    goalsCard?: boolean;
+  } = {},
 ): ChatCompletionTool[] {
   return TOOL_REGISTRY.filter((t) => t.available(opts)).map((t) =>
     t.definition(opts),

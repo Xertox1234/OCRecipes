@@ -1,7 +1,10 @@
 import { z } from "zod";
 import {
+  GOAL_KEYS,
+  GOAL_LIMITS,
   writeCardDaySchema,
   writeCardMealTypeSchema,
+  type GoalKey,
 } from "@shared/schemas/coach-write-cards";
 import { containsUnsafeCoachAdvice } from "../../lib/ai-safety";
 import { isValidCalendarDate } from "../../utils/date-validation";
@@ -122,11 +125,32 @@ export const updatePantryCardArgsSchema = z.object({
 });
 export type UpdatePantryCardArgs = z.infer<typeof updatePantryCardArgsSchema>;
 
+/**
+ * Goals card (Coach roadmap T1). The bounds are GOAL_LIMITS: calories never
+ * go under the 1,200 floor the goal calculator uses. Fractions are allowed
+ * here; the card builder rounds to the stepper's grid.
+ */
+const goalArg = (key: GoalKey) =>
+  z.number().finite().min(GOAL_LIMITS[key].min).max(GOAL_LIMITS[key].max);
+
+export const setGoalsCardArgsSchema = z
+  .object({
+    calories: goalArg("calories").optional(),
+    protein: goalArg("protein").optional(),
+    carbs: goalArg("carbs").optional(),
+    fat: goalArg("fat").optional(),
+  })
+  .refine((a) => GOAL_KEYS.some((k) => a[k] !== undefined), {
+    message: "Give at least one goal.",
+  });
+export type SetGoalsCardArgs = z.infer<typeof setGoalsCardArgsSchema>;
+
 /** A write tool call in write-card mode, args already validated. */
 export type WriteCardProposal =
   | { kind: "food"; args: LogFoodCardArgs }
   | { kind: "grocery"; args: AddGroceryCardArgs }
   | { kind: "pantry"; args: UpdatePantryCardArgs }
+  | { kind: "goals"; args: SetGoalsCardArgs }
   | {
       kind: "plan";
       args: AddMealPlanCardArgs;
@@ -145,4 +169,6 @@ export type WriteCardProposal =
 export type WriteCardOutcome =
   | { kind: "grocery"; shown: true; leftOff: string[]; unticked: string[] }
   | { kind: "grocery"; shown: false; leftOff: string[] }
-  | { kind: "pantry"; shown: boolean; rows: string[]; dropped: number };
+  | { kind: "pantry"; shown: boolean; rows: string[]; dropped: number }
+  /** goals: `rows` is the card's own line (goal names and numbers only). */
+  | { kind: "goals"; shown: boolean; rows: string };

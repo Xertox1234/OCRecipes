@@ -11,6 +11,7 @@ import type { CoachProChunk } from "../nutrition-coach";
 import type { CoachContext } from "../coach-prompt";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "../coach-blocks";
 import {
+  buildGoalsPayload,
   buildWriteCardPayload,
   planGroceryCard,
   planPantryCard,
@@ -70,6 +71,7 @@ vi.mock("../write-cards", async (orig) => ({
   buildWriteCardPayload: vi.fn(),
   planGroceryCard: vi.fn(),
   planPantryCard: vi.fn(),
+  buildGoalsPayload: vi.fn(),
 }));
 
 vi.mock("../notebook-extraction", () => ({
@@ -445,6 +447,112 @@ describe("handleCoachChat with write cards", () => {
       expect.objectContaining({ kind: "pantry", payload: pantryPayload }),
     );
     expect(buildWriteCardPayload).not.toHaveBeenCalled();
+  });
+
+  const goalsPayload = {
+    rows: [{ key: "calories" as const, current: 1800, proposed: 2000 }],
+  };
+  const proposingGoals = (seen: { outcome?: unknown }) =>
+    async function* (
+      ...args: Parameters<typeof generateCoachProResponse>
+    ): AsyncGenerator<CoachProChunk> {
+      seen.outcome = await args[7]?.onWriteCardProposal?.({
+        kind: "goals",
+        args: { calories: 2000 },
+      });
+      const chunk: CoachProChunk = { type: "content", content: "Here." };
+      yield chunk;
+    };
+
+  it("the goals tool is switched on only for an app that declared the goals card", async () => {
+    vi.mocked(generateCoachProResponse).mockImplementation(proposing());
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+    expect(
+      vi.mocked(generateCoachProResponse).mock.calls[0][7],
+    ).not.toHaveProperty("goalsCard");
+    vi.mocked(generateCoachProResponse).mockClear();
+    await collect(
+      handleCoachChat(makeParams({ writeCards: true, goalsCard: true })),
+    );
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][7]).toMatchObject({
+      goalsCard: true,
+    });
+  });
+
+  it("a goals card is worked out during the tool call and saved as the turn's card", async () => {
+    vi.mocked(buildGoalsPayload).mockResolvedValue(goalsPayload);
+    const seen: { outcome?: unknown } = {};
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposingGoals(seen),
+    );
+    await collect(
+      handleCoachChat(makeParams({ writeCards: true, goalsCard: true })),
+    );
+    expect(buildGoalsPayload).toHaveBeenCalledWith(
+      { calories: 2000 },
+      "user-42",
+    );
+    expect(seen.outcome).toEqual({
+      kind: "goals",
+      shown: true,
+      rows: "calories 2000 (now 1800)",
+    });
+    expect(storage.createWriteCard).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "goals", payload: goalsPayload }),
+    );
+    expect(buildWriteCardPayload).not.toHaveBeenCalled();
+  });
+
+  it("a reply replaced by the safety message carries no card", async () => {
+    vi.mocked(buildGoalsPayload).mockResolvedValue(goalsPayload);
+    vi.mocked(generateCoachProResponse).mockImplementation(async function* (
+      ...args: Parameters<typeof generateCoachProResponse>
+    ): AsyncGenerator<CoachProChunk> {
+      await args[7]?.onWriteCardProposal?.({
+        kind: "goals",
+        args: { calories: 2000 },
+      });
+      const text: CoachProChunk = { type: "content", content: "Eat less." };
+      yield text;
+      const override: CoachProChunk = { type: "safety_override" };
+      yield override;
+    });
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, goalsCard: true })),
+    );
+    expect(events.some((e) => e.type === "safety_override")).toBe(true);
+    expect(storage.createWriteCard).not.toHaveBeenCalled();
+  });
+
+  it("the goals tool is not offered on a safety turn", async () => {
+    vi.mocked(generateCoachProResponse).mockImplementation(proposing());
+    await collect(
+      handleCoachChat(
+        makeParams({
+          writeCards: true,
+          goalsCard: true,
+          content: "I have diabetes, what should I eat?",
+        }),
+      ),
+    );
+    const opts = vi.mocked(generateCoachProResponse).mock.calls[0][7];
+    expect(opts).toMatchObject({ writeCards: true });
+    expect(opts).not.toHaveProperty("goalsCard");
+  });
+
+  it("goals the user already has show no card", async () => {
+    vi.mocked(buildGoalsPayload).mockRejectedValue(
+      new WriteCardEditError("These are already the user's goals."),
+    );
+    const seen: { outcome?: unknown } = {};
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposingGoals(seen),
+    );
+    await collect(
+      handleCoachChat(makeParams({ writeCards: true, goalsCard: true })),
+    );
+    expect(seen.outcome).toEqual({ kind: "goals", shown: false, rows: "" });
+    expect(storage.createWriteCard).not.toHaveBeenCalled();
   });
 
   it("a pantry request with nothing left shows no card", async () => {

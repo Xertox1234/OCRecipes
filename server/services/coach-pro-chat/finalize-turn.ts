@@ -57,9 +57,15 @@ async function proReplyBlocks(
 
   // The write card is built (and its row created) only for a client still
   // here: the row locks the previous live card, which an abandoned turn must
-  // not do.
+  // not do. A reply the safety check replaced carries no card either: the
+  // card would sit under the safety message, offering what it withdrew.
   let wroteCard = false;
-  if (reply.writeCardProposal && fullResponse && !isAborted()) {
+  if (
+    reply.writeCardProposal &&
+    fullResponse &&
+    !reply.safetyOverridden &&
+    !isAborted()
+  ) {
     const card = await createWriteCardBlock(
       reply.writeCardProposal,
       { conversationId, userId, tz: turn.tz },

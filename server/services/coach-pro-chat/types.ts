@@ -47,6 +47,8 @@ export interface CoachChatParams {
    * the user's plan includes the pantry. The caller decides both.
    */
   pantryCard?: boolean;
+  /** Goals card (Coach roadmap T1): the app declared it can draw the card. */
+  goalsCard?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {

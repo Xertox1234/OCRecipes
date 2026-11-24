@@ -280,5 +280,15 @@ describe("pantry card", () => {
   it("button and fallback receipt", () => {
     expect(writeCardButtonLabel("pantry", pantry, {})).toBe("Update pantry");
     expect(writeCardReceipt("pantry", pantry, {})).toBe("✓ Pantry updated");
+    const goals = {
+      rows: [
+        { key: "calories" as const, current: 1800, proposed: 2000 },
+        { key: "protein" as const, current: null, proposed: 150 },
+      ],
+    };
+    expect(writeCardButtonLabel("goals", goals, {})).toBe("Update goals");
+    expect(writeCardReceipt("goals", goals, { values: [2100, 150] })).toBe(
+      "✓ Goals updated · 2,100 cal · 150 g protein",
+    );
   });
 });

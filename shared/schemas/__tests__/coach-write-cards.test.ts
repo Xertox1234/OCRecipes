@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   foodEditsSchema,
+  goalsCardPayloadSchema,
+  goalsEditsSchema,
   groceryEditsSchema,
   planEditsSchema,
   writeCardBlockSchema,
@@ -64,6 +66,61 @@ describe("writeCardBlockSchema", () => {
 
   it("is part of the coach block union", () => {
     expect(coachBlockSchema.safeParse(block).success).toBe(true);
+  });
+});
+
+describe("goals write card", () => {
+  const goalsBlock = {
+    type: "write_card",
+    cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+    kind: "goals",
+    status: "live",
+    payload: {
+      rows: [
+        { key: "calories", current: 1800, proposed: 2000 },
+        { key: "protein", current: null, proposed: 150 },
+      ],
+    },
+  };
+
+  it("a goals block passes the coach block schema, so the app does not drop it", () => {
+    expect(coachBlockSchema.safeParse(goalsBlock).success).toBe(true);
+    expect(writeCardBlockSchema.safeParse(goalsBlock).success).toBe(true);
+  });
+
+  it("a goals payload under another kind is refused", () => {
+    expect(
+      writeCardBlockSchema.safeParse({ ...goalsBlock, kind: "pantry" }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      "calories under the 1,200 floor",
+      [{ key: "calories", current: 1800, proposed: 1100 }],
+    ],
+    ["a value past its bound", [{ key: "fat", current: null, proposed: 501 }]],
+    ["a fraction", [{ key: "protein", current: null, proposed: 150.5 }]],
+    [
+      "the same goal twice",
+      [
+        { key: "protein", current: null, proposed: 150 },
+        { key: "protein", current: null, proposed: 160 },
+      ],
+    ],
+    ["no rows", []],
+  ])("refuses a payload with %s", (_name, rows) => {
+    expect(goalsCardPayloadSchema.safeParse({ rows }).success).toBe(false);
+  });
+
+  it("edits are strict: values only", () => {
+    expect(goalsEditsSchema.safeParse({ values: [2000] }).success).toBe(true);
+    expect(
+      goalsEditsSchema.safeParse({ values: [2000], key: "fat" }).success,
+    ).toBe(false);
+    expect(goalsEditsSchema.safeParse({ values: [2000.5] }).success).toBe(
+      false,
+    );
   });
 });
 
