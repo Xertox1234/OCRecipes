@@ -589,7 +589,8 @@ fail-closed path changed. Tests: `test-gh-pr-rest.sh` and new cloud rows in each
 
 FIXED 2026-11-24: the helper read only the first 100 PRs GitHub lists for a branch name, so a
 branch with more PRs than that could miss its open PR and answer with a closed one. It now reads
-every page (`gh api --paginate`).
+every page (`gh api --paginate`) when the first page is full, after the head-filter check has passed on
+that first page.
 
 Still open, by design: a PR whose head lives in a fork is never matched by branch name (the
 lookup asks for this repository's owner and rejects a row from another repository), so it reads as

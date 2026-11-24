@@ -17,7 +17,7 @@
 # Callers warn differently on 1 and 2, so an error must never be reported as "no PR".
 #
 # A branch can have several PRs (a reused branch name). Like `gh pr view`: the open one, else
-# the newest. Every page of the list is read.
+# the newest. A full first page (100) is followed by a read of every page.
 #
 # The caller decides which HOSTS a URL ref may name before calling (pr-verify.sh and
 # git-safety.sh both restrict to the configured GitHub host). This function only reads
@@ -26,7 +26,7 @@
 # Tests: .claude/hooks/test-gh-pr-rest.sh
 
 gh_pr_rest_json() {
-  local ref="${1:-}" raw rest enc
+  local ref="${1:-}" raw rest enc list pick
   local norm='{number, url: .html_url, title,
     state: (if .merged_at != null then "MERGED" else (.state | ascii_upcase) end),
     mergedAt: .merged_at, headRefOid: .head.sha}
@@ -59,23 +59,30 @@ gh_pr_rest_json() {
       # one {owner} this line means, and nothing in the name for gh to match.
       enc=$(printf '%s' "$ref" | od -v -An -tx1 | tr -d ' \n' | sed 's/../%&/g') || return 2
       [ -n "$enc" ] || return 2
-      # --paginate: GitHub pages this list at 100. Reading one page meant a branch name with
-      # more PRs than that could miss its open PR and answer with a closed one.
-      raw=$(gh api --paginate "repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A$enc" \
-        2>/dev/null) || return 2
+      list="repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A$enc"
+      raw=$(gh api "$list" 2>/dev/null) || return 2
       # GitHub ignores a head filter it cannot parse and lists every PR, so a row for another
       # branch means the filter was not applied: that is "could not look", not "found". The
       # same for a row whose head lives in another repository (a fork, or a deleted one,
       # whose head repo is null): it is not this repository's branch.
-      # gh prints the pages as one array or as one array per page, by version: -s reads
-      # either, and anything that is not an array (an error object) is "could not look".
-      raw=$(printf '%s' "$raw" | jq -cs --arg b "$ref" '
+      # -s: gh prints paged output as one array or as one array per page, by version; this
+      # reads either, and anything that is not an array (an error object) is "could not look".
+      pick='
         if length == 0 or any(.[]; type != "array") then error("not a list") else add end
         | if length == 0 then "none"
-        elif all(.[]; .head.ref == $b and .head.repo.full_name == .base.repo.full_name)
-          then (map(select(.state == "open"))[0] // .[0])
-        else error("head filter not applied") end' 2>/dev/null) || return 2
+          elif all(.[]; .head.ref == $b and .head.repo.full_name == .base.repo.full_name)
+            then {n: length, pr: (map(select(.state == "open"))[0] // .[0])}
+          else error("head filter not applied") end'
+      raw=$(printf '%s' "$raw" | jq -cs --arg b "$ref" "$pick" 2>/dev/null) || return 2
+      # GitHub pages this list at 100, so a FULL page may not be all of it, and stopping there
+      # could miss the open PR and answer with a closed one. Read every page then — only after
+      # the filter check above passed, so an ignored filter never pages the whole repository.
+      if [ "$(printf '%s' "$raw" | jq -r '.n? // 0' 2>/dev/null)" = 100 ]; then
+        raw=$(gh api --paginate "$list" 2>/dev/null) || return 2
+        raw=$(printf '%s' "$raw" | jq -cs --arg b "$ref" "$pick" 2>/dev/null) || return 2
+      fi
       [ "$raw" != '"none"' ] || return 1
+      raw=$(printf '%s' "$raw" | jq -c '.pr' 2>/dev/null) || return 2
       ;;
     *)
       raw=$(gh api "repos/{owner}/{repo}/pulls/$ref" 2>/dev/null) || return 2
