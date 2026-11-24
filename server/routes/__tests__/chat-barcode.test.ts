@@ -86,6 +86,7 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     vi.mocked(storage.getChatConversation).mockResolvedValue(
       createMockChatConversation({ id: 1, userId: "1", type: "coach" }),
     );
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
       createMockChatMessage({ id: 10, content: "Scanned a barcode" }),
     );
@@ -133,8 +134,13 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     );
     expect(res.body.userMessage.id).toBe(10);
     expect(res.body.assistantMessage.id).toBe(11);
-    // No AI model reads a scanned barcode, so no photo credit is spent.
-    expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
+    // No AI model reads a scanned barcode, so no photo credit is spent: the
+    // scan has its own daily count.
+    expect(storage.claimDailyAiCall).toHaveBeenCalledExactlyOnceWith(
+      "1",
+      "coachBarcodeScan",
+      200,
+    );
   });
 
   it("the number is never written into the conversation", async () => {
@@ -151,6 +157,7 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     ["letters", "40063813339ab"],
     ["too short", "12345"],
     ["too long", "12345678901234"],
+    ["a length no product barcode has", "1234567890"],
     ["a number, not a string", 4006381333931],
     ["missing", undefined],
   ])("400s on a barcode that is %s, storing nothing", async (_n, barcode) => {
@@ -262,12 +269,22 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     expect(scannedBarcodeReply).not.toHaveBeenCalled();
   });
 
+  it("answers in the chat, with no lookup, when the day's scans are spent", async () => {
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(false);
+    const res = await post(app);
+    expect(res.status).toBe(201);
+    expect(scannedBarcodeReply).not.toHaveBeenCalled();
+    expect(createWriteCardBlock).not.toHaveBeenCalled();
+    expect(res.body.assistantMessage.content).toMatch(/today's scan limit/i);
+  });
+
   it("429s at the daily message limit without looking anything up", async () => {
     vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(null);
     const res = await post(app);
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
     expect(scannedBarcodeReply).not.toHaveBeenCalled();
+    expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
   });
 
   it("saves the opening brief first when the scan opens a new chat", async () => {

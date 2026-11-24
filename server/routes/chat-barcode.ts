@@ -6,8 +6,9 @@
  *
  * No AI model is called: the camera decodes the number on the phone and the
  * product comes from the barcode lookup. So this route needs no AI consent
- * and spends no photo credit. It is still a Coach turn (daily message limit)
- * and still Coach Pro's, because the reply is a write card.
+ * and spends no photo credit. It is still a Coach turn (daily message limit),
+ * still Coach Pro's because the reply is a write card, and has its own daily
+ * scan count.
  */
 import type { Express, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
@@ -19,6 +20,8 @@ import { logger, toError } from "../lib/logger";
 import { rejectOverlappingChatTurn } from "../lib/in-flight";
 import { parseTimezone } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { isValidBarcode } from "@shared/constants/classification";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import {
   handleRouteError,
   checkPremiumFeature,
@@ -39,15 +42,16 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const LOOKUP_FAILED_TEXT =
   "I couldn't look that product up just now. Please try again in a moment.";
+const SCAN_CAP_TEXT =
+  "You've reached today's scan limit. Tell me what you ate and I'll log it for you.";
 const CARD_FAILED_TEXT =
   "I found the product but couldn't make the card just now. Please scan it again.";
 
 const bodySchema = z
   .object({
-    // Product barcodes only, as the app's scanner sends them: UPC-E (6 to
-    // 8 digits), EAN-8, UPC-A and EAN-13. The phone's decoder has already
-    // checked the symbol's own checksum.
-    barcode: z.string().regex(/^\d{6,13}$/, "Invalid barcode"),
+    // The shapes the app's scanner sends (UPC-E, EAN-8, UPC-A, EAN-13). The
+    // phone's decoder has already checked the symbol's own checksum.
+    barcode: z.string().refine(isValidBarcode, "Invalid barcode"),
     // Which opening brief the new chat showed, as on a typed first message.
     openingBrief: z.enum(["full", "short"]).optional(),
   })
@@ -154,21 +158,31 @@ export function register(app: Express): void {
         let text = LOOKUP_FAILED_TEXT;
         let blocks: CoachBlock[] = [];
         try {
-          const reply = await scannedBarcodeReply(body.data.barcode, {
-            tz,
-            now: new Date(),
-            userId: req.userId,
-          });
-          const { payload } = reply;
-          const card = payload
-            ? await createWriteCardBlock(
-                photoCardProposal(payload),
-                { conversationId: id, userId: req.userId, tz },
-                payload,
-              )
-            : null;
-          if (card) blocks = [card];
-          text = payload && !card ? CARD_FAILED_TEXT : reply.text;
+          // Claimed last: a turn refused above (message limit) spends none.
+          const claimed = await storage.claimDailyAiCall(
+            req.userId,
+            "coachBarcodeScan",
+            AI_DAILY_CAPS.coachBarcodeScan,
+          );
+          if (!claimed) {
+            text = SCAN_CAP_TEXT;
+          } else {
+            const reply = await scannedBarcodeReply(body.data.barcode, {
+              tz,
+              now: new Date(),
+              userId: req.userId,
+            });
+            const { payload } = reply;
+            const card = payload
+              ? await createWriteCardBlock(
+                  photoCardProposal(payload),
+                  { conversationId: id, userId: req.userId, tz },
+                  payload,
+                )
+              : null;
+            if (card) blocks = [card];
+            text = payload && !card ? CARD_FAILED_TEXT : reply.text;
+          }
         } catch (err) {
           logger.error({ err: toError(err) }, "coach barcode lookup failed");
         }
