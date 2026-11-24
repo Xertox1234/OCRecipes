@@ -330,13 +330,17 @@ SHA=$(printf '%s\n' "$MSG" \
 # swallowed — a NON-BLANK line that contains no whitespace at all, which is the only
 # shape left that reaches the `print` — is enumerated with measured digests in RESIDUAL 5
 # below.
+# LC_ALL=C on the sort: the digest must be the same bytes in every shell. A bare `sort -u`
+# follows LC_COLLATE (en_CA.UTF-8 orders `_x a b B`, C orders `B _x a b`), so a writer and a
+# guard under different locales disagreed and the merge denied. merge-review-guard.sh and
+# scripts/review-record-status.sh pin the same locale; change all three together.
 FILES=$(printf '%s\n' "$MSG" | awk '
   /^REVIEWED-FILES:/ { collecting=1; next }
   collecting && /^\[(CRITICAL|WARNING|SUGGESTION)\]/ { collecting=0 }
   collecting && /^No findings\.?$/                   { collecting=0 }
   collecting && NF && /[[:space:]]/                  { collecting=0 }
   collecting && NF                                    { print }
-' | sort -u)
+' | LC_ALL=C sort -u)
 [ -n "$FILES" ] || exit 0
 
 DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)

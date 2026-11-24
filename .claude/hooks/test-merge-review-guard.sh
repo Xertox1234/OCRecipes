@@ -701,6 +701,42 @@ stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
 out=$(mcp_payload 938 | run)
 assert_allowed "clean record matching the 2-file digest literal allows" "$out"
 
+# 9-locale. The digest must not depend on the caller's locale (harness-residuals, "Review-record
+# digest sorts the file list in the caller's locale"): the writer and this guard hashed the list
+# after a bare `sort -u`, so two shells with different LC_COLLATE disagreed on a list with
+# mixed-case or `_`-leading names and every gated merge between them would deny.
+# A stand-in `sort` for a locale whose collation is not byte order (en_CA.UTF-8 puts `_x a b B`
+# where C puts `B _x a b`). CI and the cloud container have only C locales installed, so the
+# real thing cannot be reproduced there: this one sorts in REVERSE unless it is run with
+# LC_ALL=C. A digest computed through it is therefore right only if the hook pins the locale.
+LOCALE_BIN=$(mktemp -d)
+REAL_SORT=$(command -v sort)
+cat > "$LOCALE_BIN/sort" <<EOF
+#!/bin/sh
+if [ "\${LC_ALL:-}" = C ]; then exec "$REAL_SORT" "\$@"; else exec "$REAL_SORT" -r "\$@"; fi
+EOF
+chmod +x "$LOCALE_BIN/sort"
+FILES_MIXED=$'server/b.ts\nserver/B.ts\nserver/_x.ts\nserver/a.ts'
+DIGEST_MIXED_C=$(printf 'server/B.ts\nserver/_x.ts\nserver/a.ts\nserver/b.ts\n' | shasum | cut -c1-16)
+DIGEST_MIXED_REV=$(printf 'server/b.ts\nserver/a.ts\nserver/_x.ts\nserver/B.ts\n' | shasum | cut -c1-16)
+clear_stamps
+export FAKE_FILES="$FILES_MIXED"
+stamp "$SHA" "$DIGEST_MIXED_C" clean code-reviewer
+out=$(mcp_payload 938 | run PATH="$LOCALE_BIN:$BIN:$PATH")
+assert_allowed "a record with the byte-order digest allows under a non-C collation" "$out"
+# CONTROL. The digest that collation would have produced is NOT accepted: the guard hashes in
+# byte order whatever the shell says, so the row above passes for that reason and no other.
+clear_stamps
+stamp "$SHA" "$DIGEST_MIXED_REV" clean code-reviewer
+out=$(mcp_payload 938 | run PATH="$LOCALE_BIN:$BIN:$PATH")
+denied "$out" && ok "a record with the collation-order digest is denied (the guard pins byte order)" \
+              || bad "a record with the collation-order digest is denied (the guard pins byte order)" "$out"
+rm -rf "$LOCALE_BIN"
+# back to row 9's state for the rows below
+clear_stamps
+export FAKE_FILES="$FILES_TWO"
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+
 # 9a. ALLOW. An ADVISORY record (WARNING/SUGGESTION-only, findings filed — 2026-09-22 ruling)
 #     passes like a clean one. 9b is its control: any OTHER non-clean verdict still denies.
 clear_stamps
@@ -1978,7 +2014,8 @@ rm -rf "$LG"
 # 221 -> 226 (2026-11-22, large-diff fallback): +5 = rows L1-L5 (the fixture control only reports on failure).
 # 226 -> 227 (2026-11-22, security review): +1 = row L6 (a -diff attribute must not hide an upload line).
 # 227 -> 236 (2026-11-23, REST fallback for a refused `gh pr view`): +9 = rows G1-G7 (G6 and G7 assert twice).
-EXPECTED_TOTAL=236
+# 236 -> 238 (2026-11-24, locale-independent digest): +2 = rows 9-locale (allow and its control).
+EXPECTED_TOTAL=238
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

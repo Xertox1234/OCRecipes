@@ -38,7 +38,8 @@ pr() {  # $1=number $2=state $3=merged_at-json $4=head-ref $5=sha
 lookup() { : > "$FAKE_GH_LOG"; OUT=$(gh_pr_rest_json "$@" 2>/dev/null); RC=$?; }
 # The branch arm percent-encodes EVERY byte of the name (see the lib for why).
 enc() { printf '%s' "$1" | od -v -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
-list_call() { printf 'api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%%3A%s' "$(enc "$1")"; }
+LIST_REST='repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A'
+list_call() { printf 'api --paginate %s%s' "$LIST_REST" "$(enc "$1")"; }
 
 # 1. A number: one PR object, mapped to gh pr view's field names.
 export FAKE_REST_BODY; FAKE_REST_BODY=$(pr 42 open null feat/x abc123)
@@ -77,10 +78,27 @@ assert_eq "branch: rc 0" 0 "$RC"
 assert_eq "branch: the open PR wins over a newer merged one" 8 "$(jq -r .number <<<"$OUT")"
 assert_eq "branch: asks the list, all states, by head" "$(list_call feat/x)" "$(cat "$FAKE_GH_LOG")"
 assert_eq "branch: the name is sent fully percent-encoded" \
-  'api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A%66%65%61%74%2f%78' "$(cat "$FAKE_GH_LOG")"
+  'api --paginate repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A%66%65%61%74%2f%78' "$(cat "$FAKE_GH_LOG")"
 FAKE_REST_BODY="[$(pr 9 closed '"2026-11-23T00:00:00Z"' feat/x new999),$(pr 3 closed null feat/x old333)]"
 lookup feat/x
 assert_eq "branch, none open: the newest (first listed) PR" "9 MERGED new999" "$(jq -r '"\(.number) \(.state) \(.headRefOid)"' <<<"$OUT")"
+
+# 4b. More PRs than one page: GitHub pages the list at 100, so gh is asked for every page
+#     (--paginate prints one array per page). The open PR on a LATER page must still win;
+#     reading page one alone took the newest closed PR instead (harness-residuals, 2026-11-24).
+FAKE_REST_BODY="[$(pr 9 closed '"2026-11-23T00:00:00Z"' feat/x new999)]
+[$(pr 8 open null feat/x open888)]"
+lookup feat/x
+assert_eq "branch, two pages: the open PR on page two wins" "0|8" "$RC|$(jq -r .number <<<"$OUT")"
+assert_eq "branch: every page is asked for" "api --paginate ${LIST_REST}$(enc feat/x)" "$(cat "$FAKE_GH_LOG")"
+FAKE_REST_BODY="[$(pr 9 open null feat/x new999)]
+[$(pr 8 closed null some/other-branch old888)]"
+lookup feat/x
+assert_eq "branch, a foreign row on page two: rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_BODY="[]
+[]"
+lookup feat/x
+assert_eq "branch, empty pages: rc 1 (no PR)" "1|" "$RC|$OUT"
 
 # 5. No PR is rc 1 — only on an EMPTY list. Rows for some other branch mean the head filter
 #    was not applied (GitHub ignores a malformed one and lists everything): that is rc 2.
@@ -139,7 +157,7 @@ LONG_ENC=${LONG//a/%61}
 FAKE_REST_BODY="[$(pr 5 open null "$LONG" abc123)]"
 lookup "$LONG"
 assert_eq "64 identical bytes: found, every byte sent" \
-  "0|api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A$LONG_ENC" "$RC|$(cat "$FAKE_GH_LOG")"
+  "0|api --paginate repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A$LONG_ENC" "$RC|$(cat "$FAKE_GH_LOG")"
 
 # 7c. A fork's PR is never "this branch's PR": head repo must equal base repo. A deleted fork
 #     has a null head repo and reads the same way — could not look, rc 2.
@@ -166,7 +184,7 @@ lookup --repo
 assert_eq "flag-like ref: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
 
 echo "$PASS passed, $FAIL failed"
-EXPECTED_TOTAL=41
+EXPECTED_TOTAL=45
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL"; exit 1
 fi

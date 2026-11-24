@@ -612,7 +612,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
    ```
 
    It prints `head_sha=` (from `gh pr view`), `digest=` (`gh pr diff --name-only | sed '/^$/d' |
-sort -u | shasum | cut -c1-16`), `match=` (`<verdict> <agent_type>` of a record for this head that is clean or advisory, has an empty `unresolved`, and carries that digest) and `objecting=` (each record for this head that would deny the merge: not clean/advisory, or something unresolved; an unreadable record is named by its file). Exit 3 means `gh` could not answer: re-run once, then treat it as a miss (step d). Below, `$HEAD_SHA`, `$MATCH` and `$OBJECTING` mean those printed values.
+LC_ALL=C sort -u | shasum | cut -c1-16`), `match=` (`<verdict> <agent_type>` of a record for this head that is clean or advisory, has an empty `unresolved`, and carries that digest) and `objecting=` (each record for this head that would deny the merge: not clean/advisory, or something unresolved; an unreadable record is named by its file). Exit 3 means `gh` could not answer: re-run once, then treat it as a miss (step d). Below, `$HEAD_SHA`, `$MATCH` and `$OBJECTING` mean those printed values.
 
    **Check first — does a record already bind this head?** Run the script now, before step b:
    - `match=` set and `objecting=` empty → the Step 6 record binds the head. Skip b–d and report `REVIEW_STAMP: <verdict from match=> (Step 6 record, head unchanged)`.

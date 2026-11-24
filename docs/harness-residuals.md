@@ -519,10 +519,20 @@ review, row L6). The per-file API was not used: its `patch`
 fields are truncated on large files, which would let an upload line slip past platform-scope.sh.
 Rows L1-L6 in `test-merge-review-guard.sh`; checked live against #1974 (allow, no refs left).
 
-Still open, reviewer side: the review-dispatch mod's `pr=<n>` form and
-`scripts/review-record-status.sh` read the file list with `gh pr diff --name-only`, which fails
-the same way on a too-large PR. Workaround: dispatch with `base=origin/<base>` (the mod then uses
-`git diff`), as #1974's review did. If reopened: give both the same local fallback.
+**FIXED 2026-11-24, reviewer side.** The review-dispatch mod's `pr=<n>` form and
+`scripts/review-record-status.sh` read the file list with `gh pr diff --name-only`, which failed
+the same way on a too-large PR. On the `too_large` answer only:
+
+- the mod lists the worktree's files against `base=` (`git diff --name-only <base>...HEAD`), which
+  every `pr=` directive also carries;
+- the script reads the names from `GET /pulls/<n>/files` (paged). Names have no line cap and the
+  truncated `patch` fields do not matter for a name list. A list of 3,000 files (GitHub's cap) is
+  not trusted and exits 3.
+
+Any other `gh` failure still refuses the dispatch or exits 3. Checked live: for #1974 the
+script's digest equals the one from the guard's local diff (`2f3371bd5006d6cb`, 123 files).
+If the REST list and the guard's local diff ever name a rename differently, the digests differ and
+`match=` is empty, which sends the caller to a fresh review.
 
 ### Review-record digest sorts the file list in the caller's locale (constructed 2026-11-23, not hit by the guard)
 
@@ -539,10 +549,15 @@ scope mismatch. If the two hooks ever ran under different locales (a remote sess
 shell), every gated merge would deny. That is fail-closed: it cannot let an unreviewed file
 through.
 
-Not changed here. Until it is: recompute by hand with a bare `sort -u`, in the same shell that
-runs the hooks. If reopened: put `LC_ALL=C` on the `sort` in both hooks in the same PR. Changing
-one alone makes every record mismatch, and records written before the change stop matching for
-any PR whose list sorts differently.
+**FIXED 2026-11-24.** `LC_ALL=C` is on the `sort` in the writer, the guard and
+`scripts/review-record-status.sh`, changed together. To recompute by hand:
+`… | sed '/^$/d' | LC_ALL=C sort -u | shasum | cut -c1-16`. Each suite has a row that runs the hook
+with a stand-in `sort` that reverses its output unless `LC_ALL=C` is set, because CI and the cloud
+container have only C locales installed and cannot reproduce a real collation difference.
+
+One-time cost: a record written before this change, under a non-C locale, for a file list that
+sorts differently in byte order (mixed case, or a name starting with `_` or `.` beside lower-case
+ones), no longer matches. The guard then denies and asks for a re-review of that head.
 
 ### HIT IN REAL USE 2026-11-23 — merge-review-guard cannot read any PR from a Claude Code cloud session (#1985)
 
@@ -572,11 +587,11 @@ Each still tries `gh pr view --json` first and, when that fails, retries through
 names and states. The helper keeps "no PR" (rc 1) apart from "could not look" (rc 2), so no caller's
 fail-closed path changed. Tests: `test-gh-pr-rest.sh` and new cloud rows in each caller's suite.
 
-Still open, by construction, not hit: on a branch name that several PRs have used, the helper picks
-the open PR, else the newest, from the first 100 PRs GitHub lists for that head. A branch with
-more than 100 PRs whose open one is not among the newest 100 would read as its newest closed PR.
-`verify-branch-merged.sh` still compares the tip to that PR's head, so it stays fail-closed.
-If reopened: page the list. A PR whose head lives in a fork is never matched by branch name (the
+FIXED 2026-11-24: the helper read only the first 100 PRs GitHub lists for a branch name, so a
+branch with more PRs than that could miss its open PR and answer with a closed one. It now reads
+every page (`gh api --paginate`).
+
+Still open, by design: a PR whose head lives in a fork is never matched by branch name (the
 lookup asks for this repository's owner and rejects a row from another repository), so it reads as
 "no PR" or "could not look"; this repository takes no fork PRs. `merge-review-guard.sh` and `scripts/todo-automerge-guard.sh` keep their
 own inline REST retry from #1987 (they key on a number only); folding them into the helper is a

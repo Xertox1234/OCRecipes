@@ -38,6 +38,7 @@ function world(
     gitThrows?: boolean;
     missed?: string;
     fetchFails?: boolean;
+    prDiff?: "too_large" | "fails";
     log?: string[];
   } = {},
 ) {
@@ -46,6 +47,19 @@ function world(
     if (opts.gitThrows) throw new Error("spawn failed");
     const argv = e.argv.join(" ");
     opts.log?.push(argv);
+    if (argv === "gh pr diff 42 --name-only" && opts.prDiff)
+      return {
+        value: {
+          exitCode: 1,
+          stdout: "",
+          stderr:
+            opts.prDiff === "too_large"
+              ? "could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000) (PullRequest.diff too_large)"
+              : "HTTP 502: Bad Gateway",
+          isStdoutTruncated: false,
+          isStderrTruncated: false,
+        },
+      };
     if (argv === "gh pr diff 42 --name-only")
       return {
         value: {
@@ -188,6 +202,28 @@ test("pr= takes the file list from gh pr diff; mode=uncommitted from git diff HE
   );
   expect(seen[1]).toContain("lens:\nu.ts\n");
   expect(seen[1]).toContain("The changes are uncommitted");
+});
+
+test("pr= on a diff GitHub calls too_large lists the files against base=", async ($, on) => {
+  const seen = world(on, { prDiff: "too_large", files: "big.ts\n" });
+  await viaReissue(
+    $,
+    "code-reviewer",
+    `REVIEW-DISPATCH worktree=${WT} base=origin/main pr=42`,
+  );
+  expect(seen[0]).toContain("lens:\nbig.ts\n");
+});
+
+test("pr= with gh failing for another reason refuses the dispatch", async ($, on) => {
+  const seen = world(on, { prDiff: "fails", files: "big.ts\n" });
+  const r = await viaReissue(
+    $,
+    "code-reviewer",
+    `REVIEW-DISPATCH worktree=${WT} base=origin/main pr=42`,
+  );
+  expect(refused(r)).toBe(true);
+  expect(text(r)).toMatch(/gh pr diff 42 --name-only. failed \(1\)/);
+  expect(seen).toHaveLength(0);
 });
 
 test("a domain reviewer waits for code-reviewer on the same HEAD", async ($, on) => {
