@@ -1,6 +1,6 @@
 ---
 title: "Label screen: photo re-uploads on Reduce Motion toggle; rate-limit toast says retry"
-status: backlog
+status: done
 priority: low
 created: 2026-11-23
 updated: 2026-11-23
@@ -33,11 +33,11 @@ three were already on `main` before that refactor, so they were left out of it.
 
 ## Acceptance Criteria
 
-- [ ] Toggling Reduce Motion on the label screen does not upload the photo again (read
+- [x] Toggling Reduce Motion on the label screen does not upload the photo again (read
       `toast` through a ref, or depend only on `imageUri`, `barcode` and `retryToken`).
-- [ ] A rate-limited upload with a local preview tells the user to wait, not to retry.
-- [ ] The stepper value reads "1 serving" at 1.
-- [ ] Each has a Vitest case.
+- [x] A rate-limited upload with a local preview tells the user to wait, not to retry.
+- [x] The stepper value reads "1 serving" at 1.
+- [x] Each has a Vitest case.
 
 ## Implementation Notes
 
@@ -55,3 +55,7 @@ React Compiler covers the hook: no `try`/`finally` and no `throw` inside a `try`
 ## Dependencies
 
 - PR #1990 merged.
+
+## Updates
+
+- 2026-11-23: done. The hook reads the toast through a ref; the rate-limited toast says to wait and has no Retry action; `servingsCountLabel` gives "1 serving". Vitest only: the stepper label was not heard on a device.
