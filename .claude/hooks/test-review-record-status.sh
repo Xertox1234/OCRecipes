@@ -23,7 +23,11 @@ cat > "$T/bin/gh" <<'EOF'
 #!/bin/sh
 [ -n "${FAKE_GH_FAIL:-}" ] && exit 1
 case "$1 $2" in
-  "pr view") printf '%s\n' "$FAKE_SHA" ;;
+  "pr view") [ -z "${FAKE_GRAPHQL_BLOCKED:-}" ] || exit 1   # a cloud session refuses GraphQL
+             printf '%s\n' "$FAKE_SHA" ;;
+  "api repos/{owner}/{repo}/pulls/42")
+             [ -z "${FAKE_REST_FAIL:-}" ] || exit 1
+             printf '{"number":42,"html_url":"u","title":"t","state":"open","merged_at":null,"head":{"ref":"b","sha":"%s"}}\n' "$FAKE_SHA" ;;
   "pr diff") printf 'b.ts\n\na.ts\nb.ts\n' ;;   # blank line and a duplicate: the gate drops both
   *) exit 1 ;;
 esac
@@ -87,6 +91,16 @@ assert_eq "other head: no match" "" "$(field match <<<"$out")"
 reset
 FAKE_GH_FAIL=1 run 42 >/dev/null 2>&1; rc=$?
 assert_eq "gh failure: exit 3" 3 "$rc"
+
+# 8b. GraphQL refused (a Claude Code cloud session): the head comes from the REST API instead,
+#     and the answer is the same as over GraphQL. Both routes failing is still exit 3.
+reset; rec code-reviewer code-reviewer clean "$DIGEST"
+out=$(FAKE_GRAPHQL_BLOCKED=1 run 42); rc=$?
+assert_eq "graphql refused: exit 0" 0 "$rc"
+assert_eq "graphql refused: head_sha from REST" "$SHA" "$(field head_sha <<<"$out")"
+assert_eq "graphql refused: the record still matches" "clean code-reviewer" "$(field match <<<"$out")"
+FAKE_GRAPHQL_BLOCKED=1 FAKE_REST_FAIL=1 run 42 >/dev/null 2>&1; rc=$?
+assert_eq "graphql refused and REST failing: exit 3" 3 "$rc"
 
 # 9. Usage.
 run >/dev/null 2>&1; rc=$?

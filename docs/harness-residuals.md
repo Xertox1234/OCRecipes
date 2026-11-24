@@ -563,11 +563,24 @@ denies. Rows G1-G7 in `test-merge-review-guard.sh` and three cases in
 `scripts/__tests__/todo-automerge-guard.test.ts`; checked live from a cloud session against #1986
 (the guard reads the PR and reaches a verdict).
 
-Still open, same cause, none of them on the merge path: `pr-verify.sh` (its "could not verify PR
-state" warning fires after every PR creation in a cloud session), `git-safety.sh`'s merged-PR
-lookup, `scripts/review-record-status.sh` and `scripts/verify-branch-merged.sh` all call
-`gh pr view --json`. If reopened: give each the same REST retry, or move the read into one shared
-`lib/` helper.
+FIXED 2026-11-24, the four other callers, none of them on the merge path: `pr-verify.sh` (its
+"could not verify PR state" warning fired after every PR creation and merge in a cloud session),
+`git-safety.sh`'s merged-PR lookup before a branch deletion (every deletion read as "FAILED (gh
+unavailable/network)"), `scripts/review-record-status.sh` and `scripts/verify-branch-merged.sh`.
+Each still tries `gh pr view --json` first and, when that fails, retries through one shared helper,
+`.claude/hooks/lib/gh-pr-rest.sh`, which reads the REST API and answers in `gh pr view`'s field
+names and states. The helper keeps "no PR" (rc 1) apart from "could not look" (rc 2), so no caller's
+fail-closed path changed. Tests: `test-gh-pr-rest.sh` and new cloud rows in each caller's suite.
+
+Still open, by construction, not hit: on a branch name that several PRs have used, the helper picks
+the open PR, else the newest, from the first 100 PRs GitHub lists for that head. A branch with
+more than 100 PRs whose open one is not among the newest 100 would read as its newest closed PR.
+`verify-branch-merged.sh` still compares the tip to that PR's head, so it stays fail-closed.
+If reopened: page the list. A PR whose head lives in a fork is never matched by branch name (the
+lookup asks for this repository's owner and rejects a row from another repository), so it reads as
+"no PR" or "could not look"; this repository takes no fork PRs. `merge-review-guard.sh` and `scripts/todo-automerge-guard.sh` keep their
+own inline REST retry from #1987 (they key on a number only); folding them into the helper is a
+refactor nobody has needed.
 
 Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable folder (chmod 000)"
 row asserted a deny that cannot happen for root, and cloud sessions run as root, so

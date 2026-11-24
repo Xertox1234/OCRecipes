@@ -24,8 +24,12 @@ esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/.claude/hooks/lib/review-stamp-path.sh"
+. "$ROOT/.claude/hooks/lib/gh-pr-rest.sh"
 
-HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid 2>/dev/null) || HEAD_SHA=""
+# `gh pr view --json` is GraphQL, which a Claude Code cloud session refuses: retry over REST.
+HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid 2>/dev/null) \
+  || HEAD_SHA=$(gh_pr_rest_json "$PR" 2>/dev/null | jq -r '.headRefOid // empty' 2>/dev/null) \
+  || HEAD_SHA=""
 FILES=$(gh pr diff "$PR" --name-only 2>/dev/null) || FILES=""
 if [ -z "$HEAD_SHA" ] || [ -z "$FILES" ]; then
   echo "review-record-status: gh could not read PR #$PR's head or changed files" >&2

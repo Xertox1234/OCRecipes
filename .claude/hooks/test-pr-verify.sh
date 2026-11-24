@@ -586,6 +586,99 @@ assert_silent "merge-decoy-vs-hidden-close, no create: gh is never invoked" "$(c
 assert_contains "merge-decoy-vs-hidden-close, no create: could-not-verify WARNING (not bare silence)" "WARNING: could not verify" "$OUT"
 rm -f "$ARGV_LOG"
 
+# ---------- GraphQL refused (Claude Code cloud sessions) → REST retry ----------
+# `gh pr view --json` is GraphQL, which a cloud session answers with HTTP 403, so this hook
+# used to print "could not verify" after EVERY PR creation and merge there (hit in real use on
+# #1985-#1987). The retry reads the REST API through lib/gh-pr-rest.sh. This stand-in refuses
+# `pr view` the way the cloud does and answers `api` with REST-shaped JSON; for a branch
+# lookup it reflects the asked-for branch back as head.ref, as GitHub's head filter would.
+make_stub_gh_cloud() {  # $1 = rest-ok | rest-fail | rest-none
+  local dir; dir=$(mktemp -d)
+  cat > "$dir/gh" <<GHEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/argv.log"
+if [ "\$1" != "api" ]; then
+  echo "HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API" >&2
+  exit 1
+fi
+[ "$1" != "rest-fail" ] || { echo "HTTP 502" >&2; exit 1; }
+one() { printf '{"number":%s,"html_url":"https://github.com/x/y/pull/%s","title":"Cloud PR","state":"%s","merged_at":%s,"head":{"ref":"%s","sha":"abc123"}}' "\$1" "\$1" "\$2" "\$3" "\$4"; }
+branch=""
+# the lib sends the branch percent-encoded, every byte: decode it back
+for a in "\$@"; do case "\$a" in *'head={owner}%3A'*) e="\${a##*head=\{owner\}%3A}"; branch=\$(printf '%b' "\${e//%/\\\\x}") ;; esac; done
+if [ -n "\$branch" ]; then
+  [ "$1" != "rest-none" ] || { echo '[]'; exit 0; }
+  printf '[%s]\n' "\$(one 77 open null "\$branch")"
+else
+  one 42 closed '"2026-11-23T00:00:00Z"' feat/x
+fi
+GHEOF
+  chmod +x "$dir/gh"
+  printf '%s' "$dir"
+}
+# The hook runs inside a throwaway repo on a KNOWN branch: the create path resolves "the
+# current branch", and CI checks this repo out detached (no current branch), so running in
+# the real checkout made the create rows depend on where the suite happened to run.
+CLOUD_REPO=$(mktemp -d)
+git -C "$CLOUD_REPO" init -q -b cloud/feature-x
+run_hook_cloud() {  # $1 = hook input JSON, $2 = stub mode; sets OUT and ARGV
+  local stubdir; stubdir=$(make_stub_gh_cloud "$2")
+  OUT=$(cd "$CLOUD_REPO" && printf '%s' "$1" | PATH="$stubdir:$PATH" bash "$HOOK" 2>/dev/null)
+  ARGV=$(cat "$stubdir/argv.log" 2>/dev/null)
+  rm -rf "$stubdir"
+}
+enc() { printf '%s' "$1" | od -v -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
+bash_input() { jq -n --arg c "$1" '{"tool_name":"Bash","tool_input":{"command":$c}}'; }
+MCP_MERGE_INPUT='{"tool_name":"mcp__github__merge_pull_request","tool_input":{"owner":"x","repo":"y","pullNumber":42},"tool_response":{"merged":true}}'
+MCP_CREATE_INPUT='{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"foo"},"tool_response":{"number":77}}'
+
+# C1: the MCP merge path (how a cloud session merges) verifies over REST, in gh pr view's words.
+run_hook_cloud "$MCP_MERGE_INPUT" rest-ok
+assert_contains "cloud: MCP merge verified over REST" "PR state verified post-command — #42, url: https://github.com/x/y/pull/42, state: MERGED, title: " "$OUT"
+assert_contains "cloud: MCP merge asks the PR's own REST resource" "api repos/{owner}/{repo}/pulls/42" "$ARGV"
+
+# C2: the MCP create path resolves the CURRENT branch's PR over REST.
+run_hook_cloud "$MCP_CREATE_INPUT" rest-ok
+assert_contains "cloud: MCP create verified over REST" "PR state verified post-command — #77" "$OUT"
+assert_contains "cloud: MCP create reports the open state" "state: OPEN" "$OUT"
+assert_contains "cloud: MCP create asks by the current branch" "head={owner}%3A$(enc cloud/feature-x)" "$ARGV"
+
+# C2b: with NO current branch (a detached checkout) the create path has nothing to key on:
+# the honest WARNING, and never a REST lookup of something else.
+git -C "$CLOUD_REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$CLOUD_REPO" checkout -q --detach
+run_hook_cloud "$MCP_CREATE_INPUT" rest-ok
+assert_contains "cloud: MCP create on a detached checkout keeps the WARNING" "WARNING: could not verify" "$OUT"
+assert_not_contains "cloud: MCP create on a detached checkout makes no REST call" "api " "$ARGV"
+git -C "$CLOUD_REPO" checkout -q cloud/feature-x
+
+# C3: the Bash forms take the same retry — a number and a branch name.
+run_hook_cloud "$(bash_input 'gh pr merge 42 --squash')" rest-ok
+assert_contains "cloud: gh pr merge <number> verified over REST" "#42, url: https://github.com/x/y/pull/42, state: MERGED" "$OUT"
+run_hook_cloud "$(bash_input 'gh pr close my-branch')" rest-ok
+assert_contains "cloud: gh pr close <branch> verified over REST" "PR state verified post-command — #77" "$OUT"
+assert_contains "cloud: gh pr close <branch> asks by THAT branch" "head={owner}%3A$(enc my-branch)" "$ARGV"
+
+# C4 (negative control): REST failing too, or finding no PR, is still the honest WARNING —
+# never a verified message built from nothing.
+run_hook_cloud "$MCP_MERGE_INPUT" rest-fail
+assert_contains "cloud: REST also failing keeps the could-not-verify WARNING" "WARNING: could not verify" "$OUT"
+assert_not_contains "cloud: REST also failing prints no verified message" "PR state verified" "$OUT"
+run_hook_cloud "$MCP_CREATE_INPUT" rest-none
+assert_contains "cloud: no PR for the branch keeps the could-not-verify WARNING" "WARNING: could not verify" "$OUT"
+assert_not_contains "cloud: no PR for the branch prints no verified message" "PR state verified" "$OUT"
+
+# C5: an unresolvable ref still never reaches gh — not `pr view`, and not the REST retry.
+run_hook_cloud "$(bash_input 'gh pr merge --auto')" rest-ok
+assert_silent "cloud: unresolvable ref — gh is never invoked, REST included" "$ARGV"
+assert_contains "cloud: unresolvable ref keeps the WARNING" "WARNING: could not verify" "$OUT"
+
+# C6: a URL outside the configured host is dropped before any lookup, REST included.
+run_hook_cloud "$(bash_input 'gh pr merge https://exfil.example.test/o/r/pull/1')" rest-ok
+assert_silent "cloud: foreign-host URL ref — gh is never invoked, REST included" "$ARGV"
+
+rm -rf "$CLOUD_REPO"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

@@ -68,11 +68,23 @@ case "$PR_REF" in
   *://*|*:*) PR_REF="" ;;
 esac
 
+# REST retry: `gh pr view --json` is GraphQL, which a Claude Code cloud session refuses, so
+# without this the WARNING below fired after every PR creation and merge there. The lib answers
+# in gh pr view's own field names. Lib unsourceable → no retry, the old behaviour. It receives
+# the SAME ref as `gh pr view` (already host-restricted above), and '' means the current
+# branch exactly as the no-args view does — so it is only ever called on the create path or
+# with a resolved ref, never from the unresolvable-ref arm below.
+pr_rest() { return 2; }
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck source=/dev/null
+. "$LIB_DIR/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null \
+  && pr_rest() { gh_pr_rest_json "$@" 2>/dev/null; }
+
 if [ "$SUBCOMMAND" = "create" ]; then
-  PR_JSON=$(gh pr view --json number,url,state,title 2>/dev/null)
+  PR_JSON=$(gh pr view --json number,url,state,title 2>/dev/null) || PR_JSON=$(pr_rest "")
   GH_EXIT=$?
 elif [ -n "$PR_REF" ]; then
-  PR_JSON=$(gh pr view "$PR_REF" --json number,url,state,title 2>/dev/null)
+  PR_JSON=$(gh pr view "$PR_REF" --json number,url,state,title 2>/dev/null) || PR_JSON=$(pr_rest "$PR_REF")
   GH_EXIT=$?
 else
   # merge/close/edit with a ref that could not be resolved (cmd_gh_pr_ref found

@@ -68,6 +68,18 @@ for a in "$@"; do
       ;;
   esac
 done
+# FAKE_GH_GRAPHQL_BLOCKED: behave like a Claude Code cloud session — `gh pr view` (GraphQL)
+# is refused with HTTP 403; `gh api` (REST) prints FAKE_GH_REST_BODY, or fails on
+# FAKE_GH_REST_FAIL.
+if [ -n "${FAKE_GH_GRAPHQL_BLOCKED:-}" ]; then
+  if [ "$1" != "api" ]; then
+    echo "HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API" >&2
+    exit 1
+  fi
+  [ -z "${FAKE_GH_REST_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
+  printf '%s\n' "$FAKE_GH_REST_BODY"
+  exit 0
+fi
 if [ "${FAKE_GH_EXIT:-0}" != "0" ]; then
   echo "${FAKE_GH_STDERR:-no pull requests found}" >&2
   exit "$FAKE_GH_EXIT"
@@ -1372,6 +1384,41 @@ fi
 FAKE_GH_EXIT=8 FAKE_GH_STDERR="network down" assert_warn_contains "advisor: gh hard failure reports UNVERIFIED" \
   "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')" \
   "UNVERIFIED"
+# GraphQL refused (Claude Code cloud sessions): `gh pr view --json` answers HTTP 403 there, so
+# the advisor used to report every deletion as "FAILED (gh unavailable/network)" — it could
+# not tell a merged branch from one with an open PR. The retry reads the REST API through
+# lib/gh-pr-rest.sh and must give the SAME five verdicts.
+rest_pr() {  # $1=number $2=state $3=merged_at-json $4=head-ref
+  printf '{"number":%s,"html_url":"u","title":"t","state":"%s","merged_at":%s,"head":{"ref":"%s","sha":"abc123"}}' "$1" "$2" "$3" "$4"
+}
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY="[$(rest_pr 521 closed '"2026-11-23T00:00:00Z"' todo/foo)]" \
+  assert_warn_contains "advisor (cloud): branch -D with a merged PR reports safe, read over REST" \
+  "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')" \
+  "PR #521 for 'todo/foo' is MERGED (2026-11-23T00:00:00Z)"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY="[$(rest_pr 521 open null todo/foo)]" \
+  assert_warn_contains "advisor (cloud): branch -D with an open PR warns loudly" \
+  "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')" \
+  "PR #521 for 'todo/foo' is OPEN and NOT merged"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY="[$(rest_pr 521 closed null todo/foo)]" \
+  assert_warn_contains "advisor (cloud): closed-unmerged PR is a rejection signal" \
+  "$(json no-registry-session "$MAIN" 'git push origin --delete todo/foo')" \
+  "CLOSED WITHOUT MERGE"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY='[]' \
+  assert_warn_contains "advisor (cloud): an empty REST list is NO PR found, not a failure" \
+  "$(json no-registry-session "$MAIN" 'git branch -D scratch-branch')" \
+  "NO PR found"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_FAIL=1 FAKE_GH_REST_BODY='[]' \
+  assert_warn_contains "advisor (cloud): REST failing too reports UNVERIFIED, never NO PR found" \
+  "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')" \
+  "FAILED (gh unavailable/network)"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY="[$(rest_pr 521 open null some/other-branch)]" \
+  assert_warn_contains "advisor (cloud): rows for another branch (head filter not applied) are UNVERIFIED, never that PR's state" \
+  "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')" \
+  "FAILED (gh unavailable/network)"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY="$(rest_pr 520 open null todo/foo)" \
+  assert_warn_contains "advisor (cloud): gh pr close <number> resolves over REST" \
+  "$(json no-registry-session "$MAIN" 'gh pr close 520')" \
+  "PR #520 for '520' is OPEN and NOT merged"
 FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close is matched" \
   "$(json no-registry-session "$MAIN" 'gh pr close 520')" \
   "OPEN and NOT merged"
@@ -1843,7 +1890,7 @@ fi
 # 336 -> 346 (2026-11-01, harness item 8, own agent worktree): +10 = 1 git allow + 3 git denies
 # (fake paths), 2 write allows + 3 write denies (real repo), 1 parent-session git deny. RED before
 # the guard change: the 3 allows failed.
-EXPECTED_TOTAL=346
+EXPECTED_TOTAL=353
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
