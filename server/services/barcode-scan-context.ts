@@ -17,19 +17,26 @@ export async function loadBarcodeScanContext(code: string, userId: string) {
   const [result, verification, profileOutcome] = await Promise.all([
     lookupBarcode(code),
     storage.getVerification(code),
-    // Fail-dangerous, NOT fatal: a profile-read hiccup must never break
-    // scanning. On rejection we degrade to a "couldn't check" flag — never
-    // silence, never a 500 (Global Constraint: allergen flags fail-dangerous).
-    storage.getUserProfile(userId).then(
-      (profile): ProfileOutcome => ({
-        ok: true,
-        allergies: parseUserAllergies(profile?.allergies),
-      }),
-      (err): ProfileOutcome => {
-        logger.warn({ err: toError(err) }, "scan-flags: profile read failed");
-        return { ok: false };
-      },
-    ),
+    loadAllergyProfile(userId),
   ]);
   return { result, verification, profileOutcome };
+}
+
+/**
+ * The scanning user's allergies. Fail-dangerous, NOT fatal: a profile-read
+ * hiccup must never break scanning. On rejection we degrade to a "couldn't
+ * check" outcome — never silence, never a 500 (Global Constraint: allergen
+ * flags fail-dangerous).
+ */
+export function loadAllergyProfile(userId: string): Promise<ProfileOutcome> {
+  return storage.getUserProfile(userId).then(
+    (profile): ProfileOutcome => ({
+      ok: true,
+      allergies: parseUserAllergies(profile?.allergies),
+    }),
+    (err): ProfileOutcome => {
+      logger.warn({ err: toError(err) }, "scan-flags: profile read failed");
+      return { ok: false };
+    },
+  );
 }

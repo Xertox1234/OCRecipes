@@ -5,8 +5,26 @@
  * Scan screen, and the answer is the Coach's own food log card: one row per
  * food, sized to the portion seen in the photo, count 1. The user changes the
  * counts on the card; nothing is saved until they tap it.
+ *
+ * S2 added labels and barcodes: `buildPhotoReply` classifies the photo first
+ * and answers a nutrition label or a barcode with a one-row card for one
+ * serving of that product.
  */
-import { analyzePhoto, type FoodItem } from "./photo-analysis";
+import {
+  analyzePhoto,
+  analyzeLabelPhoto,
+  classifyPhoto,
+  type FoodItem,
+} from "./photo-analysis";
+import {
+  loadAllergyProfile,
+  loadBarcodeScanContext,
+} from "./barcode-scan-context";
+import { buildScanResponseFlags } from "./scan-flags";
+import type { BarcodeLookupResult } from "./barcode-lookup";
+import type { ProfileOutcome } from "./scan-flags";
+import type { LabelExtractionResult } from "@shared/types/label-analysis";
+import { logger, toError } from "../lib/logger";
 import { batchNutritionLookup, type NutritionData } from "./nutrition-lookup";
 import { portionNutrition } from "./portion-nutrition";
 import { inferMealTimeHint } from "../lib/meal-time-hint";
@@ -123,4 +141,236 @@ export async function buildPhotoFoodCard(
     },
     skipped,
   };
+}
+
+// ── Labels and barcodes (Coach roadmap S2) ─────────────────────────────
+
+/** A photo reply: the card to show (null: none) and the Coach's line. */
+export interface PhotoReply {
+  payload: FoodCardPayload | null;
+  text: string;
+}
+
+/** Below this the classifier's answer is not trusted and the photo is read as a meal. */
+const CLASSIFY_CONFIDENCE = 0.7;
+
+const LABEL_NO_CALORIES_TEXT =
+  "I couldn't read the calories on that label. Try again with the whole nutrition panel in the frame and in good light.";
+const LABEL_TEXT =
+  "Here's what I read from that label, per serving. Check it against the pack, set how many servings you had, then log it.";
+const LABEL_GAPS_TEXT = " I couldn't read every number, so some show as 0.";
+const LABEL_UNSURE_TEXT =
+  " The label was hard to read, so check each number before you log it.";
+// A label photo shows no ingredients list the Coach can check. Said only to
+// a user who has allergies on their profile, or whose profile could not be
+// read (fail-dangerous, as on a scan).
+const LABEL_ALLERGY_TEXT =
+  " I can't check ingredients from a label photo, so read the pack for your allergies.";
+/** A row the food card's rules refuse: numbers out of range, or text it screens out. */
+const ROW_REFUSED_TEXT =
+  "I couldn't turn that into something I can log. Tell me what it was and how much you had, and I'll log it for you.";
+const BARCODE_UNREAD_TEXT =
+  "I can see a barcode but couldn't read its number. Try again closer and straight on, or send a photo of the nutrition label.";
+const BARCODE_UNKNOWN_TEXT =
+  "I read the barcode but couldn't find that product. Send a photo of its nutrition label and I'll read that instead.";
+const BARCODE_NO_NUTRITION_TEXT =
+  "I found that product but it has no nutrition data. Send a photo of its nutrition label and I'll read that instead.";
+const BARCODE_TEXT =
+  "I found this product from its barcode. Check it's the right one, set how many servings you had, then log it.";
+const BARCODE_UNKNOWN_SERVING_TEXT =
+  " I don't know this product's serving size, so check the amount on the card.";
+const BARCODE_GAPS_TEXT =
+  " Some numbers are missing for this product, so some show as 0.";
+/** What the barcode lookup calls a product it has no name for. */
+const LOOKUP_PLACEHOLDER_NAME = "Unknown Product";
+// Fixed wording that names no allergen: the product's allergen data comes
+// from Open Food Facts and is never stored (see BarcodeLookupResult), and
+// this line is saved with the message. What the saved message does record
+// is the outcome of the check for this user (a match, or no check possible).
+const ALLERGEN_MATCH_TEXT =
+  " Allergy check: this product may contain something on your allergy list. Read the pack before you eat it.";
+const ALLERGEN_UNCHECKED_TEXT =
+  " I couldn't check this product against your allergies, so read the pack.";
+
+/**
+ * True for an EAN-13, UPC-A or EAN-8 number whose last digit is the right
+ * check digit. The number in a photo is read by a vision model, and one
+ * wrong digit would otherwise fetch a different product; a single misread
+ * digit always fails this check.
+ */
+export function hasValidCheckDigit(code: string): boolean {
+  if (!/^(\d{8}|\d{12}|\d{13})$/.test(code)) return false;
+  const digits = [...code].map(Number);
+  const check = digits.pop()!;
+  // From the right, the digits before the check digit weigh 3, 1, 3, 1…
+  const sum = digits
+    .reverse()
+    .reduce((total, d, i) => total + d * (i % 2 === 0 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === check;
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** One card row for a packaged food, or null when the card's rules refuse it. */
+function packagedFoodRow(
+  rawName: string,
+  rawUnitLabel: string,
+  perUnit: CardItem["perUnit"],
+): CardItem | null {
+  const name = rawName.trim().slice(0, MAX_NAME) || "Packaged food";
+  const unitLabel = rawUnitLabel.trim().slice(0, MAX_UNIT_LABEL) || "1 serving";
+  const row = { name, unitLabel, count: 1, estimate: perUnit };
+  if (!cardRowSchema.safeParse(row).success) return null;
+  return { name, unitLabel, perUnit, count: 1, source: "lookup" };
+}
+
+function onePackagedFood(
+  item: CardItem,
+  ctx: { tz: string; now: Date },
+): FoodCardPayload {
+  return {
+    items: [item],
+    mealType: inferMealTimeHint(civilHourInTz(ctx.now, ctx.tz)),
+    day: "today",
+  };
+}
+
+/** A nutrition label read from a photo, as a one-serving card. */
+export function labelPhotoReply(
+  label: LabelExtractionResult,
+  profileOutcome: ProfileOutcome,
+  ctx: { tz: string; now: Date },
+): PhotoReply {
+  if (label.calories === null) {
+    return { payload: null, text: LABEL_NO_CALORIES_TEXT };
+  }
+  const serving = label.servingSize?.trim();
+  const withServing = serving ? `1 serving (${serving})` : "1 serving";
+  const item = packagedFoodRow(
+    label.productName ?? "",
+    // A serving text too long for the row is shown without the "1 serving".
+    withServing.length <= MAX_UNIT_LABEL ? withServing : (serving ?? ""),
+    {
+      calories: round1(label.calories),
+      protein: round1(label.protein ?? 0),
+      carbs: round1(label.totalCarbs ?? 0),
+      fat: round1(label.totalFat ?? 0),
+    },
+  );
+  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
+  const gaps =
+    label.protein === null ||
+    label.totalCarbs === null ||
+    label.totalFat === null;
+  const allergyCheckOwed =
+    !profileOutcome.ok || profileOutcome.allergies.length > 0;
+  return {
+    payload: onePackagedFood(item, ctx),
+    text:
+      LABEL_TEXT +
+      (gaps ? LABEL_GAPS_TEXT : "") +
+      (label.confidence < CLASSIFY_CONFIDENCE ? LABEL_UNSURE_TEXT : "") +
+      (allergyCheckOwed ? LABEL_ALLERGY_TEXT : ""),
+  };
+}
+
+/** A product found by its barcode, as a one-serving card. */
+export function barcodePhotoReply(
+  product: BarcodeLookupResult | null,
+  profileOutcome: ProfileOutcome,
+  ctx: { tz: string; now: Date },
+): PhotoReply {
+  if (!product) return { payload: null, text: BARCODE_UNKNOWN_TEXT };
+  const per = product.perServing;
+  if (per.calories === undefined) {
+    return { payload: null, text: BARCODE_NO_NUTRITION_TEXT };
+  }
+  const productName =
+    product.productName === LOOKUP_PLACEHOLDER_NAME ? "" : product.productName;
+  const item = packagedFoodRow(
+    [product.brandName, productName].filter(Boolean).join(" "),
+    product.servingInfo.displayLabel,
+    {
+      calories: round1(per.calories),
+      protein: round1(per.protein ?? 0),
+      carbs: round1(per.carbs ?? 0),
+      fat: round1(per.fat ?? 0),
+    },
+  );
+  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
+  const gaps =
+    per.protein === undefined ||
+    per.carbs === undefined ||
+    per.fat === undefined;
+
+  // The same allergen check a scan on the Scan screen gets.
+  const flags = buildScanResponseFlags(
+    {
+      allergenTags: product.allergenTags ?? [],
+      ingredientsText: product.ingredientsText ?? null,
+      allergenDataAvailable: product.allergenDataAvailable,
+    },
+    profileOutcome,
+  );
+  const allergy = flags.some((f) => f.kind === "allergen")
+    ? ALLERGEN_MATCH_TEXT
+    : flags.some((f) => f.kind === "allergen-unavailable")
+      ? ALLERGEN_UNCHECKED_TEXT
+      : "";
+  return {
+    payload: onePackagedFood(item, ctx),
+    text:
+      BARCODE_TEXT +
+      (product.isServingDataTrusted ? "" : BARCODE_UNKNOWN_SERVING_TEXT) +
+      (gaps ? BARCODE_GAPS_TEXT : "") +
+      allergy,
+  };
+}
+
+async function mealPhotoReply(
+  imageBase64: string,
+  ctx: { tz: string; now: Date },
+): Promise<PhotoReply> {
+  const { payload, skipped } = await buildPhotoFoodCard(imageBase64, ctx);
+  return {
+    payload,
+    text: photoReplyText(payload?.items.length ?? 0, skipped),
+  };
+}
+
+/**
+ * The Coach's answer to a photo. The photo is classified first: a nutrition
+ * label is read as a label, a barcode is looked up, and anything else (or a
+ * photo the classifier is unsure about, or could not classify) is read as a
+ * meal, as before S2.
+ */
+export async function buildPhotoReply(
+  imageBase64: string,
+  ctx: { tz: string; now: Date; userId: string },
+): Promise<PhotoReply> {
+  const seen = await classifyPhoto(imageBase64).catch((err) => {
+    logger.warn({ err: toError(err) }, "coach photo: classification failed");
+    return null;
+  });
+  if (!seen || seen.confidence < CLASSIFY_CONFIDENCE) {
+    return mealPhotoReply(imageBase64, ctx);
+  }
+  if (seen.contentType === "nutrition_label") {
+    const [label, profileOutcome] = await Promise.all([
+      analyzeLabelPhoto(imageBase64),
+      loadAllergyProfile(ctx.userId),
+    ]);
+    return labelPhotoReply(label, profileOutcome, ctx);
+  }
+  if (seen.contentType === "has_barcode") {
+    if (!seen.barcode || !hasValidCheckDigit(seen.barcode)) {
+      return { payload: null, text: BARCODE_UNREAD_TEXT };
+    }
+    const { result, profileOutcome } = await loadBarcodeScanContext(
+      seen.barcode,
+      ctx.userId,
+    );
+    return barcodePhotoReply(result, profileOutcome, ctx);
+  }
+  return mealPhotoReply(imageBase64, ctx);
 }
