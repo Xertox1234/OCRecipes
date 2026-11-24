@@ -62,6 +62,6 @@ the same instant, so it is rare. Found by reading; not reproduced.
 
 ### 2026-11-24 (done)
 
-- Done in PR #PRNUM.
+- Done in PR #2014.
 - Reproduced on the real database in `server/storage/__tests__/user-profiles.concurrent.test.ts`: a goals save clashed with the withdrawal and also with the onboarding save (`upsertProfileWithOnboarding`), which this todo did not list.
 - The order is now `users`, then `user_profiles`, in all three. The goals save already had it. The onboarding save's `users` update moved to the top. The withdrawal takes a row lock on `users` after closing the allergy cards and before the profile update; its own `users` update stays after the profile check, so a user with no profile row is left untouched as before. That is one added lock statement, where the scope contract asked for reordering only: moving the update itself would have cleared goals for a user with no profile.

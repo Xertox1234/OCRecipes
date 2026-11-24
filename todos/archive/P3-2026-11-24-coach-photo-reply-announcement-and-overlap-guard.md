@@ -73,7 +73,7 @@ is to confirm each one.
 
 ### 2026-11-24 (done)
 
-- Done in PR #PRNUM. Run in an interactive session at the owner's request ("we will do the follow up todos"), which is the override for `human_led`.
+- Done in PR #2014. Run in an interactive session at the owner's request ("we will do the follow up todos"), which is the override for `human_led`.
 - Criterion 1 needs a person: item 2 was confirmed by a failing test (two overlapping requests both answered 201); item 1 was confirmed by reading the code only, and the VoiceOver check on a phone is still to do.
 - Criterion 3 needs a person: with VoiceOver on, send a photo and check that "Looking at your photo" is heard and then the reply, without one cutting the other off. The pending "Looking at your photo" timer is cancelled before the reply is announced; a reply that arrives while it is being spoken would interrupt it.
 - Announcement: `uploadPhotoToCoach` returns the stored reply's text, `useCoachPhotoSend` passes it to `onSettled`, and `CoachChat` announces it through `getStreamFinishAnnouncement` after the refetch (VoiceOver hears the reply, TalkBack "Coach responded"). A failure was already announced once by the error line (`InlineError`) or the limit banner, so nothing was added there.
