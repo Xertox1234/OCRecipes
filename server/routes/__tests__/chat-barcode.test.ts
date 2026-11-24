@@ -150,7 +150,7 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
   it.each([
     ["letters", "40063813339ab"],
     ["too short", "12345"],
-    ["too long", "123456789012345"],
+    ["too long", "12345678901234"],
     ["a number, not a string", 4006381333931],
     ["missing", undefined],
   ])("400s on a barcode that is %s, storing nothing", async (_n, barcode) => {
@@ -160,6 +160,18 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
     expect(scannedBarcodeReply).not.toHaveBeenCalled();
   });
+
+  it.each(["123456", "1234567890123"])(
+    "accepts %s (the shortest and longest product codes)",
+    async (barcode) => {
+      const res = await post(app, { barcode });
+      expect(res.status).toBe(201);
+      expect(scannedBarcodeReply).toHaveBeenCalledWith(
+        barcode,
+        expect.anything(),
+      );
+    },
+  );
 
   it("refuses a second scan while the first is still being answered", async () => {
     let finish!: () => void;
@@ -231,6 +243,15 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     const res = await post(app);
     expect(res.status).toBe(400);
     expect(scannedBarcodeReply).not.toHaveBeenCalled();
+  });
+
+  it("refuses a remix conversation", async () => {
+    vi.mocked(storage.getChatConversation).mockResolvedValue(
+      createMockChatConversation({ id: 1, userId: "1", type: "remix" }),
+    );
+    const res = await post(app);
+    expect(res.status).toBe(400);
+    expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
   });
 
   it("is Coach Pro only", async () => {

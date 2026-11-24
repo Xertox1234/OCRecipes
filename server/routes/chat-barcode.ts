@@ -44,10 +44,10 @@ const CARD_FAILED_TEXT =
 
 const bodySchema = z
   .object({
-    // Product barcodes only: UPC-E (6 to 8 digits), EAN-8, UPC-A, EAN-13 and
-    // the 14-digit case code. The phone's decoder has already checked the
-    // symbol's own checksum.
-    barcode: z.string().regex(/^\d{6,14}$/, "Invalid barcode"),
+    // Product barcodes only, as the app's scanner sends them: UPC-E (6 to
+    // 8 digits), EAN-8, UPC-A and EAN-13. The phone's decoder has already
+    // checked the symbol's own checksum.
+    barcode: z.string().regex(/^\d{6,13}$/, "Invalid barcode"),
     // Which opening brief the new chat showed, as on a typed first message.
     openingBrief: z.enum(["full", "short"]).optional(),
   })
