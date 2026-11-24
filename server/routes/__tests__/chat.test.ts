@@ -747,6 +747,10 @@ describe("Chat Routes", () => {
       const goalsOpts = vi.mocked(generateCoachProResponse).mock.calls[0][7];
       expect(goalsOpts).toMatchObject({ goalsCard: true });
       expect(goalsOpts).not.toHaveProperty("pantryCard");
+      // 'allergy' is a known kind too (it has no tool; the turn reads it).
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect((await send({ cardKinds: ["allergy"] })).status).toBe(200);
     });
 
     it("rejects a card kind it does not know (400)", async () => {

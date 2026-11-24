@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  allergenIdSchema,
+  allergySeveritySchema,
+  type AllergenId,
+} from "../constants/allergens";
 
 /**
  * Coach write cards (spec docs/superpowers/specs/2026-11-09-coach-write-cards-design.md).
@@ -16,6 +21,7 @@ export const WRITE_CARD_KINDS = [
   "plan",
   "pantry",
   "goals",
+  "allergy",
 ] as const;
 export type WriteCardKind = (typeof WRITE_CARD_KINDS)[number];
 
@@ -183,6 +189,19 @@ export const goalsCardPayloadSchema = z.object({
 });
 export type GoalsCardPayload = z.infer<typeof goalsCardPayloadSchema>;
 
+/**
+ * The allergy card (Coach roadmap T1): one allergen to add to the dietary
+ * profile. Only the nine the profile editor holds. The severity is never the
+ * Coach's guess: the user picks it on the card, so it lives in the edits.
+ */
+export const allergyCardPayloadSchema = z.object({
+  allergen: allergenIdSchema,
+});
+export type AllergyCardPayload = z.infer<typeof allergyCardPayloadSchema>;
+
+/** "tree nuts" for `tree_nuts`: the allergen as a word in a sentence. */
+export const allergenWord = (id: AllergenId) => id.replace(/_/g, " ");
+
 // ── Edits (client-sent, strict) ─────────────────────────────────────
 
 export const foodEditsSchema = z
@@ -228,12 +247,19 @@ export const goalsEditsSchema = z
   .strict();
 export type GoalsCardEdits = z.infer<typeof goalsEditsSchema>;
 
+export const allergyEditsSchema = z
+  .object({ severity: allergySeveritySchema })
+  .partial()
+  .strict();
+export type AllergyCardEdits = z.infer<typeof allergyEditsSchema>;
+
 export const WRITE_CARD_EDITS_SCHEMAS = {
   food: foodEditsSchema,
   grocery: groceryEditsSchema,
   plan: planEditsSchema,
   pantry: pantryEditsSchema,
   goals: goalsEditsSchema,
+  allergy: allergyEditsSchema,
 } as const;
 
 export const WRITE_CARD_PAYLOAD_SCHEMAS = {
@@ -242,6 +268,7 @@ export const WRITE_CARD_PAYLOAD_SCHEMAS = {
   plan: planCardPayloadSchema,
   pantry: pantryCardPayloadSchema,
   goals: goalsCardPayloadSchema,
+  allergy: allergyCardPayloadSchema,
 } as const;
 
 export type WriteCardPayload =
@@ -249,13 +276,15 @@ export type WriteCardPayload =
   | GroceryCardPayload
   | PlanCardPayload
   | PantryCardPayload
-  | GoalsCardPayload;
+  | GoalsCardPayload
+  | AllergyCardPayload;
 export type WriteCardEdits =
   | FoodCardEdits
   | GroceryCardEdits
   | PlanCardEdits
   | PantryCardEdits
-  | GoalsCardEdits;
+  | GoalsCardEdits
+  | AllergyCardEdits;
 
 // ── Block ───────────────────────────────────────────────────────────
 
@@ -275,6 +304,7 @@ export const writeCardBlockObjectSchema = z.object({
     planCardPayloadSchema,
     pantryCardPayloadSchema,
     goalsCardPayloadSchema,
+    allergyCardPayloadSchema,
   ]),
   status: z.enum(WRITE_CARD_STATUSES),
   replacesCardId: z.string().uuid().optional(),

@@ -6,6 +6,7 @@ import {
   writeCardMealTypeSchema,
   type GoalKey,
 } from "@shared/schemas/coach-write-cards";
+import type { AllergenId } from "@shared/constants/allergens";
 import { containsUnsafeCoachAdvice } from "../../lib/ai-safety";
 import { isValidCalendarDate } from "../../utils/date-validation";
 
@@ -151,6 +152,8 @@ export type WriteCardProposal =
   | { kind: "grocery"; args: AddGroceryCardArgs }
   | { kind: "pantry"; args: UpdatePantryCardArgs }
   | { kind: "goals"; args: SetGoalsCardArgs }
+  /** No tool: the server turns the Coach's add_allergy action card into it. */
+  | { kind: "allergy"; args: { allergen: AllergenId } }
   | {
       kind: "plan";
       args: AddMealPlanCardArgs;

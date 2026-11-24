@@ -234,6 +234,102 @@ describe("coach-write-cards storage", () => {
     expect(await goalOf()).toBe(1800);
   });
 
+  // The whole path on a real database for the allergy card: the kind check
+  // accepts 'allergy', the save adds it to the profile, Undo removes it.
+  it("an allergy card adds the allergy and Undo removes it", async () => {
+    const { performWriteCardSave, revertWriteCardSave } = await import(
+      "../../services/write-cards"
+    );
+    await tx.insert(schema.userProfiles).values({
+      userId: user.id,
+      allergies: [{ name: "milk", severity: "mild" }],
+      healthDataConsentAt: new Date(),
+    });
+    const allergiesOf = async () =>
+      (
+        await tx
+          .select({ allergies: schema.userProfiles.allergies })
+          .from(schema.userProfiles)
+          .where(eq(schema.userProfiles.userId, user.id))
+      )[0].allergies;
+    const { card } = await createWriteCard({
+      userId: user.id,
+      conversationId,
+      kind: "allergy",
+      payload: { allergen: "shellfish" },
+    });
+    const ctx = { userId: user.id, tz: "UTC", now: new Date() };
+    const saved = await saveWriteCard(
+      card.id,
+      user.id,
+      (t, c) => performWriteCardSave(t, c, { severity: "severe" }, ctx),
+      { severity: "severe" },
+    );
+    expect(saved.status).toBe("saved");
+    expect(await allergiesOf()).toEqual([
+      { name: "milk", severity: "mild" },
+      { name: "shellfish", severity: "severe" },
+    ]);
+
+    const undone = await undoWriteCard(card.id, user.id, (t, c) =>
+      revertWriteCardSave(t, c),
+    );
+    expect(undone.status).toBe("undone");
+    expect(await allergiesOf()).toEqual([{ name: "milk", severity: "mild" }]);
+  });
+
+  // Health-data consent withdrawn: an allergy card is a structured allergy
+  // record (allergen in the payload, severity in the edits and refs), so the
+  // withdrawal closes every allergy card and blanks what the user chose.
+  it("withdrawing health consent expires allergy cards and clears their severity", async () => {
+    const { withdrawHealthConsent } = await import("../user-profiles");
+    await tx.insert(schema.userProfiles).values({
+      userId: user.id,
+      allergies: [{ name: "shellfish", severity: "severe" }],
+      healthDataConsentAt: new Date(),
+    });
+    const allergy = () =>
+      createWriteCard({
+        userId: user.id,
+        conversationId,
+        kind: "allergy",
+        payload: { allergen: "shellfish" },
+      });
+    const { card: savedCard } = await allergy();
+    await saveWriteCard(
+      savedCard.id,
+      user.id,
+      async () => ({
+        allergyAdded: { name: "shellfish", severity: "severe" },
+      }),
+      { severity: "severe" },
+    );
+    const { card: liveCard } = await allergy();
+    await setWriteCardEdits(liveCard.id, user.id, { severity: "mild" });
+    const { card: foodCard } = await createWriteCard({
+      userId: user.id,
+      conversationId: (
+        await tx
+          .insert(schema.chatConversations)
+          .values({ userId: user.id, title: "Other", type: "coach" })
+          .returning()
+      )[0].id,
+      kind: "food",
+      payload: foodPayload,
+    });
+
+    await withdrawHealthConsent(user.id);
+
+    for (const id of [savedCard.id, liveCard.id]) {
+      const after = await getWriteCard(id, user.id);
+      expect(after?.status).toBe("expired");
+      expect(after?.edits).toEqual({});
+      expect(after?.savedRefs).toBeNull();
+    }
+    // Other kinds are not health records and are left alone.
+    expect((await getWriteCard(foodCard.id, user.id))?.status).toBe("live");
+  });
+
   it("undo within 60s reverts and returns card to live", async () => {
     const { card } = await create();
     await saveWriteCard(card.id, user.id, async () => ({

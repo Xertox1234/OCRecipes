@@ -503,6 +503,106 @@ describe("handleCoachChat with write cards", () => {
     expect(buildWriteCardPayload).not.toHaveBeenCalled();
   });
 
+  describe("the allergy card", () => {
+    const allergyAction = {
+      type: "action_card" as const,
+      title: "Add shellfish to your allergies",
+      subtitle: "So I can avoid it",
+      action: { type: "add_allergy" as const, allergen: "shellfish" as const },
+      actionLabel: "Add",
+    };
+    const quick = {
+      type: "quick_replies" as const,
+      options: [{ label: "Ok", message: "Ok" }],
+    };
+    const allergyCard = {
+      card: createMockCoachWriteCard({
+        id: CARD_ID,
+        kind: "allergy",
+        payload: { allergen: "shellfish" },
+      }),
+      previous: null,
+    };
+    const types = (events: CoachChatEvent[]) =>
+      blocksEvent(events)?.blocks.map((b) => b.type);
+
+    beforeEach(() => {
+      vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+        text: t,
+        blocks: [allergyAction, quick],
+      }));
+      vi.mocked(buildWriteCardPayload).mockResolvedValue({
+        allergen: "shellfish",
+      });
+      vi.mocked(storage.createWriteCard).mockResolvedValue(allergyCard);
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        async function* (): AsyncGenerator<CoachProChunk> {
+          const chunk: CoachProChunk = { type: "content", content: "Noted." };
+          yield chunk;
+        },
+      );
+    });
+
+    it("replaces the add_allergy action card for an app that can draw it", async () => {
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true, allergyCard: true })),
+      );
+      expect(buildWriteCardPayload).toHaveBeenCalledWith(
+        { kind: "allergy", args: { allergen: "shellfish" } },
+        expect.objectContaining({ userId: "user-42" }),
+      );
+      expect(storage.createWriteCard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "allergy",
+          payload: { allergen: "shellfish" },
+        }),
+      );
+      expect(types(events)).toEqual(["quick_replies", "write_card"]);
+    });
+
+    it("leaves the action card for an app that did not declare the allergy card", async () => {
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true })),
+      );
+      expect(storage.createWriteCard).not.toHaveBeenCalled();
+      expect(types(events)).toEqual(["action_card", "quick_replies"]);
+    });
+
+    it("leaves the action card when no card can be built (no consent, or already on file)", async () => {
+      vi.mocked(buildWriteCardPayload).mockRejectedValue(
+        new WriteCardEditError("No health-data consent on record."),
+      );
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true, allergyCard: true })),
+      );
+      expect(storage.createWriteCard).not.toHaveBeenCalled();
+      expect(types(events)).toEqual(["action_card", "quick_replies"]);
+    });
+
+    it("leaves the action card when the turn already made another card", async () => {
+      vi.mocked(storage.createWriteCard).mockResolvedValue({
+        card: createMockCoachWriteCard({ id: CARD_ID, kind: "food" }),
+        previous: null,
+      });
+      vi.mocked(buildWriteCardPayload).mockResolvedValue(foodPayload);
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposing({ kind: "food", args: foodArgs }),
+      );
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true, allergyCard: true })),
+      );
+      expect(storage.createWriteCard).toHaveBeenCalledTimes(1);
+      expect(storage.createWriteCard).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "food" }),
+      );
+      expect(types(events)).toEqual([
+        "action_card",
+        "quick_replies",
+        "write_card",
+      ]);
+    });
+  });
+
   it("a reply replaced by the safety message carries no card", async () => {
     vi.mocked(buildGoalsPayload).mockResolvedValue(goalsPayload);
     vi.mocked(generateCoachProResponse).mockImplementation(async function* (

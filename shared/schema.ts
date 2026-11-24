@@ -1540,7 +1540,7 @@ export const coachWriteCards = pgTable(
       .notNull(),
     kind: text("kind")
       .notNull()
-      .$type<"food" | "grocery" | "plan" | "pantry" | "goals">(),
+      .$type<"food" | "grocery" | "plan" | "pantry" | "goals" | "allergy">(),
     payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
     edits: jsonb("edits")
       .notNull()
@@ -1559,8 +1559,8 @@ export const coachWriteCards = pgTable(
   (table) => [
     check(
       "coach_write_cards_kind_check",
-      // 'allergy' is allowed here ahead of its card (migration 0050), so the
-      // production constraint is widened once for both.
+      // Migration 0050 widened the production constraint for 'goals' and
+      // 'allergy' together.
       sql`${table.kind} IN ('food', 'grocery', 'plan', 'pantry', 'goals', 'allergy')`,
     ),
     check(
@@ -1595,6 +1595,9 @@ export interface CoachWriteCardSavedRefs {
     before: number | null;
     after: number;
   }[];
+  /** Allergy card: the allergy the save added. Undo removes it only while
+   *  the profile still holds it with this severity. */
+  allergyAdded?: { name: string; severity: "mild" | "moderate" | "severe" };
   /** Pantry card: the rows this save inserted (Undo deletes them). */
   pantryAddedIds?: number[];
   /** Pantry card: each row the save changed or deleted, as it was before. */

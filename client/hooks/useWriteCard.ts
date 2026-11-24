@@ -12,7 +12,8 @@ import type {
  * Save and Undo for one Coach write card (spec 2026-11-09). The server saves
  * from the card it stored; this sends only the user's edits. On success the
  * chat's messages are refetched so every card shows its current state, and a
- * goals card also refreshes what the rest of the app reads the goals from.
+ * goals or allergy card also refreshes what the rest of the app reads them
+ * from.
  */
 export function useWriteCard(cardId: string, kind?: WriteCardKind) {
   const queryClient = useQueryClient();
@@ -25,6 +26,11 @@ export function useWriteCard(cardId: string, kind?: WriteCardKind) {
       void queryClient.invalidateQueries({ queryKey: GOALS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailyBudget });
+    }
+    if (kind === "allergy") {
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.dietaryProfile,
+      });
     }
     return queryClient.invalidateQueries({
       predicate: (q) =>

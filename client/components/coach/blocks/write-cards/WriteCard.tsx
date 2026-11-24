@@ -11,7 +11,10 @@ import {
   planKept,
   writeCardButtonLabel,
 } from "@shared/lib/coach-write-card-math";
-import type {
+import {
+  allergenWord,
+  type AllergyCardEdits,
+  type AllergyCardPayload,
   FoodCardEdits,
   FoodCardPayload,
   GoalsCardEdits,
@@ -27,6 +30,7 @@ import type {
   WriteCardStatus,
 } from "@shared/schemas/coach-write-cards";
 import { WriteCardShell } from "./WriteCardShell";
+import { AllergyWriteCard } from "./AllergyWriteCard";
 import { FoodWriteCard } from "./FoodWriteCard";
 import { GoalsWriteCard } from "./GoalsWriteCard";
 import { GroceryWriteCard } from "./GroceryWriteCard";
@@ -75,6 +79,9 @@ function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
     // that changes nothing.
     case "goals":
       return true;
+    // The severity is the user's to choose; there is nothing to save before.
+    case "allergy":
+      return (edits as AllergyCardEdits).severity !== undefined;
   }
 }
 
@@ -90,6 +97,9 @@ function lockedSummary(block: WriteCardBlock): string {
   if (block.kind === "pantry") {
     const n = (block.payload as PantryCardPayload).rows.length;
     return `${n} pantry change${n === 1 ? "" : "s"}`;
+  }
+  if (block.kind === "allergy") {
+    return `${allergenWord((block.payload as AllergyCardPayload).allergen)} allergy`;
   }
   if (block.kind === "goals") {
     const n = (block.payload as GoalsCardPayload).rows.length;
@@ -212,6 +222,12 @@ export default function WriteCard({
         <PantryWriteCard
           payload={block.payload as PantryCardPayload}
           edits={edits as PantryCardEdits}
+          onEdit={onEdit}
+        />
+      ) : block.kind === "allergy" ? (
+        <AllergyWriteCard
+          payload={block.payload as AllergyCardPayload}
+          edits={edits as AllergyCardEdits}
           onEdit={onEdit}
         />
       ) : block.kind === "goals" ? (

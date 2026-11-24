@@ -20,6 +20,28 @@ export type WriteCardTx = Pick<
   "transaction" | "select" | "insert" | "update" | "delete"
 >;
 
+/**
+ * Health-data consent withdrawn: closes every allergy card the user has and
+ * blanks the severity they chose (edits, saved refs). An allergy card is a
+ * structured allergy record; no other kind holds health data. Runs on the
+ * withdrawal's own transaction. The allergen stays in the payload, as it
+ * does in the chat text around the card.
+ */
+export async function expireAllergyCards(
+  userId: string,
+  executor: Pick<typeof db, "update">,
+): Promise<void> {
+  await executor
+    .update(coachWriteCards)
+    .set({ status: "expired", edits: {}, savedRefs: null })
+    .where(
+      and(
+        eq(coachWriteCards.userId, userId),
+        eq(coachWriteCards.kind, "allergy"),
+      ),
+    );
+}
+
 /** Server undo window — the UI shows Undo for 6 s; this absorbs latency. */
 export const WRITE_CARD_UNDO_WINDOW_MS = 60_000;
 

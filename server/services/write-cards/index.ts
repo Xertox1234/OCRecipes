@@ -2,6 +2,8 @@ import type { CoachWriteCard, CoachWriteCardSavedRefs } from "@shared/schema";
 import {
   WRITE_CARD_EDITS_SCHEMAS,
   type FoodCardEdits,
+  type AllergyCardEdits,
+  type AllergyCardPayload,
   type FoodCardPayload,
   type GoalsCardEdits,
   type GoalsCardPayload,
@@ -45,6 +47,12 @@ import {
   startPlanImageJobs,
 } from "./plan";
 import {
+  buildAllergyPayload,
+  describeAllergy,
+  performAllergySave,
+  revertAllergySave,
+} from "./allergy";
+import {
   buildGoalsPayload,
   describeGoals,
   performGoalsSave,
@@ -75,6 +83,8 @@ export async function buildWriteCardPayload(
       return buildPantryPayload(p.args, ctx.userId);
     case "goals":
       return buildGoalsPayload(p.args, ctx.userId);
+    case "allergy":
+      return buildAllergyPayload(p.args, ctx.userId);
   }
 }
 
@@ -119,6 +129,11 @@ export async function performWriteCardSave(
       });
     case "goals":
       return performGoalsSave(tx, card, parsed.data, { userId: ctx.userId });
+    case "allergy":
+      return performAllergySave(tx, card, parsed.data, {
+        userId: ctx.userId,
+        afterCommit: ctx.afterCommit,
+      });
   }
 }
 
@@ -138,6 +153,8 @@ export async function revertWriteCardSave(
       return revertPantrySave(tx, card);
     case "goals":
       return revertGoalsSave(tx, card);
+    case "allergy":
+      return revertAllergySave(tx, card, afterCommit);
   }
 }
 
@@ -157,7 +174,9 @@ export function writeCardReceiptFor(card: CoachWriteCard): string {
   return writeCardReceipt(card.kind, card.payload as WriteCardPayload, edits);
 }
 
-const TOOL_FOR_KIND: Record<WriteCardKind, string> = {
+/** The tool that remakes each kind's card. The allergy card has none: the
+ *  server builds it from the Coach's add_allergy action card. */
+const TOOL_FOR_KIND: Record<Exclude<WriteCardKind, "allergy">, string> = {
   food: "log_food_item",
   grocery: "add_to_grocery_list",
   plan: "add_to_meal_plan",
@@ -209,6 +228,7 @@ const KIND_LABEL: Record<WriteCardKind, string> = {
   plan: "meal plan",
   pantry: "pantry",
   goals: "daily goals",
+  allergy: "allergy",
 };
 
 /**
@@ -243,6 +263,16 @@ export function describeLiveCard(card: CoachWriteCard): string {
         e as GoalsCardEdits,
       );
       break;
+    case "allergy":
+      body = describeAllergy(
+        card.payload as AllergyCardPayload,
+        e as AllergyCardEdits,
+      );
+      break;
   }
-  return `Card on screen (${KIND_LABEL[card.kind]}, not saved): ${body}. To change it, call ${TOOL_FOR_KIND[card.kind]} again with the full updated contents.`;
+  const shown = `Card on screen (${KIND_LABEL[card.kind]}, not saved): ${body}.`;
+  if (card.kind === "allergy") {
+    return `${shown} The user picks the severity and saves it on the card.`;
+  }
+  return `${shown} To change it, call ${TOOL_FOR_KIND[card.kind]} again with the full updated contents.`;
 }
