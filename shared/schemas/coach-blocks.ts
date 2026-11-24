@@ -3,6 +3,7 @@ import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
 import { allergenIdSchema } from "../constants/allergens";
 import { writeCardBlockObjectSchema } from "./coach-write-cards";
+import { formBlockSchema } from "./coach-form";
 import {
   recipeResultsBlockSchema,
   recipeQuestionsBlockSchema,
@@ -336,6 +337,7 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   inlineChartSchema,
   commitmentCardSchema,
   quickRepliesSchema,
+  formBlockSchema,
   recipeCardSchema,
   mealPlanCardSchema,
   recipeResultsBlockSchema,
