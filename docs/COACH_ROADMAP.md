@@ -55,7 +55,7 @@ Then re-rank.
       Size: M.
       Part 1, PR #1995: the form block for clarifying questions (pick one,
       pick any, a number); the answers come back as the user's next message.
-      Part 2: the goals card (calories, protein, carbs, fat; saved on tap,
+      Part 2, PR #1998: the goals card (calories, protein, carbs, fat; saved on tap,
       with Undo). Left: the allergy card.
 - [ ] **T2. Undo for small writes.** Apply a low-risk log at once and offer
       undo; keep confirm cards for large changes. Value: medium. Size: M.
