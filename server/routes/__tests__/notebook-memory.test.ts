@@ -14,6 +14,7 @@ vi.mock("../../storage", () => ({
     getUnseenNotebookSaves: vi.fn(),
     markNotebookEntriesShown: vi.fn(),
     confirmNotebookEntries: vi.fn(),
+    areCoachNotesPaused: vi.fn().mockResolvedValue(false),
     rejectNotebookEntries: vi.fn(),
     clearNotebook: vi.fn(),
     createNotebookEntry: vi.fn(),
@@ -74,6 +75,15 @@ describe("visible memory routes", () => {
       .send({ ids: [4, 5, 4] });
     expect(res.status).toBe(status);
     expect(storage[fn]).toHaveBeenCalledWith("1", [4, 5, 4]);
+  });
+
+  it("refuses to confirm a note while the notes are paused", async () => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValueOnce(true);
+    const res = await request(app())
+      .post("/api/coach/notebook/confirm")
+      .send({ ids: [4] });
+    expect(res.status).toBe(403);
+    expect(storage.confirmNotebookEntries).not.toHaveBeenCalled();
   });
 
   it("returns the counts from confirm and reject", async () => {

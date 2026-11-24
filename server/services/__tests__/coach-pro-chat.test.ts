@@ -71,6 +71,7 @@ vi.mock("../../storage", () => ({
     createNotebookEntries: vi.fn(),
     createNotebookEntry: vi.fn(),
     getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
+    areCoachNotesPaused: vi.fn().mockResolvedValue(false),
     archiveOldEntries: vi.fn(),
     getChatMessageByTurnKey: vi.fn(),
     deleteChatMessage: vi.fn(),

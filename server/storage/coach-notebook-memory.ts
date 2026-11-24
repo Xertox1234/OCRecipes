@@ -6,6 +6,7 @@
  */
 import {
   coachNotebook,
+  pendingReminders,
   userProfiles,
   type CoachNotebookEntry,
 } from "@shared/schema";
@@ -119,6 +120,15 @@ export async function getConfirmedNotebookEntries(
 export async function clearNotebook(userId: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(coachNotebook).where(eq(coachNotebook.userId, userId));
+    // Reminder rows hold a copy of the commitment's text.
+    await tx
+      .delete(pendingReminders)
+      .where(
+        and(
+          eq(pendingReminders.userId, userId),
+          eq(pendingReminders.type, "commitment"),
+        ),
+      );
     await tx
       .update(userProfiles)
       .set({ moodScore: 0, moodUpdatedAt: null })

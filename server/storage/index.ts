@@ -412,6 +412,7 @@ export const storage = {
 
   // Coach Notebook
   getActiveNotebookEntries: coachNotebook.getActiveNotebookEntries,
+  areCoachNotesPaused: coachNotebook.areCoachNotesPaused,
   createNotebookEntry: coachNotebook.createNotebookEntry,
   createNotebookEntries: coachNotebook.createNotebookEntries,
   confirmNotebookEntries: coachNotebookMemory.confirmNotebookEntries,
