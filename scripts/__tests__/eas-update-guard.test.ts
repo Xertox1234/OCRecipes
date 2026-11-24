@@ -35,7 +35,7 @@ function extractFragment(script: string): string {
 
 const tmpDirs: string[] = [];
 
-function makeFakeEasBin(): string {
+function makeFakeEasBin(freePercent: number): string {
   const dir = fs.realpathSync(
     fs.mkdtempSync(path.join(os.tmpdir(), "fake-eas-")),
   );
@@ -50,16 +50,38 @@ function makeFakeEasBin(): string {
     '#!/usr/bin/env bash\nprintf "EAS_CALLED:"\nfor a in "$@"; do printf " [%s]" "$a"; done\nprintf "\\n"\nexit 0\n',
   );
   fs.chmodSync(bin, 0o755);
+  // The fragment runs scripts/ota-machine-check.js, which reads free memory
+  // from `memory_pressure` on PATH. A fake one keeps these tests independent
+  // of how busy the machine running them is (and of the OS).
+  const mem = path.join(dir, "memory_pressure");
+  fs.writeFileSync(
+    mem,
+    `#!/bin/sh\necho "System-wide memory free percentage: ${freePercent}%"\n`,
+  );
+  fs.chmodSync(mem, 0o755);
   return dir;
 }
 
-function runGuard(scriptName: string, userArgs: string[]) {
+function runGuard(
+  scriptName: string,
+  userArgs: string[],
+  opts: { freePercent?: number; env?: NodeJS.ProcessEnv } = {},
+) {
   const fragment = extractFragment(pkg.scripts[scriptName]);
-  const binDir = makeFakeEasBin();
+  const binDir = makeFakeEasBin(opts.freePercent ?? 70);
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...opts.env,
+    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+  };
+  if (!opts.env?.OTA_ALLOW_BUSY) delete env.OTA_ALLOW_BUSY;
   const result = spawnSync("sh", ["-c", fragment, "--", ...userArgs], {
     encoding: "utf8",
     timeout: 15_000,
-    env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` },
+    // npm runs a script from the package root; the fragment names the
+    // machine check by a path relative to it.
+    cwd: path.dirname(pkgPath),
+    env,
   });
   return {
     status: result.status ?? -1,
@@ -89,6 +111,11 @@ describe("EAS update publish guards (package.json inline scripts)", () => {
       expect(script).toContain('"$@"');
       expect(script.endsWith("' --")).toBe(true);
     });
+
+    it("caps the bundler at 2 workers", () => {
+      // metro.config.js reads this; eas passes its environment to the export.
+      expect(pkg.scripts[name]).toMatch(/^CI=1 METRO_MAX_WORKERS=2 /);
+    });
   });
 
   describe.each(SCRIPTS)("$name — guard behavior", ({ name, branch }) => {
@@ -106,6 +133,29 @@ describe("EAS update publish guards (package.json inline scripts)", () => {
       expect(r.stdout).toContain(
         `EAS_CALLED: [update] [--branch] [${branch}] [--platform] [all] [--message] [fix login]`,
       );
+    });
+
+    it("refuses when the machine is short of memory, before eas runs", () => {
+      const r = runGuard(name, ["--message", "x"], { freePercent: 20 });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("20% of memory is free");
+      expect(r.stdout).not.toContain("EAS_CALLED");
+    });
+
+    it("OTA_ALLOW_BUSY=1 publishes on a busy machine", () => {
+      const r = runGuard(name, ["--message", "x"], {
+        freePercent: 20,
+        env: { OTA_ALLOW_BUSY: "1" },
+      });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain("EAS_CALLED:");
+    });
+
+    it("checks --message before the machine", () => {
+      const r = runGuard(name, [], { freePercent: 20 });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("--message is required");
+      expect(r.stderr).not.toContain("memory");
     });
 
     it("accepts the --message=value form", () => {
