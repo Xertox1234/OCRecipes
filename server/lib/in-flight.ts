@@ -60,7 +60,9 @@ export function rejectOverlapping(
  * second turn sent while the first is still being answered is refused before
  * anything is stored. The app already holds its send controls while a turn
  * runs; this covers a second device or another client. Releasing on close
- * means a turn the user stopped frees the conversation at once.
+ * means a turn the user stopped frees the conversation at once; it also means
+ * work that carries on after a disconnect (a recipe turn still saving) is not
+ * covered.
  */
 export const rejectOverlappingChatTurn = rejectOverlapping(
   (req) => `${req.userId}:${Number(req.params.id)}`,

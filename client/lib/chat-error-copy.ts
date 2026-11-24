@@ -40,6 +40,11 @@ export function chatRequestErrorCopy(code: string | undefined): string {
       return CHAT_AI_OFF_ERROR;
     case "CONFLICT":
       return "Recipe finder isn't available right now.";
+    case "REQUEST_IN_FLIGHT":
+      // Another turn in this conversation is still open on the server: a
+      // second device, or a reply cut off by a bad connection that the
+      // server has not yet seen close (it notices within seconds).
+      return "The Coach is still answering. Please try again in a moment.";
     default:
       return CHAT_GENERIC_ERROR;
   }
