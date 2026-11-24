@@ -643,11 +643,55 @@ directly (none is called directly today); SIGKILL, which nothing can handle; and
 the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
 could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
 not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
-(2) other blocking hooks source files at top level with no such probe: `git-safety.sh`
-(`cmd-detect.sh` and `gh-pr-rest.sh`; it does probe `write-targets.sh` and
-`own-agent-worktree.sh`), `guard-outward-cli.sh`, `branch-preflight.sh`, and
-`pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
-`scripts/lib/verdict-diff-stamp-path.sh`.
+(2) other blocking hooks source files at top level with no such probe: `guard-outward-cli.sh`,
+`branch-preflight.sh`, and `pr-preflight-guard.sh`, which also sources
+`scripts/lib/preflight-stamp-path.sh` and `scripts/lib/verdict-diff-stamp-path.sh`.
+`git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
+(`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
+finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
+The bypasses were inside the contract branch, measured before the change with a worktree
+contract active: a lib that shadows `read` with a function that exits (silent, rc 0); a lib
+that leaves errexit on (`check_repo_target` answers by return code, so "unresolvable" ended
+the shell with rc 2 and no deny); `deny()` when `jq` cannot print (a shadowed `jq`, or a
+140 KB registry entry in the reason: E2BIG); a signal (rc 129-143, no output). Now: the two
+existing probes reject a lib that changes the shell options or leaves a function named like a
+builtin or a command the hook calls (`printf`, `ls`, `grep`, `jq`, `read` and the rest of
+`_GS_NO_SHADOW`; a `read` wrapper that forgot `builtin` recursed until bash segfaulted, rc 139,
+and no trap runs then); `deny()` builds first and cuts the reason at 8000 characters; and an
+EXIT/signal trap (TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO)
+denies when the shell ends undecided before the contract branch has finished. The trap denies ONLY while a contract is in force (registry
+non-empty, no `SKIP_WORKTREE_CONTRACT`); with no contract the hook only advises, and it stays
+silent. Found by the security review of that change and fixed with it (rows ND8-ND11): a
+LARGE command skipped the whole write-shaped check, on `main` too. `printf "$CMD" | grep -q`
+under `pipefail` reads 141 as "no match" once the command outgrows the pipe buffer, because
+grep leaves at its first match and the printf dies of SIGPIPE. A 200 KB heredoc write into the
+main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines, was allowed
+every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
+(`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
+that outlives the hook cannot hold its stdout open.
+NOT yet checked: the same `printf '%s' "$VAR" | grep` shape appears 27 times across
+`guard-outward-cli.sh`, `branch-preflight.sh`, `pr-preflight-guard.sh`, `merge-review-guard.sh`,
+`guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under `pipefail`). Whether any of
+them is a condition over a large text that fails open is unmeasured; the known pattern is
+`docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
+Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
+`CONTRACT_DONE`, redefines a function the hook defines before the libs are sourced (`deny`,
+`registry_active`, `no_decision`, `_gs_grep`, `_gs_no_shadow`), shadows a name that is not in
+`_GS_NO_SHADOW`, or closes fd 9; SIGKILL, the fault signals (SEGV, BUS, FPE, ILL, TRAP: the
+deny is printed but the rc stays 132-139), the
+real-time signals, and PWR/STKFLT (left out because macOS bash has no such names); a signal
+between `deny()` marking the decision and printing it; a lib that defines a function
+called `builtin` defeats the shadow check, which runs through `builtin` (measured:
+`builtin() { "$@"; }; printf() { :; }` allows); a lib that ASSIGNS a variable the hook reads
+(`REG_DIR=""`, `SKIP_WORKTREE_CONTRACT=1`, `CMD=ls`, `PATH=/nonexistent`, `CWD=/tmp`: each
+allows, on `main` too) or redefines another lib's function (`emit_write_targets() { :; }` in
+`own-agent-worktree.sh`); the 15 s hook timeout (a one-line 400 KB command takes about 7 s in
+`split_segments` and `git_c_target`, both quadratic; past the timeout a SIGTERM gets the trap's
+deny, a SIGKILL gets nothing); the stop signals (STOP, TTIN, TTOU), which hang the hook until
+that timeout; the three exits before the trap when `jq` is on PATH
+but cannot read the envelope (lines 46-48); a shell that ends before the inline
+`SKIP_WORKTREE_CONTRACT=1` prefix is read is denied even with that prefix (the safe direction);
+an advisory lost to a signal or to a `jq` that cannot print. Not tested on bash 3.2 (macOS).
 All of these need a change to a reviewed file under `.claude/hooks/lib/` or `scripts/lib/` to
 reach.
 

@@ -36,7 +36,7 @@ if ! command -v jq >/dev/null 2>&1; then
   INPUT=$(cat)
   if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] \
      && ls -d /tmp/claude-worktree-contracts-*/ >/dev/null 2>&1 \
-     && printf '%s' "$INPUT" | grep -qE 'git[^a-zA-Z]+(commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset|rebase|merge|cherry-pick|apply|am|clean)|>>?|(^|[^a-zA-Z])(tee|rm|cp|mv)[^a-zA-Z]|sed[^|;]*-i'; then
+     && grep -qE 'git[^a-zA-Z]+(commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset|rebase|merge|cherry-pick|apply|am|clean)|>>?|(^|[^a-zA-Z])(tee|rm|cp|mv)[^a-zA-Z]|sed[^|;]*-i' <<<"$INPUT"; then
     printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git-safety: jq unavailable while a worktree-contract registry exists - failing closed for git/write-shaped commands. Bypass: SKIP_WORKTREE_CONTRACT=1."}}'
   fi
   exit 0
@@ -49,12 +49,28 @@ CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || echo "")
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 
+# _gs_grep <text> <grep args>: grep over a here-string, never `printf ... | grep -q` (2026-11-24).
+# Under this file's pipefail, grep -q leaves at its first match, the printf still writing a
+# large text dies of SIGPIPE, and the pipeline reads 141: "no match". Measured: a 200 KB
+# heredoc write into the main checkout skipped the whole write-shaped check that way.
+_gs_grep() { grep "${@:2}" <<<"$1"; }
+
+# deny() builds its JSON inside `$(...)` first and marks the decision only when the text holds
+# the deny: a jq that fails or ends its shell (a 140 KB reason is E2BIG as one argv entry on
+# Linux, so the reason is cut at 8000 characters) then leaves the hook undecided, and
+# no_decision below answers. Written to fd 9, the hook's own stdout saved below.
 deny() {
-  jq -n --arg r "$1" \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
+  local j r="$1"
+  [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
+  j=$(jq -n --arg r "$r" \
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}' 2>/dev/null) || j=""
+  case "$j" in
+    *'"permissionDecision": "deny"'*) DECIDED=1; printf '%s\n' "$j" >&9 ;;
+  esac
   exit 0
 }
 warn() {
+  DECIDED=1
   jq -n --arg c "$1" \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$c}}'
   exit 0
@@ -63,6 +79,63 @@ warn() {
 REG_DIR=""
 [ -n "$SESSION" ] && REG_DIR="/tmp/claude-worktree-contracts-${SESSION}"
 registry_active() { [ -n "$REG_DIR" ] && [ -d "$REG_DIR" ] && [ -n "$(ls -A "$REG_DIR" 2>/dev/null)" ]; }
+
+# From here on, while a worktree contract is in force, the hook's shell must not end without
+# a decision (2026-11-24). A PreToolUse hook that ends silently is an ALLOW, so anything that
+# ended this shell inside the contract branch was a bypass: a lib that shadows a builtin with
+# a function that exits, errexit left on by a lib, a signal, a deny() that could not print.
+# DECIDED is set by deny() and warn(); CONTRACT_DONE once the contract branch has run to its
+# end without denying. Any other end of the shell runs no_decision, which denies when a
+# contract is in force (same test as the branch itself, minus the inline bypass when the shell
+# ended before that was read) and stays silent otherwise: with no contract this hook only
+# advises, and an advisory that is lost is not a bypass. The trap is not inherited by
+# `$(...)`, so the lib probes and every substitution are unaffected. fd 9 is the hook's real
+# stdout: the shell can end inside a command whose stdout is redirected, and the trap would
+# inherit that redirect. Not covered: a lib that replaces the trap, sets DECIDED or
+# CONTRACT_DONE, redefines deny(), or closes fd 9; SIGKILL (docs/harness-residuals.md).
+# External commands that could leave a child behind (git, gh) are run with `9>&-`, so a
+# lingering child cannot hold the hook's stdout open.
+exec 9>&1
+DECIDED=""
+CONTRACT_DONE=""
+no_decision() {
+  [ -n "$DECIDED" ] && return 0
+  [ -n "$CONTRACT_DONE" ] && return 0
+  [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "${INLINE_BYPASS:-}" ] && registry_active || return 0
+  DECIDED=1
+  builtin printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git-safety: the hook ended before it reached a decision while a worktree contract is active (a helper under .claude/hooks/lib/ ended the hook, or the hook was interrupted), so it cannot say this command stays inside the assigned worktree. Fail-closed. Bypass: SKIP_WORKTREE_CONTRACT=1 as the first text of the command, or scripts/declare-worktree.sh --remove/--clear when the assignment has ended."}}' >&9
+  exit 0
+}
+trap no_decision EXIT
+# A trapped signal would otherwise RETURN to the interrupted command; end the shell instead
+# (rc 0, so a deny printed by no_decision is read as one).
+# Signals outside this list still end the shell with their own rc (an allow): the fault
+# signals (SEGV, BUS, FPE, ILL, TRAP), the real-time ones, and names macOS bash lacks (PWR,
+# STKFLT), left out so the trap line never fails there.
+trap 'no_decision; DECIDED=1; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+
+# _gs_no_shadow: run in a probe subshell right after the lib was sourced there. Fails when a
+# function now carries the name of a builtin or a command this hook calls. A lib that leaves
+# one counts as missing, like one that exits: `printf() { :; }`, `ls() { exit 0; }` and a
+# `read` wrapper that forgot `builtin` (endless recursion, the shell segfaults and no trap
+# runs) each gave a silent allow under a contract, measured. Uses only `builtin`s and no
+# word splitting. One name defeats it: a lib that defines a function called `builtin` (the
+# check itself runs through `builtin`), listed as open in docs/harness-residuals.md.
+_GS_NO_SHADOW=(. : '[' break builtin cd command compgen continue declare echo eval exec exit
+  export false kill local printf pwd read readonly return set shift shopt source test trap true
+  type typeset unset wait cat ls grep jq awk sed tr sort dirname git gh)
+_gs_no_shadow() {
+  for _gs_f in "${_GS_NO_SHADOW[@]}"; do
+    builtin declare -F -- "$_gs_f" >/dev/null 2>&1 && builtin return 1
+  done
+  builtin return 0
+}
+# lib_loads <file>: source it in a subshell first. A lib that exits, fails under this file's
+# `set -u`, shadows a name in _GS_NO_SHADOW, or changes the shell options (errexit left on)
+# counts as missing. TWIN of merge-review-guard.sh's lib_loads (which has no shadow check).
+lib_loads() {
+  [ "$(_o="$-:$SHELLOPTS"; { . "$1"; } >/dev/null 2>&1; _gs_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && printf loaded)" = loaded ]
+}
 
 # Dot segments defeat lexical prefix matching ($WT/../x, /tmp/../x) — treat any
 # path containing them as matching nothing, which fails toward deny in the
@@ -89,13 +162,16 @@ lex_collapse() {
 # Probed in a subshell first: a brace group is NOT a subshell, so a lib that is PRESENT but
 # BROKEN (e.g. its body runs `exit 0`, or expands an unset var under this file's `set -u`)
 # would otherwise take the whole hook down before the fail-closed check below ever runs.
+# The probe also rejects a lib that changes the shell options (2026-11-24: errexit left on
+# ended the shell at check_repo_target's first non-zero return) or shadows a builtin or a
+# command this hook calls (_gs_no_shadow above).
 case "${BASH_SOURCE[0]}" in */*) _WT_HERE="${BASH_SOURCE[0]%/*}" ;; *) _WT_HERE=. ;; esac
-_WT_OK=$( { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1; declare -F emit_write_targets >/dev/null && echo ok )
+_WT_OK=$( _o="$-:$SHELLOPTS"; { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1; _gs_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && declare -F emit_write_targets >/dev/null && echo ok )
 [ "$_WT_OK" = ok ] && { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1
 # own_agent_root (lib/own-agent-worktree.sh, harness item 8): a subagent's OWN isolation worktree
 # passes the contract check (in_registered below), keyed on the hook input's agent_id plus a cwd
 # inside agent-<agent_id>. Probed the same way; a lib that fails to load means no exception.
-_OA_OK=$( { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1; declare -F own_agent_root >/dev/null && echo ok )
+_OA_OK=$( _o="$-:$SHELLOPTS"; { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1; _gs_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && declare -F own_agent_root >/dev/null && echo ok )
 [ "$_OA_OK" = ok ] && { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1
 OWN_ROOT=""
 if [ "$_OA_OK" = ok ]; then
@@ -576,8 +652,11 @@ case "$CMD" in "SKIP_WORKTREE_CONTRACT=1 "*) INLINE_BYPASS=1 ;; esac
 # the dot command at a command position (`. ./x.sh` runs a script that may cd, in this shell). Used
 # to decide whether the command's working folder is knowable from its text.
 _gs_has_cd_word() {
-  printf '%s' "$1" | tr -d "\"'\\\\" \
-    | grep -qE '(^|[^A-Za-z0-9_.-])(cd|pushd|popd|eval|source|exec|builtin|command)([^A-Za-z0-9_.-]|$)|\$|`|(^|[;&|(])[[:space:]]*\.[[:space:]]'
+  # tr over a here-string: no pipeline into grep -q (see _gs_grep), and linear. A bash
+  # `${1//[...]/}` here was quadratic in the number of quotes (1 MB of them: 15 s, past the
+  # hook's timeout) and cannot be interrupted by a signal.
+  local t; t=$(tr -d "\"'\\\\" <<<"$1")
+  _gs_grep "$t" -qE '(^|[^A-Za-z0-9_.-])(cd|pushd|popd|eval|source|exec|builtin|command)([^A-Za-z0-9_.-]|$)|\$|`|(^|[;&|(])[[:space:]]*\.[[:space:]]'
 }
 # Leading cd (2026-10-24): exactly ONE `cd <absolute folder> &&` at the very start, and no
 # cd/pushd/popd (or eval/source/exec/builtin/command, any `$`, backtick) anywhere after it, sets
@@ -598,7 +677,7 @@ if [[ "$CMD" =~ $_GS_LEAD_CD_RE ]]; then
   _rest=${CMD#"${BASH_REMATCH[0]}"}
   _rest_sep=0
   case "$_rest" in *$'\n'*|*';'*|*'||'*) _rest_sep=1 ;; esac
-  printf '%s' "$_rest" | grep -qE '(^|[^&])&([^&]|$)' && _rest_sep=1
+  _gs_grep "$_rest" -qE '(^|[^&])&([^&]|$)' && _rest_sep=1
   if [[ "$_lc" == /* ]] && ! has_dot_segments "$_lc" && ! _gs_has_cd_word "$_rest" \
      && { [ "$_rest_sep" = 0 ] || { [ -d "$_lc" ] && [ -x "$_lc" ]; }; }; then
     LEAD_CD=${_lc%/}; [ -n "$LEAD_CD" ] || LEAD_CD=/
@@ -817,8 +896,8 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
         # Positive self-test: the candidate must still match a canonical mutating invocation
         # AND must still reject a non-invocation. Both directions, or a pattern that matches
         # everything would pass as readily as a correct one.
-        if printf '%s' 'git commit -m x' | grep -qE "$_CAND" 2>/dev/null \
-           && ! printf '%s' 'echo hello' | grep -qE "$_CAND" 2>/dev/null; then
+        if _gs_grep 'git commit -m x' -qE "$_CAND" 2>/dev/null \
+           && ! _gs_grep 'echo hello' -qE "$_CAND" 2>/dev/null; then
           # UNION IN, NEVER SUBSTITUTE. The self-test above proves the candidate is neither
           # empty nor absurdly wide; it CANNOT prove it is not NARROWER than the shipped
           # fallback, and a wholesale replace would then SUBTRACT denials. Measured: a lib
@@ -846,8 +925,8 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     _GS_STASH_OPT='(-p|--patch|--stat|--numstat|--shortstat|--name-only|--name-status|--oneline|-u|--include-untracked|--only-untracked|-q|--quiet|-n|-[0-9]+)'
     _GS_STASH_RO_RE="^[[:space:]]*git[[:space:]]+((-C|-c)[[:space:]]+${_GS_STASH_ARG}[[:space:]]+)*stash[[:space:]]+(list|show)([[:space:]]+(${_GS_STASH_OPT}|${_GS_STASH_ARG}|\"${_GS_STASH_ARG}\"|'${_GS_STASH_ARG}'))*[[:space:]]*\$"
     while IFS= read -r seg; do
-      printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
-      printf '%s' "$seg" | grep -qE "$_GS_STASH_RO_RE" && continue
+      _gs_grep "$seg" -qE "$MUTATING_GIT_SEG_RE" || continue
+      _gs_grep "$seg" -qE "$_GS_STASH_RO_RE" && continue
       # git_c_target (defined above) emits the redirect COMPONENTS of this segment, quote-AWARE:
       #   g <path> = --git-dir/GIT_DIR   c <path> = the cumulative -C fold   w <path> = --work-tree/GIT_WORK_TREE
       # git resolves the git-dir and the work-tree INDEPENDENTLY, so we reconstruct BOTH and validate
@@ -904,9 +983,9 @@ Run it inside the assigned worktree (or with git -C <worktree>). ${ESCAPES}"
   # --- write-shaped shell commands: absolute targets under the MAIN checkout ---
   # Cheap grep FIRST — the git rev-parse below must not run for every ls/echo/npm
   # command while a registry is active (~140ms/hook budget).
-  if printf '%s' "$CMD" | grep -qE '>>?|(^|[[:space:]|;&])(tee|rm|cp|mv)[[:space:]]|sed[[:space:]][^|;]*-i'; then
+  if _gs_grep "$CMD" -qE '>>?|(^|[[:space:]|;&])(tee|rm|cp|mv)[[:space:]]|sed[[:space:]][^|;]*-i'; then
   MAIN_ROOT=""
-  COMMON=$(git -C "${CWD:-/nonexistent}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "")
+  COMMON=$(git -C "${CWD:-/nonexistent}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null 9>&- || echo "")
   [ -n "$COMMON" ] && MAIN_ROOT=$(dirname "$COMMON")
   if [ -n "$MAIN_ROOT" ]; then
     # Quote-AWARE target extraction (emit_write_targets, sourced from lib/write-targets.sh). The prior
@@ -976,6 +1055,9 @@ EOF
   fi
   fi
 fi
+# The contract branch ran to its end without denying (or no contract is in force). From here
+# the hook only advises, so an end of the shell is no longer a decision that is missing.
+CONTRACT_DONE=1
 
 # ============ B) ADVISOR branch (never blocks) ============
 # `gh pr close` detection reads the shared, quote-AWARE command detector
@@ -1016,7 +1098,9 @@ fi
 _CMD_DETECT_OK=""
 if [[ "$CMD" == *gh* && "$CMD" == *close* ]]; then
   case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
-  if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+  # Probed first (2026-11-24): a lib that exits took the whole advisor with it, including
+  # the branch-deletion arms that never use it.
+  if lib_loads "$HERE/lib/cmd-detect.sh" && . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
      && declare -F cmd_gh_pr_write_subcommand >/dev/null \
      && declare -F cmd_gh_pr_ref >/dev/null; then
     _CMD_DETECT_OK=1
@@ -1039,17 +1123,17 @@ SKIP_REASON=""
 # `gh pr close`. Fixing only the reported instance would have left its mirror live.
 SUBJ="this branch's merge state"
 VERB="deleting"
-if printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+-[a-zA-Z]*D[a-zA-Z]*[[:space:]]+'; then
+if _gs_grep "$CMD" -qE '(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+-[a-zA-Z]*D[a-zA-Z]*[[:space:]]+'; then
   KIND="delete"
   REF=$(printf '%s' "$CMD" | sed -nE 's/.*git[[:space:]]+branch[[:space:]]+-[a-zA-Z]*D[a-zA-Z]*[[:space:]]+([^[:space:];&|]+).*/\1/p')
-elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+[^;&|]*--delete[^;&|]*--force|(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+[^;&|]*--force[^;&|]*--delete'; then
+elif _gs_grep "$CMD" -qE '(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+[^;&|]*--delete[^;&|]*--force|(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+[^;&|]*--force[^;&|]*--delete'; then
   # Long-form spelling of branch -D.
   KIND="delete"
   REF=$(printf '%s' "$CMD" | tr ' ' '\n' | awk 'f && $0 !~ /^-/ { print; exit } $0 == "branch" { f = 1 }')
-elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:space:]][^;&|]*--delete[[:space:]]'; then
+elif _gs_grep "$CMD" -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:space:]][^;&|]*--delete[[:space:]]'; then
   KIND="delete"
   REF=$(printf '%s' "$CMD" | sed -nE 's/.*--delete[[:space:]]+([^[:space:];&|]+).*/\1/p')
-elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:space:]][^;&|]*[[:space:]]:[^[:space:]]'; then
+elif _gs_grep "$CMD" -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:space:]][^;&|]*[[:space:]]:[^[:space:]]'; then
   KIND="delete"
   REF=$(printf '%s' "$CMD" | sed -nE 's/.*[[:space:]]:([^[:space:];&|]+).*/\1/p')
 elif [ -n "$_CMD_DETECT_OK" ] && [ "$(cmd_gh_pr_write_subcommand "$CMD")" = "close" ]; then
@@ -1079,7 +1163,7 @@ elif [ -n "$_CMD_DETECT_OK" ] && [ "$(cmd_gh_pr_write_subcommand "$CMD")" = "clo
   # $? today") — not adding that dependency keeps that note accurate.
   REF=$(cmd_gh_pr_ref "$CMD")
   [ -n "$REF" ] || SKIP_REASON="could not resolve the PR ref via the shared extractor (e.g. a --repo/-R retarget, more than one 'gh pr' mention, or an ambiguous flag) — confirm this PR's state manually before closing."
-elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+worktree[[:space:]]+remove[[:space:]][^;&|]*(--force|[[:space:]]-f)'; then
+elif _gs_grep "$CMD" -qE '(^|[;&|[:space:]])git[[:space:]]+worktree[[:space:]]+remove[[:space:]][^;&|]*(--force|[[:space:]]-f)'; then
   warn "⚠ git worktree remove --force discards any uncommitted work in that worktree. Confirm the branch is pushed (or its PR merged) before removal. Recovery runbook: docs/solutions/best-practices/restore-and-merge-closed-pr-after-branch-deletion-2026-07-11.md"
 fi
 
@@ -1170,11 +1254,11 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
   else
     # Three outcomes: found | none (the lookup worked, no PR) | failed (could not look).
     PR_LOOKUP=failed
-    if PR_JSON=$(gh pr view "$REF" --json number,state,mergedAt 2>/dev/null); then
+    if PR_JSON=$(gh pr view "$REF" --json number,state,mergedAt 2>/dev/null 9>&-); then
       PR_LOOKUP=found
     else
-      GH_ERR=$(gh pr view "$REF" --json number 2>&1 >/dev/null || true)
-      if printf '%s' "$GH_ERR" | grep -qi 'no pull requests found'; then
+      GH_ERR=$(gh pr view "$REF" --json number 2>&1 >/dev/null 9>&- || true)
+      if _gs_grep "$GH_ERR" -qi 'no pull requests found'; then
         PR_LOOKUP=none
       else
         # REST retry. `gh pr view --json` is GraphQL, which a Claude Code cloud session
@@ -1186,8 +1270,8 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
         # → no retry, the old FAILED warning. Fork-free dir, as for cmd-detect.sh above.
         case "${BASH_SOURCE[0]}" in */*) _PR_HERE="${BASH_SOURCE[0]%/*}" ;; *) _PR_HERE=. ;; esac
         # shellcheck source=/dev/null
-        if . "$_PR_HERE/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null; then
-          PR_JSON=$(gh_pr_rest_json "$REF" 2>/dev/null)
+        if lib_loads "$_PR_HERE/lib/gh-pr-rest.sh" && . "$_PR_HERE/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null; then
+          PR_JSON=$(gh_pr_rest_json "$REF" 2>/dev/null 9>&-)
           case $? in
             0) PR_LOOKUP=found ;;
             1) PR_LOOKUP=none ;;

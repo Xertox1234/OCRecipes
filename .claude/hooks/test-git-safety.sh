@@ -12,10 +12,14 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 CALLER_STATE_BEFORE=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
 
 run_hook() { echo "$1" | bash "$HOOK" 2>/dev/null; }
+# Conditions in this file grep a here-string, never `echo "$out" | grep -q` (2026-11-24): the
+# file runs under pipefail, grep -q leaves at its first match, and on a busy machine the echo
+# then dies of SIGPIPE and the pipeline reads 141. Measured: two deny rows red in one run of
+# four with the hook answering correctly.
 
 assert_deny() {
   local name="$1" out; out=$(run_hook "$2")
-  if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+  if grep -q '"permissionDecision": "deny"' <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected deny)"; echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
@@ -29,10 +33,10 @@ assert_allow() {
 # Advisor must WARN (additionalContext containing $3) and must NOT deny.
 assert_warn_contains() {
   local name="$1" out; out=$(run_hook "$2")
-  if echo "$out" | grep -q '"permissionDecision"'; then
+  if grep -q '"permissionDecision"' <<<"$out"; then
     echo "FAIL: $name (advisor must never block)"; FAIL=$((FAIL+1)); return
   fi
-  if echo "$out" | grep -q '"additionalContext"' && echo "$out" | grep -qF -- "$3"; then
+  if grep -q '"additionalContext"' <<<"$out" && grep -qF -- "$3" <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected additionalContext containing: $3)"
@@ -549,7 +553,7 @@ assert_walker() {  # $1=name $2=segment $3=expected emission
 assert_matcher() {  # $1=name $2=segment $3=MATCH|NOMATCH
   local name="$1" seg="$2" want="$3" got
   if ( . "${HOOK%/*}/lib/cmd-detect.sh" >/dev/null 2>&1
-       printf '%s' "$seg" | grep -qE "^[[:space:]]*git${_CMD_GIT_GLOBALS}[[:space:]]+(commit|reset)([[:space:]]|\$)" )
+       grep -qE "^[[:space:]]*git${_CMD_GIT_GLOBALS}[[:space:]]+(commit|reset)([[:space:]]|\$)" <<<"$seg" )
   then got=MATCH; else got=NOMATCH; fi
   if [ "$got" = "$want" ]; then echo "PASS: $name"; PASS=$((PASS + 1))
   else echo "FAIL: $name (expected $want, got $got)"; FAIL=$((FAIL + 1)); fi
@@ -907,7 +911,7 @@ cp "$HOOK" "$LIBTMP/git-safety.sh"
 assert_deny_stub() {  # $1=name $2=lib body $3=payload (default: an ordinary mutating git)
   printf '%s\n' "$2" > "$LIBTMP/lib/cmd-detect.sh"
   local out; out=$(json "$SESSION" "$MAIN" "${3:-git commit -m x}" | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
-  if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+  if grep -q '"permissionDecision": "deny"' <<<"$out"; then
     echo "PASS: $1"; PASS=$((PASS+1))
   else
     echo "FAIL: $1 (expected deny; a broken lib must fall back, never allow)"
@@ -947,7 +951,7 @@ assert_deny_stub "narrower lib: dropping the EOL anchor must not lose a bare 'gi
 STUBNARROW='_CMD_GIT_GLOBALS="([[:space:]]+-p)*" ; _CMD_POS_SUFFIX="([[:space:]]|$)"'
 printf '%s\n' "$STUBNARROW" > "$LIBTMP/lib/cmd-detect.sh"
 NARROW_OUT=$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x" | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
-if echo "$NARROW_OUT" | grep -q '"permissionDecision": "deny"'; then
+if grep -q '"permissionDecision": "deny"' <<<"$NARROW_OUT"; then
   echo "PASS: narrower lib: dropping the -C arm must not lose the incident class itself"; PASS=$((PASS+1))
 else
   echo "FAIL: narrower lib: dropping the -C arm LOST 'git -C <main> commit' — the incident class"
@@ -1103,7 +1107,7 @@ assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' before a redirect into main 
 assert_deny_reason() {  # $1=name $2=payload $3=needle $4=1 (must contain) | 0 (must not)
   local out reason; out=$(run_hook "$2")
   reason=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
-  if ! printf '%s' "$out" | grep -q '"permissionDecision": "deny"'; then
+  if ! grep -q '"permissionDecision": "deny"' <<<"$out"; then
     echo "FAIL: $1 (expected deny)"; FAIL=$((FAIL+1))
   elif { [ "$4" = 1 ] && grep -qF -- "$3" <<<"$reason"; } || { [ "$4" = 0 ] && ! grep -qF -- "$3" <<<"$reason"; }; then
     echo "PASS: $1"; PASS=$((PASS+1))
@@ -1275,7 +1279,7 @@ for b in bash cat ls grep; do
   ln -s "$(command -v "$b")" "$NOJQ_BIN/$b"
 done
 out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | env PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null)
-if echo "$out" | grep -q '"permissionDecision":"deny"'; then
+if grep -q '"permissionDecision":"deny"' <<<"$out"; then
   echo "PASS: jq-less environment fails closed for mutating git under a registry"; PASS=$((PASS+1))
 else
   echo "FAIL: jq-less environment fails closed for mutating git under a registry"
@@ -1301,7 +1305,7 @@ fi
 NOLIB=$(mktemp -d)
 cp "$HOOK" "$NOLIB/git-safety.sh"
 out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | bash "$NOLIB/git-safety.sh" 2>/dev/null)
-if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+if grep -q '"permissionDecision": "deny"' <<<"$out"; then
   echo "PASS: lib-missing — contract-branch deny is unaffected"; PASS=$((PASS+1))
 else
   echo "FAIL: lib-missing — contract-branch deny is unaffected"
@@ -1322,7 +1326,7 @@ rm -rf "$NOLIB"
 # must still deny — pinning that branch A resolves independently of, and
 # before, branch B's lib-sourcing attempt.
 out=$(echo "$(jsonc "$SESSION" "$MAIN" 'git commit -m "would gh pr close but for real"')" | bash "$HOOK" 2>/dev/null)
-if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+if grep -q '"permissionDecision": "deny"' <<<"$out"; then
   echo "PASS: registry: a mutating command containing both gh-pr-close pre-guard substrings still denies"; PASS=$((PASS+1))
 else
   echo "FAIL: registry: a mutating command containing both gh-pr-close pre-guard substrings still denies"
@@ -1359,7 +1363,7 @@ FAKE_GH_STATE=MERGED assert_warn_contains "advisor: quoted shell variable is rep
   "$(jsonc no-registry-session "$MAIN" 'git branch -D "$B"')" \
   "could not resolve a literal branch name"
 out=$(FAKE_GH_EXIT=1 run_hook "$(json no-registry-session "$MAIN" 'git branch -D -f todo/foo')")
-if echo "$out" | grep -qF 'looks like a flag' && ! echo "$out" | grep -qi 'NO PR found'; then
+if grep -qF 'looks like a flag' <<<"$out" && ! grep -qi 'NO PR found' <<<"$out"; then
   echo "PASS: advisor: flag-like extraction skips the lookup (no additional NO PR found)"; PASS=$((PASS+1))
 else
   echo "FAIL: advisor: flag-like extraction skips the lookup (no additional NO PR found)"
@@ -1374,7 +1378,7 @@ fi
 # fall-through pass this assertion for the wrong reason, so assert the
 # skip message and the absence of any gh-derived state word.
 out=$(FAKE_GH_STATE=MERGED run_hook "$(jsonc no-registry-session "$MAIN" 'git branch -D ""')")
-if echo "$out" | grep -qF 'extracted ref is empty' && ! echo "$out" | grep -qi 'MERGED'; then
+if grep -qF 'extracted ref is empty' <<<"$out" && ! grep -qi 'MERGED' <<<"$out"; then
   echo "PASS: advisor: empty ref after quote-stripping skips the lookup (no false MERGED)"; PASS=$((PASS+1))
 else
   echo "FAIL: advisor: empty ref after quote-stripping skips the lookup (no false MERGED)"
@@ -1457,7 +1461,7 @@ FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close with -R<repo> (glu
 # controls below claim in comments, per the house rule that a measurement
 # belongs in an assertion, not only in prose next to one.
 old_needle_matches() {
-  printf '%s' "$1" | grep -qE '(^|[;&|[:space:]])gh[[:space:]]+pr[[:space:]]+close[[:space:]]+'
+  grep -qE '(^|[;&|[:space:]])gh[[:space:]]+pr[[:space:]]+close[[:space:]]+' <<<"$1"
 }
 if ! old_needle_matches 'gh -R owner/repo pr close 42' \
    && ! old_needle_matches 'gh --repo owner/repo pr close 42' \
@@ -1818,6 +1822,199 @@ assert_warn_contains "advisor: worktree remove --force warns about uncommitted w
 assert_allow "advisor: gh pr view is not matched" \
   "$(json no-registry-session "$MAIN" 'gh pr view 520')"
 
+# ---------- the hook's shell must not end without a decision (2026-11-24) ----------
+# While a worktree contract is in force this hook is a deny gate, and a PreToolUse hook that
+# ends with no output is an ALLOW. Each tree below is a COPY of the hook beside a copy of
+# lib/ with one line appended to one lib, so the real libs are untouched. Every ND row but the
+# controls was RED before the guard change (silent, or rc 143).
+ND_TREES=""
+nd_tree() {  # $1=lib file  $2=line appended to it ; prints the tree's folder
+  local d; d=$(mktemp -d)
+  cp "$HOOK" "$d/git-safety.sh"; cp -R "$(dirname "$HOOK")/lib" "$d/lib"
+  printf '\n%s\n' "$2" >> "$d/lib/$1"
+  printf '%s' "$d"
+}
+nd_run() {  # $1=tree  $2=payload ; sets ND_OUT ND_RC ND_ERR
+  local e; e=$(mktemp)
+  ND_OUT=$(printf '%s' "$2" | bash "$1/git-safety.sh" 2>"$e"); ND_RC=$?
+  ND_ERR=$(cat "$e"); rm -f "$e"
+}
+nd_ok() { echo "PASS: $1"; PASS=$((PASS+1)); }
+nd_bad() { echo "FAIL: $1"; echo "  got: rc=$ND_RC out=$(printf '%s' "$ND_OUT" | head -c 300)"; FAIL=$((FAIL+1)); }
+# Exactly one JSON value, and it is a deny.
+nd_only_deny() {
+  [ "$(printf '%s' "$ND_OUT" | jq -s 'length' 2>/dev/null)" = 1 ] \
+    && [ "$(printf '%s' "$ND_OUT" | jq -r '.hookSpecificOutput.permissionDecision' 2>/dev/null)" = deny ]
+}
+nd_reason() { printf '%s' "$ND_OUT" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null; }
+# Never `… | grep -q` here: this file runs under pipefail too, and grep leaving at its first
+# match made ND5 (an 8 KB reason) fail about one run in three (SIGPIPE, 141).
+nd_reason_has() { local r; r=$(nd_reason); grep -q -- "$1" <<<"$r"; }
+nd_out_has() { grep -q -- "$1" <<<"$ND_OUT"; }
+nd_out_hasF() { grep -qF -- "$1" <<<"$ND_OUT"; }
+
+# ND1. A lib shadows a builtin the hook calls in its own shell with a function that exits.
+#      (The probe now treats such a lib as missing, so this is the ordinary contract deny;
+#      the trap's own deny is pinned by ND2 and ND4.)
+T=$(nd_tree write-targets.sh 'read() { exit 0; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+n="ND1 a lib shadows 'read' with a function that exits: deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(json no-registry-session "$MAIN" 'git commit -m x')"
+n="ND1 control: the same broken lib with NO contract never blocks"
+[ -z "$ND_OUT" ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(json "$SESSION" "$MAIN" 'ls -la')"
+n="ND1 control: an ordinary command under a contract is still allowed"
+[ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+
+# ND2. The shell is signalled mid-run (a lib function does it here). Under a contract: deny, rc 0.
+#      With no contract: silent, rc 0.
+T=$(nd_tree own-agent-worktree.sh 'own_agent_root() { kill -TERM $$; sleep 1; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
+n="ND2 SIGTERM mid-run under a contract: ended-before-a-decision deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(jq -cn --arg c "$MAIN" '{tool_name:"Bash",session_id:"no-registry-session",agent_id:"ccc",cwd:$c,tool_input:{command:"git commit -m x"}}')"
+n="ND2 control: SIGTERM mid-run with NO contract is silent, rc 0"
+[ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+for sig in PIPE ALRM USR1 USR2 HUP; do
+  T=$(nd_tree own-agent-worktree.sh "own_agent_root() { kill -$sig \$\$; sleep 1; }"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
+  n="ND2 SIG$sig mid-run under a contract: deny, rc 0"
+  nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+done
+
+# ND3. A lib leaves errexit on. check_repo_target answers by return code (2 = unresolvable),
+#      which under errexit ended the shell before the deny.
+T=$(nd_tree write-targets.sh 'set -e'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "" 'git commit -m x')"
+n="ND3 a lib leaves errexit on: the unresolvable-repo deny still happens"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(json "$SESSION" "$WT_A" 'git commit -m x')"
+n="ND3 control: with that lib, git inside the registered worktree is allowed, rc 0"
+[ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+
+# ND4. deny() itself cannot print: a jq on PATH that reads the envelope but prints nothing for
+#      `jq -n` (what deny() runs). The static deny answers instead.
+ND_JQ=$(mktemp -d); ND_TREES="$ND_TREES $ND_JQ"
+printf '#!/usr/bin/env bash\n[ "$1" = -n ] && exit 0\nexec %q "$@"\n' "$(command -v jq)" > "$ND_JQ/jq"; chmod +x "$ND_JQ/jq"
+ND_OLD_PATH=$PATH; PATH="$ND_JQ:$PATH"
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+PATH=$ND_OLD_PATH
+n="ND4 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+
+# ND5. A deny reason too large for one argv entry (E2BIG at 128 KB on Linux): a registry entry
+#      of 140 KB lands in the reason through registered_list.
+head -c 140000 /dev/zero | tr '\0' 'a' > "$REG_DIR/zzzz-huge"
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+rm -f "$REG_DIR/zzzz-huge"
+n="ND5 a 140 KB deny reason: one readable deny of bounded size"
+nd_only_deny && [ "${#ND_OUT}" -lt 20000 ] && nd_reason_has 'Worktree contract violation' && nd_ok "$n" || nd_bad "$n"
+
+# ND6. Nothing on stderr for an allow or a deny (a stray line left by an edit prints
+#      "command not found" on every call while every other row stays green).
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'ls -la')"
+n="ND6 an allowed command under a contract writes nothing to stderr"
+[ -z "$ND_ERR" ] && [ -z "$ND_OUT" ] && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+n="ND6 a deny writes nothing to stderr"
+[ -z "$ND_ERR" ] && nd_only_deny && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
+nd_run "$(dirname "$HOOK")" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
+n="ND6 an advisory writes nothing to stderr"
+[ -z "$ND_ERR" ] && nd_out_has '"additionalContext"' && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
+
+# ND7. The ADVISOR's two libs were sourced with no probe, so one that exits took the hook with
+#      it and the branch-deletion warning was lost. Now a lib that exits counts as missing.
+T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo ; echo gh close')"
+n="ND7 cmd-detect.sh exits when sourced: the branch-deletion advisory still appears"
+nd_out_has '"additionalContext"' && nd_out_hasF "is MERGED" && nd_ok "$n" || nd_bad "$n"
+T=$(nd_tree gh-pr-rest.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY='[]' nd_run "$T" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
+n="ND7 gh-pr-rest.sh exits when sourced: the advisory reports UNVERIFIED instead of vanishing"
+nd_out_hasF 'FAILED (gh unavailable/network)' && nd_ok "$n" || nd_bad "$n"
+
+# ND8. A lib leaves a function named like a builtin or a command the hook calls (security
+#      review of this change, each measured as a silent allow under a contract). The probes
+#      now count such a lib as missing. The last one recursed until bash segfaulted (rc 139).
+while IFS= read -r shadow; do
+  T=$(nd_tree write-targets.sh "$shadow"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+  n="ND8 write-targets.sh defines '$shadow': mutating git in main still denies, rc 0"
+  nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+done <<'SHADOWS'
+printf() { exit 0; }
+printf() { :; }
+ls() { exit 0; }
+ls() { command ls --color=auto "$@" >/dev/null; }
+grep() { exit 0; }
+jq() { exit 0; }
+read() { read -r "$@"; }
+SHADOWS
+T=$(nd_tree own-agent-worktree.sh 'read() { read -r "$@"; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+n="ND8 own-agent-worktree.sh with a recursive read wrapper: still denies, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+T=$(nd_tree write-targets.sh 'printf() { :; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "$R_WT" "echo x > $R_MAIN/notes.txt")"
+n="ND8 a shadowing write-targets.sh counts as missing: a write into main denies (did not load)"
+nd_only_deny && nd_reason_has 'did not load' && nd_ok "$n" || nd_bad "$n"
+
+# ND9. A LARGE command (pre-existing, found by the same review): `printf "$CMD" | grep -q`
+#      under pipefail read 141 as "not write-shaped" once the command outgrew the pipe buffer,
+#      so a 200 KB heredoc write into main was allowed. Run five times: the old outcome
+#      depended on timing near the buffer size and was a steady allow at this size.
+# The command goes to jq on STDIN: 400 KB as one --arg is E2BIG.
+nd_big_json() {  # $1=cwd ; raw command on stdin
+  jq -Rsc --arg s "$SESSION" --arg c "$1" '{tool_name:"Bash",session_id:$s,cwd:$c,tool_input:{command:.}}'
+}
+ND_BIG=$(printf 'cat > %s/big.txt <<EOF_BIG\n' "$R_MAIN"; head -c 400000 /dev/zero | tr '\0' 'a' | fold -w 80; printf '\nEOF_BIG\n')
+ND_BIG_PAYLOAD=$(printf '%s' "$ND_BIG" | nd_big_json "$R_WT")
+ND_BIG_OK=0
+for _ in 1 2 3 4 5; do
+  nd_run "$(dirname "$HOOK")" "$ND_BIG_PAYLOAD"
+  nd_only_deny && ND_BIG_OK=$((ND_BIG_OK+1))
+done
+n="ND9 a 400 KB heredoc write into the main checkout is denied, 5 runs of 5"
+[ "$ND_BIG_OK" = 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  denied $ND_BIG_OK of 5"; }
+ND_BIG_PAYLOAD=$({ printf 'rm -rf %s/server\n' "$R_MAIN"; head -c 400000 /dev/zero | tr '\0' 'b' | fold -w 78 | sed 's/^/# /'; } | nd_big_json "$R_WT")
+nd_run "$(dirname "$HOOK")" "$ND_BIG_PAYLOAD"
+n="ND9 rm of a main-checkout folder followed by 400 KB of comment lines is denied"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+ND_BIG_PAYLOAD=$({ printf 'cat > %s/big.txt <<EOF_BIG\n' "$R_WT"; head -c 400000 /dev/zero | tr '\0' 'a' | fold -w 80; printf '\nEOF_BIG\n'; } | nd_big_json "$R_WT")
+printf '%s' "$R_WT" > "$REG_DIR/zzzz-nd9"   # the real worktree's entry was removed further up
+nd_run "$(dirname "$HOOK")" "$ND_BIG_PAYLOAD"
+rm -f "$REG_DIR/zzzz-nd9"
+n="ND9 control: the same 400 KB write inside the registered worktree is allowed, rc 0"
+[ "${#ND_BIG_PAYLOAD}" -gt 400000 ] && [ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+
+# ND10. More signals than the first list (same review): each left rc 152-157 and so an allow.
+for sig in XCPU PROF IO; do
+  T=$(nd_tree own-agent-worktree.sh "own_agent_root() { kill -$sig \$\$; sleep 1; }"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
+  n="ND10 SIG$sig mid-run under a contract: deny, rc 0"
+  nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+done
+
+# ND11. A child that outlives the hook must not hold the hook's stdout open (fd 9 is closed
+#       for git and gh). The fake gh leaves a 6-second sleeper behind.
+ND_GH=$(mktemp -d); ND_TREES="$ND_TREES $ND_GH"
+cat > "$ND_GH/gh" <<'GHEOF'
+#!/usr/bin/env bash
+(sleep 6 </dev/null >/dev/null 2>/dev/null &)
+printf '%s' '{"number":520,"state":"MERGED","mergedAt":"2026-07-16T00:00:00Z"}'
+GHEOF
+chmod +x "$ND_GH/gh"
+ND_OLD_PATH=$PATH; PATH="$ND_GH:$PATH"
+ND_T0=$(date +%s)
+nd_run "$(dirname "$HOOK")" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
+ND_T1=$(date +%s)
+PATH=$ND_OLD_PATH
+n="ND11 a lingering child of gh does not keep the hook's stdout open (answer in under 4 s)"
+[ $((ND_T1 - ND_T0)) -lt 4 ] && nd_out_hasF 'is MERGED' && nd_ok "$n" || { nd_bad "$n"; echo "  took $((ND_T1 - ND_T0)) s"; }
+# shellcheck disable=SC2086
+rm -rf $ND_TREES
+
 CALLER_STATE_AFTER=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
 if [ "$CALLER_STATE_BEFORE" = "$CALLER_STATE_AFTER" ]; then
   echo "PASS: caller repo untouched (hermetic)"; PASS=$((PASS+1))
@@ -1890,7 +2087,12 @@ fi
 # 336 -> 346 (2026-11-01, harness item 8, own agent worktree): +10 = 1 git allow + 3 git denies
 # (fake paths), 2 write allows + 3 write denies (real repo), 1 parent-session git deny. RED before
 # the guard change: the 3 allows failed.
-EXPECTED_TOTAL=353
+# 353 -> 372 (2026-11-24, the hook cannot end without a decision under a contract): +19 =
+# ND1 (three), ND2 (seven), ND3 (two), ND4, ND5, ND6 (three), ND7 (two). RED before the guard
+# change: 14 of them (ND1 first, all of ND2, both ND3, ND4, ND5, both ND7).
+# 372 -> 388 (2026-11-24, security review of that change): +16 = ND8 (nine), ND9 (three),
+# ND10 (three), ND11.
+EXPECTED_TOTAL=388
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
