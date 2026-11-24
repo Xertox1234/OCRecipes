@@ -679,8 +679,12 @@ four exits before the trap (`SKIP_BRANCH_PREFLIGHT`, and `jq` unable to read the
 with `jq` missing from PATH the hook allows everything, on `main` too); a
 `cmd_git_repo_dir` that fails with exactly rc 1, or prints a wrong folder, still reads as
 "cannot place" and the commit is not judged; on the degraded paths the wide text test still
-misses a global whose value holds a space (`git -c "a=b c" commit`); the trap speaks only for
-the commit check; and a command that keeps the matcher past the 10 s hook timeout (measured,
+misses a global whose value holds a space (`git -c "a=b c" commit`), and it matches `-C <dir>`
+without FOLLOWING it: those paths read the HEAD of the hook's own folder, so with the lib
+unusable `git -C <detached repo> commit` from a folder on a named branch is allowed, and the
+mirror case is a false deny (on `main` too); the same test over-matches, which costs false
+denies on a detached HEAD while the lib is broken (`echo "git commit"`,
+`git --no-pager log -1 commit`); the trap speaks only for the commit check; and a command that keeps the matcher past the 10 s hook timeout (measured,
 on `main` too: 45 KB with two `$(...)` per line takes 13.7 s, 200 KB of command lines before
 the commit 14.6 s, a 1 MB single line 39 s; a SIGTERM then gets the trap's deny, a SIGKILL
 nothing). Also on `main`, outside this change: on a healthy install the precise matcher does

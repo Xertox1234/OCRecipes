@@ -85,15 +85,23 @@ _bp_deny() {
 # test reads the command with quotes and backslashes removed and asks for the word `git`, then
 # any number of option words (each may carry one value word), then `commit`. Only options may
 # sit between the two: `git status -m commit` is not a commit and stays silent (pinned by the
-# lib-missing rows). It can over-match (`git -p status commit` reads `status` as a value),
-# which on these paths costs a false deny on a detached HEAD while the lib is broken, never an
-# allow. Still missed: a global whose value holds a space (`git -c "a=b c" commit`), and `git`
-# reached through a path or a wrapper the lib also misses (docs/harness-residuals.md).
-_BP_WIDE_COMMIT_RE='(^|[^A-Za-z0-9_./-])git([[:space:]]+-[^[:space:]]+([[:space:]]+[^[:space:]-][^[:space:]]*)?)*[[:space:]]+commit([^A-Za-z0-9_-]|$)'
+# lib-missing rows); a redirect word (`git >/dev/null commit`) and a backslash-newline between
+# them are read through. It over-matches: an option's value can be a subcommand (`git -p status
+# commit`, `git --no-pager log -1 commit`), and because quotes are removed a quoted MENTION
+# counts too (`echo "git commit"`, `grep -rn "git --no-pager commit" docs`). On these paths
+# that costs a false deny on a detached HEAD while the lib is broken (or, from the trap, after
+# an interrupted run), never an allow. Still missed: a global whose value holds a space
+# (`git -c "a=b c" commit`), and `git` reached through a path or a wrapper the lib also
+# misses. And `-C <dir>` is matched but not FOLLOWED: these paths judge the hook's own folder,
+# never the `-C` target (docs/harness-residuals.md).
+_BP_WIDE_COMMIT_RE='(^|[^A-Za-z0-9_./-])git([[:space:]]+(-[^[:space:]]+([[:space:]]+[^[:space:]-][^[:space:]]*)?|[0-9]*[<>][^[:space:]]*))*[[:space:]]+commit([^A-Za-z0-9_-]|$)'
 _bp_looks_like_commit() {
   grep -qE "$GIT_COMMIT_RE" <<<"$CMD" && return 0
   grep -qE "$COMPOUND_COMMIT_RE" <<<"$CMD" && return 0
-  local t; t=$(tr -d "\"'\\\\" <<<"$CMD")
+  # A backslash-newline is a line continuation: join it first, because grep reads per line
+  # and `git \<newline> commit` would otherwise never be seen as one command.
+  local t=${CMD//$'\\\n'/ }
+  t=$(tr -d "\"'\\\\" <<<"$t")
   grep -qE "$_BP_WIDE_COMMIT_RE" <<<"$t"
 }
 no_decision() {
@@ -204,7 +212,11 @@ if [ "$LIB_OK" = 1 ]; then
        # other rc (127 from a missing helper, a signal) is a broken function, not an answer,
        # and takes the fallback. A function that fails with exactly 1 still reads as "cannot
        # place" (docs/harness-residuals.md).
-       REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT"); _BP_DIR_RC=$?
+       # Kept inside an `&& ... ||` list: there, bash ignores errexit, so a function that turns
+       # `set -e` on cannot end its subshell with rc 1 at a failure it would otherwise tolerate
+       # (measured: as a plain statement that read as "cannot place", and a detached-HEAD
+       # commit the previous revision denied was allowed).
+       REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") && _BP_DIR_RC=0 || _BP_DIR_RC=$?
        case "$_BP_DIR_RC" in
          0) IS_COMMIT=1 ;;
          1) REPO_COMMIT="." ;;
@@ -258,27 +270,14 @@ if [ "$_BP_FALLBACK" = 1 ]; then
   # shell-keyword command positions (`if`/`then`, `for`/`do`, `while`/`do`, `case`, etc.) — a gap
   # the primary path's own `_CMD_POS_PREFIX` shares too (see the solution doc's Unresolved
   # section), so this is not a fallback-vs-primary divergence, just a residual both paths carry.
-  # Also still missing: redirect absorption (the primary path's `_CMD_REDIR` alternative inside
-  # `_CMD_POS_PREFIX` lets a redirect like `2>/dev/null` sit between the anchor and the verb,
-  # e.g. `2>/dev/null git commit -m x`) — pre-existing, not a regression from this widening, and
-  # out of the todo's Scope Contract (widen the existing character classes, no new mechanism).
-  # CORRECTED 2026-09-02 (security-auditor, round-2 review of this same widening —
-  # construct-and-run against both this fallback and the pre-widening committed version, not
-  # just reading the regex): a prior version of this comment claimed `git -C /elsewhere commit`
-  # "can DENY" here, in the safe direction. That was checked and is false in BOTH directions —
-  # neither `GIT_COMMIT_RE` nor `COMPOUND_COMMIT_RE` absorbs an uppercase `-C` (only lowercase
-  # `-c key=value` is in the group, and that is for git-config overrides, not repo redirection),
-  # so the whole match fails and `IS_COMMIT` never becomes 1: `git -C /elsewhere commit -m x` is
-  # SILENTLY ALLOWED by this fallback, full stop — pre-existing (confirmed against
-  # `git show HEAD:.claude/hooks/branch-preflight.sh` from before this todo's widening started),
-  # not a regression from this diff, but the unsafe direction for a fail-closed data-loss gate:
-  # the primary (lib-sourced) path follows `-C` and independently checks the TARGET repo's HEAD
-  # (see `cmd_git_repo_dir` above), so a real detached-HEAD commit in /elsewhere that the primary
-  # path would catch is invisible to this fallback when the lib is unsourceable. `-C`/`-c`-global
-  # absorption is a new detection mechanism (following a redirect, not widening a character
-  # class), so it is out of this todo's Scope Contract; tracked as a residual for
-  # todos/P2-2026-08-29-branch-preflight-fallback-parity-gaps.md's follow-up rather than fixed
-  # here.
+  # UPDATED 2026-11-24: this block used to say a redirect before `git` and `git -C /elsewhere
+  # commit` were both missed by the two regexes. They still are by those two, but
+  # _bp_looks_like_commit (defined near the top) now adds a wider test that matches both
+  # spellings. What remains is that `-C` is matched and NOT FOLLOWED: the check below reads the
+  # HEAD of this hook's own folder (REPO_COMMIT is "."), so with the lib unusable
+  # `git -C <detached repo> commit` run from a folder on a named branch is allowed, and the
+  # mirror case (cwd detached, `-C` to a repo on a branch) is a false deny. The primary path
+  # follows `-C` through cmd_git_repo_dir.
   if _bp_looks_like_commit; then
     IS_COMMIT=1
   fi

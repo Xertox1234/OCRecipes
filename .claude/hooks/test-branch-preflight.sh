@@ -700,6 +700,28 @@ nd_only_deny && nd_reason_has 'could not render its reason' && nd_ok "$n" || nd_
 #      was allowed, on main too. Only a clean rc 1 means "cannot place".
 T=$(nd_tree cmd-detect.sh 'cmd_git_repo_dir() { no_such_helper "$@"; }'); ND_TREES="$ND_TREES $T"
 nd_trio "ND7 cmd_git_repo_dir calls a missing helper" "$T"
+# ND7b. cmd_git_repo_dir turns errexit on and then meets a failure it would tolerate. As a
+#      plain statement its subshell ended with rc 1, which reads as "cannot place": a commit
+#      main denies was allowed by the first version of the ND7 fix (confirmation review).
+T=$(nd_tree cmd-detect.sh 'cmd_git_repo_dir() { set -e; false; printf .; }'); ND_TREES="$ND_TREES $T"
+nd_trio "ND7b cmd_git_repo_dir sets errexit and hits a tolerated failure" "$T"
+# ND7c. Control: a clean rc 1 still means "cannot place" and the commit is not judged.
+T=$(nd_tree cmd-detect.sh 'cmd_git_repo_dir() { return 1; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" 'git commit -m x'
+n="ND7c control: cmd_git_repo_dir answering 1 (cannot place) is not judged, as before"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+# ND6b. Two more spellings the text test missed (same review): a line continuation and a
+#      redirect word between `git` and `commit`.
+T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" $'git \\\n  commit -m x'
+n="ND6b fallback spelling: git, backslash-newline, commit"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$REPO_DETACHED" 'git >/dev/null commit -m x'
+n="ND6b fallback spelling: git >/dev/null commit"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$REPO_DETACHED" $'git status \\\n  --short'
+n="ND6b control: a continued non-commit command stays silent"
+nd_silent && nd_ok "$n" || nd_bad "$n"
 # ND8. A lib that PRINTS when sourced: its text landed ahead of the deny JSON.
 T=$(nd_tree cmd-detect.sh 'echo "cmd-detect loaded"'); ND_TREES="$ND_TREES $T"
 nd_trio "ND8 cmd-detect.sh prints when sourced" "$T"
