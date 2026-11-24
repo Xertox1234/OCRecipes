@@ -1,8 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
-import { GOALS_QUERY_KEY } from "@/hooks/useCalorieGoal";
-import { QUERY_KEYS } from "@/lib/query-keys";
+import { writeCardRefreshKeys } from "@/lib/write-card-refresh";
 import type {
   WriteCardKind,
   WriteCardStatus,
@@ -11,9 +10,9 @@ import type {
 /**
  * Save and Undo for one Coach write card (spec 2026-11-09). The server saves
  * from the card it stored; this sends only the user's edits. On success the
- * chat's messages are refetched so every card shows its current state, and a
- * goals or allergy card also refreshes what the rest of the app reads them
- * from.
+ * chat's messages are refetched so every card shows its current state, and
+ * each kind also refreshes what the rest of the app reads its data from
+ * (`writeCardRefreshKeys`).
  */
 export function useWriteCard(cardId: string, kind?: WriteCardKind) {
   const queryClient = useQueryClient();
@@ -21,16 +20,8 @@ export function useWriteCard(cardId: string, kind?: WriteCardKind) {
   // The chat's messages query is keyed `/api/chat/conversations/<id>/messages`
   // (one string), so a prefix key would miss it.
   const refresh = () => {
-    if (kind === "goals") {
-      // The same three GoalSetupScreen refreshes after its own save.
-      void queryClient.invalidateQueries({ queryKey: GOALS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailyBudget });
-    }
-    if (kind === "allergy") {
-      void queryClient.invalidateQueries({
-        queryKey: QUERY_KEYS.dietaryProfile,
-      });
+    for (const queryKey of writeCardRefreshKeys(kind)) {
+      void queryClient.invalidateQueries({ queryKey });
     }
     return queryClient.invalidateQueries({
       predicate: (q) =>

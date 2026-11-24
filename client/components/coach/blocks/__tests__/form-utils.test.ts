@@ -71,7 +71,7 @@ describe("formAnswerMessage length", () => {
 });
 
 describe("formAnswerMessage length, numbers", () => {
-  it("keeps the longest number line shorter than a multi-choice line", () => {
+  it("keeps the longest number line to 126 characters", () => {
     const biggest = formBlockSchema.parse({
       type: "form",
       fields: [
