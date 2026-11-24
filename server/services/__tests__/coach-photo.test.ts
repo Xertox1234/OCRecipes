@@ -9,6 +9,7 @@ import {
   loadBarcodeScanContext,
 } from "../barcode-scan-context";
 import type { BarcodeLookupResult } from "../barcode-lookup";
+import { UpstreamUnavailableError } from "../usda-lookup";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
 import { batchNutritionLookup } from "../nutrition-lookup";
 import type { NutritionData } from "../nutrition-lookup";
@@ -17,6 +18,7 @@ import {
   buildPhotoReply,
   hasValidCheckDigit,
   photoFoodsToCardItems,
+  scannedBarcodeReply,
   photoReplyText,
   COACH_PHOTO_USER_TEXT,
 } from "../coach-photo";
@@ -565,5 +567,61 @@ describe("buildPhotoReply", () => {
       expect(analyzeLabelPhoto).toHaveBeenCalled();
       expect(loadBarcodeScanContext).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("scannedBarcodeReply (a barcode read by the camera)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("looks the number up and offers the same one-serving card as a barcode photo", async () => {
+    scanContext(product());
+    const reply = await scannedBarcodeReply("4006381333931", ctx);
+    expect(loadBarcodeScanContext).toHaveBeenCalledWith("4006381333931", "u1");
+    expect(classifyPhoto).not.toHaveBeenCalled();
+    expect(reply.payload?.items).toEqual([
+      {
+        name: "Oatly Oat Drink",
+        unitLabel: "250 ml",
+        perUnit: { calories: 115, protein: 2.5, carbs: 16.8, fat: 3.8 },
+        count: 1,
+        source: "lookup",
+      },
+    ]);
+    expect(reply.text).not.toContain("Oat");
+  });
+
+  it("gives the allergy warning a barcode photo gets", async () => {
+    scanContext(product({ allergenTags: ["en:milk"] }), [
+      { name: "milk", severity: "severe" },
+    ]);
+    const reply = await scannedBarcodeReply("4006381333931", ctx);
+    expect(reply.text).toMatch(/allergy check/i);
+    expect(reply.text).not.toMatch(/milk/i);
+  });
+
+  it("asks for the label when the product is unknown", async () => {
+    scanContext(null);
+    const reply = await scannedBarcodeReply("4006381333931", ctx);
+    expect(reply.payload).toBeNull();
+    expect(reply.text).toMatch(/nutrition label/i);
+  });
+
+  it("asks for another try, not a label, when every lookup source is down", async () => {
+    vi.mocked(loadBarcodeScanContext).mockRejectedValue(
+      new UpstreamUnavailableError(),
+    );
+    const reply = await scannedBarcodeReply("4006381333931", ctx);
+    expect(reply.payload).toBeNull();
+    expect(reply.text).toMatch(/try again/i);
+    expect(reply.text).not.toMatch(/couldn't find/i);
+  });
+
+  it("rejects on any other failure", async () => {
+    vi.mocked(loadBarcodeScanContext).mockRejectedValue(new Error("db down"));
+    await expect(scannedBarcodeReply("4006381333931", ctx)).rejects.toThrow(
+      "db down",
+    );
   });
 });

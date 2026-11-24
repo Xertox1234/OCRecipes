@@ -52,6 +52,7 @@ import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
+import CoachBarcodeScanScreen from "@/screens/CoachBarcodeScanScreen";
 import CoachChatScreen from "@/screens/CoachChatScreen";
 import RecipeChatScreen from "@/screens/RecipeChatScreen";
 import AllConversationsScreen from "@/screens/AllConversationsScreen";
@@ -221,6 +222,9 @@ export type RootStackParamList = {
   };
   BatchScan: undefined;
   BatchSummary: undefined;
+  /** The live scanner opened from the Coach chat; answers through
+   * `settleCoachBarcode` (client/lib/coach-barcode-scan.ts). */
+  CoachBarcodeScan: undefined;
   CoachChat: {
     question: string;
     questionText: string;
@@ -534,6 +538,15 @@ export default function RootStackNavigator() {
             options={{
               headerTitle: "Product Details",
               presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="CoachBarcodeScan"
+            component={CoachBarcodeScanScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
             }}
           />
           <Stack.Screen

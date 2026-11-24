@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Platform, type AlertButton } from "react-native";
 import {
   pickCoachPhoto,
   type CoachPhotoSource,
 } from "@/lib/coach-photo-picker";
 import { uploadPhotoToCoach } from "@/lib/photo-upload";
 import {
+  awaitCoachBarcode,
+  sendBarcodeToCoach,
+} from "@/lib/coach-barcode-scan";
+import {
   coachPhotoFailure,
   type CoachPhotoFailure,
+  type CoachSendKind,
 } from "@/components/coach/coach-photo-utils";
+
+/** Where the turn comes from: a photo source, or the live barcode scanner. */
+type CoachSendSource = CoachPhotoSource | "scan";
+
+/** What the user picked: a photo's local uri, or a scanned barcode's digits. */
+type Picked = { kind: CoachSendKind; value: string };
 
 interface Args {
   /** A reply is streaming or the mic is on: the chooser stays shut. */
@@ -26,8 +37,16 @@ interface Args {
   ensureConversation: () => Promise<number | null>;
   /** Set when this send would open a new chat that showed the brief. */
   openingBriefForm?: "full" | "short";
-  /** A photo was picked: show the user's turn before the upload runs. */
-  onStart: () => void;
+  /**
+   * Opens the live barcode scanner screen. When set, the chooser offers
+   * "Scan a Barcode"; the screen answers through `settleCoachBarcode`.
+   */
+  openScanner?: () => void;
+  /**
+   * A photo was picked or a barcode read: show the user's turn before the
+   * send runs.
+   */
+  onStart: (kind: CoachSendKind) => void;
   /**
    * The upload ended; `failure` is null when the server stored the turn.
    * `sentBrief` is whether this send carried the opening brief, latched when
@@ -45,32 +64,46 @@ interface Args {
   onPickFailure: (message: string) => void;
 }
 
-/** Pick, upload and settle one photo. Never rejects on an upload failure. */
-async function runPhotoSend(
-  source: CoachPhotoSource,
+/** The photo or barcode for this turn; null when the user backed out. */
+async function pick(
+  source: CoachSendSource,
   latest: () => Args,
-  setSending: (sending: boolean) => void,
-): Promise<void> {
+): Promise<Picked | null> {
+  if (source === "scan") {
+    // Wait first, then open: a read can then never arrive unheard.
+    const scanned = awaitCoachBarcode();
+    latest().openScanner?.();
+    const code = await scanned;
+    return code ? { kind: "barcode", value: code } : null;
+  }
   const uri = await pickCoachPhoto(source, (message) =>
     latest().onPickFailure(message),
   );
-  if (!uri) return;
+  return uri ? { kind: "photo", value: uri } : null;
+}
+
+/** Pick, send and settle one turn. Never rejects on a send failure. */
+async function runPhotoSend(
+  source: CoachSendSource,
+  latest: () => Args,
+  setSending: (sending: boolean) => void,
+): Promise<void> {
+  const picked = await pick(source, latest);
+  if (!picked) return;
   // Latched now: creating the conversation changes what the host passes.
   const a = latest();
   setSending(true);
-  a.onStart();
+  a.onStart(picked.kind);
   const conversationId = await a.ensureConversation();
   if (conversationId === null) return;
   let failure: CoachPhotoFailure | null = null;
   let replyText: string | null = null;
   try {
-    replyText = await uploadPhotoToCoach(
-      uri,
-      conversationId,
-      a.openingBriefForm,
-    );
+    const send =
+      picked.kind === "barcode" ? sendBarcodeToCoach : uploadPhotoToCoach;
+    replyText = await send(picked.value, conversationId, a.openingBriefForm);
   } catch (err) {
-    failure = coachPhotoFailure(err);
+    failure = coachPhotoFailure(err, picked.kind);
   }
   await latest().onSettled(
     conversationId,
@@ -81,9 +114,9 @@ async function runPhotoSend(
 }
 
 /**
- * Sending a meal photo into the Coach chat (Coach roadmap S1): choose the
- * camera or the library, upload, and hand the outcome to the chat, which
- * refetches the stored turn and its food card.
+ * Sending a photo or a scanned barcode into the Coach chat (Coach roadmap S1
+ * and S2): choose the scanner, the camera or the library, send, and hand the
+ * outcome to the chat, which refetches the stored turn and its food card.
  */
 export function useCoachPhotoSend(args: Args) {
   const [isSendingPhoto, setIsSendingPhoto] = useState(false);
@@ -105,7 +138,7 @@ export function useCoachPhotoSend(args: Args) {
   );
 
   const send = useCallback(
-    (source: CoachPhotoSource) => {
+    (source: CoachSendSource) => {
       if (blocked()) return Promise.resolve();
       sendingRef.current = true;
       return runPhotoSend(
@@ -122,15 +155,33 @@ export function useCoachPhotoSend(args: Args) {
 
   const openPhotoChooser = useCallback(() => {
     if (blocked()) return;
-    Alert.alert(
-      "Send a photo",
-      "A meal, a nutrition label or a barcode. The Coach will offer to log it.",
-      [
-        { text: "Take Photo", onPress: () => send("camera") },
-        { text: "Choose from Library", onPress: () => send("library") },
+    const buttons: AlertButton[] = [
+      { text: "Take Photo", onPress: () => send("camera") },
+      { text: "Choose from Library", onPress: () => send("library") },
+    ];
+    if (!argsRef.current.openScanner) {
+      Alert.alert(
+        "Send a photo",
+        "A meal, a nutrition label or a barcode. The Coach will offer to log it.",
+        [...buttons, { text: "Cancel", style: "cancel" }],
+      );
+      return;
+    }
+    buttons.unshift({ text: "Scan a Barcode", onPress: () => send("scan") });
+    const message =
+      "Scan a barcode, or send a photo of a meal or a nutrition label. The Coach will offer to log it.";
+    // An Android alert shows at most three buttons, so there Cancel is the
+    // back button or a tap outside.
+    if (Platform.OS === "android") {
+      Alert.alert("Log with the camera", message, buttons, {
+        cancelable: true,
+      });
+    } else {
+      Alert.alert("Log with the camera", message, [
+        ...buttons,
         { text: "Cancel", style: "cancel" },
-      ],
-    );
+      ]);
+    }
   }, [blocked, send]);
 
   /** True from the tap on a source until the send settles (picker included). */

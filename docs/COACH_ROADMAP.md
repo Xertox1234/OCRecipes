@@ -47,10 +47,11 @@ Then re-rank.
       nutrition label or a barcode as well as a meal: the photo is classified
       first, a label is read into a one-serving food card, and a barcode
       number read from the photo is looked up into the same card (with the
-      allergy check a scan gets). Left for later: a live barcode scanner
-      opened from the chat (a number read from a still photo is often not
-      legible; the Coach then asks for the label), and the label's
-      micronutrients (the card carries calories and the three macros).
+      allergy check a scan gets). A follow-up (PR #PRNUM) added a live barcode
+      scanner opened from the chat's camera button: the phone decodes the
+      number, so no model reads it and no photo credit is spent. Left for
+      later: the label's micronutrients (the card carries calories and the
+      three macros).
 - [ ] **S3. Receipt and menu photos.** A receipt becomes a pantry write card; a
       menu becomes a "what should I order" card. Value: medium. Size: M.
       Needs S1.

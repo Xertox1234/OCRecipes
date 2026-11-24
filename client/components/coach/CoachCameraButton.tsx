@@ -31,7 +31,7 @@ export default function CoachCameraButton({ onPress, disabled }: Props) {
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel="Send a photo of your meal"
-      accessibilityHint="Takes or chooses a photo for the Coach to log"
+      accessibilityHint="Scans a barcode, or takes or chooses a photo, for the Coach to log"
       accessibilityState={{ disabled: !!disabled }}
     >
       <Ionicons name="camera" size={20} color={theme.link} accessible={false} />

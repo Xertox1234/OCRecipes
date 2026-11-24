@@ -31,4 +31,31 @@ describe("coachPhotoFailure", () => {
     const failure = coachPhotoFailure(new Error("Upload failed: 500 <html>"));
     expect(failure.message).toBe("Couldn't send that photo. Please try again.");
   });
+
+  describe("for a scanned barcode", () => {
+    it.each([
+      [ErrorCode.RATE_LIMITED, /wait/i],
+      [ErrorCode.PREMIUM_REQUIRED, /Coach Pro/],
+      [ErrorCode.REQUEST_IN_FLIGHT, /still answering/i],
+    ])("has its own line for %s that never says photo", (code, pattern) => {
+      const failure = coachPhotoFailure(new ApiError("x", code), "barcode");
+      expect(failure.message).toMatch(pattern);
+      expect(failure.message).not.toMatch(/photo/i);
+    });
+
+    it("has a fallback line about the barcode", () => {
+      const failure = coachPhotoFailure(new Error("boom"), "barcode");
+      expect(failure.message).toMatch(/barcode/i);
+      expect(failure.message).not.toContain("boom");
+    });
+
+    it("still treats the daily limit as the limit banner", () => {
+      expect(
+        coachPhotoFailure(
+          new ApiError("x", ErrorCode.DAILY_LIMIT_REACHED),
+          "barcode",
+        ),
+      ).toEqual({ atDailyLimit: true, message: null });
+    });
+  });
 });

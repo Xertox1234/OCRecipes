@@ -28,7 +28,10 @@ import { useTTS } from "@/hooks/useTTS";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import CoachCameraButton from "@/components/coach/CoachCameraButton";
 import { useCoachPhotoSend } from "@/hooks/useCoachPhotoSend";
-import { COACH_PHOTO_USER_TEXT } from "@shared/lib/coach-photo";
+import {
+  COACH_BARCODE_USER_TEXT,
+  COACH_PHOTO_USER_TEXT,
+} from "@shared/lib/coach-photo";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
 import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
@@ -634,28 +637,37 @@ export default function CoachChat({
     }
   }, []);
   useEffect(() => cancelPhotoAnnouncement, [cancelPhotoAnnouncement]);
+  // Whether the turn on its way is a scanned barcode (else a photo).
+  const [sendingBarcode, setSendingBarcode] = useState(false);
   const { openPhotoChooser, isSendingPhoto, isPhotoBusy } = useCoachPhotoSend({
     disabled: isStreaming || isListening,
     canStart: () => !startingTurnRef.current,
     openingBriefForm:
       !conversationId && openingBrief ? openingBrief.form : undefined,
     onPickFailure: (message) => toast.error(message),
-    onStart: () => {
+    openScanner: () => navigation.navigate("CoachBarcodeScan"),
+    onStart: (kind) => {
+      const isBarcode = kind === "barcode";
+      setSendingBarcode(isBarcode);
       turnEpochRef.current += 1;
       followLatest();
       setPendingSave(null);
       setOptimisticAfter(lastSavedIdRef.current);
-      setOptimisticMessage(COACH_PHOTO_USER_TEXT);
+      setOptimisticMessage(
+        isBarcode ? COACH_BARCODE_USER_TEXT : COACH_PHOTO_USER_TEXT,
+      );
       setStreamBlocks([]);
       setStreamingError(null);
       setIsAtDailyLimit(false);
       ttsStop();
-      // The photo path has no stream to announce its start. Delayed so it is
-      // not lost under the camera or picker closing.
+      // The photo and scan paths have no stream to announce their start.
+      // Delayed so it is not lost under the camera or picker closing.
       cancelPhotoAnnouncement();
       photoAnnounceTimerRef.current = setTimeout(
         () =>
-          AccessibilityInfo.announceForAccessibility("Looking at your photo"),
+          AccessibilityInfo.announceForAccessibility(
+            isBarcode ? "Looking up that barcode" : "Looking at your photo",
+          ),
         500,
       );
     },
@@ -1199,7 +1211,13 @@ export default function CoachChat({
       showLiveReply || isSendingPhoto || streamBlocks.length > 0 ? (
         <StreamingBubble
           streamingContent={streamingContent}
-          statusText={isSendingPhoto ? "Looking at your photo..." : statusText}
+          statusText={
+            isSendingPhoto
+              ? sendingBarcode
+                ? "Looking up that barcode..."
+                : "Looking at your photo..."
+              : statusText
+          }
           isStreaming={showLiveReply || isSendingPhoto}
           streamBlocks={lockedStreamBlocks}
           writeCardEdits={writeCardEdits}
@@ -1215,6 +1233,7 @@ export default function CoachChat({
     [
       showLiveReply,
       isSendingPhoto,
+      sendingBarcode,
       streamingContent,
       statusText,
       streamBlocks,
