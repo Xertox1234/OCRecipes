@@ -198,7 +198,9 @@ describe("Coach Tools Service", () => {
       { date: "2026-11-24" },
       "user-1",
       null,
-      "America/Edmonton",
+      // A zone with no clock changes (UTC-7 all year), so the expected
+      // times do not depend on the runner's timezone database.
+      "America/Phoenix",
     )) as { items: Record<string, unknown>[] };
 
     expect(result.items).toEqual([
