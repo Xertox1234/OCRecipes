@@ -70,6 +70,28 @@ describe("formAnswerMessage length", () => {
   });
 });
 
+describe("formAnswerMessage length, numbers", () => {
+  it("keeps the longest number line shorter than a multi-choice line", () => {
+    const biggest = formBlockSchema.parse({
+      type: "form",
+      fields: [
+        {
+          kind: "number",
+          label: "l".repeat(100),
+          min: -1_000_000,
+          max: -999_999.99,
+          step: 0.01,
+          value: -999_999.99,
+          unit: "u".repeat(12),
+        },
+      ],
+    });
+    const message = formAnswerMessage(biggest, initialFormAnswers(biggest));
+    // 100 + ": " + "-999,999.99" + " " + 12
+    expect(message).toHaveLength(126);
+  });
+});
+
 describe("canSubmitForm", () => {
   const choiceOnly: FormBlock = { type: "form", fields: [block.fields[0]] };
   it("needs at least one answer", () => {

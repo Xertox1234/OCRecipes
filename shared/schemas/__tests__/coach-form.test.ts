@@ -75,6 +75,11 @@ describe("formBlockSchema", () => {
     ["a zero step", { step: 0 }],
     ["a value off the step grid", { value: 2.5 }],
     ["more than 200 steps", { min: 0, max: 5000, value: 0 }],
+    ["a step under 0.01", { min: 0, max: 0.1, step: 0.001, value: 0 }],
+    [
+      "a value past a million",
+      { min: 1e300, max: 2e300, step: 1e299, value: 1e300 },
+    ],
   ])("refuses a number field with %s", (_name, over) => {
     expect(
       formBlockSchema.safeParse({

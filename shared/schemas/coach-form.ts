@@ -13,7 +13,13 @@ const MAX_NUMBER_STEPS = 200;
 
 // Sized so the longest answer message (4 multi-choice fields, every option
 // ticked: 4 × (100 + 2 + 8 × 40 + 14) + 3 = 1747) fits a chat message's
-// 2000 characters (server/routes/chat.ts).
+// 2000 characters (server/routes/chat.ts). A number line is shorter: its
+// value is bounded below (MAX_NUMBER, MIN_NUMBER_STEP).
+/** A number a person would enter: within a million, to 2 decimals at most. */
+const MAX_NUMBER = 1_000_000;
+const MIN_NUMBER_STEP = 0.01;
+const amount = z.number().min(-MAX_NUMBER).max(MAX_NUMBER);
+
 const label = z.string().trim().min(1).max(100);
 const option = z.string().trim().min(1).max(40);
 
@@ -48,11 +54,11 @@ export const formNumberFieldSchema = z
   .object({
     kind: z.literal("number"),
     label,
-    min: z.number().finite(),
-    max: z.number().finite(),
-    step: z.number().finite().positive(),
+    min: amount,
+    max: amount,
+    step: z.number().min(MIN_NUMBER_STEP).max(MAX_NUMBER),
     /** Where the stepper starts. */
-    value: z.number().finite(),
+    value: amount,
     unit: z.string().trim().min(1).max(12).optional(),
   })
   .refine((f) => f.min < f.max, { message: "min must be below max." })
