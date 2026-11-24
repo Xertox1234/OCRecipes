@@ -39,10 +39,11 @@ const INJECTION_PATTERNS: RegExp[] = [
     `you\\s+are\\s+now\\s+(?!a\\s+nutrition|a\\s+food)(?:an?\\s+[\\w-]+|in\\s+${JAILBREAK_MODE}\\s+mode\\b|\\w*bot\\b|\\w*gpt\\b|dan\\b)`,
     "i",
   ),
-  // An instruction: at the start of a sentence or clause, or after "you to" /
-  // "can you". Not "my son likes to pretend to be a chef" or "let's not
-  // pretend you are going to ...".
-  /(?:^|[.!?:,]\s+|\n\s*|\bplease\s+|\bnow\s+|\byou\s+to\s+|\b(?:can|could|will|would)\s+you\s+)pretend\s+(?:to\s+be|you\s+are|you['’]re)\s+(?!going\b)/i,
+  // Anywhere in the text: this also runs on tool results and recipe fields,
+  // where an injected instruction sits mid-string. Not someone else
+  // pretending ("my son likes to pretend to be a chef", "my toddler will
+  // pretend to be full") or "let's not pretend you are going to ...".
+  /(?<!\b(?:likes?|loves?|wants?|tends?|used|going|trying|tried|able|how|not|never|will|would|they|he|she|kids?|who)\s+(?:to\s+)?)pretend\s+(?:to\s+be|you\s+are|you['’]re)\s+(?!going\b)/i,
   new RegExp(
     `\\bact\\s+as\\s+(?:if\\s+you\\s+(?:are|were)\\s+(?:an?\\s+)?(?:[\\w-]+\\s+){0,2}${AI_NOUN}\\b|a\\s+different\\s+${AI_NOUN}\\b)`,
     "i",
