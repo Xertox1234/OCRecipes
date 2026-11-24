@@ -9,6 +9,7 @@ import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
 import { eq, sql } from "drizzle-orm";
 import { clearFamilyHealthData } from "./family-profiles";
+import { expireAllergyCards } from "./coach-write-cards";
 import { coachResponseCache, mealSuggestionCache } from "@shared/schema";
 import {
   HEALTH_CONSENT_VERSION,
@@ -232,6 +233,9 @@ export async function withdrawHealthConsent(
     // Family profiles' allergies and notes are health data under the same
     // consent; names stay.
     await clearFamilyHealthData(userId, tx);
+
+    // The Coach's allergy cards hold an allergen and the severity chosen.
+    await expireAllergyCards(userId, tx);
 
     return profile;
   });
