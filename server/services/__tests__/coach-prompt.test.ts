@@ -1,10 +1,70 @@
 import { describe, it, expect } from "vitest";
-import { getSystemPromptTemplateVersion } from "../coach-prompt";
+import {
+  buildSystemPrompt,
+  getSystemPromptTemplateVersion,
+  type CoachContext,
+} from "../coach-prompt";
+import type { CoachIntent } from "../coach-intent-classifier";
 
 describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
-  it("is byte-identical to the pre-split value", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("b28e7ee438e62ac8");
+  it("matches the pinned value (last intended edit: care rules, audit 2026-11-24)", () => {
+    expect(getSystemPromptTemplateVersion()).toBe("f0324f47c8a75c8b");
+  });
+});
+
+// Audit 2026-11-24 (M35, M37): the safety bundle no longer refuses every
+// message that mentions a condition, and the rules that protect a user are
+// seen by every intent, not only the two bundles that happened to carry them.
+describe("coach prompt care rules", () => {
+  const CONTEXT: CoachContext = {
+    goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+    todayIntake: { calories: 800, protein: 40, carbs: 100, fat: 30 },
+    dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
+  };
+  const INTENTS: CoachIntent[] = [
+    "safety_refusal",
+    "vague_request",
+    "general_fact",
+    "personalized_advice",
+  ];
+
+  it.each(INTENTS)("%s carries the allergy rule exactly once", (intent) => {
+    const prompt = buildSystemPrompt(CONTEXT, intent);
+    expect(prompt.match(/NEVER suggest those foods/g)).toHaveLength(1);
+  });
+
+  it.each(INTENTS)(
+    "%s carries the under-18, distress and pregnancy rules",
+    (intent) => {
+      const prompt = buildSystemPrompt(CONTEXT, intent);
+      expect(prompt).toContain("CARE RULES");
+      expect(prompt).toMatch(/Under 18: no calorie deficit/);
+      expect(prompt).toMatch(/earning or burning off food/);
+      expect(prompt).toMatch(/Pregnant or breastfeeding: an ordinary state/);
+    },
+  );
+
+  it("the safety bundle answers an ordinary food question and declines only the unsafe part", () => {
+    const prompt = buildSystemPrompt(CONTEXT, "safety_refusal");
+    expect(prompt).toContain("ANSWER — the user only mentions a condition");
+    expect(prompt).toContain("DECLINE — any part of the request is unsafe");
+    expect(prompt).not.toContain("build EVERY response from this");
+    // An ANSWER example, so the model has more than refusals to copy.
+    expect(prompt).toContain("What is a good high-iron dinner while pregnant?");
+  });
+
+  it("the weight-loss framing lines give way to a care rule", () => {
+    const prompt = buildSystemPrompt(CONTEXT, "personalized_advice");
+    expect(prompt).toContain(
+      "Skip the weight-loss framing when a CARE RULE applies",
+    );
+    expect(prompt).toContain("and no CARE RULE applies, you may reference");
+  });
+
+  it("no refusal example names a food the user could be allergic to", () => {
+    const prompt = buildSystemPrompt(CONTEXT, "safety_refusal");
+    expect(prompt).not.toContain("eggs, fatty fish, or hemp seeds");
   });
 });

@@ -489,6 +489,22 @@
     {
       "text": "Raw kidney beans can induce vomiting, so boil them for at least 10 minutes.",
       "why": "Food-safety use of 'induce vomiting'; blocked today."
+    },
+    {
+      "text": "A lentil and spinach curry with a squeeze of lemon is a strong pick — the vitamin C helps you absorb the iron — or a well-cooked beef and broccoli stir-fry.",
+      "why": "Few-shot verbatim (ANSWER case, pregnancy)."
+    },
+    {
+      "text": "Your midwife or doctor can tell you whether you need a supplement on top.",
+      "why": "Few-shot verbatim (ANSWER case, pregnancy referral clause)."
+    },
+    {
+      "text": "Greek yogurt with berries and seeds, or eggs on whole-grain toast with avocado — both pair protein and fiber with slower carbs for a steadier morning.",
+      "why": "Few-shot verbatim (ANSWER case, diabetes)."
+    },
+    {
+      "text": "In the meantime, regular balanced meals and steady sleep do more for focus — want a few dinner ideas that fit your diet?",
+      "why": "Few-shot verbatim (vitamin D refusal, safe alternative with no named foods)."
     }
   ]
 }
