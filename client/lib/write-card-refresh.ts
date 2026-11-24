@@ -24,8 +24,16 @@ export function writeCardRefreshKeys(
     case "grocery":
       return [GROCERY_LISTS];
     case "plan":
-      // A plan card can also add its meals' shopping to a list.
-      return [["/api/meal-plan"], GROCERY_LISTS];
+      // A plan card can also copy a community recipe into the user's own,
+      // changes the day's planned calories, and can add its meals' shopping
+      // to a list.
+      return [
+        ["/api/meal-plan"],
+        ["/api/meal-plan/recipes"],
+        ["/api/recipes/browse"],
+        QUERY_KEYS.dailyBudget,
+        GROCERY_LISTS,
+      ];
     case "pantry":
       return [["/api/pantry"], ["/api/pantry/expiring"]];
     case "goals":

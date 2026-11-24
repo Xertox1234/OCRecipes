@@ -7,6 +7,8 @@ updated: 2026-11-24
 assignee:
 labels: [deferred, coach, accessibility]
 github_issue:
+blocked_reason: "The first step is a VoiceOver check on a simulator or device, and a decision to close an item that does not reproduce"
+human_led: true
 ---
 
 # Coach photo turn: announce the reply to screen readers; refuse overlapping turns on the server

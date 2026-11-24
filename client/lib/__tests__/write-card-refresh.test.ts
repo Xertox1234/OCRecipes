@@ -16,9 +16,12 @@ describe("writeCardRefreshKeys", () => {
     ]);
   });
 
-  it("a plan card refreshes the plan and, for its shopping, the grocery lists", () => {
+  it("a plan card refreshes the plan, its copied recipes, the day's budget and the grocery lists", () => {
     expect(writeCardRefreshKeys("plan")).toEqual([
       ["/api/meal-plan"],
+      ["/api/meal-plan/recipes"],
+      ["/api/recipes/browse"],
+      ["/api/daily-budget"],
       ["/api/meal-plan/grocery-lists"],
     ]);
   });
