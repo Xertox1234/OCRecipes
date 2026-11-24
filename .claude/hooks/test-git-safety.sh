@@ -1845,10 +1845,12 @@ nd_only_deny() {
 nd_reason() { printf '%s' "$ND_OUT" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null; }
 
 # ND1. A lib shadows a builtin the hook calls in its own shell with a function that exits.
+#      (The probe now treats such a lib as missing, so this is the ordinary contract deny;
+#      the trap's own deny is pinned by ND2 and ND4.)
 T=$(nd_tree write-targets.sh 'read() { exit 0; }'); ND_TREES="$ND_TREES $T"
 nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
-n="ND1 a lib shadows 'read' with a function that exits: ended-before-a-decision deny, rc 0"
-nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason | grep -q 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+n="ND1 a lib shadows 'read' with a function that exits: deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
 nd_run "$T" "$(json no-registry-session "$MAIN" 'git commit -m x')"
 n="ND1 control: the same broken lib with NO contract never blocks"
 [ -z "$ND_OUT" ] && nd_ok "$n" || nd_bad "$n"
@@ -1882,12 +1884,15 @@ nd_run "$T" "$(json "$SESSION" "$WT_A" 'git commit -m x')"
 n="ND3 control: with that lib, git inside the registered worktree is allowed, rc 0"
 [ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
 
-# ND4. deny() itself cannot print (jq shadowed by a function that exits; jq was called
-#      directly in the hook's shell).
-T=$(nd_tree write-targets.sh 'jq() { exit 0; }'); ND_TREES="$ND_TREES $T"
-nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
-n="ND4 deny() cannot build its JSON: one static deny, rc 0"
-nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+# ND4. deny() itself cannot print: a jq on PATH that reads the envelope but prints nothing for
+#      `jq -n` (what deny() runs). The static deny answers instead.
+ND_JQ=$(mktemp -d); ND_TREES="$ND_TREES $ND_JQ"
+printf '#!/usr/bin/env bash\n[ "$1" = -n ] && exit 0\nexec %q "$@"\n' "$(command -v jq)" > "$ND_JQ/jq"; chmod +x "$ND_JQ/jq"
+ND_OLD_PATH=$PATH; PATH="$ND_JQ:$PATH"
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+PATH=$ND_OLD_PATH
+n="ND4 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason | grep -q 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
 
 # ND5. A deny reason too large for one argv entry (E2BIG at 128 KB on Linux): a registry entry
 #      of 140 KB lands in the reason through registered_list.
@@ -1919,6 +1924,85 @@ T=$(nd_tree gh-pr-rest.sh 'exit 0'); ND_TREES="$ND_TREES $T"
 FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY='[]' nd_run "$T" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
 n="ND7 gh-pr-rest.sh exits when sourced: the advisory reports UNVERIFIED instead of vanishing"
 printf '%s' "$ND_OUT" | grep -qF 'FAILED (gh unavailable/network)' && nd_ok "$n" || nd_bad "$n"
+
+# ND8. A lib leaves a function named like a builtin or a command the hook calls (security
+#      review of this change, each measured as a silent allow under a contract). The probes
+#      now count such a lib as missing. The last one recursed until bash segfaulted (rc 139).
+while IFS= read -r shadow; do
+  T=$(nd_tree write-targets.sh "$shadow"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+  n="ND8 write-targets.sh defines '$shadow': mutating git in main still denies, rc 0"
+  nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+done <<'SHADOWS'
+printf() { exit 0; }
+printf() { :; }
+ls() { exit 0; }
+ls() { command ls --color=auto "$@" >/dev/null; }
+grep() { exit 0; }
+jq() { exit 0; }
+read() { read -r "$@"; }
+SHADOWS
+T=$(nd_tree own-agent-worktree.sh 'read() { read -r "$@"; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+n="ND8 own-agent-worktree.sh with a recursive read wrapper: still denies, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+T=$(nd_tree write-targets.sh 'printf() { :; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "$R_WT" "echo x > $R_MAIN/notes.txt")"
+n="ND8 a shadowing write-targets.sh counts as missing: a write into main denies (did not load)"
+nd_only_deny && nd_reason | grep -q 'did not load' && nd_ok "$n" || nd_bad "$n"
+
+# ND9. A LARGE command (pre-existing, found by the same review): `printf "$CMD" | grep -q`
+#      under pipefail read 141 as "not write-shaped" once the command outgrew the pipe buffer,
+#      so a 200 KB heredoc write into main was allowed. Run five times: the old outcome
+#      depended on timing near the buffer size and was a steady allow at this size.
+# The command goes to jq on STDIN: 400 KB as one --arg is E2BIG.
+nd_big_json() {  # $1=cwd ; raw command on stdin
+  jq -Rsc --arg s "$SESSION" --arg c "$1" '{tool_name:"Bash",session_id:$s,cwd:$c,tool_input:{command:.}}'
+}
+ND_BIG=$(printf 'cat > %s/big.txt <<EOF_BIG\n' "$R_MAIN"; head -c 400000 /dev/zero | tr '\0' 'a' | fold -w 80; printf '\nEOF_BIG\n')
+ND_BIG_PAYLOAD=$(printf '%s' "$ND_BIG" | nd_big_json "$R_WT")
+ND_BIG_OK=0
+for _ in 1 2 3 4 5; do
+  nd_run "$(dirname "$HOOK")" "$ND_BIG_PAYLOAD"
+  nd_only_deny && ND_BIG_OK=$((ND_BIG_OK+1))
+done
+n="ND9 a 400 KB heredoc write into the main checkout is denied, 5 runs of 5"
+[ "$ND_BIG_OK" = 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  denied $ND_BIG_OK of 5"; }
+ND_BIG_PAYLOAD=$({ printf 'rm -rf %s/server\n' "$R_MAIN"; head -c 400000 /dev/zero | tr '\0' 'b' | fold -w 78 | sed 's/^/# /'; } | nd_big_json "$R_WT")
+nd_run "$(dirname "$HOOK")" "$ND_BIG_PAYLOAD"
+n="ND9 rm of a main-checkout folder followed by 400 KB of comment lines is denied"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+ND_BIG_PAYLOAD=$({ printf 'cat > %s/big.txt <<EOF_BIG\n' "$R_WT"; head -c 400000 /dev/zero | tr '\0' 'a' | fold -w 80; printf '\nEOF_BIG\n'; } | nd_big_json "$R_WT")
+printf '%s' "$R_WT" > "$REG_DIR/zzzz-nd9"   # the real worktree's entry was removed further up
+nd_run "$(dirname "$HOOK")" "$ND_BIG_PAYLOAD"
+rm -f "$REG_DIR/zzzz-nd9"
+n="ND9 control: the same 400 KB write inside the registered worktree is allowed, rc 0"
+[ "${#ND_BIG_PAYLOAD}" -gt 400000 ] && [ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+
+# ND10. More signals than the first list (same review): each left rc 152-157 and so an allow.
+for sig in XCPU PROF IO; do
+  T=$(nd_tree own-agent-worktree.sh "own_agent_root() { kill -$sig \$\$; sleep 1; }"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
+  n="ND10 SIG$sig mid-run under a contract: deny, rc 0"
+  nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+done
+
+# ND11. A child that outlives the hook must not hold the hook's stdout open (fd 9 is closed
+#       for git and gh). The fake gh leaves a 6-second sleeper behind.
+ND_GH=$(mktemp -d); ND_TREES="$ND_TREES $ND_GH"
+cat > "$ND_GH/gh" <<'GHEOF'
+#!/usr/bin/env bash
+(sleep 6 </dev/null >/dev/null 2>/dev/null &)
+printf '%s' '{"number":520,"state":"MERGED","mergedAt":"2026-07-16T00:00:00Z"}'
+GHEOF
+chmod +x "$ND_GH/gh"
+ND_OLD_PATH=$PATH; PATH="$ND_GH:$PATH"
+ND_T0=$(date +%s)
+nd_run "$(dirname "$HOOK")" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
+ND_T1=$(date +%s)
+PATH=$ND_OLD_PATH
+n="ND11 a lingering child of gh does not keep the hook's stdout open (answer in under 4 s)"
+[ $((ND_T1 - ND_T0)) -lt 4 ] && printf '%s' "$ND_OUT" | grep -qF 'is MERGED' && nd_ok "$n" || { nd_bad "$n"; echo "  took $((ND_T1 - ND_T0)) s"; }
 # shellcheck disable=SC2086
 rm -rf $ND_TREES
 
@@ -1997,7 +2081,9 @@ fi
 # 353 -> 372 (2026-11-24, the hook cannot end without a decision under a contract): +19 =
 # ND1 (three), ND2 (seven), ND3 (two), ND4, ND5, ND6 (three), ND7 (two). RED before the guard
 # change: 14 of them (ND1 first, all of ND2, both ND3, ND4, ND5, both ND7).
-EXPECTED_TOTAL=372
+# 372 -> 388 (2026-11-24, security review of that change): +16 = ND8 (nine), ND9 (three),
+# ND10 (three), ND11.
+EXPECTED_TOTAL=388
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
