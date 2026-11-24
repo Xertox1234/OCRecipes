@@ -92,7 +92,11 @@ beforeEach(() => {
   });
   s.insertWeeklyReport.mockResolvedValue({ id: 41 });
   s.hasReminderSince.mockResolvedValue(false);
-  vi.mocked(writeWeeklyReport).mockResolvedValue({ content, source: "ai" });
+  vi.mocked(writeWeeklyReport).mockResolvedValue({
+    content,
+    source: "ai",
+    aiFault: null,
+  });
   vi.mocked(notify).mockResolvedValue({ pushDelivered: true });
   vi.mocked(isAiSharingAllowedFor).mockResolvedValue(true);
 });
@@ -125,6 +129,24 @@ describe("generateWeeklyReportForUser", () => {
     expect(await generateWeeklyReportForUser("u1", NOW, TZ)).toBe("exists");
     expect(writeWeeklyReport).not.toHaveBeenCalled();
   });
+
+  // The report is still created; the result says the AI part failed so the
+  // scheduler can count it and raise one alarm for the run.
+  it.each([
+    ["call", "created-ai-call-failed"],
+    ["reply", "created-bad-reply"],
+  ] as const)(
+    "a template written after an AI %s fault is reported as %s",
+    async (aiFault, result) => {
+      vi.mocked(writeWeeklyReport).mockResolvedValue({
+        content,
+        source: "template",
+        aiFault,
+      });
+      expect(await generateWeeklyReportForUser("u1", NOW, TZ)).toBe(result);
+      expect(inserted().source).toBe("template");
+    },
+  );
 
   it("stores the Sunday–Saturday week with the push due now", async () => {
     expect(await generateWeeklyReportForUser("u1", NOW, TZ)).toBe("created");

@@ -23,8 +23,14 @@ const DEFERRED_PUSH_LOCAL_HOUR = 9;
 const EMPTY_WEEKS_BEFORE_PAUSE = 3;
 const HOUR_MS = 3_600_000;
 
+/**
+ * The two `created-…` results are a report that WAS created, with the
+ * template text, because the AI part failed (see WeeklyReportAiFault).
+ */
 export type GenerateResult =
   | "created"
+  | "created-ai-call-failed"
+  | "created-bad-reply"
   | "exists"
   | "skipped-not-pro"
   | "skipped-disabled";
@@ -95,7 +101,7 @@ export async function generateWeeklyReportForUser(
   // this user: check their AI-sharing permission here. Without it the report
   // still saves, with the template text and no AI call.
   const aiAllowed = await isAiSharingAllowedFor(userId);
-  const { content, source } = await writeWeeklyReport(facts, {
+  const { content, source, aiFault } = await writeWeeklyReport(facts, {
     aiAllowed,
     userId,
   });
@@ -114,7 +120,10 @@ export async function generateWeeklyReportForUser(
       previous,
     ),
   });
-  return row ? "created" : "exists";
+  if (!row) return "exists";
+  if (aiFault === "call") return "created-ai-call-failed";
+  if (aiFault === "reply") return "created-bad-reply";
+  return "created";
 }
 
 /**

@@ -111,23 +111,43 @@ export function buildWeeklyReportMessages(facts: WeeklyFacts) {
 }
 
 /**
+ * Why the template was used when the AI was asked and did not deliver:
+ * `call` = the call itself failed (outage, timeout); `reply` = it answered,
+ * but not with usable JSON. Null when the AI text was used, or when the
+ * template was chosen for another reason (AI sharing off, a safety signal, a
+ * guard rejection).
+ */
+export type WeeklyReportAiFault = "call" | "reply" | null;
+
+/**
  * `aiAllowed` is the user's AI-sharing permission (privacy audit H3). This
  * runs from the scheduler, outside any signed-in request, so aiChat's own
  * request-context gate cannot see the user — the caller must check.
+ *
+ * An AI fault is a warn here, per user, and is named in the result: the
+ * scheduler counts them and raises one error for the run. Logging an error
+ * per user made a provider outage one Sentry error per Coach Pro user.
  */
 export async function writeWeeklyReport(
   facts: WeeklyFacts,
   opts: { aiAllowed: boolean; userId: string },
-): Promise<{ content: WeeklyReportContent; source: "ai" | "template" }> {
-  const fallback = () => ({
+): Promise<{
+  content: WeeklyReportContent;
+  source: "ai" | "template";
+  aiFault: WeeklyReportAiFault;
+}> {
+  const fallback = (aiFault: WeeklyReportAiFault = null) => ({
     content: applyGuards(templateContent(facts), facts),
     source: "template" as const,
+    aiFault,
   });
   const logContext = { userId: opts.userId, weekStart: facts.weekStart };
   // No AI words after a safety signal: the gentle template only.
   if (!opts.aiAllowed || facts.safetySignal) return fallback();
+  // Ids and the week only in these logs — never the facts or the reply text.
+  let response: Awaited<ReturnType<typeof aiChat>>;
   try {
-    const response = await aiChat(
+    response = await aiChat(
       "coach-weekly-report",
       {
         messages: buildWeeklyReportMessages(facts),
@@ -137,7 +157,16 @@ export async function writeWeeklyReport(
       },
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
-    const content = parseAiJson(
+  } catch (err) {
+    logger.warn(
+      { err: toError(err), ...logContext },
+      "weekly report: AI call failed, using template",
+    );
+    return fallback("call");
+  }
+  let content: WeeklyReportContent;
+  try {
+    content = parseAiJson(
       response.choices[0]?.message?.content,
       weeklyReportContentSchema,
       {
@@ -147,23 +176,22 @@ export async function writeWeeklyReport(
       },
       logger,
     );
-    const guarded = applyGuards(content, facts);
-    const check = validateContent(guarded, facts);
-    if (!check.ok) {
-      logger.warn(
-        { reason: check.reason, ...logContext },
-        "weekly report: text rejected, using template",
-      );
-      return fallback();
-    }
-    return { content: guarded, source: "ai" };
   } catch (err) {
-    // Reaches Sentry: a failed call or an unusable reply. Ids and the week
-    // only — never the facts or the reply text.
-    logger.error(
+    // Handled by the template, so a warn (owner ruling 2026-11-23).
+    logger.warn(
       { err: toError(err), ...logContext },
-      "weekly report: AI call failed, using template",
+      "weekly report: unusable AI reply, using template",
+    );
+    return fallback("reply");
+  }
+  const guarded = applyGuards(content, facts);
+  const check = validateContent(guarded, facts);
+  if (!check.ok) {
+    logger.warn(
+      { reason: check.reason, ...logContext },
+      "weekly report: text rejected, using template",
     );
     return fallback();
   }
+  return { content: guarded, source: "ai", aiFault: null };
 }

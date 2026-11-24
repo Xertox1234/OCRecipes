@@ -982,6 +982,8 @@ describe("weekly report schedule", () => {
             skippedNotPro: 1,
             skippedDisabled: 1,
             failed: 1,
+            aiCallFailed: 0,
+            badReply: 0,
           },
           SUMMARY,
         ],
@@ -1010,6 +1012,94 @@ describe("weekly report schedule", () => {
       expect(withMessage(error, ALL_FAILED)).toEqual([
         [{ inWindow: 3, tried: 2, failed: 2 }, ALL_FAILED],
       ]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    // In a catch-up hour everyone else already has the report, so the users
+    // "tried" shrink to the one whose row is bad. That is one user's problem,
+    // already logged per user, not a systemic failure.
+    it("does not raise the all-failed alarm for a single failing user in a catch-up hour", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["has-one", "also-has-one", "broken"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      vi.mocked(generateWeeklyReportForUser).mockImplementation(
+        async (userId) => {
+          if (userId === "broken") throw new Error("boom");
+          return "exists";
+        },
+      );
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)).toHaveLength(1);
+      expect(withMessage(error, ALL_FAILED)).toEqual([]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    const AI_FAILED =
+      "notification-scheduler: weekly report AI call failed, template text used";
+
+    // The template fallback counts as created, so an outage never trips the
+    // all-failed alarm. It raises ONE error for the run, not one per user.
+    it("a provider outage raises one error for the run and counts the fallbacks", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["a", "b", "c", "fine"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      vi.mocked(generateWeeklyReportForUser).mockImplementation(
+        async (userId) =>
+          userId === "fine" ? "created" : "created-ai-call-failed",
+      );
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)).toEqual([
+        [
+          {
+            inWindow: 4,
+            created: 4,
+            exists: 0,
+            skippedNotPro: 0,
+            skippedDisabled: 0,
+            failed: 0,
+            aiCallFailed: 3,
+            badReply: 0,
+          },
+          SUMMARY,
+        ],
+      ]);
+      expect(withMessage(error, AI_FAILED)).toEqual([
+        [{ created: 4, aiCallFailed: 3 }, AI_FAILED],
+      ]);
+      expect(withMessage(error, ALL_FAILED)).toEqual([]);
+      info.mockRestore();
+      error.mockRestore();
+    });
+
+    // Owner ruling 2026-11-23: an unusable reply is counted, never an error.
+    it("counts an unusable AI reply without raising an error", async () => {
+      const { info, error } = spies();
+      vi.mocked(storage.getUserIdPage)
+        .mockResolvedValueOnce(["a", "b"])
+        .mockResolvedValueOnce([]);
+      vi.mocked(sendDueWeeklyReportPushes).mockResolvedValue(0);
+      vi.mocked(generateWeeklyReportForUser).mockResolvedValue(
+        "created-bad-reply",
+      );
+
+      await runWeeklyReports(now);
+
+      expect(withMessage(info, SUMMARY)[0][0]).toMatchObject({
+        created: 2,
+        aiCallFailed: 0,
+        badReply: 2,
+      });
+      expect(error).not.toHaveBeenCalled();
       info.mockRestore();
       error.mockRestore();
     });
