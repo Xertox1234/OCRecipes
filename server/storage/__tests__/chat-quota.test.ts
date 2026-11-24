@@ -30,14 +30,19 @@ const {
   deleteChatMessage,
   deleteChatConversation,
 } = await import("../chat");
+const quotaModule = await import("../chat-quota");
 const {
   createFinderUserMessage,
   claimRecipeGeneration,
   claimSpoonacularSearch,
-} = await import("../chat-quota");
+} = quotaModule;
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
+
+afterAll(async () => {
+  await closeTestPool();
+});
 
 // Recipe finder quota (spec §6, R2).
 describe("chat quota — recipe finder generation quota and Spoonacular cap", () => {
@@ -51,10 +56,6 @@ describe("chat quota — recipe finder generation quota and Spoonacular cap", ()
 
   afterEach(async () => {
     await rollbackTestTransaction();
-  });
-
-  afterAll(async () => {
-    await closeTestPool();
   });
 
   it("the daily limit resets at midnight in the STORED timezone, not UTC", async () => {
@@ -473,5 +474,119 @@ describe("chat quota — recipe finder generation quota and Spoonacular cap", ()
     await expect(
       createFinderUserMessage(otherConv.id, testUser.id, "x"),
     ).rejects.toThrow("Conversation not found");
+  });
+});
+
+// Coach chat audit 2026-11-24 (H4, M48): the daily message and generation
+// limits were counts of live rows, so deleting a message or its conversation
+// handed the slot back. Each quota-checked message now records a claim, as
+// the finder's Generate already did.
+describe("chat quota — a deleted message does not hand its slot back", () => {
+  const { refundUndeliveredMessage, REMIX_REFINEMENTS_PER_GENERATION } =
+    quotaModule;
+
+  beforeEach(async () => {
+    tx = await setupTestTransaction();
+    testUser = await createTestUser(tx);
+  });
+
+  afterEach(async () => {
+    await rollbackTestTransaction();
+  });
+
+  const send = (
+    conversationId: number,
+    type: "coach" | "recipe" | "remix",
+    limit = 1,
+  ) =>
+    createChatMessageWithLimitCheck(
+      conversationId,
+      testUser.id,
+      "hello",
+      limit,
+      type,
+    );
+
+  const deletions = {
+    "the message": (ids: { conversationId: number; messageId: number }) =>
+      deleteChatMessage(ids.messageId, testUser.id),
+    "the whole conversation": (ids: {
+      conversationId: number;
+      messageId: number;
+    }) => deleteChatConversation(ids.conversationId, testUser.id),
+  };
+
+  for (const type of ["coach", "recipe", "remix"] as const) {
+    for (const [what, remove] of Object.entries(deletions)) {
+      it(`${type}: deleting ${what} does not hand the slot back`, async () => {
+        const conv = await createChatConversation(testUser.id, "A", type);
+        const first = await send(conv.id, type);
+        expect(first).not.toBeNull();
+        expect(
+          await remove({ conversationId: conv.id, messageId: first!.id }),
+        ).toBe(true);
+
+        const next = await createChatConversation(testUser.id, "B", type);
+        expect(await send(next.id, type)).toBeNull();
+      });
+    }
+
+    it(`${type}: control — the limit holds without any delete`, async () => {
+      const conv = await createChatConversation(testUser.id, "A", type);
+      expect(await send(conv.id, type)).not.toBeNull();
+      const next = await createChatConversation(testUser.id, "B", type);
+      expect(await send(next.id, type)).toBeNull();
+    });
+  }
+
+  it("the disconnect refund hands the slot back, and removes the row", async () => {
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    const first = await send(conv.id, "coach");
+    expect(await refundUndeliveredMessage(first!.id, testUser.id)).toBe(true);
+    expect(await send(conv.id, "coach")).not.toBeNull();
+  });
+
+  it("the refund never touches another user's row", async () => {
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    const first = await send(conv.id, "coach");
+    const other = await createTestUser(tx);
+    expect(await refundUndeliveredMessage(first!.id, other.id)).toBe(false);
+    // Still counted for its owner.
+    expect(await send(conv.id, "coach")).toBeNull();
+  });
+
+  it("the refund keeps a Generate claim on the row (#1151)", async () => {
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    const first = await send(conv.id, "coach", 5);
+    expect(await claimRecipeGeneration(testUser.id, first!.id, 1)).toBe(true);
+    expect(await refundUndeliveredMessage(first!.id, testUser.id)).toBe(true);
+    const again = await send(conv.id, "coach", 5);
+    expect(await claimRecipeGeneration(testUser.id, again!.id, 1)).toBe(false);
+  });
+
+  it("a remix conversation created on an earlier day still counts on the day of its first message (M48)", async () => {
+    const { chatConversations } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const old = await createChatConversation(testUser.id, "Old", "remix");
+    await getTestTx()
+      .update(chatConversations)
+      .set({ createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) })
+      .where(eq(chatConversations.id, old.id));
+    expect(await send(old.id, "remix")).not.toBeNull();
+
+    const fresh = await createChatConversation(testUser.id, "New", "remix");
+    expect(await send(fresh.id, "remix")).toBeNull();
+  });
+
+  it("remix refinements are free up to a daily bound, then refused (M48)", async () => {
+    const conv = await createChatConversation(testUser.id, "Remix", "remix");
+    expect(await send(conv.id, "remix")).not.toBeNull();
+    for (let i = 0; i < REMIX_REFINEMENTS_PER_GENERATION; i++) {
+      expect(
+        await send(conv.id, "remix"),
+        `refinement ${i + 1}`,
+      ).not.toBeNull();
+    }
+    expect(await send(conv.id, "remix")).toBeNull();
   });
 });

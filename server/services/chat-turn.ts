@@ -542,9 +542,10 @@ async function settleAbortedCoachTurn(ctx: TurnContext): Promise<void> {
       : strippedText;
     const { blocks } = parsedPartial;
     if (!partialText && blocks.length === 0) {
-      // Paid recipe-finder claims live in recipe_finder_claims, so
-      // this refund can never hand a paid slot back (#1151).
-      await storage.deleteChatMessage(userMessage.id, req.userId);
+      // Nothing reached the user: the message and its daily-limit claim
+      // go, which hands the slot back. Paid recipe-finder claims on the
+      // row stay, so this refund never hands a paid slot back (#1151).
+      await storage.refundUndeliveredMessage(userMessage.id, req.userId);
     } else {
       // Never cached, titled, or notebook-extracted — a partial.
       await storage.createChatMessage(

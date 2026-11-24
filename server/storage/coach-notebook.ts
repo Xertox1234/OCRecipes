@@ -211,8 +211,12 @@ export async function updateNotebookEntryStatus(
   return updated;
 }
 
+/** How many due commitments one Coach turn reads: the most recently due. */
+export const DUE_COMMITMENTS_LIMIT = 20;
+
 export async function getCommitmentsWithDueFollowUp(
   userId: string,
+  limit: number = DUE_COMMITMENTS_LIMIT,
 ): Promise<CoachNotebookEntry[]> {
   return db
     .select()
@@ -225,7 +229,8 @@ export async function getCommitmentsWithDueFollowUp(
         lte(coachNotebook.followUpDate, new Date()),
       ),
     )
-    .orderBy(desc(coachNotebook.followUpDate));
+    .orderBy(desc(coachNotebook.followUpDate))
+    .limit(limit);
 }
 
 export async function archiveOldEntries(
@@ -265,6 +270,15 @@ export async function archiveOldEntries(
     )
     .returning();
   return result.length;
+}
+
+/** Every entry the user holds, whatever its type or status (the cap's count). */
+export async function getNotebookEntryTotal(userId: string): Promise<number> {
+  const [result] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(coachNotebook)
+    .where(eq(coachNotebook.userId, userId));
+  return result?.count ?? 0;
 }
 
 export async function getNotebookEntryCount(

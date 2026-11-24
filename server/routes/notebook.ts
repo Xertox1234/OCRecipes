@@ -14,6 +14,7 @@ import { sendError } from "../lib/api-errors";
 import { civilDateToInstant } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
+  MAX_NOTEBOOK_ENTRIES,
   notebookEntryTypes,
   notebookEntryStatusValues,
 } from "@shared/schemas/coach-notebook";
@@ -223,6 +224,20 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         const { type, content, followUpDate } = parsed.data;
+        // A ceiling on what one account can add: the rate limit alone let
+        // it reach tens of thousands of rows, which every Coach turn and
+        // the daily reminder job then read.
+        if (
+          (await storage.getNotebookEntryTotal(req.userId)) >=
+          MAX_NOTEBOOK_ENTRIES
+        ) {
+          return sendError(
+            res,
+            409,
+            "Your notebook is full. Remove some notes to add new ones.",
+            ErrorCode.LIMIT_REACHED,
+          );
+        }
         const entry = await storage.createNotebookEntry({
           userId: req.userId,
           type,

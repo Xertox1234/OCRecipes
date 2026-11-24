@@ -41,6 +41,7 @@ const {
   getDueCommitmentsAllUsers,
   archiveOldEntries,
   getNotebookEntryCount,
+  getNotebookEntryTotal,
   getNotebookEntryById,
   getNotebookEntriesByIds,
 } = await import("../coach-notebook");
@@ -433,10 +434,58 @@ describe("Coach Notebook Storage", () => {
     });
   });
 
+  describe("getNotebookEntryTotal", () => {
+    it("counts every entry of the user, whatever its type or status", async () => {
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "goal",
+        content: "a",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "preference",
+        content: "b",
+        status: "rejected",
+      });
+      const other = await createTestUser(tx);
+      await createNotebookEntry({
+        userId: other.id,
+        type: "goal",
+        content: "c",
+        status: "active",
+      });
+
+      expect(await getNotebookEntryTotal(testUser.id)).toBe(2);
+      expect(await getNotebookEntryTotal(other.id)).toBe(1);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // getCommitmentsWithDueFollowUp
   // --------------------------------------------------------------------------
   describe("getCommitmentsWithDueFollowUp", () => {
+    // Audit 2026-11-24 (M45): every Coach Pro turn reads these, so the read
+    // is bounded: the most recently due come first.
+    it("returns at most the limit, most recently due first", async () => {
+      for (const daysAgo of [3, 1, 2]) {
+        const due = new Date();
+        due.setDate(due.getDate() - daysAgo);
+        await createNotebookEntry({
+          userId: testUser.id,
+          type: "commitment",
+          content: `due ${daysAgo} days ago`,
+          status: "active",
+          followUpDate: due,
+        });
+      }
+      const due = await getCommitmentsWithDueFollowUp(testUser.id, 2);
+      expect(due.map((e) => e.content)).toEqual([
+        "due 1 days ago",
+        "due 2 days ago",
+      ]);
+    });
+
     it("returns only due commitments", async () => {
       const pastDate = new Date();
       pastDate.setDate(pastDate.getDate() - 1);
