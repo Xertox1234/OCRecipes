@@ -44,6 +44,7 @@ const {
   getDailyLogs,
   createDailyLog,
   getDailySummary,
+  getDailyLogItems,
   getMostEatenFoods,
   getDailyScanCount,
   getSavedItems,
@@ -567,6 +568,47 @@ describe("nutrition storage", () => {
       const logs = await getDailyLogs(testUser.id, new Date(), "UTC");
       expect(logs).toHaveLength(1);
       expect(logs[0].scannedItemId).toBe(activeItem.id);
+    });
+  });
+
+  // Audit 2026-11-24 (M40): what the Coach's "what did I eat" tool reads.
+  describe("getDailyLogItems", () => {
+    it("returns each log with its food name and resolved nutrition", async () => {
+      const item = await insertScannedItem(testUser.id, {
+        productName: "Oat bar",
+        calories: "200",
+        protein: "10",
+        carbs: "25",
+        fat: "8",
+      });
+      await insertDailyLog(testUser.id, {
+        scannedItemId: item.id,
+        servings: "2",
+        mealType: "breakfast",
+      });
+
+      const items = await getDailyLogItems(testUser.id, new Date(), "UTC");
+
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        name: "Oat bar",
+        mealType: "breakfast",
+      });
+      expect(Number(items[0]!.servings)).toBe(2);
+      expect(Number(items[0]!.calories)).toBeCloseTo(400, 0);
+      expect(Number(items[0]!.protein)).toBeCloseTo(20, 0);
+      expect(items[0]!.loggedAt).toBeInstanceOf(Date);
+    });
+
+    it("returns nothing for another user's logs", async () => {
+      const item = await insertScannedItem(testUser.id);
+      await insertDailyLog(testUser.id, { scannedItemId: item.id });
+      const other = await createTestUser(getTestTx());
+
+      expect(
+        await getDailyLogItems(testUser.id, new Date(), "UTC"),
+      ).toHaveLength(1);
+      expect(await getDailyLogItems(other.id, new Date(), "UTC")).toEqual([]);
     });
   });
 

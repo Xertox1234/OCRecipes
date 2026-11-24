@@ -179,7 +179,19 @@ export type WriteCardOutcome =
   | { kind: "pantry"; shown: boolean; rows: string[]; dropped: number }
   /** goals: `rows` is the card's own line (goal names and numbers only). */
   | { kind: "goals"; shown: boolean; rows: string }
-  /** plan: whether the card also saves the grocery list the user asked for. */
-  | { kind: "plan"; groceryList: "on_card" | "not_on_card" }
+  /**
+   * plan: `meals` are the card's rows ("2026-11-25 dinner: Lentil stew") and
+   * `dropped` counts the asked-for meals whose recipe could not be used.
+   * `shown` is absent when the card is built at the end of the turn instead.
+   * `groceryList`: whether the card also saves the list the user asked for.
+   */
+  | {
+      kind: "plan";
+      shown?: boolean;
+      meals?: string[];
+      dropped?: number;
+      groceryList?: "on_card" | "not_on_card";
+    }
+  | { kind: "food"; shown: boolean }
   /** A grocery call in a turn whose plan card already holds the shopping. */
   | { kind: "grocery_on_plan_card" };

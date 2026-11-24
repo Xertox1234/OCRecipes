@@ -250,6 +250,25 @@ describe("meal-plan-recipes storage", () => {
       expect(page.total).toBe(3);
     });
 
+    // Audit 2026-11-24 (M50): the title filter runs in SQL, before the limit,
+    // so an older recipe is found however many newer ones there are.
+    it("filters by title before applying the limit", async () => {
+      await seedRecipe(testUser.id, {
+        title: "Grandma's Lasagna",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      for (let i = 0; i < 3; i++) await seedRecipe(testUser.id);
+      const page = await getUserMealPlanRecipes(testUser.id, 1, 0, "lasagna");
+      expect(page.items.map((r) => r.title)).toEqual(["Grandma's Lasagna"]);
+      expect(page.total).toBe(1);
+    });
+
+    it("treats % and _ in the title filter as plain characters", async () => {
+      await seedRecipe(testUser.id, { title: "Plain soup" });
+      const page = await getUserMealPlanRecipes(testUser.id, 10, 0, "%");
+      expect(page.items).toEqual([]);
+    });
+
     it("does not include recipes owned by another user (IDOR scoping)", async () => {
       const otherUser = await createTestUser(tx);
       await seedRecipe(otherUser.id);

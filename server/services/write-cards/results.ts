@@ -42,18 +42,60 @@ export function groceryCardResult(outcome: void | WriteCardOutcome) {
 }
 
 /**
- * The plan card's result (Coach roadmap A1): when the model asked for the
- * grocery list too, whether this card saves it.
+ * The plan card's result: which meals the card shows and how many of the
+ * asked-for meals were left off, so the reply never lists a meal the card
+ * does not have or points at a card that is not there. When the model asked
+ * for the grocery list too (Coach roadmap A1), whether this card saves it.
+ * Recipe titles are written by users and the community, so each line passes
+ * the prompt sanitizer.
  */
 export function planCardResult(outcome: void | WriteCardOutcome) {
   if (!outcome || outcome.kind !== "plan") {
     return { card_shown: true, message: CARD_SHOWN_MESSAGE };
   }
-  const note =
-    outcome.groceryList === "on_card"
-      ? "The same card also adds these meals' ingredients to the user's grocery list when they save it (they can switch that off or pick the list on the card); what their pantry already covers is left off. Do not call add_to_grocery_list for these meals, and do not write out the ingredients."
-      : "This card does not include the grocery list. Do not call add_to_grocery_list in this turn: it would replace this card. Tell the user to save the plan first, then ask for the grocery list.";
-  return { card_shown: true, message: `${CARD_SHOWN_MESSAGE} ${note}` };
+  if (outcome.shown === false) {
+    return {
+      card_shown: false,
+      message:
+        "No meal plan card was made, and nothing has been saved: none of those recipes could be used (an id that does not exist, or a recipe that is not safe for the user's allergies). Call find_plan_recipes or get_my_recipes for ids, then try again. Do not tell the user to tap a card.",
+    };
+  }
+  const notes: string[] = [];
+  if (outcome.meals && outcome.meals.length > 0) {
+    notes.push(
+      `The card shows: ${outcome.meals.map((line) => sanitizeUserInput(line)).join("; ")}.`,
+    );
+  }
+  if (outcome.dropped && outcome.dropped > 0) {
+    notes.push(
+      `${outcome.dropped} of the meals asked for ${outcome.dropped === 1 ? "was" : "were"} left off because the recipe was not found or is not safe for the user's allergies. Describe only the meals on the card.`,
+    );
+  }
+  if (outcome.groceryList === "on_card") {
+    notes.push(
+      "The same card also adds these meals' ingredients to the user's grocery list when they save it (they can switch that off or pick the list on the card); what their pantry already covers is left off. Do not call add_to_grocery_list for these meals, and do not write out the ingredients.",
+    );
+  } else if (outcome.groceryList === "not_on_card") {
+    notes.push(
+      "This card does not include the grocery list. Do not call add_to_grocery_list in this turn: it would replace this card. Tell the user to save the plan first, then ask for the grocery list.",
+    );
+  }
+  return {
+    card_shown: true,
+    message: [CARD_SHOWN_MESSAGE, ...notes].join(" "),
+  };
+}
+
+/** The food card's result: whether there is a card to point the user at. */
+export function foodCardResult(outcome: void | WriteCardOutcome) {
+  if (outcome?.kind === "food" && !outcome.shown) {
+    return {
+      card_shown: false,
+      message:
+        "No food card was made, and nothing has been logged: there was nothing in the request that could be logged. Do not tell the user to tap a card.",
+    };
+  }
+  return { card_shown: true, message: CARD_SHOWN_MESSAGE };
 }
 
 /**
