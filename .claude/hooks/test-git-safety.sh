@@ -12,10 +12,14 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 CALLER_STATE_BEFORE=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
 
 run_hook() { echo "$1" | bash "$HOOK" 2>/dev/null; }
+# Conditions in this file grep a here-string, never `echo "$out" | grep -q` (2026-11-24): the
+# file runs under pipefail, grep -q leaves at its first match, and on a busy machine the echo
+# then dies of SIGPIPE and the pipeline reads 141. Measured: two deny rows red in one run of
+# four with the hook answering correctly.
 
 assert_deny() {
   local name="$1" out; out=$(run_hook "$2")
-  if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+  if grep -q '"permissionDecision": "deny"' <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected deny)"; echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
@@ -29,10 +33,10 @@ assert_allow() {
 # Advisor must WARN (additionalContext containing $3) and must NOT deny.
 assert_warn_contains() {
   local name="$1" out; out=$(run_hook "$2")
-  if echo "$out" | grep -q '"permissionDecision"'; then
+  if grep -q '"permissionDecision"' <<<"$out"; then
     echo "FAIL: $name (advisor must never block)"; FAIL=$((FAIL+1)); return
   fi
-  if echo "$out" | grep -q '"additionalContext"' && echo "$out" | grep -qF -- "$3"; then
+  if grep -q '"additionalContext"' <<<"$out" && grep -qF -- "$3" <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected additionalContext containing: $3)"
@@ -549,7 +553,7 @@ assert_walker() {  # $1=name $2=segment $3=expected emission
 assert_matcher() {  # $1=name $2=segment $3=MATCH|NOMATCH
   local name="$1" seg="$2" want="$3" got
   if ( . "${HOOK%/*}/lib/cmd-detect.sh" >/dev/null 2>&1
-       printf '%s' "$seg" | grep -qE "^[[:space:]]*git${_CMD_GIT_GLOBALS}[[:space:]]+(commit|reset)([[:space:]]|\$)" )
+       grep -qE "^[[:space:]]*git${_CMD_GIT_GLOBALS}[[:space:]]+(commit|reset)([[:space:]]|\$)" <<<"$seg" )
   then got=MATCH; else got=NOMATCH; fi
   if [ "$got" = "$want" ]; then echo "PASS: $name"; PASS=$((PASS + 1))
   else echo "FAIL: $name (expected $want, got $got)"; FAIL=$((FAIL + 1)); fi
@@ -907,7 +911,7 @@ cp "$HOOK" "$LIBTMP/git-safety.sh"
 assert_deny_stub() {  # $1=name $2=lib body $3=payload (default: an ordinary mutating git)
   printf '%s\n' "$2" > "$LIBTMP/lib/cmd-detect.sh"
   local out; out=$(json "$SESSION" "$MAIN" "${3:-git commit -m x}" | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
-  if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+  if grep -q '"permissionDecision": "deny"' <<<"$out"; then
     echo "PASS: $1"; PASS=$((PASS+1))
   else
     echo "FAIL: $1 (expected deny; a broken lib must fall back, never allow)"
@@ -947,7 +951,7 @@ assert_deny_stub "narrower lib: dropping the EOL anchor must not lose a bare 'gi
 STUBNARROW='_CMD_GIT_GLOBALS="([[:space:]]+-p)*" ; _CMD_POS_SUFFIX="([[:space:]]|$)"'
 printf '%s\n' "$STUBNARROW" > "$LIBTMP/lib/cmd-detect.sh"
 NARROW_OUT=$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x" | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
-if echo "$NARROW_OUT" | grep -q '"permissionDecision": "deny"'; then
+if grep -q '"permissionDecision": "deny"' <<<"$NARROW_OUT"; then
   echo "PASS: narrower lib: dropping the -C arm must not lose the incident class itself"; PASS=$((PASS+1))
 else
   echo "FAIL: narrower lib: dropping the -C arm LOST 'git -C <main> commit' — the incident class"
@@ -1103,7 +1107,7 @@ assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' before a redirect into main 
 assert_deny_reason() {  # $1=name $2=payload $3=needle $4=1 (must contain) | 0 (must not)
   local out reason; out=$(run_hook "$2")
   reason=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
-  if ! printf '%s' "$out" | grep -q '"permissionDecision": "deny"'; then
+  if ! grep -q '"permissionDecision": "deny"' <<<"$out"; then
     echo "FAIL: $1 (expected deny)"; FAIL=$((FAIL+1))
   elif { [ "$4" = 1 ] && grep -qF -- "$3" <<<"$reason"; } || { [ "$4" = 0 ] && ! grep -qF -- "$3" <<<"$reason"; }; then
     echo "PASS: $1"; PASS=$((PASS+1))
@@ -1275,7 +1279,7 @@ for b in bash cat ls grep; do
   ln -s "$(command -v "$b")" "$NOJQ_BIN/$b"
 done
 out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | env PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null)
-if echo "$out" | grep -q '"permissionDecision":"deny"'; then
+if grep -q '"permissionDecision":"deny"' <<<"$out"; then
   echo "PASS: jq-less environment fails closed for mutating git under a registry"; PASS=$((PASS+1))
 else
   echo "FAIL: jq-less environment fails closed for mutating git under a registry"
@@ -1301,7 +1305,7 @@ fi
 NOLIB=$(mktemp -d)
 cp "$HOOK" "$NOLIB/git-safety.sh"
 out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | bash "$NOLIB/git-safety.sh" 2>/dev/null)
-if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+if grep -q '"permissionDecision": "deny"' <<<"$out"; then
   echo "PASS: lib-missing — contract-branch deny is unaffected"; PASS=$((PASS+1))
 else
   echo "FAIL: lib-missing — contract-branch deny is unaffected"
@@ -1322,7 +1326,7 @@ rm -rf "$NOLIB"
 # must still deny — pinning that branch A resolves independently of, and
 # before, branch B's lib-sourcing attempt.
 out=$(echo "$(jsonc "$SESSION" "$MAIN" 'git commit -m "would gh pr close but for real"')" | bash "$HOOK" 2>/dev/null)
-if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+if grep -q '"permissionDecision": "deny"' <<<"$out"; then
   echo "PASS: registry: a mutating command containing both gh-pr-close pre-guard substrings still denies"; PASS=$((PASS+1))
 else
   echo "FAIL: registry: a mutating command containing both gh-pr-close pre-guard substrings still denies"
@@ -1359,7 +1363,7 @@ FAKE_GH_STATE=MERGED assert_warn_contains "advisor: quoted shell variable is rep
   "$(jsonc no-registry-session "$MAIN" 'git branch -D "$B"')" \
   "could not resolve a literal branch name"
 out=$(FAKE_GH_EXIT=1 run_hook "$(json no-registry-session "$MAIN" 'git branch -D -f todo/foo')")
-if echo "$out" | grep -qF 'looks like a flag' && ! echo "$out" | grep -qi 'NO PR found'; then
+if grep -qF 'looks like a flag' <<<"$out" && ! grep -qi 'NO PR found' <<<"$out"; then
   echo "PASS: advisor: flag-like extraction skips the lookup (no additional NO PR found)"; PASS=$((PASS+1))
 else
   echo "FAIL: advisor: flag-like extraction skips the lookup (no additional NO PR found)"
@@ -1374,7 +1378,7 @@ fi
 # fall-through pass this assertion for the wrong reason, so assert the
 # skip message and the absence of any gh-derived state word.
 out=$(FAKE_GH_STATE=MERGED run_hook "$(jsonc no-registry-session "$MAIN" 'git branch -D ""')")
-if echo "$out" | grep -qF 'extracted ref is empty' && ! echo "$out" | grep -qi 'MERGED'; then
+if grep -qF 'extracted ref is empty' <<<"$out" && ! grep -qi 'MERGED' <<<"$out"; then
   echo "PASS: advisor: empty ref after quote-stripping skips the lookup (no false MERGED)"; PASS=$((PASS+1))
 else
   echo "FAIL: advisor: empty ref after quote-stripping skips the lookup (no false MERGED)"
@@ -1457,7 +1461,7 @@ FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close with -R<repo> (glu
 # controls below claim in comments, per the house rule that a measurement
 # belongs in an assertion, not only in prose next to one.
 old_needle_matches() {
-  printf '%s' "$1" | grep -qE '(^|[;&|[:space:]])gh[[:space:]]+pr[[:space:]]+close[[:space:]]+'
+  grep -qE '(^|[;&|[:space:]])gh[[:space:]]+pr[[:space:]]+close[[:space:]]+' <<<"$1"
 }
 if ! old_needle_matches 'gh -R owner/repo pr close 42' \
    && ! old_needle_matches 'gh --repo owner/repo pr close 42' \
