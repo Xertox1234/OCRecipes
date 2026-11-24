@@ -303,6 +303,105 @@ describe("image-store", () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
+  // deleteImage resolves without deleting in several cases. Account deletion
+  // has to tell "this was never ours" from "ours, and still there": the rows
+  // naming the picture are gone by then, so nothing else can find it.
+  describe("deleteImage outcome", () => {
+    it("is 'deleted' when the delete was sent", async () => {
+      setR2Env(true);
+      const { deleteImage } = await load();
+      await expect(
+        deleteImage("https://img.example.com/avatars/me.jpg", "avatar"),
+      ).resolves.toBe("deleted");
+    });
+
+    it("is 'no-url' for a missing url", async () => {
+      setR2Env(true);
+      const { deleteImage } = await load();
+      await expect(deleteImage(null, "avatar")).resolves.toBe("no-url");
+      await expect(deleteImage("", "recipe")).resolves.toBe("no-url");
+    });
+
+    it("is 'refused' for a key under our base that a guard stops", async () => {
+      setR2Env(true);
+      const { deleteImage } = await load();
+      await expect(
+        deleteImage("https://img.example.com/avatars/victim.jpg", "recipe"),
+      ).resolves.toBe("refused");
+      await expect(
+        deleteImage(
+          "https://img.example.com/recipe-images/nested/recipe-abc.png",
+          "recipe",
+        ),
+      ).resolves.toBe("refused");
+    });
+
+    it("is 'refused' for a legacy disk path of another kind", async () => {
+      setR2Env(false);
+      const { deleteImage } = await load();
+      await expect(
+        deleteImage("/api/avatars/victim.jpg", "recipe"),
+      ).resolves.toBe("refused");
+    });
+
+    it("is 'not-ours' for a picture on another site", async () => {
+      setR2Env(true);
+      const { deleteImage } = await load();
+      await expect(
+        deleteImage("https://images.cooking.example/2021/soup.jpg", "recipe"),
+      ).resolves.toBe("not-ours");
+      await expect(
+        deleteImage("data:image/png;base64,AAAA", "avatar"),
+      ).resolves.toBe("not-ours");
+    });
+
+    // An object stored under a CDN base that is no longer configured: the
+    // path is exactly what this module stores, on a host it does not know.
+    it("is 'unknown-base' for our key shape on a host that is not the configured base", async () => {
+      setR2Env(true);
+      const { deleteImage } = await load();
+      await expect(
+        deleteImage(
+          "https://old-cdn.example.com/recipe-images/recipe-abc.png?v=3",
+          "recipe",
+        ),
+      ).resolves.toBe("unknown-base");
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it("is 'unknown-base' for an R2 url when R2 is not configured", async () => {
+      setR2Env(false);
+      const { deleteImage } = await load();
+      await expect(
+        deleteImage("https://img.example.com/avatars/me.jpg", "avatar"),
+      ).resolves.toBe("unknown-base");
+    });
+
+    it("is 'deleted' when a legacy disk file is already gone", async () => {
+      setR2Env(false);
+      const fsp = await import("node:fs");
+      vi.spyOn(fsp.default.promises, "unlink").mockRejectedValue(
+        Object.assign(new Error("gone"), { code: "ENOENT" }),
+      );
+      const { deleteImage } = await load();
+      await expect(deleteImage("/api/avatars/me.jpg", "avatar")).resolves.toBe(
+        "deleted",
+      );
+    });
+
+    it("is 'unlink-failed', without throwing, when a legacy disk file cannot be removed", async () => {
+      setR2Env(false);
+      const fsp = await import("node:fs");
+      vi.spyOn(fsp.default.promises, "unlink").mockRejectedValue(
+        Object.assign(new Error("denied"), { code: "EACCES" }),
+      );
+      const { deleteImage } = await load();
+      await expect(deleteImage("/api/avatars/me.jpg", "avatar")).resolves.toBe(
+        "unlink-failed",
+      );
+    });
+  });
+
   it("handles a trailing slash in R2_PUBLIC_BASE_URL without doubling", async () => {
     setR2Env(true);
     process.env.R2_PUBLIC_BASE_URL = "https://img.example.com/";

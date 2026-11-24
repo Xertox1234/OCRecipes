@@ -1,6 +1,6 @@
 ---
 title: "delete-account script can exit 0 with pictures still in storage"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-23
 updated: 2026-11-23
@@ -32,12 +32,12 @@ that the picture exists.
 
 ## Acceptance Criteria
 
-- [ ] `deleteImage` tells its caller when it did not delete (a return value, not a throw, so
+- [x] `deleteImage` tells its caller when it did not delete (a return value, not a throw, so
       request paths keep their fire-and-forget behaviour).
-- [ ] `deleteAccount` with `awaitCleanup` counts those cases, and the script exits 2 for them.
-- [ ] A skip that is correct by design (a URL owned by another account, a null URL) is not
+- [x] `deleteAccount` with `awaitCleanup` counts those cases, and the script exits 2 for them.
+- [x] A skip that is correct by design (a URL owned by another account, a null URL) is not
       counted.
-- [ ] Tests cover one counted skip and one not-counted skip.
+- [x] Tests cover one counted skip and one not-counted skip.
 
 ## Implementation Notes
 
@@ -54,3 +54,7 @@ the 2026-11-06 owner ruling). Check them with the LSP tool before changing its r
 ## Dependencies
 
 - None.
+
+## Updates
+
+- 2026-11-23: done. `deleteImage` returns an outcome; `deleteAccount` counts and logs `refused`, `unknown-base` and `unlink-failed`. The script needed no change: it already exits 2 on the count. `unknown-base` is judged by path shape alone.

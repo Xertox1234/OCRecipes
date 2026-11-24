@@ -212,6 +212,35 @@ const KIND_PREFIX: Record<ImageKind, string> = {
 };
 
 /**
+ * What `deleteImage` did. It never throws for a picture it chose not to
+ * delete, so request paths keep ignoring the result; account deletion reads
+ * it to say when a picture of ours is still in storage.
+ *
+ * - `deleted`: the delete was sent, or the legacy disk file was already gone.
+ * - `no-url`: there was no picture.
+ * - `not-ours`: the URL points at nothing this module stores (another site).
+ * - `refused`: under our storage, but not `<this kind's prefix>/<one filename>`.
+ * - `unknown-base`: exactly our key shape, on a host that is not the
+ *   configured base (an old CDN base, or R2 not configured here). Judged by
+ *   shape alone, so another site that happens to use the same path matches.
+ * - `unlink-failed`: a legacy disk file could not be removed.
+ */
+export type DeleteImageOutcome =
+  | "deleted"
+  | "no-url"
+  | "not-ours"
+  | "refused"
+  | "unknown-base"
+  | "unlink-failed";
+
+/** `/<prefix>/<one filename>` as the whole path of an absolute URL. */
+function hasStoredKeyShape(cleanUrl: string, prefix: string): boolean {
+  const m = /^https?:\/\/[^/]+\/(.*)$/.exec(cleanUrl);
+  if (!m || !m[1].startsWith(`${prefix}/`)) return false;
+  return isSafeStoredFilename(m[1].slice(prefix.length + 1));
+}
+
+/**
  * Delete a previously stored image by its stored URL. No-op on null/unknown.
  * Handles both R2 absolute URLs and legacy relative disk paths.
  *
@@ -219,14 +248,15 @@ const KIND_PREFIX: Record<ImageKind, string> = {
  * `recipe-images/`). The AWS SDK provides no key-prefix enforcement, and
  * some image URLs (meal-plan recipes) are client-suppliable — without this
  * guard, a crafted URL could delete an arbitrary bucket object (IDOR).
- * A URL whose derived key is not `<expected prefix>/<one filename>` is a
- * silent no-op, consistent with the unknown-URL behavior.
+ * A URL whose derived key is not `<expected prefix>/<one filename>` is
+ * not deleted and does not throw, consistent with the unknown-URL behavior;
+ * the returned outcome says which case it was.
  */
 export async function deleteImage(
   url: string | null | undefined,
   kind: ImageKind,
-): Promise<void> {
-  if (!url) return;
+): Promise<DeleteImageOutcome> {
+  if (!url) return "no-url";
   // Strip any cache-busting `?v=` query — the stored object key/filename never
   // includes it, so deriving the key from a versioned URL must ignore it (else
   // the delete targets a non-existent key and orphans the real object).
@@ -238,20 +268,27 @@ export async function deleteImage(
     if (cleanUrl.startsWith(normalizedBase + "/")) {
       const key = cleanUrl.slice(normalizedBase.length + 1);
       // Prefix guard: only delete objects of the expected kind.
-      if (!key.startsWith(`${prefix}/`)) return;
+      if (!key.startsWith(`${prefix}/`)) return "refused";
       // Shape guard: every key this module stores is <prefix>/<one filename>.
-      if (!isSafeStoredFilename(key.slice(prefix.length + 1))) return;
+      if (!isSafeStoredFilename(key.slice(prefix.length + 1))) return "refused";
       await client(cfg).send(
         new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }),
       );
-      return;
+      return "deleted";
     }
   }
   // Legacy disk path for this kind: /api/<prefix>/<f>
   if (cleanUrl.startsWith(`/api/${prefix}/`)) {
     const safe = path.basename(cleanUrl); // prevents traversal
-    await fs.promises
-      .unlink(path.join(UPLOADS_ROOT, prefix, safe))
-      .catch(() => {});
+    return fs.promises.unlink(path.join(UPLOADS_ROOT, prefix, safe)).then(
+      () => "deleted" as const,
+      // Already gone is the result we wanted; anything else left the file.
+      (err: NodeJS.ErrnoException) =>
+        err?.code === "ENOENT" ? "deleted" : "unlink-failed",
+    );
   }
+  // A legacy disk path of another kind: ours, but not this caller's to delete.
+  if (Object.values(KIND_PREFIX).some((p) => cleanUrl.startsWith(`/api/${p}/`)))
+    return "refused";
+  return hasStoredKeyShape(cleanUrl, prefix) ? "unknown-base" : "not-ours";
 }

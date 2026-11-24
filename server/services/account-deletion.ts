@@ -1,7 +1,11 @@
 import type { User } from "@shared/schema";
 import { storage } from "../storage";
 import { invalidateTokenVersionCache } from "../middleware/auth";
-import { deleteImage } from "../lib/image-store";
+import {
+  deleteImage,
+  type DeleteImageOutcome,
+  type ImageKind,
+} from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { logger, toError } from "../lib/logger";
 import { revokeAppleIdentities } from "./auth-session";
@@ -54,49 +58,59 @@ export async function deleteAccount(
   // Clean up stored images (fire-and-forget; account is already gone, so a
   // storage cleanup failure must not affect the response or add ~50-300ms
   // of R2 latency to it)
-  const avatarCleanup = deleteImage(user.avatarUrl, "avatar");
-  fireAndForget("account-deletion-avatar-cleanup", avatarCleanup);
+  const avatarCleanup = removePicture(user.avatarUrl, "avatar");
   // Filter AFTER the delete: any reference left belongs to another
   // account (a shared copy, or a crafted meal-plan imageUrl), and
   // deleteImage keeps its per-kind prefix guard.
-  // Each failed delete is logged with its url and kind: the rows that named
-  // these pictures are gone, so this log is the only record of which ones
-  // were left behind.
   const imageDeletes = storage
     .filterUnreferencedImageUrls(ownedImages)
-    .then(async (images) => {
-      const results = await Promise.allSettled(
-        images.map((i) => deleteImage(i.url, i.kind)),
-      );
-      results.forEach((result, index) => {
-        if (result.status !== "rejected") return;
-        logger.error(
-          {
-            err: toError(result.reason),
-            url: images[index].url,
-            kind: images[index].kind,
-          },
-          "account-deletion: a stored picture was not deleted",
-        );
-      });
-      return results;
-    });
+    .then((images) =>
+      Promise.all(images.map((i) => removePicture(i.url, i.kind))),
+    );
   // Catches (and logs) a failed reference check; the deletes log themselves.
   fireAndForget("account-deletion-image-cleanup", imageDeletes);
 
   // A script exits when this returns, so it waits; a failure is already
-  // logged above and never fails the deletion, but it is counted: the rows
-  // that named these pictures are gone, so nothing can find them later.
+  // logged and never fails the deletion, but it is counted: the rows that
+  // named these pictures are gone, so nothing can find them later.
   if (!options.awaitCleanup) return { cleanupFailures: 0 };
-  const [avatar, images] = await Promise.allSettled([
+  const [avatarGone, images] = await Promise.all([
     avatarCleanup,
-    imageDeletes,
+    imageDeletes.catch(() => null),
   ]);
   return {
     cleanupFailures:
-      (avatar.status === "rejected" ? 1 : 0) +
-      (images.status === "rejected"
+      (avatarGone ? 0 : 1) +
+      (images === null
         ? 1 // the reference check itself failed: nothing was tried
-        : images.value.filter((r) => r.status === "rejected").length),
+        : images.filter((gone) => !gone).length),
   };
+}
+
+/** Outcomes of `deleteImage` that leave a picture of ours in storage. */
+const LEFT_BEHIND: ReadonlySet<DeleteImageOutcome> = new Set([
+  "refused",
+  "unknown-base",
+  "unlink-failed",
+]);
+
+/**
+ * Delete one stored picture. Resolves false, never rejects, when the picture
+ * is ours and still in storage: the delete threw, or `deleteImage` resolved
+ * without deleting. Each such picture is logged with its url and kind: the
+ * rows that named it are gone, so this log is the only record that it exists.
+ */
+async function removePicture(
+  url: string | null,
+  kind: ImageKind,
+): Promise<boolean> {
+  const message = "account-deletion: a stored picture was not deleted";
+  try {
+    const outcome = await deleteImage(url, kind);
+    if (!LEFT_BEHIND.has(outcome)) return true;
+    logger.error({ url, kind, reason: outcome }, message);
+  } catch (err) {
+    logger.error({ err: toError(err), url, kind }, message);
+  }
+  return false;
 }
