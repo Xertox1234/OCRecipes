@@ -37,7 +37,7 @@ pr() {  # $1=number $2=state $3=merged_at-json $4=head-ref $5=sha
 }
 lookup() { : > "$FAKE_GH_LOG"; OUT=$(gh_pr_rest_json "$@" 2>/dev/null); RC=$?; }
 # The branch arm percent-encodes EVERY byte of the name (see the lib for why).
-enc() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
+enc() { printf '%s' "$1" | od -v -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
 list_call() { printf 'api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%%3A%s' "$(enc "$1")"; }
 
 # 1. A number: one PR object, mapped to gh pr view's field names.
@@ -131,6 +131,16 @@ case "$(enc 'x{repo}y') $(enc repo-cleanup)" in
   *) echo "PASS: an encoded name is %xx bytes only, so no placeholder text survives"; PASS=$((PASS+1)) ;;
 esac
 
+# 7b2. A long run of one byte: od prints a repeated 16-byte line as a lone "*" unless told -v,
+#      which cut the name short (confirmation review, 2026-11-24). The expectation is built
+#      without od so it cannot share the defect.
+LONG=$(printf 'a%.0s' 1 2 3 4 5 6 7 8); LONG="$LONG$LONG$LONG$LONG$LONG$LONG$LONG$LONG"   # 64 x a
+LONG_ENC=${LONG//a/%61}
+FAKE_REST_BODY="[$(pr 5 open null "$LONG" abc123)]"
+lookup "$LONG"
+assert_eq "64 identical bytes: found, every byte sent" \
+  "0|api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A$LONG_ENC" "$RC|$(cat "$FAKE_GH_LOG")"
+
 # 7c. A fork's PR is never "this branch's PR": head repo must equal base repo. A deleted fork
 #     has a null head repo and reads the same way — could not look, rc 2.
 with_repos() { jq -c --arg h "$2" '.head.repo = (if $h == "" then null else {full_name: $h} end) | .base = {repo: {full_name: "o/r"}}' <<<"$1"; }
@@ -156,7 +166,7 @@ lookup --repo
 assert_eq "flag-like ref: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
 
 echo "$PASS passed, $FAIL failed"
-EXPECTED_TOTAL=40
+EXPECTED_TOTAL=41
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL"; exit 1
 fi

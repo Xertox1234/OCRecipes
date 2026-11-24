@@ -57,7 +57,7 @@ gh_pr_rest_json() {
       # turned a branch called repo-cleanup into "<repo name>-cleanup" and x{repo}y into some
       # other branch. Percent-encoding EVERY byte of the name (and the colon) leaves only the
       # one {owner} this line means, and nothing in the name for gh to match.
-      enc=$(printf '%s' "$ref" | od -An -tx1 | tr -d ' \n' | sed 's/../%&/g') || return 2
+      enc=$(printf '%s' "$ref" | od -v -An -tx1 | tr -d ' \n' | sed 's/../%&/g') || return 2
       [ -n "$enc" ] || return 2
       raw=$(gh api "repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A$enc" \
         2>/dev/null) || return 2

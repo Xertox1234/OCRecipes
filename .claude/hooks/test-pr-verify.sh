@@ -622,7 +622,7 @@ run_hook_cloud() {  # $1 = hook input JSON, $2 = stub mode; sets OUT and ARGV
   ARGV=$(cat "$stubdir/argv.log" 2>/dev/null)
   rm -rf "$stubdir"
 }
-enc() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
+enc() { printf '%s' "$1" | od -v -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
 bash_input() { jq -n --arg c "$1" '{"tool_name":"Bash","tool_input":{"command":$c}}'; }
 MCP_MERGE_INPUT='{"tool_name":"mcp__github__merge_pull_request","tool_input":{"owner":"x","repo":"y","pullNumber":42},"tool_response":{"merged":true}}'
 MCP_CREATE_INPUT='{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"foo"},"tool_response":{"number":77}}'
