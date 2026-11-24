@@ -1692,6 +1692,35 @@ only_deny "$out" && [ "$rc" = 0 ] && reason "$out" | grep -q 'ended before it re
   && ok "I4 a lib shadows a builtin with a function that exits: ended-before-a-decision deny" \
   || bad "I4 a lib shadows a builtin with a function that exits: ended-before-a-decision deny" "rc=$rc out=$out"
 rm -rf "$E0"
+# I5-I7. deny() itself must not be the silent exit. It used to mark the decision and THEN run
+#     jq, so a jq that failed there printed nothing and the net stayed quiet.
+# I5. A findings record whose first entry is 140 KB: `jq --arg` with it is E2BIG (one argument
+#     is capped at 128 KB on Linux). The record is written through stdin for the same reason.
+mkdir -p "$ROOT/$SHA"
+head -c 140000 /dev/zero | tr '\0' 'x' | jq -Rs --arg s "$SHA" --arg d "$DIGEST_ONE" \
+  '{head_sha:$s, reviewed_files_digest:$d, agent_type:"code-reviewer", verdict:"findings",
+    unresolved:[.], written_by:"review-stamp-writer.sh", written_at:"2026-09-09T00:00:00Z"}' \
+  > "$ROOT/$SHA/code-reviewer.json"
+out=$(mcp_payload 938 | run); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && ok "I5 a 140 KB findings entry: still one readable deny" \
+                                 || bad "I5 a 140 KB findings entry: still one readable deny" "rc=$rc bytes=${#out}"
+[ "${#out}" -lt 20000 ] && ok "I5 the deny reason is cut to a bounded size" \
+                        || bad "I5 the deny reason is cut to a bounded size" "bytes=${#out}"
+clear_stamps
+# I6. A lib that shadows jq with a function that exits: deny() cannot print, the net does.
+E0=$(exit0_tree gh-pr-rest.sh keep 'jq() { exit 0; }')
+out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && ok "I6 a lib shadows jq with a function that exits: denies" \
+                                 || bad "I6 a lib shadows jq with a function that exits: denies" "rc=$rc out=$out"
+rm -rf "$E0"
+# I7. Signals beyond TERM/INT/HUP that would end the shell with a non-zero rc.
+for sig in PIPE ALRM USR1 USR2; do
+  E0=$(exit0_tree review-stamp-path.sh keep "review_stamp_dir() { kill -$sig \$\$; sleep 1; }")
+  out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+  only_deny "$out" && [ "$rc" = 0 ] && ok "I7 SIG$sig mid-run: deny, rc 0" \
+                                   || bad "I7 SIG$sig mid-run: deny, rc 0" "rc=$rc out=$out"
+  rm -rf "$E0"
+done
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 
 # G7. CONTROL. With GraphQL answering, the REST PR resource is never read: the fallback is a
@@ -2164,7 +2193,8 @@ rm -rf "$LG"
 # +12 = rows H1 (two), H2-H5, H6 (four) and H7 (two).
 # 253 -> 261 (2026-11-24, a lib FUNCTION that exits when called, and the EXIT-trap net):
 # +8 = rows I1 (four), I2 (two), I3 and I4.
-EXPECTED_TOTAL=261
+# 261 -> 268 (2026-11-24, deny() cannot be the silent exit): +7 = rows I5 (two), I6, I7 (four).
+EXPECTED_TOTAL=268
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

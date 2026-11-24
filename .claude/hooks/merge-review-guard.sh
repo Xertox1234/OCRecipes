@@ -74,14 +74,27 @@ ROOT="$(cd "$HERE/../.." && pwd)" || ROOT=""
 
 BYPASS='Bypass (emergencies only): SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code — not in the command.'
 
+# deny <reason>: print the deny, then end. The JSON is BUILT first and the decision marked only
+# once there is something to print (2026-11-24). Marking first made deny() itself a silent
+# exit when jq failed here: a 140 KB findings entry in the reason is E2BIG for `jq --arg`, and
+# a lib can shadow jq. Now a failed build leaves DECIDED empty and no_decision (below) prints
+# its static deny. The reason is cut to 8000 characters for the same E2BIG reason. Written to
+# fd 9, the hook's real stdout. Every call site is after the trap and fd 9 are set up.
 deny() {
-  DECIDED=1
-  jq -n --arg r "$1" '{
+  local j r="$1"
+  [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
+  j=$(jq -n --arg r "$r" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
       "permissionDecisionReason": $r
     }
+  }' 2>/dev/null) || j=""
+  case "$j" in
+    *'"permissionDecision": "deny"'*) DECIDED=1; printf '%s\n' "$j" >&9 ;;
+  esac
+  exit 0
+}
   }'
   exit 0
 }
@@ -132,12 +145,14 @@ exempt() {
 # review record is good" exit). Any other end runs no_decision, which denies with rc 0.
 # The trap is not inherited by `$(...)`, so the lib_loads probe and every substitution are
 # unaffected. Two details, each measured by a row (I3, I4 in the test):
-#   - TERM/INT/HUP are trapped too. On a signal bash runs the EXIT trap and then dies OF the
-#     signal (rc 143), and a non-zero rc makes the harness ignore the JSON. Trapped, the
-#     handler's own `exit 0` is what ends the shell.
+#   - The catchable signals that end a shell are trapped too. On one of them bash runs the
+#     EXIT trap and then dies OF the signal (rc 143 for TERM), and a non-zero rc makes the
+#     harness ignore the JSON. Trapped, the handler's own `exit 0` is what ends the shell.
 #   - The deny goes to fd 9, a copy of the hook's real stdout. The shell can end inside a
 #     command that has stdout redirected (`declare -F x >/dev/null`), and the trap inherits
 #     that redirect: the deny went to /dev/null.
+# fd 9 is inherited by children; the one child that can leave a process behind (git fetch
+# and its auto-maintenance) is started with `9>&-` so it cannot hold the harness's pipe open.
 # Not covered: a lib that replaces this trap, sets DECIDED or closes fd 9
 # (docs/harness-residuals.md).
 exec 9>&1
@@ -149,7 +164,7 @@ no_decision() {
   printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked: merge-review-guard ended before it reached a decision (a helper under .claude/hooks/lib/ ended the hook, or the hook was interrupted), so it cannot say this is not an unreviewed PR merge. Fail-closed. Bypass (emergencies only): SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code."}}' >&9
   exit 0
 }
-trap no_decision EXIT TERM INT HUP
+trap no_decision EXIT TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT
 
 PR=""
 case "$TOOL" in
@@ -741,7 +756,7 @@ pr_diff() {
   local head_ref="refs/merge-review-guard/pr-$PR-head" base_ref="refs/merge-review-guard/pr-$PR-base"
   local rc=1
   if git fetch -q --no-tags origin "+refs/pull/$PR/head:$head_ref" "+refs/heads/$BASE_REF:$base_ref" \
-       >/dev/null 2>&1 \
+       >/dev/null 2>&1 9>&- \
      && [ "$(git rev-parse -q --verify "$head_ref^{commit}" 2>/dev/null)" = "$HEAD_SHA" ]; then
     rc=0
     git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --text -M \
