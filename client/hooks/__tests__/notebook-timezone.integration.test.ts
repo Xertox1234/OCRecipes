@@ -38,6 +38,7 @@ vi.mock("../../../server/lib/openai", () => ({
 vi.mock("../../../server/storage", () => ({
   storage: {
     createNotebookEntry: vi.fn(),
+    getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
     updateNotebookEntry: vi.fn(),
   },
 }));

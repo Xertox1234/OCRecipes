@@ -1,5 +1,6 @@
 import { civilDateToInstant } from "../../lib/civil-date";
 import { storage } from "../../storage";
+import { MAX_NOTEBOOK_ENTRIES } from "@shared/schemas/coach-notebook";
 import { extractNotebookEntries } from "../notebook-extraction";
 import { hashNotebookDedupeKey } from "../coach-cache-keys";
 
@@ -75,13 +76,20 @@ export async function extractAndStoreNotebook(a: {
     // more correct of the two available anchors.
     { now: today, tz, wroteCard },
   );
-  if (entries.length > 0) {
+  // The account ceiling bounds what the Coach writes on its own too: only as
+  // many as there is room for.
+  const room =
+    entries.length > 0
+      ? MAX_NOTEBOOK_ENTRIES - (await storage.getNotebookEntryTotal(userId))
+      : 0;
+  const toWrite = entries.slice(0, Math.max(0, room));
+  if (toWrite.length > 0) {
     // Build a per-entry dedup fingerprint so SSE retries that replay
     // the same conversation turn do not create duplicate rows. The
     // unique index on `dedupeKey` combined with `onConflictDoNothing`
     // at the storage layer is what actually enforces this.
     await storage.createNotebookEntries(
-      entries.map((e) => ({
+      toWrite.map((e) => ({
         userId,
         type: e.type,
         content: e.content,

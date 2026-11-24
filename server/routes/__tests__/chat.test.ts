@@ -64,6 +64,7 @@ vi.mock("../../storage", () => ({
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
     deleteChatMessage: vi.fn(),
+    refundUndeliveredMessage: vi.fn(),
     reportChatMessage: vi.fn(),
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
@@ -1318,7 +1319,7 @@ describe("Chat Routes", () => {
           createMockChatMessage({ id: USER_MSG_ID, role: "user" }),
         );
         vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
-        vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+        vi.mocked(storage.refundUndeliveredMessage).mockResolvedValue(true);
       }
 
       const assistantWrites = () =>
@@ -1339,7 +1340,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect(() => true);
 
-        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+        expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(
           USER_MSG_ID,
           "1",
         );
@@ -1361,7 +1362,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect(() => true);
 
-        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+        expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(
           USER_MSG_ID,
           "1",
         );
@@ -1383,7 +1384,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes("protein."));
 
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
         expect(assistantWrites()).toHaveLength(1);
         expect(assistantWrites()[0][3]).toBe("Eat more protein.");
         // A partial must never be served to other users as a cached answer.
@@ -1422,7 +1423,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes("coach_blocks"));
 
-        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+        expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(
           USER_MSG_ID,
           "1",
         );
@@ -1448,7 +1449,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes("diabetes"));
 
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
         expect(assistantWrites()).toHaveLength(1);
         expect(assistantWrites()[0][3]).not.toContain("diabetes");
         expect(assistantWrites()[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
@@ -1485,7 +1486,7 @@ describe("Chat Routes", () => {
         await postAndDisconnect((body) => body.includes("Full answer."));
 
         expect(assistantWrites()).toHaveLength(1);
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
       });
 
       describe("recipe offer flag on", () => {
@@ -1542,7 +1543,7 @@ describe("Chat Routes", () => {
           });
           // Once by the service's dedup, once by the H6 settle.
           expect(storage.getChatMessageByTurnKey).toHaveBeenCalledTimes(2);
-          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
         });
       });
 
@@ -1556,7 +1557,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes('"done":true'));
 
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
         expect(assistantWrites()).toHaveLength(1);
         expect(assistantWrites()[0][3]).toBe("All done.");
       });
@@ -1642,7 +1643,7 @@ describe("Chat Routes", () => {
           });
           // Coach-only settle path — recipe/remix never refunds or looks up a
           // turn key.
-          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
           expect(storage.getChatMessageByTurnKey).not.toHaveBeenCalled();
         });
       });
