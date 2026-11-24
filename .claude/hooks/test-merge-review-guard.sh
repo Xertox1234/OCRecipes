@@ -115,19 +115,20 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
   exit 0
 fi
 if [ "${1:-}" = "api" ]; then
-  # The REST fallback for a refused `gh pr view`: the bare PR resource, read three ways. What the
-  # guard's --jq would print is answered from the same FAKE_* values the `pr view` branch uses,
-  # so a row differs only in WHICH route supplied them.
+  # The REST fallback for a refused `gh pr view`: the bare PR resource, as GitHub's REST API
+  # shapes it (lib/gh-pr-rest.sh reads it whole and renames the fields). It is built from the
+  # same FAKE_* values the `pr view` branch uses, so a row differs only in WHICH route supplied
+  # them.
   for a in "$@"; do
     case "$a" in
       'repos/{owner}/{repo}/pulls/'*[!0-9]*) ;;
       'repos/{owner}/{repo}/pulls/'[0-9]*)
         [ -n "${FAKE_REST_PR_FAIL:-}" ] && exit 1
-        case "$*" in
-          *changed_files*) printf '%s\n' "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}" ;;
-          *'.body'*) printf '%s\n' "${FAKE_BODY:-}" ;;
-          *) printf '%s\n' "${FAKE_VIEW_JSON}" ;;
-        esac
+        jq -cn --argjson v "${FAKE_VIEW_JSON}" --arg n "${a##*/}" --arg body "${FAKE_BODY:-}" \
+          --arg files "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}" \
+          '{number: ($n | tonumber), html_url: "https://github.com/o/r/pull/\($n)", title: "t",
+            state: "open", merged_at: null, head: {ref: $v.headRefName, sha: $v.headRefOid},
+            base: {ref: $v.baseRefName}, body: $body, changed_files: ($files | tonumber? // $files)}'
         exit 0 ;;
     esac
   done
@@ -1550,6 +1551,21 @@ out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1 FAKE_FILES="$FILES_SAFE")
 assert_exempt "graphql refused: the same safe-path PR with an honest count is exempt (control)" "$out" "--paths-only"
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 
+# G8. DENY. The retry lives in lib/gh-pr-rest.sh. A copy of the hook whose lib/ lacks it has no
+#     second route, so a refused `gh pr view` is "could not read PR" — never an allow.
+NOLIB=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-norest-$$-XXXX")
+mkdir -p "$NOLIB/.claude/hooks/lib" "$NOLIB/scripts/harness"
+cp "$HOOK" "$NOLIB/.claude/hooks/merge-review-guard.sh"
+cp "$HOOKS_DIR/lib/fastpath-filter.sh" "$HOOKS_DIR/lib/cmd-detect.sh" \
+   "$HOOKS_DIR/lib/review-stamp-path.sh" "$NOLIB/.claude/hooks/lib/" 2>/dev/null
+cp "$HOOKS_DIR/../../scripts/todo-automerge-guard.sh" "$NOLIB/scripts/"
+out=$(mcp_payload 938 \
+      | PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" FAKE_GRAPHQL_BLOCKED=1 bash "$NOLIB/.claude/hooks/merge-review-guard.sh" 2>/dev/null)
+denied "$out" && reason "$out" | grep -q 'could not read PR' \
+  && ok "graphql refused and no gh-pr-rest.sh: unreadable PR denies (fail-closed)" \
+  || bad "graphql refused and no gh-pr-rest.sh: unreadable PR denies (fail-closed)" "$out"
+rm -rf "$NOLIB"
+
 # G7. CONTROL. With GraphQL answering, the REST PR resource is never read: the fallback is a
 #     fallback, not a second lookup on every merge.
 : > "$GH_LOG"
@@ -2015,7 +2031,8 @@ rm -rf "$LG"
 # 226 -> 227 (2026-11-22, security review): +1 = row L6 (a -diff attribute must not hide an upload line).
 # 227 -> 236 (2026-11-23, REST fallback for a refused `gh pr view`): +9 = rows G1-G7 (G6 and G7 assert twice).
 # 236 -> 238 (2026-11-24, locale-independent digest): +2 = rows 9-locale (allow and its control).
-EXPECTED_TOTAL=238
+# 238 -> 239 (2026-11-24, REST retry folded into lib/gh-pr-rest.sh): +1 = row G8.
+EXPECTED_TOTAL=239
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

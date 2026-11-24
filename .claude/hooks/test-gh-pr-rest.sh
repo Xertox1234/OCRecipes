@@ -47,7 +47,18 @@ export FAKE_REST_BODY; FAKE_REST_BODY=$(pr 42 open null feat/x abc123)
 lookup 42
 assert_eq "number: rc 0" 0 "$RC"
 assert_eq "number: fields in gh pr view's shape" \
-  '{"number":42,"url":"https://github.com/o/r/pull/42","title":"T42","state":"OPEN","mergedAt":null,"headRefOid":"abc123"}' "$OUT"
+  '{"number":42,"url":"https://github.com/o/r/pull/42","title":"T42","state":"OPEN","mergedAt":null,"headRefOid":"abc123","headRefName":"feat/x","baseRefName":null,"body":"","changedFiles":null}' "$OUT"
+# 1b. The merge path's fields (merge-review-guard.sh, scripts/todo-automerge-guard.sh): head and
+#     base branch, the body, and the declared changed-file count. A null body reads as "".
+FAKE_REST_BODY=$(pr 42 open null feat/x abc123 | jq -c '.base = {ref: "main"} | .body = "line one\n## Platform check\nrun 777" | .changed_files = 7')
+lookup 42
+assert_eq "number: head branch, base branch and changed-file count" "feat/x main 7" \
+  "$(jq -r '"\(.headRefName) \(.baseRefName) \(.changedFiles)"' <<<"$OUT")"
+assert_eq "number: the body comes through whole" $'line one\n## Platform check\nrun 777' "$(jq -r .body <<<"$OUT")"
+FAKE_REST_BODY=$(pr 42 open null feat/x abc123 | jq -c '.body = null')
+lookup 42
+assert_eq "number: a null body reads as the empty string" '""' "$(jq -c .body <<<"$OUT")"
+FAKE_REST_BODY=$(pr 42 open null feat/x abc123)
 assert_eq "number: asks the single-PR resource" 'api repos/{owner}/{repo}/pulls/42' "$(cat "$FAKE_GH_LOG")"
 
 # 2. REST says closed + merged_at; gh pr view says MERGED. Closed without merge stays CLOSED.
@@ -205,7 +216,7 @@ lookup --repo
 assert_eq "flag-like ref: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
 
 echo "$PASS passed, $FAIL failed"
-EXPECTED_TOTAL=47
+EXPECTED_TOTAL=50
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL"; exit 1
 fi

@@ -76,7 +76,9 @@ if [ "$1" = "api" ]; then
         echo "fake-gh: simulated pulls/{n} failure" >&2
         exit 1
       fi
-      printf '%s\\n' "\${FAKE_GH_CHANGED_FILES:-$(printf '%s\\n' "$FAKE_GH_DIFF_FILES" | grep -c . || true)}"
+      # GitHub's REST shape: lib/gh-pr-rest.sh reads the object whole and renames the fields.
+      printf '{"number":1,"html_url":"u","title":"t","state":"open","merged_at":null,"head":{"ref":"b","sha":"abc"},"base":{"ref":"main"},"body":"","changed_files":%s}\\n' \\
+        "\${FAKE_GH_CHANGED_FILES:-$(printf '%s\\n' "$FAKE_GH_DIFF_FILES" | grep -c . || true)}"
       exit 0
       ;;
     commits)

@@ -9,8 +9,11 @@
 #   VIEW=$(gh pr view "$REF" --json number,state 2>/dev/null) || VIEW=$(gh_pr_rest_json "$REF")
 #
 # usage: gh_pr_rest_json <ref>      ref = a PR number, a PR URL, a branch name, or '' (current branch)
-# stdout (rc 0 only): {"number","url","title","state","mergedAt","headRefOid"}
+# stdout (rc 0 only): {"number","url","title","state","mergedAt","headRefOid",
+#                      "headRefName","baseRefName","body","changedFiles"}
 #   state is OPEN | CLOSED | MERGED, as `gh pr view` prints it (REST says closed + merged_at).
+#   body is "" when the PR has none. changedFiles is a number for a PR NUMBER or URL ref; for a
+#   BRANCH ref it is null, because GitHub's PR list leaves the count out: ask by number for it.
 # rc 0  found
 # rc 1  the lookup worked and there is NO pull request for this branch
 # rc 2  could not look (gh failed, an answer that is not a PR, a ref this cannot key on)
@@ -29,7 +32,9 @@ gh_pr_rest_json() {
   local ref="${1:-}" raw rest enc list pick
   local norm='{number, url: .html_url, title,
     state: (if .merged_at != null then "MERGED" else (.state | ascii_upcase) end),
-    mergedAt: .merged_at, headRefOid: .head.sha}
+    mergedAt: .merged_at, headRefOid: .head.sha,
+    headRefName: .head.ref, baseRefName: .base.ref, body: (.body // ""),
+    changedFiles: .changed_files}
     | select((.number | type) == "number" and (.headRefOid | type) == "string")'
 
   if [ -z "$ref" ]; then
