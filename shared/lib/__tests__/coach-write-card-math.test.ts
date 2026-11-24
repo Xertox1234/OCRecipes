@@ -346,8 +346,8 @@ describe("plan card with a shopping section (A1)", () => {
     expect(writeCardButtonLabel("plan", combined, {})).toBe(
       "Plan 3 dinners + shopping",
     );
-    expect(
-      writeCardButtonLabel("plan", combined, { addShopping: false }),
-    ).toBe("Add 3 dinners to plan");
+    expect(writeCardButtonLabel("plan", combined, { addShopping: false })).toBe(
+      "Add 3 dinners to plan",
+    );
   });
 });
