@@ -85,15 +85,26 @@ deny() {
   exit 0
 }
 
-# lib_loads <file>: rc 0 only when sourcing <file> RUNS TO ITS END. Every lib is sourced into
-# this shell, so one that calls `exit` would end the hook right there with no decision, and a
-# PreToolUse hook that says nothing is an allow. So each lib is tried in a subshell first: the
-# marker prints only if the source came back. A lib that fails this is treated at its call site
-# exactly like one that is missing. (Whether it DEFINES what is needed is still checked after
-# the real source; this only answers "is it safe to source here".) Cost: one fork per lib, and
-# only fastpath-filter.sh is reached on an ordinary Bash call.
+# lib_loads <file>: rc 0 only when <file> can be sourced into THIS shell without breaking it.
+# Every lib is sourced into the hook's own shell, so the hook inherits whatever the file does
+# at top level. Three things a lib must not do, each of which turned a deny into an allow:
+#   - call `exit`: the hook ends right there with no decision, and a PreToolUse hook that says
+#     nothing is an allow;
+#   - print to stdout: the hook's stdout must be the decision JSON and nothing else, and a
+#     stray line in front of it leaves nothing the harness can read as a deny;
+#   - leave a shell option changed (`set -e`): the hook is written for `set -uo pipefail`, and
+#     under errexit the first non-zero command ends it with rc 1, again no decision.
+# So each lib is tried in a subshell first. The marker is the subshell's ONLY output when the
+# source came back, printed nothing and left the shell options as it found them. ($- and
+# $SHELLOPTS, not `$(set +o)`: bash clears errexit inside a command substitution, so a nested
+# one never sees the `set -e` it is looking for.) A lib that fails this is
+# treated at its call site exactly like one that is missing. Whether it DEFINES what is needed
+# is still checked after the real source. Not covered (docs/harness-residuals.md): a lib
+# FUNCTION that exits when called, a trap a lib installs, a lib that behaves differently in a
+# subshell. Cost: one fork per lib, and only fastpath-filter.sh is reached on an ordinary
+# Bash call.
 lib_loads() {
-  [ "$( { . "$1"; } >/dev/null 2>&1; printf loaded)" = loaded ]
+  [ "$(_o="$-:$SHELLOPTS"; { . "$1"; } 2>/dev/null; [ "$-:$SHELLOPTS" = "$_o" ] && printf loaded)" = loaded ]
 }
 
 # An exempt merge says so (harness N8, 2026-11-01): a silent exit here was read as "merged with
@@ -785,7 +796,7 @@ bash "$GUARD" --paths-only "$PR" >/dev/null 2>&1 || GUARD_RC=$?
 [ -f "$HERE/lib/review-stamp-path.sh" ] \
   || deny "Blocked: merge-review-guard could not locate lib/review-stamp-path.sh, so it cannot find where reviews are recorded. Fail-closed. $BYPASS"
 lib_loads "$HERE/lib/review-stamp-path.sh" \
-  || deny "Blocked: merge-review-guard could not load lib/review-stamp-path.sh (sourcing it does not run to its end), so it cannot find where reviews are recorded. Fail-closed. $BYPASS"
+  || deny "Blocked: merge-review-guard could not load lib/review-stamp-path.sh (sourcing it exits, prints or changes shell options), so it cannot find where reviews are recorded. Fail-closed. $BYPASS"
 . "$HERE/lib/review-stamp-path.sh" 2>/dev/null
 declare -F review_stamp_dir >/dev/null \
   || deny "Blocked: review_stamp_dir unavailable, so merge-review-guard cannot find where reviews are recorded. Fail-closed. $BYPASS"

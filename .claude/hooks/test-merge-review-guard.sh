@@ -1580,7 +1580,7 @@ rm -rf "$NOLIB"
 #     now tried in a subshell first; one that does not run to its end counts as "could not load",
 #     which every site already handles. Each row runs a full copy of the hook tree with ONE lib
 #     swapped for the stub. No review record exists here, so a merge that is read at all denies.
-exit0_tree() {  # exit0_tree <lib file name> [keep] -> prints the copy's root; keep = stub AFTER the real text
+exit0_tree() {  # exit0_tree <lib> [keep [<line>]] -> prints the copy's root; keep = <line> (default `exit 0`) AFTER the real text
   local t; t=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-exit0-$$-XXXX")
   mkdir -p "$t/.claude/hooks/lib" "$t/scripts/harness"
   cp "$HOOKS_DIR/../../scripts/harness/platform-scope.sh" "$t/scripts/harness/"
@@ -1588,7 +1588,7 @@ exit0_tree() {  # exit0_tree <lib file name> [keep] -> prints the copy's root; k
   cp "$HOOKS_DIR/lib/fastpath-filter.sh" "$HOOKS_DIR/lib/cmd-detect.sh" \
      "$HOOKS_DIR/lib/review-stamp-path.sh" "$HOOKS_DIR/lib/gh-pr-rest.sh" "$t/.claude/hooks/lib/"
   cp "$HOOKS_DIR/../../scripts/todo-automerge-guard.sh" "$t/scripts/"
-  if [ "${2:-}" = keep ]; then printf '\nexit 0\n' >> "$t/.claude/hooks/lib/$1"
+  if [ "${2:-}" = keep ]; then printf '\n%s\n' "${3:-exit 0}" >> "$t/.claude/hooks/lib/$1"
   else printf 'exit 0\n' > "$t/.claude/hooks/lib/$1"; fi
   printf '%s' "$t"
 }
@@ -1630,6 +1630,31 @@ denied "$out" && reason "$out" | grep -q 'could not read PR' \
   && ok "H5 gh-pr-rest.sh that exits, graphql refused: could-not-read deny" \
   || bad "H5 gh-pr-rest.sh that exits, graphql refused: could-not-read deny" "$out"
 rm -rf "$E0"
+# H6-H7. Two more ways a lib that DOES run to its end breaks the hook that sources it:
+#     it prints (the hook's stdout must be the decision JSON and nothing else), or it leaves a
+#     shell option changed (`set -e` makes the first non-zero command end the hook, rc 1, no
+#     decision). Both count as "could not load" too. The whole stdout is checked: a deny that
+#     follows a stray line is not a deny the harness can read.
+only_deny() { [ "$(printf '%s' "${1:-}" | jq -rs 'if length == 1 then .[0].hookSpecificOutput.permissionDecision else "not one JSON value" end' 2>/dev/null)" = deny ]; }
+for lib in fastpath-filter.sh cmd-detect.sh; do
+  E0=$(exit0_tree "$lib" keep 'echo debug-left-in')
+  out=$(bash_payload "gh pr merge 938 --auto --squash" | run_tree "$E0")
+  only_deny "$out" && ok "H6 $lib that prints: the output is the deny and nothing else" \
+                   || bad "H6 $lib that prints: the output is the deny and nothing else" "$out"
+  rm -rf "$E0"
+  E0=$(exit0_tree "$lib" keep 'set -e')
+  out=$(bash_payload "gh pr merge 938 --auto --squash" | run_tree "$E0")
+  only_deny "$out" && ok "H7 $lib that leaves set -e on: still denies" \
+                   || bad "H7 $lib that leaves set -e on: still denies" "$out"
+  rm -rf "$E0"
+done
+for lib in review-stamp-path.sh gh-pr-rest.sh; do
+  E0=$(exit0_tree "$lib" keep 'echo debug-left-in')
+  out=$(mcp_payload 938 | run_tree "$E0" FAKE_GRAPHQL_BLOCKED=1)
+  only_deny "$out" && ok "H6 $lib that prints: the output is the deny and nothing else" \
+                   || bad "H6 $lib that prints: the output is the deny and nothing else" "$out"
+  rm -rf "$E0"
+done
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 
 # G7. CONTROL. With GraphQL answering, the REST PR resource is never read: the fallback is a
@@ -2098,8 +2123,9 @@ rm -rf "$LG"
 # 227 -> 236 (2026-11-23, REST fallback for a refused `gh pr view`): +9 = rows G1-G7 (G6 and G7 assert twice).
 # 236 -> 238 (2026-11-24, locale-independent digest): +2 = rows 9-locale (allow and its control).
 # 238 -> 241 (2026-11-24, REST retry folded into lib/gh-pr-rest.sh): +3 = rows G5b (two) and G8.
-# 241 -> 247 (2026-11-24, a lib that exits is "could not load"): +6 = rows H1 (two) and H2-H5.
-EXPECTED_TOTAL=247
+# 241 -> 253 (2026-11-24, a lib that exits, prints or changes shell options is "could not load"):
+# +12 = rows H1 (two), H2-H5, H6 (four) and H7 (two).
+EXPECTED_TOTAL=253
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -617,15 +617,23 @@ FIXED 2026-11-24 (found by that review, older than the change): the hook sourced
 at top level, so a lib file that is present but calls `exit 0` ended the hook with no decision,
 which is an allow. All four sourcing sites shared this (`fastpath-filter.sh`, `cmd-detect.sh`,
 `review-stamp-path.sh`, `gh-pr-rest.sh`). `merge-review-guard.sh` now tries each lib in a
-subshell first (`lib_loads`): one that does not run to its end is treated like a missing one,
-which each site already turned into a deny (or, for the fast-path filter, into "no filter, read
-the command"). Rows H1-H5 in `test-merge-review-guard.sh`; four of them were silent allows
-before. Cost: about 1 ms per Bash call (one fork).
-Open, same shape, not fixed here: (1) a lib FUNCTION that calls `exit` when it is called, not
-when the file is sourced, still ends the hook; (2) the other blocking hooks that source `lib/`
-files at top level (`git-safety.sh`, `guard-outward-cli.sh`, `pr-preflight-guard.sh`,
-`branch-preflight.sh`, `core-bare-guard.sh`) have no such probe. Both need a change to a reviewed
-file under `.claude/hooks/lib/` to reach.
+subshell first (`lib_loads`). A lib that exits, prints to stdout while being sourced (a stray line
+in front of the decision JSON) or leaves a shell option changed (`set -e` ends the hook at the
+first non-zero command, rc 1) is treated like a missing one, which each site already turned into
+a deny (or, for the fast-path filter, into "no filter, read the command"). Rows H1-H7 in
+`test-merge-review-guard.sh`; all but the H1 control were allows, or unreadable output, before.
+Cost: about 1 ms per Bash call (one fork).
+Open, same shape, not fixed here:
+(1) a lib FUNCTION that calls `exit` when it is called directly in the hook's shell still ends the
+hook (one called inside `$(...)` cannot); so does a trap a lib installs, or a lib that exits only
+outside a subshell.
+(2) other blocking hooks source files at top level with no such probe: `git-safety.sh`
+(`cmd-detect.sh` and `gh-pr-rest.sh`; it does probe `write-targets.sh` and
+`own-agent-worktree.sh`), `guard-outward-cli.sh`, `branch-preflight.sh`, and
+`pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
+`scripts/lib/verdict-diff-stamp-path.sh`.
+All of these need a change to a reviewed file under `.claude/hooks/lib/` or `scripts/lib/` to
+reach.
 
 Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable folder (chmod 000)"
 row asserted a deny that cannot happen for root, and cloud sessions run as root, so
