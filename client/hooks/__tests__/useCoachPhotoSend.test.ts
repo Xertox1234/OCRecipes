@@ -8,6 +8,7 @@ import { uploadPhotoToCoach } from "@/lib/photo-upload";
 import {
   awaitCoachBarcode,
   sendBarcodeToCoach,
+  settleCoachBarcode,
 } from "@/lib/coach-barcode-scan";
 import { useCoachPhotoSend } from "../useCoachPhotoSend";
 
@@ -16,6 +17,7 @@ vi.mock("@/lib/photo-upload", () => ({ uploadPhotoToCoach: vi.fn() }));
 vi.mock("@/lib/coach-barcode-scan", () => ({
   awaitCoachBarcode: vi.fn(),
   sendBarcodeToCoach: vi.fn(),
+  settleCoachBarcode: vi.fn(),
 }));
 
 function setup(over: Partial<Parameters<typeof useCoachPhotoSend>[0]> = {}) {
@@ -268,6 +270,31 @@ describe("useCoachPhotoSend", () => {
       expect(args.onStart).not.toHaveBeenCalled();
       expect(sendBarcodeToCoach).not.toHaveBeenCalled();
       expect(result.current.isPhotoBusy()).toBe(false);
+    });
+
+    it("stops waiting when the scanner could not be opened", async () => {
+      // As the real module: the wait ends when it is settled.
+      let settle!: (code: string | null) => void;
+      vi.mocked(awaitCoachBarcode).mockReturnValue(
+        new Promise((resolve) => (settle = resolve)),
+      );
+      vi.mocked(settleCoachBarcode).mockImplementation((code) => settle(code));
+      const { result, args } = setup({
+        openScanner: () => {
+          throw new Error("navigator not ready");
+        },
+      });
+      await choose(result, "Scan a Barcode");
+      expect(settleCoachBarcode).toHaveBeenCalledWith(null);
+      expect(args.onStart).not.toHaveBeenCalled();
+      expect(result.current.isPhotoBusy()).toBe(false);
+    });
+
+    it("stops waiting when the chat goes away", () => {
+      const { unmount } = setup({ openScanner: vi.fn() });
+      expect(settleCoachBarcode).not.toHaveBeenCalled();
+      unmount();
+      expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith(null);
     });
 
     it("words a refused scan as a scan, not a photo", async () => {

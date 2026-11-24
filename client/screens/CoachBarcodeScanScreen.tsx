@@ -139,7 +139,7 @@ export default function CoachBarcodeScanScreen() {
           styles.closeButton,
           {
             top: insets.top + Spacing.sm,
-            backgroundColor: withOpacity(theme.backgroundRoot, 0.7),
+            backgroundColor: withOpacity(theme.backgroundRoot, 0.85),
           },
         ]}
         accessibilityRole="button"
@@ -194,6 +194,8 @@ const styles = StyleSheet.create({
   closeLink: {
     marginTop: Spacing.lg,
     padding: Spacing.sm,
+    minHeight: 44,
+    justifyContent: "center",
     alignSelf: "center",
   },
   closeButton: {

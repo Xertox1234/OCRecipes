@@ -8,6 +8,7 @@ import { uploadPhotoToCoach } from "@/lib/photo-upload";
 import {
   awaitCoachBarcode,
   sendBarcodeToCoach,
+  settleCoachBarcode,
 } from "@/lib/coach-barcode-scan";
 import {
   coachPhotoFailure,
@@ -72,7 +73,12 @@ async function pick(
   if (source === "scan") {
     // Wait first, then open: a read can then never arrive unheard.
     const scanned = awaitCoachBarcode();
-    latest().openScanner?.();
+    try {
+      latest().openScanner?.();
+    } catch {
+      // No screen opened, so nothing would ever answer the wait.
+      settleCoachBarcode(null);
+    }
     const code = await scanned;
     return code ? { kind: "barcode", value: code } : null;
   }
@@ -128,6 +134,9 @@ export function useCoachPhotoSend(args: Args) {
     argsRef.current = args;
   });
   const sendingRef = useRef(false);
+  // The chat going away ends a wait on the scanner, so nothing is sent for
+  // a chat that is no longer there. A no-op when nothing is waiting.
+  useEffect(() => () => settleCoachBarcode(null), []);
 
   const blocked = useCallback(
     () =>
