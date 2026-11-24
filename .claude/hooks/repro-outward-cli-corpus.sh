@@ -5997,7 +5997,7 @@ ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-
   | LC_ALL=C sed -E 's/^[^g]*guard-outward-cli: //; s/ Bypass:.*//' \
   | LC_ALL=C cut -c1-72 | sed 's/[[:space:]]*$//' | LC_ALL=C sort -u)
 
-# The 7 sites no command text can reach on the PRECISE path, and why each is
+# The 9 sites no ROW can reach on the PRECISE path, and why each is
 # (COUNT THE HEREDOC, do not trust this number: it read 5 for two commits after the two
 # DEFINITION-INTEGRITY entries landed -- the root-position shape assertion and the
 # GH_API_RE_SEPSAFE check -- because the paragraph below was extended and this line was not.
@@ -6012,10 +6012,21 @@ ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-
 #       malformed-envelope handling. `envelope()` emits well-formed JSON by
 #       construction, so no ROW can reach these; test-guard-outward-cli.sh owns
 #       them.
+#   - the hook ended before it reached a decision            (2026-11-24, two entries)
+#       the EXIT/signal trap's static deny. Reached only when the hook's shell ends
+#       undecided: a broken lib, a signal, a jq that cannot print. Command text alone
+#       cannot do that. test-guard-outward-cli.sh rows ND1-ND5 own it.
+#   - this command is ${#CMD} characters long
+#       the size cap at 300000 characters. Command text CAN reach it, but not through
+#       this file: `envelope()` passes the command as ONE argv entry (`jq --arg`), and
+#       Linux refuses an argv entry over 128 KB (E2BIG), so no ROW can carry a command
+#       that large. test-guard-outward-cli.sh rows ND5b own it (payload on stdin).
 # Adding to this list is how you disable a coverage requirement, so it is a
 # deliberate, dated, reviewable edit like any other pin -- never the way to make
 # a red gate green.
 _pin_exempt_sites() { cat <<'PIN_EXEMPT_EOF'
+the hook ended before it reached a decision (a helper under .claude/hook
+this command is ${#CMD} characters long and names (or could build) an ou
 jq unavailable - failing closed for a command that looks like an outward
 lib/cmd-detect.sh is unsourceable (broken install) - failing closed via
 the hook envelope's .tool_input.command could not be read (malformed JSO
@@ -6085,7 +6096,14 @@ PIN_EXEMPT_EOF
 # visible only to a run; this one is MEASURED. Coverage for the new site is the three
 # `apicolfp-oneshot`/`c2-fp-*` rows whose want moved ALLOW -> DENY, which are generated rows, so
 # `_pin_sites` reaches it without a new DENY-SITE COVERAGE entry.
-EXPECTED_EMIT_SITES=44
+# 44 -> 46 (2026-11-24, "the hook cannot end without a decision"): +2 sites, both in
+# _pin_exempt_sites above with their reasons (the trap's static deny, the 300000-character
+# size cap). MEASURED: CI on the first commit reported `guard deny-emit sites is 45, expected
+# 44` with the trap's deny as the one uncovered site; the size cap is the second. (A third,
+# a non-numeric `gh api` count, was added and removed inside the same PR: it sat behind a
+# gate that reads a broken count as 0, so it could never fire.) No row's verdict moved on any
+# of the 4 paths.
+EXPECTED_EMIT_SITES=46
 
 PIN_FAIL=0
 

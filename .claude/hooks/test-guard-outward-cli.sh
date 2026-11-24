@@ -43,13 +43,17 @@ _on_exit() {
 trap _on_exit EXIT
 
 run_hook() { echo "$1" | bash "$HOOK" 2>/dev/null; }
+# Conditions in this file grep a here-string, never `echo "$out" | grep -q` (2026-11-24): the
+# file runs under pipefail, grep -q leaves at its first match, and on a busy machine the echo
+# then dies of SIGPIPE and the pipeline reads 141 (measured in test-git-safety.sh: two deny
+# rows red in one run of four with the hook answering correctly).
 
 # Two-sided per docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md:
 # assert the SPECIFIC deny reason (not merely a generic deny marker), and pair
 # every deny with a matching allow (negative control) below.
 assert_deny() {  # $1=name $2=command $3=reason substring
   local name="$1" out; out=$(run_hook "$2")
-  if echo "$out" | grep -q '"permissionDecision": "deny"' && echo "$out" | grep -qF -- "$3"; then
+  if grep -q '"permissionDecision": "deny"' <<<"$out" && grep -qF -- "$3" <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected deny containing: $3)"; echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
@@ -2423,12 +2427,12 @@ _CLAUSE_CUTS=$(grep -c 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 _CUTS_OK=1
 _BAD_CUT=""
 while IFS= read -r _line; do
-  printf '%s' "$_line" | grep -qF -- '"$_GH_API_CUT"' || { _CUTS_OK=0; _BAD_CUT="$_line"; }
+  grep -qF -- '"$_GH_API_CUT"' <<<"$_line" || { _CUTS_OK=0; _BAD_CUT="$_line"; }
 done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
-   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_GH_GLOBALS}${_OUT_SEP}api' \
+   && grep -qF 'gh${_OUT_GH_GLOBALS}${_OUT_SEP}api' <<<"$_ANCHOR_RE" \
    && [ "$_CUT_DEFS" -eq 1 ] \
-   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*" \
+   && grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*" <<<"$_CUT_DEF_LINE" \
    && [ "$_CLAUSE_CUTS" -eq 3 ] \
    && [ "$_CUTS_OK" -eq 1 ]; then
   echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor via a single _GH_API_CUT constant (structural, not behavioural)"; PASS=$((PASS+1))
@@ -2542,8 +2546,8 @@ _mut_goc_denies_with() {  # $1 = sed program  $2 = expected deny-reason substrin
   out=$(jq -cn '{tool_name:"Bash",tool_input:{command:"gh pr list"}}' \
         | env -u ALLOW_OUTWARD_CLI bash "$f" 2>/dev/null)
   rm -f "$f"
-  printf '%s' "$out" | grep -q '"permissionDecision": "deny"' \
-    && printf '%s' "$out" | grep -qF -- "$2"
+  grep -q '"permissionDecision": "deny"' <<<"$out" \
+    && grep -qF -- "$2" <<<"$out"
 }
 # THE GH_API_RE_SEPSAFE INTEGRITY CHECK. THREE rows: one reverting BOTH constants, then one
 # per `case` arm. Expressed as whole-line replacements of the needle definition, which is why
@@ -2682,8 +2686,8 @@ fi
 _SEP_DEFS=$(grep -c '^_OUT_SEP=' "$HOOK" | tr -d '[:space:]')
 _SEP_DEF=$(grep -m1 '^_OUT_SEP=' "$HOOK")
 if [ "${_SEP_DEFS:-0}" = 1 ] \
-   && printf '%s' "$_SEP_DEF" | grep -qF '$_CMD_REDIR' \
-   && printf '%s' "$_SEP_DEF" | grep -qF '[[:space:]]+'; then
+   && grep -qF '$_CMD_REDIR' <<<"$_SEP_DEF" \
+   && grep -qF '[[:space:]]+' <<<"$_SEP_DEF"; then
   echo "PASS: _OUT_SEP interpolates the lib's \$_CMD_REDIR and keeps its mandatory trailing [[:space:]]+"; PASS=$((PASS+1))
 else
   echo "FAIL: _OUT_SEP no longer interpolates \$_CMD_REDIR (which is UNBOUND above the lib source -- a set -u abort, not an empty expansion), or lost the mandatory trailing [[:space:]]+ that keeps 'eas>/dev/nullupdate' allowed"
@@ -6779,6 +6783,128 @@ OUTWARD_CORPUS_END
 C=${C%$'\n'}
 assert_deny 'help/heredoc: a spaced node function definition' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
 
+# ---------- the hook's shell must not end without a decision (2026-11-24) ----------
+# A PreToolUse hook that ends with no output is an ALLOW. Each tree is a COPY of the hook
+# beside a copy of lib/ with one line appended to one lib; the real libs are untouched.
+# Command STRINGS only, as everywhere in this file. Conditions grep a here-string, never
+# `… | grep -q` (pipefail + SIGPIPE reads as "no match").
+ND_TREES=""
+nd_tree() {  # $1=lib file  $2=line appended ; prints the tree's folder
+  local d; d=$(mktemp -d)
+  cp "$HOOK" "$d/guard-outward-cli.sh"; cp -R "$(dirname "$HOOK")/lib" "$d/lib"
+  printf '\n%s\n' "$2" >> "$d/lib/$1"
+  printf '%s' "$d"
+}
+nd_run() {  # $1=hook dir  $2=raw command ; sets ND_OUT ND_RC ND_ERR
+  local e; e=$(mktemp)
+  ND_OUT=$(jsonc "$2" | bash "$1/guard-outward-cli.sh" 2>"$e"); ND_RC=$?
+  ND_ERR=$(cat "$e"); rm -f "$e"
+}
+nd_ok() { echo "PASS: $1"; PASS=$((PASS+1)); }
+nd_bad() { echo "FAIL: $1"; echo "  got: rc=$ND_RC out=${ND_OUT:0:300} err=${ND_ERR:0:200}"; FAIL=$((FAIL+1)); }
+nd_only_deny() {  # exactly one JSON value, a deny, rc 0
+  [ "$ND_RC" = 0 ] && [ "$(jq -s 'length' <<<"$ND_OUT" 2>/dev/null)" = 1 ] \
+    && [ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$ND_OUT" 2>/dev/null)" = deny ]
+}
+nd_reason_has() { local r; r=$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$ND_OUT" 2>/dev/null); grep -qF -- "$1" <<<"$r"; }
+nd_silent() { [ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ]; }
+ND_OUTWARD='eas update --branch production --message x'
+nd_pair() {  # $1=label $2=tree : the outward command denies, an ordinary one is silent with rc 0
+  nd_run "$2" "$ND_OUTWARD"
+  nd_only_deny && nd_ok "$1: an outward command denies, rc 0" || nd_bad "$1: an outward command denies, rc 0"
+  nd_run "$2" 'ls -la'
+  nd_silent && nd_ok "$1: an ordinary command is allowed, rc 0" || nd_bad "$1: an ordinary command is allowed, rc 0"
+}
+
+# ND1. A lib that ends the shell when SOURCED (both libs were sourced with no probe).
+T=$(nd_tree fastpath-filter.sh 'exit 0'); ND_TREES="$ND_TREES $T"; nd_pair "ND1 fastpath-filter.sh exits when sourced" "$T"
+T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"; nd_pair "ND1 cmd-detect.sh exits when sourced" "$T"
+# ND2. A lib FUNCTION that ends the shell when called (cmd_fastpath_has ran in the hook's shell).
+for code in 0 1; do
+  T=$(nd_tree fastpath-filter.sh "cmd_fastpath_has() { exit $code; }"); ND_TREES="$ND_TREES $T"
+  nd_pair "ND2 cmd_fastpath_has calls exit $code" "$T"
+done
+# ND3. A lib leaves errexit on, or a function named like a builtin or a command the hook calls.
+while IFS= read -r spec; do
+  T=$(nd_tree "${spec%%|*}" "${spec#*|}"); ND_TREES="$ND_TREES $T"
+  nd_pair "ND3 ${spec%%|*} + '${spec#*|}'" "$T"
+done <<'SPECS'
+fastpath-filter.sh|set -e
+cmd-detect.sh|set -e
+cmd-detect.sh|jq() { exit 0; }
+cmd-detect.sh|declare() { exit 0; }
+cmd-detect.sh|printf() { :; }
+cmd-detect.sh|grep() { exit 0; }
+cmd-detect.sh|read() { read -r "$@"; }
+fastpath-filter.sh|shopt() { exit 0; }
+SPECS
+# ND3b. `wc` (security review of this change, pre-existing on main): shadowed, the occurrence
+#      counters read an empty count as 0 and two families reached the final allow. The eas
+#      rows above cannot see it; these use a PR merge and a REST merge.
+for shadow in 'wc() { :; }' 'wc() { exit 0; }'; do
+  T=$(nd_tree cmd-detect.sh "$shadow"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" 'gh pr merge 12 --squash'
+  n="ND3b cmd-detect.sh + '$shadow': a PR merge denies, rc 0"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+  nd_run "$T" 'gh api -X PUT repos/o/r/pulls/1/merge'
+  n="ND3b cmd-detect.sh + '$shadow': a REST merge denies, rc 0"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+done
+# ND4. A signal mid-run (a lib function sends it here). An outward command: the static deny,
+#      rc 0. A command that does not smell outward: silent, rc 0.
+for sig in TERM PIPE ALRM USR1 USR2 HUP XCPU PROF IO; do
+  T=$(nd_tree cmd-detect.sh "cmd_words() { kill -$sig \$\$; sleep 1; }"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$ND_OUTWARD"
+  # A signal the shell inherited as IGNORED cannot be trapped or reset by a non-interactive
+  # bash, so the kill does nothing there (CI runners ignore SIGPIPE: this row was red in CI
+  # with a correct deny). The stub then returns nothing and the hook denies through its
+  # empty-rendering check instead. Either deny is right; ND5 pins the trap's own text.
+  n="ND4 SIG$sig mid-run on an outward command: one deny, rc 0 (the trap's, or the empty-rendering one where the signal is ignored)"
+  nd_only_deny && { nd_reason_has 'ended before it reached a decision' || nd_reason_has 'rendering came back empty'; } && nd_ok "$n" || nd_bad "$n"
+done
+nd_run "$T" 'npm test'
+n="ND4 control: a signal mid-run on a command that does not smell outward is silent, rc 0"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+# ND5. deny() cannot print: a jq on PATH that reads the envelope but prints nothing for `jq -n`.
+ND_JQ=$(mktemp -d); ND_TREES="$ND_TREES $ND_JQ"
+printf '#!/usr/bin/env bash\n[ "$1" = -n ] && exit 0\nexec %q "$@"\n' "$(command -v jq)" > "$ND_JQ/jq"; chmod +x "$ND_JQ/jq"
+ND_PAYLOAD=$(jsonc "$ND_OUTWARD")
+ND_OUT=$(PATH="$ND_JQ:$PATH" bash "$HOOK" 2>/dev/null <<<"$ND_PAYLOAD"); ND_RC=$?; ND_ERR=""
+n="ND5 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
+nd_only_deny && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+# ND5b. A command too large to evaluate inside the 15 s hook timeout (same review): above
+#      300000 characters with an outward word it denies at once. Payloads go to the hook on
+#      stdin from jq -Rs (one --arg over 128 KB is E2BIG).
+nd_big() {  # $1=first line  $2=padding bytes ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ printf '%s\n' "$1"; head -c "$2" /dev/zero | tr '\0' 'b' | fold -w 78 | sed 's/^/# /'; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_big "$ND_OUTWARD" 600000
+n="ND5b a 600 KB command that starts with an outward command: too-large deny in under 5 s"
+nd_only_deny && nd_reason_has 'characters long' && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_big 'ls -la' 600000
+n="ND5b control: a 600 KB command with no outward word is allowed, rc 0"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+nd_big "$ND_OUTWARD" 100000
+n="ND5b control: a 100 KB outward command still gets the precise reason, not the size one"
+nd_only_deny && ! nd_reason_has 'characters long' && nd_ok "$n" || nd_bad "$n"
+# ND6. Nothing on stderr for an allow or a deny.
+nd_run "$(dirname "$HOOK")" 'ls -la'
+n="ND6 an allowed command writes nothing to stderr"
+nd_silent && [ -z "$ND_ERR" ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$(dirname "$HOOK")" 'npm test'
+n="ND6 an allowed command past the fast path writes nothing to stderr"
+nd_silent && [ -z "$ND_ERR" ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$(dirname "$HOOK")" "$ND_OUTWARD"
+n="ND6 a deny writes nothing to stderr"
+nd_only_deny && [ -z "$ND_ERR" ] && nd_ok "$n" || nd_bad "$n"
+# shellcheck disable=SC2086
+rm -rf $ND_TREES
+
+
 # 975 -> 977 (2026-09-17, closer-class sweep): +2 structural rows. #991 fixed ONE hand-written
 # `([[:space:]]|$)` closer; the sibling todo's criterion is that leaving the others is this
 # file's most repeated mistake, so the two remaining code-line instances (both `grep -oE`
@@ -6834,7 +6960,11 @@ assert_deny 'help/heredoc: a spaced node function definition' "$(jsonc "$C")" 'c
 # `<<` denies (two arithmetic, one comment), 1 unrelated-arithmetic deny, 1 unclosed-result deny.
 # 1319 -> 1322 (2026-10-25, #1555 security review): +3 phantom `<<` denies (${x:-…}, ${x/…/…}, array
 # subscript).
-EXPECTED_TOTAL=1322
+# 1322 -> 1360 (2026-11-24, the hook cannot end without a decision): +38 = ND1 (four), ND2
+# (four), ND3 (sixteen), ND4 (ten), ND5, ND6 (three). RED before the guard change: 20 of them
+# (ND1 and ND2 outward rows, the exit-1 ordinary row, four ND3 rows, all of ND4, ND5).
+# 1360 -> 1367 (2026-11-24, security review of that change): +7 = ND3b (four), ND5b (three).
+EXPECTED_TOTAL=1367
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

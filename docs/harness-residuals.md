@@ -643,9 +643,60 @@ directly (none is called directly today); SIGKILL, which nothing can handle; and
 the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
 could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
 not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
-(2) other blocking hooks source files at top level with no such probe: `guard-outward-cli.sh`,
-`branch-preflight.sh`, and `pr-preflight-guard.sh`, which also sources
-`scripts/lib/preflight-stamp-path.sh` and `scripts/lib/verdict-diff-stamp-path.sh`.
+(2) other blocking hooks source files at top level with no such probe: `branch-preflight.sh`
+and `pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
+`scripts/lib/verdict-diff-stamp-path.sh`.
+`guard-outward-cli.sh` FIXED 2026-11-24 (rows ND1-ND6 in `test-guard-outward-cli.sh`).
+Measured before the change, `eas update --branch production` was allowed in silence when:
+`lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced (both were sourced in the
+hook's shell with no probe); `cmd_fastpath_has` exits when called; a lib shadows `jq`,
+`declare` or `shopt` with a function that exits; a signal arrives mid-run (rc 143, no output);
+`deny()` cannot print. Now: `fastpath-filter.sh` is sourced and `cmd_fastpath_has` called
+inside one `$(...)`, and only a clean "1" takes the fast way out; `cmd-detect.sh` is probed
+before it is sourced (exit, changed shell options, a shadowing function: the existing
+"unsourceable" fallback); `deny()` builds first and cuts the reason at 8000 characters; and
+an EXIT/signal trap answers when the shell ends undecided. The trap denies only when the
+command passes the crude smell test the hook already uses on its degraded paths, so a broken
+hook does not block ordinary commands. Cost: one fork, about 1-2 ms per Bash call.
+Found by the security review of that change, both on `main` too, both fixed with it (rows
+ND3b, ND5b): (a) a lib function named `wc` made the occurrence counters read an empty count
+as 0, and a PR merge and a REST merge reached the final allow; `wc` and `tail` joined the
+names a lib may not shadow. Only that route is closed: with `wc` MISSING from the hook's
+`PATH`, or printing nothing, both merges are still allowed (`_out_max_count` reads the broken
+count as `${n:-0}`, so the occurrence count is 0 and the family's block is skipped).
+(b) LARGE commands: the piped-grep bypass of `git-safety.sh` does not exist here (100 KB
+tails after an OTA update, a PR merge and a REST merge all denied on `main`; the conditions
+already read here-strings, and the nine `printf | grep -q` conditions left were converted),
+but the quote-aware renderings are quadratic: 200 KB takes 3.7 s, 400 KB 13.7 s, 480 KB
+19.9 s, against a 15 s hook timeout, so above about 450 KB the hook was killed before it
+answered. A command over 300000 characters that holds a fast-path needle now denies at once.
+Still open in `guard-outward-cli.sh`: the same list as for `git-safety.sh` below (a lib that
+replaces the trap, sets `DECIDED`, assigns a variable the hook reads such as `CMD` or `PATH`,
+redefines a function defined before the libs are sourced, defines `builtin`, or closes fd 9;
+SIGKILL, the fault signals, which print the deny but leave rc 132-139, the real-time and stop
+signals); the ambient `ALLOW_OUTWARD_CLI` exit, the no-`jq` arm and the read of stdin run
+before the trap; the size cap does NOT bound a command dense in `$(...)` or backtick
+substitutions: `lib/cmd-detect.sh` runs one awk per substitution body (about 6.5 ms each,
+loops at lines 986 and 1642), so an outward command followed by such lines takes 15.2 s at
+60 KB and 42 s at 150 KB, on `main` too. Past the timeout a SIGTERM gets the trap's deny for
+what the crude smell test recognises, and a SIGKILL gets nothing. A fix is a bound on the
+substitution count next to the size cap, or one awk run for all bodies; it needs a corpus
+row. A command of inert text between about 250 KB and 300000 characters can also pass the
+timeout on a busy machine; and the trap and the "unsourceable" fallback are only as wide as
+`crude_smells_outward`, which misses families the precise matcher denies: `npx eas-cli
+update`, `yarn dlx`/`pnpm dlx`/`bunx eas-cli update`, `node node_modules/eas-cli/bin/run
+update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with a global
+flag before the subcommand (`gh -R o/r pr merge 1 --squash`, `gh -R o/r api -X PUT x`,
+`gh -R o/r release create v1`), and `npx @railway/cli up`. With `cmd-detect.sh` broken, or
+a signal mid-run, those are allowed (measured). Not tested on bash 3.2 (macOS).
+SEPARATE, found by the same review, on `main`, NOT fixed here (2026-11-24): the PRECISE path
+of a healthy install allows an OTA update spelled `npm exec eas-cli -- update --branch
+preview` (also `npm exec eas -- update …` and `npm x eas-cli -- update …`): silent, rc 0.
+With a harmless local stub, npm 11.19.1 hands the stub `update --branch preview`, so the
+spelling is a real publish. Denied controls: `npm exec -- eas-cli update …`,
+`npm exec eas-cli update …`, `npm exec --package=eas-cli -- eas update …`. The launcher
+grammar (from line 2711) does not let the launcher-to-verb separator absorb a `--` after the
+package word, as the `explore` arm near line 2894 does.
 `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
 (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
 finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
@@ -669,9 +720,10 @@ main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines,
 every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
 (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
 that outlives the hook cannot hold its stdout open.
-NOT yet checked: the same `printf '%s' "$VAR" | grep` shape appears 27 times across
-`guard-outward-cli.sh`, `branch-preflight.sh`, `pr-preflight-guard.sh`, `merge-review-guard.sh`,
-`guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under `pipefail`). Whether any of
+NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `branch-preflight.sh`,
+`pr-preflight-guard.sh`, `merge-review-guard.sh`, `guard-worktree-isolation.sh` and
+`core-bare-guard.sh` (all under `pipefail`; `guard-outward-cli.sh` was checked and converted
+2026-11-24). Whether any of
 them is a condition over a large text that fails open is unmeasured; the known pattern is
 `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
 Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
