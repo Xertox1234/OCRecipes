@@ -643,9 +643,31 @@ directly (none is called directly today); SIGKILL, which nothing can handle; and
 the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
 could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
 not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
-(2) other blocking hooks source files at top level with no such probe: `guard-outward-cli.sh`,
-`branch-preflight.sh`, and `pr-preflight-guard.sh`, which also sources
-`scripts/lib/preflight-stamp-path.sh` and `scripts/lib/verdict-diff-stamp-path.sh`.
+(2) other blocking hooks source files at top level with no such probe: `branch-preflight.sh`
+and `pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
+`scripts/lib/verdict-diff-stamp-path.sh`.
+`guard-outward-cli.sh` FIXED 2026-11-24 (rows ND1-ND6 in `test-guard-outward-cli.sh`).
+Measured before the change, `eas update --branch production` was allowed in silence when:
+`lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced (both were sourced in the
+hook's shell with no probe); `cmd_fastpath_has` exits when called; a lib shadows `jq`,
+`declare` or `shopt` with a function that exits; a signal arrives mid-run (rc 143, no output);
+`deny()` cannot print. Now: `fastpath-filter.sh` is sourced and `cmd_fastpath_has` called
+inside one `$(...)`, and only a clean "1" takes the fast way out; `cmd-detect.sh` is probed
+before it is sourced (exit, changed shell options, a shadowing function: the existing
+"unsourceable" fallback); `deny()` builds first and cuts the reason at 8000 characters; and
+an EXIT/signal trap answers when the shell ends undecided. The trap denies only when the
+command passes the crude smell test the hook already uses on its degraded paths, so a broken
+hook does not block ordinary commands. Cost: one fork, about 1-2 ms per Bash call. Large
+commands were NOT a bypass here (100 KB and 400 KB tails after an `eas update`, a PR merge
+and a `gh api -X PUT` all denied on `main`): its conditions already read here-strings. Its
+nine remaining `printf | grep -q` conditions (seven over short constants, two over a `gh`
+clause) were converted all the same. Still open in `guard-outward-cli.sh`: the same list as
+for `git-safety.sh` below (a lib that replaces the trap, sets `DECIDED`, assigns a variable
+the hook reads such as `CMD`, redefines a function defined before the libs are sourced,
+defines `builtin`, or closes fd 9; SIGKILL, fault, stop and real-time signals); the ambient
+`ALLOW_OUTWARD_CLI` exit and the no-`jq` arm run before the trap; a shell that ends undecided
+on an outward command the crude smell test does not recognise is allowed. Not tested on bash
+3.2 (macOS).
 `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
 (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
 finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
@@ -669,9 +691,10 @@ main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines,
 every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
 (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
 that outlives the hook cannot hold its stdout open.
-NOT yet checked: the same `printf '%s' "$VAR" | grep` shape appears 27 times across
-`guard-outward-cli.sh`, `branch-preflight.sh`, `pr-preflight-guard.sh`, `merge-review-guard.sh`,
-`guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under `pipefail`). Whether any of
+NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `branch-preflight.sh`,
+`pr-preflight-guard.sh`, `merge-review-guard.sh`, `guard-worktree-isolation.sh` and
+`core-bare-guard.sh` (all under `pipefail`; `guard-outward-cli.sh` was checked and converted
+2026-11-24). Whether any of
 them is a condition over a large text that fails open is unmeasured; the known pattern is
 `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
 Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or

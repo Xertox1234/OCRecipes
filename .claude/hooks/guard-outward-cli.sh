@@ -2044,31 +2044,87 @@ fi
 # Defined BEFORE the envelope extraction below so the jq-failure fallbacks can
 # use it. Safe: jq is confirmed present at this point (the no-jq branch above
 # already returned), and this function is never reached from that branch.
+#
+# deny() builds its JSON inside `$(...)` first and marks the decision only when the text holds
+# the deny (2026-11-24): a jq that fails or ends its shell then leaves the hook undecided and
+# no_decision below answers. The reason is cut at 8000 characters (one argv entry over 128 KB
+# is E2BIG on Linux). Written to fd 9, the hook's own stdout saved here: the shell can end
+# inside a command whose stdout is redirected, and the trap would inherit that redirect.
+exec 9>&1
+DECIDED=""
 deny() {
-  jq -n --arg r "$1" \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
+  local j r="$1"
+  [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
+  j=$(jq -n --arg r "$r" \
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}' 2>/dev/null) || j=""
+  case "$j" in
+    *'"permissionDecision": "deny"'*) DECIDED=1; printf '%s\n' "$j" >&9 ;;
+  esac
   exit 0
 }
+# allow: the intended silent way out ("not an outward-facing mutation", or an honored bypass).
+allow() { DECIDED=1; exit 0; }
 
 INPUT=$(cat)
+# From here to the end, the hook's shell must not end without a decision (2026-11-24). A
+# PreToolUse hook that ends silently is an ALLOW, so anything that ended this shell early was
+# a bypass, each measured: a lib that exits when sourced (both were sourced with no probe), a
+# lib function that exits when called in this shell (cmd_fastpath_has), a signal, a deny()
+# that could not print. DECIDED is set only by deny() and allow(). Any other end runs
+# no_decision, which denies when the command (or, before it was read, the raw envelope) passes
+# the crude smell test this hook already uses on its degraded paths, and stays silent
+# otherwise, so a broken hook does not block every ordinary command. The trap is not inherited
+# by `$(...)`. Not covered: a lib that replaces the trap, sets DECIDED, redefines a function
+# defined above this point, or closes fd 9; SIGKILL and the fault signals
+# (docs/harness-residuals.md).
+no_decision() {
+  [ -n "$DECIDED" ] && return 0
+  DECIDED=1
+  if crude_smells_outward "${CMD:-$INPUT}"; then
+    builtin printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"guard-outward-cli: the hook ended before it reached a decision (a helper under .claude/hooks/lib/ ended the hook, or the hook was interrupted) on a command that looks like an outward-facing CLI mutation, so it cannot say this is safe to run. Fail-closed. Bypass: ALLOW_OUTWARD_CLI=1 as the first text of the command."}}' >&9
+  fi
+  allow
+}
+trap no_decision EXIT
+# A trapped signal would otherwise RETURN to the interrupted command; end the shell instead.
+# Names macOS bash lacks (PWR, STKFLT) are left out so this line never fails there.
+trap 'no_decision; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+
+# lib_loads <file>: source it in a subshell first. A lib that exits, fails under this file's
+# `set -u`, changes the shell options (errexit left on), or leaves a function named like a
+# builtin or a command this hook calls counts as missing. TWIN of git-safety.sh's lib_loads
+# and _gs_no_shadow. The shadow check runs through `builtin`, so a lib that defines a function
+# called `builtin` defeats it (listed as open in docs/harness-residuals.md).
+_OUT_NO_SHADOW=(. : '[' break builtin cd command compgen continue declare echo eval exec exit
+  export false kill local printf pwd read readonly return set shift shopt source test trap true
+  type typeset unset wait cat ls grep jq awk sed tr sort dirname head)
+_out_no_shadow() {
+  for _out_f in "${_OUT_NO_SHADOW[@]}"; do
+    builtin declare -F -- "$_out_f" >/dev/null 2>&1 && builtin return 1
+  done
+  builtin return 0
+}
+lib_loads() {
+  [ "$(_o="$-:$SHELLOPTS"; { . "$1"; } >/dev/null 2>&1; _out_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && printf loaded)" = loaded ]
+}
 # A jq EXTRACTION failure is not the same as "no jq". The previous version
 # spelled both as `|| exit 0` — so malformed JSON, an absent `tool_name`, or a
 # renamed envelope field ALLOWED everything, while the no-jq path fails CLOSED
 # on the identical input. Fall back to the same crude smell test instead.
 if ! TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null); then
-  raw_inline_bypass "$INPUT" && exit 0
+  raw_inline_bypass "$INPUT" && allow
   if crude_smells_outward "$INPUT"; then
     deny "guard-outward-cli: the hook envelope's .tool_name could not be read (malformed JSON or a changed envelope shape) - failing closed via the crude smell test for a payload that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
-  exit 0
+  allow
 fi
-[ "$TOOL" = "Bash" ] || exit 0
+[ "$TOOL" = "Bash" ] || allow
 if ! CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null); then
-  raw_inline_bypass "$INPUT" && exit 0
+  raw_inline_bypass "$INPUT" && allow
   if crude_smells_outward "$INPUT"; then
     deny "guard-outward-cli: the hook envelope's .tool_input.command could not be read (malformed JSON or a changed envelope shape) - failing closed via the crude smell test for a payload that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
-  exit 0
+  allow
 fi
 
 # Inline "ALLOW_OUTWARD_CLI=1 <command>" prefix — the documented single-command
@@ -2095,8 +2151,8 @@ fi
 # the cd and turn the "folder" into a command. Builtin `[[ =~ ]]`, no fork: this
 # runs on every Bash call, ahead of the fast path. TWIN: git-safety.sh INLINE_BYPASS.
 _OUT_CD_BYPASS_RE='^cd[[:blank:]]+('"'"'[^'"'"']*'"'"'|"[^"$`\]*"|[^[:space:];&|<>()$`'"'"'"\]+)[[:blank:]]*(&&|;)[[:blank:]]*ALLOW_OUTWARD_CLI=1 '
-case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0 ;; esac
-[[ "$CMD" =~ $_OUT_CD_BYPASS_RE ]] && exit 0
+case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) allow ;; esac
+[[ "$CMD" =~ $_OUT_CD_BYPASS_RE ]] && allow
 
 # Fork-free: a $(cd ...) subshell here would be the ENTIRE added cost of reaching the shared
 # fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this HERE now runs
@@ -2143,8 +2199,14 @@ case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esa
 # check below, which already has its own tested fail-closed handling (crude_smells_outward);
 # losing the cheap pre-filter only costs performance in that (broken-install) case, never a
 # decision.
-if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
-  shopt -s nocasematch
+# The lib is sourced and cmd_fastpath_has called INSIDE one `$(...)` (2026-11-24), never in the
+# hook's own shell: sourced there, a lib that exits took the hook with it, and so did a
+# cmd_fastpath_has that exits. The answer is the function's rc as text. Only a clean "1" (no
+# needle present) may take the fast way out. Empty means the lib exited, left a shell option
+# changed or a shadowing function (the lib_loads test, inlined here to keep this at ONE fork
+# per Bash call, about 1 ms), or the function did not return: then the full evaluation below
+# runs, as with no filter at all. nocasematch is set inside that subshell only.
+if :; then
   # THE NEEDLE LIST IS A SECOND GATE, and a deep check for a token absent from it is dead code
   # that reads as live. Round 6 added node/bun/deno to the OTA-script runner alternation; `bun`
   # denied and `node --run update:production` / `deno task update:production` did not, because
@@ -2152,14 +2214,14 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
   # The runner is the WRONG needle to add: `*node*` matches `node_modules`, which appears in
   # most commands in this repo, so it would neuter the pre-filter it belongs to. The SCRIPT NAME
   # is the precise one -- rare, and the actual target of the clause.
-  cmd_fastpath_has "$CMD" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*' '*npx*' '*bun*' '*update:preview*' '*update:production*'
+  _OUT_FP_RC=$(_o="$-:$SHELLOPTS"; { . "$HERE/lib/fastpath-filter.sh"; } >/dev/null 2>&1
+    _out_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && declare -F cmd_fastpath_has >/dev/null || exit 0
+    shopt -s nocasematch; cmd_fastpath_has "$CMD" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*' '*npx*' '*bun*' '*update:preview*' '*update:production*' >/dev/null 2>&1; printf '%s' "$?")
   # _OUT_FP_RC is an EXIT-STATUS capture (0 = matched), not a boolean "found" flag — code
   # review, 2026-09-02: the old inline filter's `_OUT_FASTPATH=1` meant "matched"; this is
   # `$?` from cmd_fastpath_has, where 0 means "matched" — same polarity as the check below,
   # but the inverted-from-before meaning is a misreading trap for the next editor if the name
   # still reads as a boolean.
-  _OUT_FP_RC=$?
-  shopt -u nocasematch
   # STAGE 3, guard-local (2026-09-06, security review of PR #926, finding C1).
   # DECLINE TO DECIDE rather than widen the strip. The helper's own two-stage
   # soundness argument is TYPED: "cmd_words only ever deletes those CHARACTERS
@@ -2258,7 +2320,7 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
   # The OR composition still holds and is what keeps this local to reason about:
   # stage 3 runs only after 1 and 2 have both missed, so declining can only ever
   # ADD work and denies, never remove a pass they already found.
-  if [ "$_OUT_FP_RC" != 0 ]; then
+  if [ "$_OUT_FP_RC" = 1 ]; then
     case "$CMD" in
       *'${'*|*'$('*|*'`'*) : ;;   # a span may build a needle we cannot see here
       # A SPECIAL parameter or an ANSI-C respelling may do the same (2026-09-06).
@@ -2272,7 +2334,7 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
       # never deleted downstream -- declining on it costs a slow path, not a
       # verdict.
       *'$!'*|*'$@'*|*'$*'*|*'$'"'"*|*'$'[0-9]*) : ;;
-      *) exit 0 ;;
+      *) allow ;;
     esac
   fi
 fi
@@ -2283,11 +2345,11 @@ fi
 # (A previous version of this hook exited 0 here on the false premise that
 # "the no-jq path already covers this" — jq-present + lib-missing is a
 # DIFFERENT condition the no-jq branch never runs for, so nothing covered it.)
-if ! . "$HERE/lib/cmd-detect.sh" 2>/dev/null || ! declare -F cmd_bare >/dev/null; then
+if ! lib_loads "$HERE/lib/cmd-detect.sh" || ! . "$HERE/lib/cmd-detect.sh" 2>/dev/null || ! declare -F cmd_bare >/dev/null; then
   if crude_smells_outward "$CMD"; then
     deny "guard-outward-cli: lib/cmd-detect.sh is unsourceable (broken install) - failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
-  exit 0
+  allow
 fi
 
 # --- command-position anchors (must follow the lib source: _CMD_REDIR) -------
@@ -3286,10 +3348,10 @@ _OUT_GH_GLOBALS_SEPSAFE='(([[:space:]]+(-R[[:space:]]+'"$_OUT_SEPSAFE_TOK"'+|--r
 _OUT_GRANT_SPANS=no
 _OUT_SEPSAFE_SPANS=no
 for _out_gp in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' ' --repo a;y' ' --repo a&y' ' --repo a|y'; do
-  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; fi
+  if grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$" <<< "$_out_gp"; then _OUT_GRANT_SPANS=yes; fi
   # The SEPSAFE form must refuse the same spans, INCLUDING with a value token in play — that
   # is the whole reason it exists, and ' -x y;z' is the probe the grant rows cannot make.
-  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_SPANS=yes; fi
+  if grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$" <<< "$_out_gp"; then _OUT_SEPSAFE_SPANS=yes; fi
 done
 # ONE PROBE PER ANCHOR CHARACTER, with and without a value token in play. Keying these on
 # `;&|` alone is exactly how the first version of this constant passed its own assertion while
@@ -3298,7 +3360,7 @@ for _out_gp in ' -x y;z' ' -x y&z' ' -x y|z' ' -R a b;z' ' --repo a b|z' \
                ' -x y(z' ' -x y`z' ' -x y{z' ' -x y!z' \
                ' -a b -c <(z' ' -a b -c >(z' ' -a b -c<(z' \
                ' -x (z' ' -x `z' ' -x {z' ' -x !z'; do
-  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_SPANS=yes; fi
+  if grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$" <<< "$_out_gp"; then _OUT_SEPSAFE_SPANS=yes; fi
 done
 # Operand 5: a SEPARATE-ARG flag neither form names. The wide form must span it whole; the
 # grant form must not. Probed rather than pattern-matched, so the assertion survives a
@@ -3320,13 +3382,13 @@ _OUT_WIDE_TAKES_VALUE=yes
 _OUT_GRANT_TAKES_VALUE=no
 _OUT_SEPSAFE_TAKES_VALUE=yes
 for _out_vp in ' -t x' ' -Z somevalue' ' --match-head-commit abc123'; do
-  if ! printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS}\$"; then _OUT_WIDE_TAKES_VALUE=no; fi
-  if printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_TAKES_VALUE=yes; fi
+  if ! grep -qE "^${_OUT_GH_GLOBALS}\$" <<< "$_out_vp"; then _OUT_WIDE_TAKES_VALUE=no; fi
+  if grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$" <<< "$_out_vp"; then _OUT_GRANT_TAKES_VALUE=yes; fi
   # SEPSAFE must take a value like the wide form; without it the gh api count would MISS
   # `gh -t x api …` entirely and the max would silently fall back to the wide count alone.
-  if ! printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_TAKES_VALUE=no; fi
+  if ! grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$" <<< "$_out_vp"; then _OUT_SEPSAFE_TAKES_VALUE=no; fi
 done
-if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
+if ! grep -qF -- '--repo' <<< "$_OUT_GH_GLOBALS" \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
    || [ "$_OUT_WIDE_TAKES_VALUE" != yes ] \
    || [ "$_OUT_GRANT_TAKES_VALUE" != no ] \
@@ -3597,7 +3659,7 @@ if { [[ ! "$BARE" =~ [^[:space:]] ]] || [[ ! "$WORDS" =~ [^[:space:]] ]]; } \
   if crude_smells_outward "$CMD"; then
     deny "guard-outward-cli: the quote-aware rendering came back empty for a non-empty command - either its awk backend is missing/broken, or the command's entire text is quoted - so the precise matchers below cannot see it. Failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
-  exit 0
+  allow
 fi
 
 # WORDS_DEEP additionally surfaces a verb hidden inside a LIVE (unquoted or
@@ -4609,7 +4671,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # IS the match's own leading _OUT_POS_PREFIX boundary byte — a clause starting at the
   # boundary cannot contain a previous command's --auto, whereas the process-substitution `(`
   # sits mid-clause and would still mask. That is reasoned, not measured; measure it first.
-  if printf '%s' "$CLAUSE" | grep -qE '[$(`]'; then
+  if grep -qE '[$(`]' <<< "$CLAUSE"; then
     HAS_REAL_AUTO=no
   elif [ -z "${_CMD_REDIR:-}" ]; then
     # Unreachable with a healthy lib (a broken one is already caught at the
@@ -5228,7 +5290,7 @@ if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
   # second character class, not trying to read WHAT is inside either one.
   if grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' <<< "$GH_API_CLAUSE" \
      && { [ "$_GH_API_SPAN_DERIVED" = yes ] \
-          || printf '%s' "$GH_API_CLAUSE" | grep -qE '[$`]'; }; then
+          || grep -qE '[$`]' <<< "$GH_API_CLAUSE"; }; then
     deny "guard-outward-cli: command-position 'gh api' with a method flag (-X/--method) whose value is not literal text (an expansion or substitution, or a clause only readable after deleting one) cannot be verified read-only — denying, the same 'cannot verify -> deny' rule the 'gh pr merge' --auto check applies. Read-only 'gh api' with no -X/--method is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   # Matches BOTH the spaced/`=` form (-X POST, -X=POST, --method POST,
@@ -5520,4 +5582,4 @@ if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(${_OUT_INTERP_WORD})?${_OU
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
-exit 0
+allow
