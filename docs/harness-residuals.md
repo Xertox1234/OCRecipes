@@ -576,7 +576,9 @@ Still open, by construction, not hit: on a branch name that several PRs have use
 the open PR, else the newest, from the first 100 PRs GitHub lists for that head. A branch with
 more than 100 PRs whose open one is not among the newest 100 would read as its newest closed PR.
 `verify-branch-merged.sh` still compares the tip to that PR's head, so it stays fail-closed.
-If reopened: page the list. `merge-review-guard.sh` and `scripts/todo-automerge-guard.sh` keep their
+If reopened: page the list. A PR whose head lives in a fork is never matched by branch name (the
+lookup asks for this repository's owner and rejects a row from another repository), so it reads as
+"no PR" or "could not look"; this repository takes no fork PRs. `merge-review-guard.sh` and `scripts/todo-automerge-guard.sh` keep their
 own inline REST retry from #1987 (they key on a number only); folding them into the helper is a
 refactor nobody has needed.
 

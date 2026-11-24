@@ -604,7 +604,8 @@ fi
 [ "$1" != "rest-fail" ] || { echo "HTTP 502" >&2; exit 1; }
 one() { printf '{"number":%s,"html_url":"https://github.com/x/y/pull/%s","title":"Cloud PR","state":"%s","merged_at":%s,"head":{"ref":"%s","sha":"abc123"}}' "\$1" "\$1" "\$2" "\$3" "\$4"; }
 branch=""
-for a in "\$@"; do case "\$a" in head=*) branch="\${a#head=\{owner\}:}" ;; esac; done
+# the lib sends the branch percent-encoded, every byte: decode it back
+for a in "\$@"; do case "\$a" in *'head={owner}%3A'*) e="\${a##*head=\{owner\}%3A}"; branch=\$(printf '%b' "\${e//%/\\\\x}") ;; esac; done
 if [ -n "\$branch" ]; then
   [ "$1" != "rest-none" ] || { echo '[]'; exit 0; }
   printf '[%s]\n' "\$(one 77 open null "\$branch")"
@@ -621,6 +622,7 @@ run_hook_cloud() {  # $1 = hook input JSON, $2 = stub mode; sets OUT and ARGV
   ARGV=$(cat "$stubdir/argv.log" 2>/dev/null)
   rm -rf "$stubdir"
 }
+enc() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
 bash_input() { jq -n --arg c "$1" '{"tool_name":"Bash","tool_input":{"command":$c}}'; }
 MCP_MERGE_INPUT='{"tool_name":"mcp__github__merge_pull_request","tool_input":{"owner":"x","repo":"y","pullNumber":42},"tool_response":{"merged":true}}'
 MCP_CREATE_INPUT='{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"foo"},"tool_response":{"number":77}}'
@@ -634,14 +636,14 @@ assert_contains "cloud: MCP merge asks the PR's own REST resource" "api repos/{o
 run_hook_cloud "$MCP_CREATE_INPUT" rest-ok
 assert_contains "cloud: MCP create verified over REST" "PR state verified post-command — #77" "$OUT"
 assert_contains "cloud: MCP create reports the open state" "state: OPEN" "$OUT"
-assert_contains "cloud: MCP create asks by the current branch" "head={owner}:$(git branch --show-current)" "$ARGV"
+assert_contains "cloud: MCP create asks by the current branch" "head={owner}%3A$(enc "$(git branch --show-current)")" "$ARGV"
 
 # C3: the Bash forms take the same retry — a number and a branch name.
 run_hook_cloud "$(bash_input 'gh pr merge 42 --squash')" rest-ok
 assert_contains "cloud: gh pr merge <number> verified over REST" "#42, url: https://github.com/x/y/pull/42, state: MERGED" "$OUT"
 run_hook_cloud "$(bash_input 'gh pr close my-branch')" rest-ok
 assert_contains "cloud: gh pr close <branch> verified over REST" "PR state verified post-command — #77" "$OUT"
-assert_contains "cloud: gh pr close <branch> asks by THAT branch" "head={owner}:my-branch" "$ARGV"
+assert_contains "cloud: gh pr close <branch> asks by THAT branch" "head={owner}%3A$(enc my-branch)" "$ARGV"
 
 # C4 (negative control): REST failing too, or finding no PR, is still the honest WARNING —
 # never a verified message built from nothing.

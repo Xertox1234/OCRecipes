@@ -26,7 +26,7 @@
 # Tests: .claude/hooks/test-gh-pr-rest.sh
 
 gh_pr_rest_json() {
-  local ref="${1:-}" raw rest
+  local ref="${1:-}" raw rest enc
   local norm='{number, url: .html_url, title,
     state: (if .merged_at != null then "MERGED" else (.state | ascii_upcase) end),
     mergedAt: .merged_at, headRefOid: .head.sha}
@@ -43,23 +43,33 @@ gh_pr_rest_json() {
       # https://<host>/<owner>/<repo>/pull/<n>[/…] and nothing else
       rest="${ref#*://}"
       [ "$rest" != "$ref" ] || return 2
-      if [[ "$rest" =~ ^[^/]+/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/pull/([0-9]+)(/.*)?$ ]]; then
+      # Owner and repo must start with a letter or digit: gh sends the path as written, so
+      # a `.` or `..` segment would walk it somewhere else.
+      if [[ "$rest" =~ ^[^/]+/([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9][A-Za-z0-9._-]*)/pull/([0-9]+)(/.*)?$ ]]; then
         raw=$(gh api "repos/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/pulls/${BASH_REMATCH[3]}" 2>/dev/null) || return 2
       else
         return 2
       fi
       ;;
     *[!0-9]*)
-      # A branch. -F (not -f) so gh fills {owner}; the prefix also keeps a branch named
-      # "true" or "@file" from being read as one of -F's magic values.
-      raw=$(gh api -X GET 'repos/{owner}/{repo}/pulls' -F "head={owner}:$ref" \
-        -f state=all -f per_page=100 2>/dev/null) || return 2
+      # A branch. gh fills placeholders anywhere in an endpoint or a -F value — {owner},
+      # {repo}, {branch} and the legacy :owner, :repo, :branch — so `head={owner}:<name>`
+      # turned a branch called repo-cleanup into "<repo name>-cleanup" and x{repo}y into some
+      # other branch. Percent-encoding EVERY byte of the name (and the colon) leaves only the
+      # one {owner} this line means, and nothing in the name for gh to match.
+      enc=$(printf '%s' "$ref" | od -An -tx1 | tr -d ' \n' | sed 's/../%&/g') || return 2
+      [ -n "$enc" ] || return 2
+      raw=$(gh api "repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A$enc" \
+        2>/dev/null) || return 2
       # GitHub ignores a head filter it cannot parse and lists every PR, so a row for another
-      # branch means the filter was not applied: that is "could not look", not "found".
+      # branch means the filter was not applied: that is "could not look", not "found". The
+      # same for a row whose head lives in another repository (a fork, or a deleted one,
+      # whose head repo is null): it is not this repository's branch.
       raw=$(printf '%s' "$raw" | jq -c --arg b "$ref" '
         if type != "array" then error("not a list")
         elif length == 0 then "none"
-        elif all(.[]; .head.ref == $b) then (map(select(.state == "open"))[0] // .[0])
+        elif all(.[]; .head.ref == $b and .head.repo.full_name == .base.repo.full_name)
+          then (map(select(.state == "open"))[0] // .[0])
         else error("head filter not applied") end' 2>/dev/null) || return 2
       [ "$raw" != '"none"' ] || return 1
       ;;

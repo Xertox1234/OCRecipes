@@ -36,6 +36,9 @@ pr() {  # $1=number $2=state $3=merged_at-json $4=head-ref $5=sha
     "$1" "$1" "$1" "$2" "$3" "$4" "$5"
 }
 lookup() { : > "$FAKE_GH_LOG"; OUT=$(gh_pr_rest_json "$@" 2>/dev/null); RC=$?; }
+# The branch arm percent-encodes EVERY byte of the name (see the lib for why).
+enc() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
+list_call() { printf 'api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%%3A%s' "$(enc "$1")"; }
 
 # 1. A number: one PR object, mapped to gh pr view's field names.
 export FAKE_REST_BODY; FAKE_REST_BODY=$(pr 42 open null feat/x abc123)
@@ -72,8 +75,9 @@ FAKE_REST_BODY="[$(pr 9 closed '"2026-11-23T00:00:00Z"' feat/x new999),$(pr 8 op
 lookup feat/x
 assert_eq "branch: rc 0" 0 "$RC"
 assert_eq "branch: the open PR wins over a newer merged one" 8 "$(jq -r .number <<<"$OUT")"
-assert_eq "branch: asks the list, all states, by head" \
-  'api -X GET repos/{owner}/{repo}/pulls -F head={owner}:feat/x -f state=all -f per_page=100' "$(cat "$FAKE_GH_LOG")"
+assert_eq "branch: asks the list, all states, by head" "$(list_call feat/x)" "$(cat "$FAKE_GH_LOG")"
+assert_eq "branch: the name is sent fully percent-encoded" \
+  'api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A%66%65%61%74%2f%78' "$(cat "$FAKE_GH_LOG")"
 FAKE_REST_BODY="[$(pr 9 closed '"2026-11-23T00:00:00Z"' feat/x new999),$(pr 3 closed null feat/x old333)]"
 lookup feat/x
 assert_eq "branch, none open: the newest (first listed) PR" "9 MERGED new999" "$(jq -r '"\(.number) \(.state) \(.headRefOid)"' <<<"$OUT")"
@@ -109,17 +113,50 @@ git -C "$REPO" init -q -b my-branch
 FAKE_REST_BODY="[$(pr 5 open null my-branch abc123)]"
 : > "$FAKE_GH_LOG"; OUT=$(cd "$REPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
 assert_eq "no ref: resolves the current branch's PR" "0|5" "$RC|$(jq -r .number <<<"$OUT")"
-assert_eq "no ref: asked by the current branch name" \
-  'api -X GET repos/{owner}/{repo}/pulls -F head={owner}:my-branch -f state=all -f per_page=100' "$(cat "$FAKE_GH_LOG")"
+assert_eq "no ref: asked by the current branch name" "$(list_call my-branch)" "$(cat "$FAKE_GH_LOG")"
 : > "$FAKE_GH_LOG"; OUT=$(cd "$T" && GIT_CEILING_DIRECTORIES="$T" gh_pr_rest_json "" 2>/dev/null); RC=$?
 assert_eq "no ref outside a repo: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
+
+# 7b. gh fills placeholders anywhere in an endpoint or a -F value: {owner}, {repo}, {branch}
+#     and the legacy :owner, :repo, :branch. Sent as `head={owner}:<name>`, a branch called
+#     repo-cleanup became "<repo name>-cleanup" and x{repo}y became another well-formed branch
+#     (security review, 2026-11-24). Encoding every byte leaves gh nothing to match.
+for b in repo-cleanup owner branch/x 'x{repo}y' '{owner}'; do
+  FAKE_REST_BODY="[$(pr 5 open null "$b" abc123)]"
+  lookup "$b"
+  assert_eq "placeholder-shaped branch '$b': found, and sent encoded" "0|$(list_call "$b")" "$RC|$(cat "$FAKE_GH_LOG")"
+done
+case "$(enc 'x{repo}y') $(enc repo-cleanup)" in
+  *[!%0-9a-f\ ]*) echo "FAIL: an encoded name carries something other than %xx bytes"; FAIL=$((FAIL+1)) ;;
+  *) echo "PASS: an encoded name is %xx bytes only, so no placeholder text survives"; PASS=$((PASS+1)) ;;
+esac
+
+# 7c. A fork's PR is never "this branch's PR": head repo must equal base repo. A deleted fork
+#     has a null head repo and reads the same way — could not look, rc 2.
+with_repos() { jq -c --arg h "$2" '.head.repo = (if $h == "" then null else {full_name: $h} end) | .base = {repo: {full_name: "o/r"}}' <<<"$1"; }
+FAKE_REST_BODY="[$(with_repos "$(pr 5 open null feat/x abc123)" o/r)]"
+lookup feat/x
+assert_eq "same-repo PR with repos named: found" "0|5" "$RC|$(jq -r .number <<<"$OUT")"
+FAKE_REST_BODY="[$(with_repos "$(pr 5 open null feat/x abc123)" fork/r)]"
+lookup feat/x
+assert_eq "a fork's PR under the same branch name: rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_BODY="[$(with_repos "$(pr 5 open null feat/x abc123)" "")]"
+lookup feat/x
+assert_eq "a deleted fork (null head repo): rc 2, nothing printed" "2|" "$RC|$OUT"
+
+# 7d. A URL whose owner or repo is a dot segment never reaches gh (gh does not normalise
+#     the path).
+for u in https://github.com/../../pull/1 https://github.com/./r/pull/1 https://github.com/o/../pull/1; do
+  lookup "$u"
+  assert_eq "dot-segment URL $u: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
+done
 
 # 8. A flag-like ref never reaches gh.
 lookup --repo
 assert_eq "flag-like ref: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
 
 echo "$PASS passed, $FAIL failed"
-EXPECTED_TOTAL=27
+EXPECTED_TOTAL=40
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL"; exit 1
 fi
