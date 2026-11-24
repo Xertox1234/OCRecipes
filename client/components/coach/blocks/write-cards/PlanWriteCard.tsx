@@ -12,9 +12,17 @@ import type {
   PlanCardEdits,
   PlanCardPayload,
 } from "@shared/schemas/coach-write-cards";
+import {
+  planShoppingNames,
+  planShoppingOn,
+} from "@shared/lib/coach-write-card-math";
 import { CardCheckRow } from "./CardCheckRow";
 import { rowDivider } from "./WriteCardShell";
-import { mealChipLabel, planDayLabel } from "./write-card-utils";
+import {
+  mealChipLabel,
+  planDayLabel,
+  planShoppingPreview,
+} from "./write-card-utils";
 
 interface Props {
   payload: PlanCardPayload;
@@ -23,10 +31,14 @@ interface Props {
 }
 
 const SHOPPING_LABEL = "Also add the shopping to my grocery list";
+const COMBINED_SHOPPING_LABEL = "Add the shopping for these meals";
 
 /**
  * The plan card's controls: a row per day with Swap (two or three
- * alternatives, picked in place) and Remove, then the optional shopping tick.
+ * alternatives, picked in place) and Remove, then the shopping: one tick for
+ * the user's latest list, or (Coach roadmap A1, when the user asked for the
+ * list too) a section that starts ticked, names what the kept meals need and
+ * lets the user pick the list.
  */
 export function PlanWriteCard({ payload, edits, onEdit }: Props) {
   const { theme } = useTheme();
@@ -34,6 +46,10 @@ export function PlanWriteCard({ payload, edits, onEdit }: Props) {
   const { reducedMotion } = useAccessibility();
   const [openRow, setOpenRow] = useState<number | null>(null);
   const n = payload.rows.length;
+  const { shopping } = payload;
+  const shoppingOn = planShoppingOn(payload, edits);
+  const names = shopping ? planShoppingNames(payload, edits) : [];
+  const list = edits.shoppingListId ?? shopping?.defaultListId ?? "new";
   const removed = payload.rows.map((_, i) => edits.removed?.[i] ?? false);
   const chosen = payload.rows.map((_, i) => edits.chosen?.[i] ?? null);
 
@@ -64,7 +80,10 @@ export function PlanWriteCard({ payload, edits, onEdit }: Props) {
         return (
           <View
             key={`${row.plannedDate}-${row.mealType}-${i}`}
-            style={[styles.row, i < n - 1 && rowDivider(theme.border)]}
+            style={[
+              styles.row,
+              (i < n - 1 || shopping) && rowDivider(theme.border),
+            ]}
           >
             <View style={removed[i] ? styles.removed : undefined}>
               <ThemedText type="caption" style={{ color: theme.textSecondary }}>
@@ -137,7 +156,50 @@ export function PlanWriteCard({ payload, edits, onEdit }: Props) {
           </View>
         );
       })}
-      {payload.shoppingListId !== null ? (
+      {shopping ? (
+        <View style={styles.shopping}>
+          <CardCheckRow
+            label={COMBINED_SHOPPING_LABEL}
+            checked={shoppingOn}
+            onToggle={() => onEdit({ ...edits, addShopping: !shoppingOn })}
+          />
+          {shoppingOn ? (
+            <>
+              {names.length > 0 ? (
+                <ThemedText type="small">
+                  {planShoppingPreview(names)}
+                </ThemedText>
+              ) : null}
+              <ThemedText
+                type="caption"
+                style={[styles.note, { color: theme.textSecondary }]}
+              >
+                Amounts are added up when you save, and what your pantry already
+                has is left off.
+              </ThemedText>
+              <View style={styles.picker} accessibilityRole="radiogroup">
+                {shopping.lists.map((l) => (
+                  <Chip
+                    key={l.id}
+                    label={l.title}
+                    variant="outline"
+                    accessibilityRole="radio"
+                    selected={list === l.id}
+                    onPress={() => onEdit({ ...edits, shoppingListId: l.id })}
+                  />
+                ))}
+                <Chip
+                  label={`New list (${shopping.newListName})`}
+                  variant="outline"
+                  accessibilityRole="radio"
+                  selected={list === "new"}
+                  onPress={() => onEdit({ ...edits, shoppingListId: "new" })}
+                />
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : payload.shoppingListId !== null ? (
         <CardCheckRow
           label={SHOPPING_LABEL}
           checked={edits.addShopping ?? false}
@@ -153,6 +215,8 @@ export function PlanWriteCard({ payload, edits, onEdit }: Props) {
 const styles = StyleSheet.create({
   row: { paddingVertical: Spacing.sm },
   removed: { opacity: 0.45 },
+  shopping: { marginTop: Spacing.xs, paddingTop: Spacing.xs },
+  note: { marginTop: Spacing.xs },
   actions: {
     flexDirection: "row",
     justifyContent: "flex-end",

@@ -305,8 +305,8 @@ export function register(app: Express): void {
           // that cannot draw a kind does not list it, and the coach is then
           // never given the tool that makes that card.
           cardKinds: z
-            .array(z.enum(["pantry", "goals", "allergy"]))
-            .max(4)
+            .array(z.enum(["pantry", "goals", "allergy", "plan_shop"]))
+            .max(5)
             .optional(),
           liveCard: z
             .object({

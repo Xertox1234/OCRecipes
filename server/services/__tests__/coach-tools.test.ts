@@ -1035,6 +1035,49 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(text).not.toMatch(/tap the card/i);
   });
 
+  it("the plan tool says whether the card also holds the grocery list (A1)", async () => {
+    const run = (groceryList: "on_card" | "not_on_card") =>
+      executeToolCall(
+        "add_to_meal_plan",
+        { ...planArgs, withGroceryList: true },
+        "user-1",
+        null,
+        "UTC",
+        {
+          writeCards: true,
+          onWriteCardProposal: async () => ({
+            kind: "plan" as const,
+            groceryList,
+          }),
+        },
+      );
+    const on = JSON.stringify(await run("on_card"));
+    expect(on).toMatch(/"card_shown":true/);
+    expect(on).toMatch(/same card also adds/i);
+    expect(on).toMatch(/Do not call add_to_grocery_list/);
+    const off = JSON.stringify(await run("not_on_card"));
+    expect(off).toMatch(/does not include the grocery list/i);
+    expect(off).toMatch(/Do not call add_to_grocery_list in this turn/);
+  });
+
+  it("a grocery call is turned away when the plan card already holds the shopping (A1)", async () => {
+    const result = await executeToolCall(
+      "add_to_grocery_list",
+      groceryArgs,
+      "user-1",
+      null,
+      "UTC",
+      {
+        writeCards: true,
+        onWriteCardProposal: async () => ({
+          kind: "grocery_on_plan_card" as const,
+        }),
+      },
+    );
+    expect(result).toMatchObject({ card_shown: false });
+    expect(JSON.stringify(result)).toMatch(/plan card on screen already/i);
+  });
+
   it("invalid write-card args return invalidArgs and no proposal", async () => {
     const onWriteCardProposal = vi.fn();
     const result = await executeToolCall(

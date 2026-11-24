@@ -674,6 +674,202 @@ describe("plan write card", () => {
     expect(added).toEqual(["spinach"]);
   });
 
+  describe("with a shopping section (A1)", () => {
+    const groceryLists = () =>
+      tx
+        .select()
+        .from(schema.groceryLists)
+        .where(eq(schema.groceryLists.userId, user.id));
+    const itemsOn = (listId: number) =>
+      tx
+        .select()
+        .from(schema.groceryListItems)
+        .where(eq(schema.groceryListItems.groceryListId, listId));
+    const newList = async (title: string) => {
+      const [list] = await tx
+        .insert(schema.groceryLists)
+        .values({
+          userId: user.id,
+          title,
+          dateRangeStart: "2026-11-01",
+          dateRangeEnd: "2026-11-07",
+        })
+        .returning();
+      return list;
+    };
+
+    async function combined() {
+      const shawarma = await community("Chicken shawarma bowl");
+      const stew = await mine("Lentil stew");
+      await tx.insert(schema.recipeIngredients).values({
+        recipeId: stew.id,
+        name: "Red lentils",
+        quantity: "200",
+        unit: "g",
+        displayOrder: 0,
+      });
+      const args = addMealPlanCardArgsSchema.parse({
+        withGroceryList: true,
+        rows: [
+          {
+            plannedDate: "2026-11-09",
+            mealType: "dinner",
+            recipe: { source: "community", id: shawarma.id },
+            alternatives: [],
+          },
+          {
+            plannedDate: "2026-11-11",
+            mealType: "dinner",
+            recipe: { source: "mine", id: stew.id },
+            alternatives: [],
+          },
+        ],
+      });
+      return { args, shawarma, stew };
+    }
+
+    it("the card carries the lists and each recipe's ingredient names", async () => {
+      const list = await newList("Weekly shop");
+      const { args, shawarma, stew } = await combined();
+      const p = await buildPlanPayload(args, user.id, [], { shopping: true });
+      expect(p.shopping).toEqual({
+        lists: [{ id: list.id, title: "Weekly shop" }],
+        defaultListId: list.id,
+        newListName: "Meal plan shopping",
+        ingredients: {
+          [`community:${shawarma.id}`]: ["Chickpeas", "Spinach"],
+          [`mine:${stew.id}`]: ["Red lentils"],
+        },
+      });
+    });
+
+    it("no section for an app that cannot draw it, or when the list was not asked for", async () => {
+      const { args } = await combined();
+      expect((await buildPlanPayload(args, user.id)).shopping).toBeUndefined();
+      expect(
+        (
+          await buildPlanPayload(
+            { ...args, withGroceryList: undefined },
+            user.id,
+            [],
+            { shopping: true },
+          )
+        ).shopping,
+      ).toBeUndefined();
+    });
+
+    it("one save plans the meals and adds the shopping to a new list; one undo removes both", async () => {
+      const { args } = await combined();
+      const p = await buildPlanPayload(args, user.id, [], { shopping: true });
+      expect(p.shopping?.defaultListId).toBeNull();
+      const refs = await performPlanSave(tx, card(p), {}, { userId: user.id });
+      expect(await planItems()).toHaveLength(2);
+      const [list] = await groceryLists();
+      expect(list).toMatchObject({
+        title: "Meal plan shopping",
+        dateRangeStart: "2026-11-09",
+        dateRangeEnd: "2026-11-11",
+      });
+      expect((await itemsOn(list.id)).map((r) => r.name).sort()).toEqual([
+        "chickpeas",
+        "red lentils",
+        "spinach",
+      ]);
+      expect(refs).toMatchObject({ createdListId: list.id, listId: list.id });
+
+      await revertPlanSave(tx, card(p, refs));
+      expect(await planItems()).toHaveLength(0);
+      expect(await groceryLists()).toHaveLength(0);
+    });
+
+    it("saves to the list the user picked, skipping lines already waiting there", async () => {
+      await newList("Weekly shop");
+      const other = await newList("Party");
+      await tx.insert(schema.groceryListItems).values({
+        groceryListId: other.id,
+        name: "chickpeas",
+        quantity: "1",
+        unit: "can",
+      });
+      const { args } = await combined();
+      const p = await buildPlanPayload(args, user.id, [], { shopping: true });
+      const refs = await performPlanSave(
+        tx,
+        card(p),
+        { shoppingListId: other.id },
+        { userId: user.id },
+      );
+      expect(refs.listId).toBe(other.id);
+      expect(refs.createdListId).toBeUndefined();
+      expect((await itemsOn(other.id)).map((r) => r.name).sort()).toEqual([
+        "chickpeas",
+        "red lentils",
+        "spinach",
+      ]);
+      expect(refs.groceryItemIds).toHaveLength(2);
+    });
+
+    it("turned off, it plans the meals and touches no list", async () => {
+      const { args } = await combined();
+      const p = await buildPlanPayload(args, user.id, [], { shopping: true });
+      const refs = await performPlanSave(
+        tx,
+        card(p),
+        { addShopping: false },
+        { userId: user.id },
+      );
+      expect(await planItems()).toHaveLength(2);
+      expect(await groceryLists()).toHaveLength(0);
+      expect(refs.listId).toBeUndefined();
+    });
+
+    it("refuses a list the card did not offer, and a list choice on a card without the section", async () => {
+      const stranger = await createTestUser(tx);
+      const [theirs] = await tx
+        .insert(schema.groceryLists)
+        .values({
+          userId: stranger.id,
+          title: "Theirs",
+          dateRangeStart: "2026-11-01",
+          dateRangeEnd: "2026-11-07",
+        })
+        .returning();
+      const { args } = await combined();
+      const p = await buildPlanPayload(args, user.id, [], { shopping: true });
+      await expect(
+        performPlanSave(
+          tx,
+          card(p),
+          { shoppingListId: theirs.id },
+          { userId: user.id },
+        ),
+      ).rejects.toBeInstanceOf(WriteCardEditError);
+      const plain = await buildPlanPayload(args, user.id);
+      await expect(
+        performPlanSave(
+          tx,
+          card(plain),
+          { addShopping: true, shoppingListId: "new" },
+          { userId: user.id },
+        ),
+      ).rejects.toBeInstanceOf(WriteCardEditError);
+      expect(await planItems()).toHaveLength(0);
+    });
+
+    it("makes no new list when the pantry covers everything", async () => {
+      await tx.insert(schema.pantryItems).values([
+        { userId: user.id, name: "spinach", quantity: "5", unit: "bag" },
+        { userId: user.id, name: "chickpeas", quantity: "5", unit: "can" },
+        { userId: user.id, name: "red lentils", quantity: "900", unit: "g" },
+      ]);
+      const { args } = await combined();
+      const p = await buildPlanPayload(args, user.id, [], { shopping: true });
+      const refs = await performPlanSave(tx, card(p), {}, { userId: user.id });
+      expect(await groceryLists()).toHaveLength(0);
+      expect(refs.groceryItemIds ?? []).toHaveLength(0);
+    });
+  });
+
   it("startPlanImageJobs asks for a cover only for copies without an image", async () => {
     const withImage = await community("Pictured", {
       imageUrl: "https://cdn.example/x.jpg",

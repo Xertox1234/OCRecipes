@@ -4,7 +4,7 @@ import { civilDateString } from "../../lib/civil-date";
 import { sanitizeUserInput } from "../../lib/ai-safety";
 import { storage } from "../../storage";
 import { addMealPlanCardArgsSchema } from "../write-cards/tool-args";
-import { CARD_SHOWN_MESSAGE } from "../write-cards/results";
+import { planCardResult } from "../write-cards/results";
 import {
   defineTool,
   invalidArgs,
@@ -175,7 +175,7 @@ const addToMealPlanCardDefinition = (): ChatCompletionTool => ({
   function: {
     name: "add_to_meal_plan",
     description:
-      "Show the user a card of meals to add to their plan. Nothing is saved until the user taps the card. Every recipe must be an id returned by find_plan_recipes or get_my_recipes in this conversation — never invent one.",
+      "Show the user a card of meals to add to their plan. Nothing is saved until the user taps the card. Every recipe must be an id returned by find_plan_recipes or get_my_recipes in this conversation — never invent one. When the user also wants the grocery or shopping list for these meals, set withGroceryList: true instead of calling add_to_grocery_list: the one card then saves both.",
     parameters: {
       type: "object",
       properties: {
@@ -215,6 +215,11 @@ const addToMealPlanCardDefinition = (): ChatCompletionTool => ({
             },
             required: ["plannedDate", "mealType", "recipe"],
           },
+        },
+        withGroceryList: {
+          type: "boolean",
+          description:
+            "True when the user asked for the grocery or shopping list for these meals as well. The server works out the ingredients from the recipes.",
         },
       },
       required: ["rows"],
@@ -261,12 +266,13 @@ const addToMealPlanTool = defineTool({
   run: async (args, { tz, opts }) => {
     if (opts.writeCards) {
       const card = args as z.infer<typeof addMealPlanCardArgsSchema>;
-      await opts.onWriteCardProposal?.({
-        kind: "plan",
-        args: card,
-        pool: [...(opts.planRecipePool ?? [])],
-      });
-      return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+      return planCardResult(
+        await opts.onWriteCardProposal?.({
+          kind: "plan",
+          args: card,
+          pool: [...(opts.planRecipePool ?? [])],
+        }),
+      );
     }
     const data = args as z.infer<typeof addToMealPlanSchema>;
     // Nothing in the client reads this proposal (see log_food_item).

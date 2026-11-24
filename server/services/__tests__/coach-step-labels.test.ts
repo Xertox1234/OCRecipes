@@ -15,6 +15,17 @@ describe("coach step labels (show-the-work spec 2026-11-09)", () => {
     ).toEqual({ label: "Looking up beef burger…", trail: "beef burger" });
   });
 
+  it("names both parts of a plan-and-shopping card (A1)", () => {
+    expect(
+      toolStep(call("add_to_meal_plan", { withGroceryList: true }), {
+        writeCards: true,
+      }),
+    ).toEqual({
+      label: "Preparing your plan and shopping…",
+      trail: "meal plan and shopping card",
+    });
+  });
+
   it("card tools never claim a save", () => {
     for (const name of [
       "log_food_item",

@@ -10,7 +10,7 @@ import type {
   WriteCardBlock,
   WriteCardEdits,
 } from "@shared/schemas/coach-write-cards";
-import { planDayLabel } from "../write-card-utils";
+import { planDayLabel, planShoppingPreview } from "../write-card-utils";
 
 vi.mock("@/lib/query-client", () => ({ apiRequest: vi.fn() }));
 vi.mock("@/hooks/useHaptics", () => ({
@@ -131,6 +131,76 @@ describe("PlanWriteCard", () => {
         name: "Also add the shopping to my grocery list",
       }),
     ).toBeNull();
+  });
+
+  describe("with a shopping section (A1)", () => {
+    const combined = () =>
+      payload({
+        shopping: {
+          lists: [{ id: 7, title: "Weekly shop" }],
+          defaultListId: 7,
+          newListName: "Meal plan shopping",
+          ingredients: {
+            "community:1": ["Chicken", "Rice"],
+            "community:12": ["Tofu", "Rice"],
+            "community:2": ["Lentils"],
+            "community:3": ["Salmon"],
+          },
+        },
+      });
+    const TICK = "Add the shopping for these meals";
+
+    it("starts ticked, names what the meals need and offers the lists", () => {
+      renderComponent(<Harness p={combined()} />);
+      expect(
+        screen
+          .getByRole("checkbox", { name: TICK })
+          .getAttribute("aria-checked"),
+      ).toBe("true");
+      expect(screen.getByText("Chicken, Rice, Lentils, Salmon")).toBeDefined();
+      expect(
+        screen
+          .getByRole("radio", { name: "Weekly shop" })
+          .getAttribute("aria-checked"),
+      ).toBe("true");
+      expect(
+        screen.getByRole("radio", { name: "New list (Meal plan shopping)" }),
+      ).toBeDefined();
+      expect(
+        screen.getByRole("button", { name: "Plan 3 dinners + shopping" }),
+      ).toBeDefined();
+      // The older tick is not shown as well.
+      expect(
+        screen.queryByRole("checkbox", {
+          name: "Also add the shopping to my grocery list",
+        }),
+      ).toBeNull();
+    });
+
+    it("the preview follows a swap", () => {
+      renderComponent(<Harness p={combined()} />);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Swap Chicken shawarma bowl" }),
+      );
+      fireEvent.click(
+        screen.getByRole("radio", { name: "Tofu stir-fry, 500 cal" }),
+      );
+      expect(screen.getByText("Tofu, Rice, Lentils, Salmon")).toBeDefined();
+    });
+
+    it("unticking hides the list and the button plans only", () => {
+      renderComponent(<Harness p={combined()} />);
+      fireEvent.click(screen.getByRole("checkbox", { name: TICK }));
+      expect(screen.queryByRole("radio", { name: "Weekly shop" })).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Add 3 dinners to plan" }),
+      ).toBeDefined();
+    });
+  });
+
+  it("planShoppingPreview shortens a long list", () => {
+    expect(planShoppingPreview(["a", "b", "c"], 2)).toBe("a, b and 1 more");
+    expect(planShoppingPreview(["a", "b"], 2)).toBe("a, b");
   });
 
   it("planDayLabel names the day", () => {

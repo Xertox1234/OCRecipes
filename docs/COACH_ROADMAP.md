@@ -68,8 +68,13 @@ Then re-rank.
 
 ## Act: the Coach does more on its own (rung 9)
 
-- [ ] **A1. Multi-step jobs.** "Plan my week and build the grocery list" as one
+- [x] **A1. Multi-step jobs.** "Plan my week and build the grocery list" as one
       chained run with one combined approval. Value: high. Size: M.
+      Done in PR #2005: the meal plan card takes the shopping as well (a
+      ticked section naming what the kept meals need, with a list picker), so
+      one Save plans the meals and adds the shopping and one Undo reverts
+      both. A grocery call in the same turn is turned away in favour of that
+      card. Only this one job is chained; other pairs still take two turns.
 - [ ] **A2. Proactive Coach.** The Coach starts a conversation by push
       notification. One trigger first (expiring pantry items), with a strict
       daily cap. Value: high. Size: L.

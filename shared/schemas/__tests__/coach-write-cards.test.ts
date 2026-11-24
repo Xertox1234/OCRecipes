@@ -51,6 +51,13 @@ describe("write-card edit schemas", () => {
   it("plan edits reject unknown keys", () => {
     expect(planEditsSchema.safeParse({ addShopping: true }).success).toBe(true);
     expect(planEditsSchema.safeParse({ recipeId: 4 }).success).toBe(false);
+    expect(planEditsSchema.safeParse({ shoppingListId: "new" }).success).toBe(
+      true,
+    );
+    expect(planEditsSchema.safeParse({ shoppingListId: 4 }).success).toBe(true);
+    expect(planEditsSchema.safeParse({ shoppingListId: "x" }).success).toBe(
+      false,
+    );
   });
 });
 

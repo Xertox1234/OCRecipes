@@ -751,6 +751,10 @@ describe("Chat Routes", () => {
       mockStreamingSetup();
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
       expect((await send({ cardKinds: ["allergy"] })).status).toBe(200);
+      // 'plan_shop' (A1): the plan card's shopping section.
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect((await send({ cardKinds: ["plan_shop"] })).status).toBe(200);
     });
 
     it("rejects a card kind it does not know (400)", async () => {

@@ -346,6 +346,12 @@ describe("write-card prompt rules", () => {
     ).toContain("find_plan_recipes");
   });
 
+  it("writeCards prompt sends a plan-plus-shopping request to the one card (A1)", () => {
+    expect(getBlocksSystemPrompt(false, { writeCards: true })).toMatch(
+      /withGroceryList: true[^\n]*never also call add_to_grocery_list/,
+    );
+  });
+
   it("is today's prompt without writeCards", () => {
     expect(getBlocksSystemPrompt(false)).toBe(BLOCKS_SYSTEM_PROMPT);
     expect(getBlocksSystemPrompt(false, { writeCards: false })).toBe(

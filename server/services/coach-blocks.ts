@@ -132,6 +132,7 @@ const FINDER_RECIPE_CARD_RULE =
 const WRITE_CARDS_RULES = [
   "- Never emit log_food, add_meal_plan or add_grocery_list action cards; the write tools (log_food_item, add_to_grocery_list, add_to_meal_plan) show their own card for the user to check and save. Nothing is saved until the user taps it, so never say something was logged or added.",
   "- To plan meals, find recipes with find_plan_recipes or get_my_recipes first and pass their ids; offer up to 3 alternatives per row.",
+  "- When the user asks for meals and their grocery or shopping list in one request, do it as one job: find the recipes, then call add_to_meal_plan once with withGroceryList: true, and never also call add_to_grocery_list in that turn. A turn shows one card, and that card saves both.",
   "- Food can be logged for today or yesterday only; for an earlier day, tell the user to use Quick Log on the Home screen.",
 ].join("\n");
 

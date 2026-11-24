@@ -147,6 +147,12 @@ function rawToolStep(
         ? { label: "Preparing a food card…", trail: "food card" }
         : { label: "Preparing a food entry…", trail: "food entry" };
     case "add_to_meal_plan":
+      if (card && args.withGroceryList === true) {
+        return {
+          label: "Preparing your plan and shopping…",
+          trail: "meal plan and shopping card",
+        };
+      }
       return card
         ? { label: "Preparing a meal plan card…", trail: "meal plan card" }
         : { label: "Preparing a meal plan…", trail: "meal plan" };

@@ -53,6 +53,8 @@ interface StreamArgs {
   writeCards: boolean;
   pantryCard: boolean;
   goalsCard: boolean;
+  /** The app can draw the plan card's shopping section (A1). */
+  planShopCard: boolean;
 }
 
 function emptyReply(): ReplyResult {
@@ -94,6 +96,7 @@ async function* streamProReply(
 ): AsyncGenerator<CoachChatEvent, ReplyResult> {
   const { params, turn, intent, offerOn, writeCards, pantryCard, goalsCard } =
     a;
+  const { planShopCard } = a;
   const { userId, isAborted, abortSignal } = params;
   const reply = emptyReply();
 
@@ -134,6 +137,26 @@ async function* streamProReply(
               }
               throw err;
             }
+          }
+          if (p.kind === "plan" && p.args.withGroceryList) {
+            // One card for the whole job (A1): it plans the meals and adds
+            // their shopping. An app that cannot draw that gets the plan
+            // card alone, and the model is told so.
+            reply.writeCardProposal = { ...p, shopping: planShopCard };
+            reply.writeCardPrepared = null;
+            return {
+              kind: "plan",
+              groceryList: planShopCard ? "on_card" : "not_on_card",
+            };
+          }
+          if (
+            p.kind === "grocery" &&
+            reply.writeCardProposal?.kind === "plan" &&
+            reply.writeCardProposal.shopping
+          ) {
+            // The plan card already holds this shopping; a grocery card
+            // would replace it and drop the meals.
+            return { kind: "grocery_on_plan_card" };
           }
           if (p.kind !== "grocery" && p.kind !== "pantry") {
             reply.writeCardProposal = p;

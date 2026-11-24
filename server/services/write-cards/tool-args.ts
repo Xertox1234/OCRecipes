@@ -88,6 +88,8 @@ export const addMealPlanCardArgsSchema = z.object({
     )
     .min(1)
     .max(7),
+  /** The user asked for the grocery list too: the one card saves both (A1). */
+  withGroceryList: z.boolean().optional(),
 });
 export type AddMealPlanCardArgs = z.infer<typeof addMealPlanCardArgsSchema>;
 
@@ -159,6 +161,8 @@ export type WriteCardProposal =
       args: AddMealPlanCardArgs;
       /** Community ids find_plan_recipes returned this turn, for Swap. */
       pool?: number[];
+      /** The app can draw the card's shopping section (A1). */
+      shopping?: boolean;
     };
 
 /**
@@ -174,4 +178,8 @@ export type WriteCardOutcome =
   | { kind: "grocery"; shown: false; leftOff: string[] }
   | { kind: "pantry"; shown: boolean; rows: string[]; dropped: number }
   /** goals: `rows` is the card's own line (goal names and numbers only). */
-  | { kind: "goals"; shown: boolean; rows: string };
+  | { kind: "goals"; shown: boolean; rows: string }
+  /** plan: whether the card also saves the grocery list the user asked for. */
+  | { kind: "plan"; groceryList: "on_card" | "not_on_card" }
+  /** A grocery call in a turn whose plan card already holds the shopping. */
+  | { kind: "grocery_on_plan_card" };

@@ -3,6 +3,8 @@ import {
   foodTotal,
   groceryKept,
   planKept,
+  planShoppingNames,
+  planShoppingOn,
   writeCardButtonLabel,
   writeCardReceipt,
   pantryKept,
@@ -296,6 +298,56 @@ describe("pantry card", () => {
     expect(writeCardButtonLabel("goals", goals, {})).toBe("Update goals");
     expect(writeCardReceipt("goals", goals, { values: [2100, 150] })).toBe(
       "✓ Goals updated · 2,100 cal · 150 g protein",
+    );
+  });
+});
+
+describe("plan card with a shopping section (A1)", () => {
+  const combined: PlanCardPayload = {
+    ...plan,
+    shopping: {
+      lists: [{ id: 7, title: "Weekly shop" }],
+      defaultListId: 7,
+      newListName: "Meal plan shopping",
+      ingredients: {
+        "community:1": ["Chicken", "Rice"],
+        "community:11": ["Turkey", "Beans"],
+        "community:2": ["Lentils", " rice "],
+      },
+    },
+  };
+
+  it("shopping is on by default only when the card has the section", () => {
+    expect(planShoppingOn(plan, {})).toBe(false);
+    expect(planShoppingOn(combined, {})).toBe(true);
+    expect(planShoppingOn(combined, { addShopping: false })).toBe(false);
+    expect(planShoppingOn(plan, { addShopping: true })).toBe(true);
+  });
+
+  it("names each kept meal's ingredients once", () => {
+    expect(planShoppingNames(combined, {})).toEqual([
+      "Chicken",
+      "Rice",
+      "Lentils",
+    ]);
+  });
+
+  it("follows a swap and a removed row", () => {
+    expect(
+      planShoppingNames(combined, {
+        chosen: [0, null, null],
+        removed: [false, true, false],
+      }),
+    ).toEqual(["Turkey", "Beans"]);
+    expect(planShoppingNames(plan, {})).toEqual([]);
+  });
+
+  it("the button says the one tap does both, until shopping is turned off", () => {
+    expect(writeCardButtonLabel("plan", combined, {})).toBe(
+      "Plan 3 dinners + shopping",
+    );
+    expect(writeCardButtonLabel("plan", combined, { addShopping: false })).toBe(
+      "Add 3 dinners to plan",
     );
   });
 });

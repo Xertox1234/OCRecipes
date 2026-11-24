@@ -44,10 +44,10 @@ export { matchKey, unitKey };
  * user's lists, or to a new one.
  */
 
-const LISTS_OFFERED = 4;
+export const LISTS_OFFERED = 4;
 const DEFAULT_NEW_LIST_NAME = "Coach list";
 /** Same cap the generate-list route applies (server/routes/grocery.ts). */
-const MAX_GROCERY_LISTS = 50;
+export const MAX_GROCERY_LISTS = 50;
 
 export interface GroceryCardPlan {
   /** Null when the pantry covers every item: there is no card to show. */
@@ -144,7 +144,7 @@ function toRow(item: GroceryCardPayload["items"][number]) {
 }
 
 /** Same item, unit and amount: the line a repeated save would duplicate. */
-function lineKey(row: {
+export function lineKey(row: {
   name: string;
   quantity: string | null;
   unit: string | null;

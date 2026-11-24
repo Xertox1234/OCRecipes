@@ -13,6 +13,7 @@ import {
   PantryCardPayload,
   PlanCardEdits,
   PlanCardPayload,
+  planRecipeKey,
   WriteCardEdits,
   WriteCardKind,
   WriteCardMealType,
@@ -113,6 +114,34 @@ export function planKept(p: PlanCardPayload, e: PlanCardEdits): KeptPlanRow[] {
   return kept;
 }
 
+/** Whether saving also adds the shopping: the user's tick, else on exactly
+ *  when the card has a shopping section (the user asked for the list). */
+export function planShoppingOn(p: PlanCardPayload, e: PlanCardEdits): boolean {
+  return e.addShopping ?? p.shopping !== undefined;
+}
+
+/**
+ * The ingredient names the kept meals need, each once, in card order. A
+ * preview: the save merges amounts and leaves off what the pantry covers.
+ */
+export function planShoppingNames(
+  p: PlanCardPayload,
+  e: PlanCardEdits,
+): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const row of planKept(p, e)) {
+    for (const name of p.shopping?.ingredients[planRecipeKey(row.recipe)] ??
+      []) {
+      const key = name.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      names.push(name.trim());
+    }
+  }
+  return names;
+}
+
 function plural(n: number, word: string): string {
   if (n === 1) return `${n} ${word}`;
   // "lunch" is the one meal type that takes -es.
@@ -163,8 +192,15 @@ export function writeCardButtonLabel(
       ).length;
       return `Add ${plural(n, "item")}`;
     }
-    case "plan":
-      return `Add ${planNoun(planKept(p as PlanCardPayload, e as PlanCardEdits))} to plan`;
+    case "plan": {
+      const pp = p as PlanCardPayload;
+      const pe = e as PlanCardEdits;
+      const noun = planNoun(planKept(pp, pe));
+      // A combined card (A1) says what the one tap does.
+      return pp.shopping && planShoppingOn(pp, pe)
+        ? `Plan ${noun} + shopping`
+        : `Add ${noun} to plan`;
+    }
     case "pantry":
       return "Update pantry";
     case "goals":

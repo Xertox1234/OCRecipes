@@ -15,7 +15,7 @@ describe("buildCoachStreamBody", () => {
       content: "make it three eggs",
       turnKey: "tk",
       writeCards: true,
-      cardKinds: ["pantry", "goals", "allergy"],
+      cardKinds: ["pantry", "goals", "allergy", "plan_shop"],
       liveCard: {
         cardId: "11111111-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
         edits: { counts: [3] },
@@ -48,7 +48,7 @@ describe("buildCoachStreamBody", () => {
       content: "hi",
       turnKey: "tk",
       writeCards: true,
-      cardKinds: ["pantry", "goals", "allergy"],
+      cardKinds: ["pantry", "goals", "allergy", "plan_shop"],
     });
     expect(buildCoachStreamBody("hi", "tk", {})).not.toHaveProperty(
       "cardKinds",
