@@ -51,6 +51,11 @@ export interface CoachContext {
   mealPatternSummary?: string;
   blocksPrompt?: string;
   /**
+   * Coach's notes are paused (health consent withdrawn, `coachNotesPaused`):
+   * no commitment card is offered or kept, since nothing would save it.
+   */
+  notesPaused?: boolean;
+  /**
    * Coach write cards (spec 2026-11-09): the conversation's live, unsaved
    * card with the user's edits applied (already sanitized), so a reply that
    * changes it starts from what is on screen.

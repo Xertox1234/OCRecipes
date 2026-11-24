@@ -2,7 +2,7 @@ import { storage } from "../../storage";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { filterMemoryRefs } from "../memory-refs";
 import { filterAllergyCards } from "../allergy-cards";
-import { parseBlocksFromContent } from "../coach-blocks";
+import { dropCommitmentCards, parseBlocksFromContent } from "../coach-blocks";
 import { buildTrail } from "../coach-step-labels";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { createWriteCardBlock } from "./write-card-context";
@@ -53,6 +53,9 @@ async function proReplyBlocks(
       filterMemoryRefs(parsedBlocks.blocks, confirmedIds),
       turn.context.dietaryProfile.allergies.map((a) => a.name),
     );
+    // Coach's notes are paused: accepting a commitment card would save
+    // nothing, so a card the model wrote anyway never reaches the screen.
+    if (turn.context.notesPaused) blocks = dropCommitmentCards(blocks);
   }
 
   // The write card is built (and its row created) only for a client still

@@ -34,6 +34,7 @@ export async function applyWriteCardContext(
 ): Promise<void> {
   context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled(), {
     writeCards: true,
+    notesPaused: context.notesPaused,
   });
   if (a.liveCard) {
     const card = await storage.getWriteCard(a.liveCard.cardId, a.userId);

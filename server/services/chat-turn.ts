@@ -27,7 +27,7 @@ import {
   containsUnsafeCoachAdvice,
   containsUnsafeCoachAdviceInValue,
 } from "../lib/ai-safety";
-import { parseBlocksFromContent } from "./coach-blocks";
+import { dropCommitmentCards, parseBlocksFromContent } from "./coach-blocks";
 import type { ChatConversation, ChatMessage } from "@shared/schema";
 import type { finderActionSchema } from "@shared/schemas/recipe-finder";
 import type { z } from "zod";
@@ -540,7 +540,12 @@ async function settleAbortedCoachTurn(ctx: TurnContext): Promise<void> {
     const partialText = containsUnsafeCoachAdvice(strippedText)
       ? STANDARD_SAFETY_MESSAGE
       : strippedText;
-    const { blocks } = parsedPartial;
+    // Coach's notes are paused: a commitment card would save nothing.
+    const blocks =
+      parsedPartial.blocks.some((b) => b.type === "commitment_card") &&
+      (await storage.areCoachNotesPaused(req.userId))
+        ? dropCommitmentCards(parsedPartial.blocks)
+        : parsedPartial.blocks;
     if (!partialText && blocks.length === 0) {
       // Nothing reached the user: the message and its daily-limit claim
       // go, which hands the slot back. Paid recipe-finder claims on the
