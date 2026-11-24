@@ -44,7 +44,7 @@ The hook event and the transcript write race each other. A replay reads the tran
 
 - **Live hook fails but replay passes → capture the live input.** Add one temporary line that appends `$INPUT` plus the state it depends on (here: `[ -r "$TP" ]`, the hand-back count now, and again 3 s later in a background subshell) to a scratchpad log. Then trigger the event once and remove the line. Get the owner's OK first if another session shares the checkout, because the line could be swept into their commit.
 - Any hook that reads a file another process is still writing (transcripts, logs) needs a bounded wait, not a single read.
-- Until the fix is in the checkout the hooks run from (`$CLAUDE_PROJECT_DIR`), a missed record can be written by hand from the real transcript. Only do this on the owner's say-so, and check the digest against `gh pr diff <n> --name-only | sort -u | shasum | cut -c1-16`.
+- Until the fix is in the checkout the hooks run from (`$CLAUDE_PROJECT_DIR`), a missed record can be written by hand from the real transcript. Only do this on the owner's say-so, and check the digest against `gh pr diff <n> --name-only | LC_ALL=C sort -u | shasum | cut -c1-16`.
 
 ## Related Files
 

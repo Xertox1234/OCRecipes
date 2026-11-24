@@ -167,7 +167,10 @@ export const register: Register = (on) => {
     // pr=<n>: the PR's own file list. GitHub refuses a diff over 20,000 lines, names
     // included ("PullRequest.diff too_large", #1974); on that answer only, list the
     // worktree's files against base=, which every pr= directive also carries. Any other
-    // gh failure still refuses the dispatch.
+    // gh failure still refuses the dispatch. -M names a rename as the merge guard's own
+    // local diff does, whatever diff.renames says. The list is the WORKTREE's, against the
+    // local base ref: if either is behind the PR, the record's digest will not match the
+    // guard's and the merge is refused until a review of the real head.
     const prFiles = async (pr: string, wt: string, base: string) => {
       const argv = ["gh", "pr", "diff", pr, "--name-only"];
       const r = await $.process.run(argv, { cwd: wt });
@@ -177,7 +180,7 @@ export const register: Register = (on) => {
           `\`${argv.join(" ")}\` failed (${r.exitCode}): ${r.stderr.trim().slice(0, 300)}`,
         );
       return run(
-        ["git", "-C", wt, "diff", "--name-only", `${base}...HEAD`],
+        ["git", "-C", wt, "diff", "--name-only", "-M", `${base}...HEAD`],
         wt,
       );
     };

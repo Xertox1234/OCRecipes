@@ -66,7 +66,7 @@ Derive the reviewer's file list from **the gate's own command and nothing else**
 that output verbatim into the dispatch prompt:
 
 ```bash
-CHANGED=$(gh pr diff "$PR" --name-only 2>/dev/null | sed '/^$/d' | sort -u)
+CHANGED=$(gh pr diff "$PR" --name-only 2>/dev/null | sed '/^$/d' | LC_ALL=C sort -u)
 printf '%s\n' "$CHANGED"
 printf '%s\n' "$CHANGED" | shasum | cut -c1-16     # the digest the gate will demand
 ```
