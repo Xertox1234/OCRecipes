@@ -277,7 +277,8 @@ function scanContext(
     result,
     verification: undefined,
     profileOutcome: { ok: true, allergies },
-  } as Awaited<ReturnType<typeof loadBarcodeScanContext>>);
+    // The verification row is not read by the Coach's reply.
+  } as unknown as Awaited<ReturnType<typeof loadBarcodeScanContext>>);
 }
 
 describe("buildPhotoReply", () => {
