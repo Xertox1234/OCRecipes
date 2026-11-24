@@ -1167,23 +1167,53 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
   fi
   if [ -n "$SKIP_REASON" ]; then
     warn "⚠ Fresh PR check skipped: ${SKIP_REASON}"
-  elif PR_JSON=$(gh pr view "$REF" --json number,state,mergedAt 2>/dev/null); then
-    NUM=$(printf '%s' "$PR_JSON" | jq -r '.number' 2>/dev/null || echo "?")
-    STATE=$(printf '%s' "$PR_JSON" | jq -r '.state' 2>/dev/null || echo "")
-    MERGED_AT=$(printf '%s' "$PR_JSON" | jq -r '.mergedAt // "-"' 2>/dev/null || echo "-")
-    case "$STATE" in
-      MERGED) warn "Fresh PR check: PR #${NUM} for '${REF}' is MERGED (${MERGED_AT}) — deletion is safe." ;;
-      OPEN)   warn "⚠ Fresh PR check: PR #${NUM} for '${REF}' is OPEN and NOT merged — deleting this branch will CLOSE THE PR UNMERGED (the PR #520 incident). Stop unless you intend to abandon it. Recovery runbook: docs/solutions/best-practices/restore-and-merge-closed-pr-after-branch-deletion-2026-07-11.md" ;;
-      CLOSED) warn "⚠ Fresh PR check: PR #${NUM} for '${REF}' is CLOSED WITHOUT MERGE — a rejection signal. Never sweep this branch silently (keep local AND remote; see the land skill's branch-sweep table)." ;;
-      *)      warn "⚠ Fresh PR check for '${REF}': PR state unparseable — treat as UNVERIFIED and confirm merge state manually. Rule: docs/solutions/conventions/delete-branch-only-after-confirming-pr-merged-2026-07-06.md" ;;
-    esac
   else
-    GH_ERR=$(gh pr view "$REF" --json number 2>&1 >/dev/null || true)
-    if printf '%s' "$GH_ERR" | grep -qi 'no pull requests found'; then
-      warn "⚠ Fresh PR check: NO PR found for '${REF}' — deleting it may lose never-pushed work. Rule: docs/solutions/conventions/delete-branch-only-after-confirming-pr-merged-2026-07-06.md"
+    # Three outcomes: found | none (the lookup worked, no PR) | failed (could not look).
+    PR_LOOKUP=failed
+    if PR_JSON=$(gh pr view "$REF" --json number,state,mergedAt 2>/dev/null); then
+      PR_LOOKUP=found
     else
-      warn "⚠ Fresh PR check for '${REF}' FAILED (gh unavailable/network) — treat as UNVERIFIED and confirm merge state manually before deleting. Rule: docs/solutions/conventions/delete-branch-only-after-confirming-pr-merged-2026-07-06.md"
+      GH_ERR=$(gh pr view "$REF" --json number 2>&1 >/dev/null || true)
+      if printf '%s' "$GH_ERR" | grep -qi 'no pull requests found'; then
+        PR_LOOKUP=none
+      else
+        # REST retry. `gh pr view --json` is GraphQL, which a Claude Code cloud session
+        # refuses (HTTP 403), so every deletion there used to land in the FAILED warning
+        # below — a merged branch and one with an open PR looked the same. The lib answers
+        # in gh pr view's field names and keeps "no PR" (rc 1) apart from "could not look"
+        # (rc 2). REF is the same value handed to `gh pr view` above: non-empty, not
+        # flag-like, and already restricted to the configured GitHub host. Lib unsourceable
+        # → no retry, the old FAILED warning. Fork-free dir, as for cmd-detect.sh above.
+        case "${BASH_SOURCE[0]}" in */*) _PR_HERE="${BASH_SOURCE[0]%/*}" ;; *) _PR_HERE=. ;; esac
+        # shellcheck source=/dev/null
+        if . "$_PR_HERE/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null; then
+          PR_JSON=$(gh_pr_rest_json "$REF" 2>/dev/null)
+          case $? in
+            0) PR_LOOKUP=found ;;
+            1) PR_LOOKUP=none ;;
+          esac
+        fi
+      fi
     fi
+    case "$PR_LOOKUP" in
+      found)
+        NUM=$(printf '%s' "$PR_JSON" | jq -r '.number' 2>/dev/null || echo "?")
+        STATE=$(printf '%s' "$PR_JSON" | jq -r '.state' 2>/dev/null || echo "")
+        MERGED_AT=$(printf '%s' "$PR_JSON" | jq -r '.mergedAt // "-"' 2>/dev/null || echo "-")
+        case "$STATE" in
+          MERGED) warn "Fresh PR check: PR #${NUM} for '${REF}' is MERGED (${MERGED_AT}) — deletion is safe." ;;
+          OPEN)   warn "⚠ Fresh PR check: PR #${NUM} for '${REF}' is OPEN and NOT merged — deleting this branch will CLOSE THE PR UNMERGED (the PR #520 incident). Stop unless you intend to abandon it. Recovery runbook: docs/solutions/best-practices/restore-and-merge-closed-pr-after-branch-deletion-2026-07-11.md" ;;
+          CLOSED) warn "⚠ Fresh PR check: PR #${NUM} for '${REF}' is CLOSED WITHOUT MERGE — a rejection signal. Never sweep this branch silently (keep local AND remote; see the land skill's branch-sweep table)." ;;
+          *)      warn "⚠ Fresh PR check for '${REF}': PR state unparseable — treat as UNVERIFIED and confirm merge state manually. Rule: docs/solutions/conventions/delete-branch-only-after-confirming-pr-merged-2026-07-06.md" ;;
+        esac
+        ;;
+      none)
+        warn "⚠ Fresh PR check: NO PR found for '${REF}' — deleting it may lose never-pushed work. Rule: docs/solutions/conventions/delete-branch-only-after-confirming-pr-merged-2026-07-06.md"
+        ;;
+      *)
+        warn "⚠ Fresh PR check for '${REF}' FAILED (gh unavailable/network) — treat as UNVERIFIED and confirm merge state manually before deleting. Rule: docs/solutions/conventions/delete-branch-only-after-confirming-pr-merged-2026-07-06.md"
+        ;;
+    esac
   fi
 fi
 

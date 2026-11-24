@@ -24,7 +24,16 @@ case "$BRANCH" in -*)
   exit 1 ;;
 esac
 
-if ! PR_JSON=$(gh pr view "$BRANCH" --json state,headRefOid 2>/dev/null); then
+# `gh pr view --json` is GraphQL, which a Claude Code cloud session refuses: retry over REST
+# (same fields, same OPEN|CLOSED|MERGED states, and like gh an open PR wins on a reused branch
+# name). Lib missing, no PR, or REST failing too → the same fail-closed exit 1 as before.
+pr_rest() { return 2; }
+# shellcheck source=/dev/null
+. "$(cd "$(dirname "$0")/.." && pwd)/.claude/hooks/lib/gh-pr-rest.sh" 2>/dev/null \
+  && declare -F gh_pr_rest_json >/dev/null && pr_rest() { gh_pr_rest_json "$@" 2>/dev/null; }
+
+if ! PR_JSON=$(gh pr view "$BRANCH" --json state,headRefOid 2>/dev/null) \
+  && ! PR_JSON=$(pr_rest "$BRANCH"); then
   echo "verify-branch-merged: no PR found or gh failed for '$BRANCH' — NOT safe to delete" >&2
   exit 1
 fi

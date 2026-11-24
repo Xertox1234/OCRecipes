@@ -18,7 +18,20 @@ const GIT_ENV_UNSET = {
 
 // Fake `gh` controlled by env: FAKE_GH_STATE / FAKE_GH_OID (JSON fields),
 // FAKE_GH_EXIT (exit code). Mirrors `gh pr view --json state,headRefOid`.
+//
+// FAKE_GH_GRAPHQL_BLOCKED=1 makes it behave like a Claude Code cloud session: `gh pr view`
+// (GraphQL) is refused with HTTP 403, and `gh api` (REST) prints FAKE_GH_REST_BODY — or
+// fails when FAKE_GH_REST_FAIL is set.
 const FAKE_GH = `#!/usr/bin/env bash
+if [ -n "\${FAKE_GH_GRAPHQL_BLOCKED:-}" ]; then
+  if [ "$1" != "api" ]; then
+    echo "HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API" >&2
+    exit 1
+  fi
+  [ -z "\${FAKE_GH_REST_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
+  printf '%s\\n' "$FAKE_GH_REST_BODY"
+  exit 0
+fi
 if [ "\${FAKE_GH_EXIT:-0}" != "0" ]; then
   echo "\${FAKE_GH_STDERR:-no pull requests found for branch}" >&2
   exit "$FAKE_GH_EXIT"
@@ -180,6 +193,105 @@ describe("verify-branch-merged.sh", () => {
         FAKE_GH_STDERR: "network down",
       }).status,
     ).toBe(1);
+  });
+
+  describe("GraphQL refused (Claude Code cloud session): REST retry", () => {
+    const restPr = (
+      number: number,
+      state: "open" | "closed",
+      mergedAt: string | null,
+      sha: string,
+    ) => ({
+      number,
+      html_url: `https://github.com/o/r/pull/${number}`,
+      title: "t",
+      state,
+      merged_at: mergedAt,
+      head: { ref: "todo/foo", sha },
+    });
+    const cloud = (body: unknown, extra: Record<string, string> = {}) => ({
+      FAKE_GH_GRAPHQL_BLOCKED: "1",
+      FAKE_GH_REST_BODY: JSON.stringify(body),
+      ...extra,
+    });
+    const MERGED_AT = "2026-11-23T00:00:00Z";
+
+    it("exit 0 when REST says merged and the local tip equals the PR head", () => {
+      const { dir, oid } = makeRepo();
+      const r = run(
+        ["todo/foo"],
+        cloud([restPr(7, "closed", MERGED_AT, oid)]),
+        dir,
+      );
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("MERGED");
+    });
+
+    it("exit 1 when REST says merged but the local tip differs from the PR head", () => {
+      const { dir } = makeRepo();
+      const r = run(
+        ["todo/foo"],
+        cloud([
+          restPr(
+            7,
+            "closed",
+            MERGED_AT,
+            "0000000000000000000000000000000000000000",
+          ),
+        ]),
+        dir,
+      );
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("post-merge commits?");
+    });
+
+    it("exit 1 when REST says open", () => {
+      const { dir, oid } = makeRepo();
+      const r = run(["todo/foo"], cloud([restPr(7, "open", null, oid)]), dir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("'OPEN' (not MERGED)");
+    });
+
+    it("exit 1 when REST says closed without merge", () => {
+      const { dir, oid } = makeRepo();
+      const r = run(["todo/foo"], cloud([restPr(7, "closed", null, oid)]), dir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("'CLOSED' (not MERGED)");
+    });
+
+    it("exit 1 when a reused branch name has an OPEN PR beside a merged one at the same tip", () => {
+      const { dir, oid } = makeRepo();
+      // newest first, as GitHub lists them: the merged one is newer, the open one must win
+      const r = run(
+        ["todo/foo"],
+        cloud([
+          restPr(9, "closed", MERGED_AT, oid),
+          restPr(8, "open", null, oid),
+        ]),
+        dir,
+      );
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("'OPEN' (not MERGED)");
+    });
+
+    it("exit 1 when REST finds no PR for the branch", () => {
+      const r = run(["todo/foo"], cloud([]));
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("NOT safe to delete");
+    });
+
+    it("exit 1 when REST fails too (fail-closed)", () => {
+      const { dir, oid } = makeRepo();
+      const r = run(
+        ["todo/foo"],
+        cloud([restPr(7, "closed", MERGED_AT, oid)], {
+          FAKE_GH_REST_FAIL: "1",
+        }),
+        dir,
+      );
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("NOT safe to delete");
+    });
   });
 
   it("exit 1 on a flag-like branch name", () => {
