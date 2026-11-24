@@ -23,6 +23,83 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
+# From here to the end, the hook's shell must not end without a decision (2026-11-24). A
+# PreToolUse hook that ends silently is an ALLOW, so anything that ended this shell early let
+# a commit on a detached HEAD through, each measured: a lib that exits when sourced (both were
+# sourced in this shell with no probe), a lib function that exits when called here
+# (cmd_fastpath_has, cmd_is_git_commit), a lib that shadows jq, declare, git or printf, a
+# signal, a final jq that could not print. DECIDED is set only by deny() and allow(). Any
+# other end runs no_decision, which denies when the command matches the fallback commit
+# regexes below (the ones the lib-less path already uses) and stays silent otherwise, so a
+# broken hook does not block ordinary commands. The branch-behind-upstream check is hygiene
+# and already fails open with no lib, so the trap does not speak for it. The trap is not
+# inherited by `$(...)`. fd 9 is the hook's real stdout: the shell can end inside a command
+# whose stdout is redirected, and the trap would inherit that redirect. Not covered: a lib
+# that replaces the trap, sets DECIDED, assigns a variable the hook reads, redefines a
+# function defined above the libs, defines `builtin`, or closes fd 9; SIGKILL, the fault,
+# stop and real-time signals; the exits above this line (docs/harness-residuals.md).
+#
+# The fallback regexes (used when the lib is unusable, and by the trap). See the comment at
+# their use site in Check 1 for what they do and do not model.
+GIT_COMMIT_RE='^[[:space:]]*[`{(!]?[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
+COMPOUND_COMMIT_RE='(&&|\|\||\||&|;|[`{(!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
+exec 9>&1
+DECIDED=""
+allow() { DECIDED=1; exit 0; }
+# deny builds its JSON inside `$(...)` first and marks the decision only when the text holds
+# the deny; the reason is cut at 8000 characters (one argv entry over 128 KB is E2BIG).
+deny() {
+  local j r="$1"
+  [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
+  j=$(jq -n --arg r "$r" '{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": $r
+  }
+}' 2>/dev/null) || j=""
+  case "$j" in
+    *'"permissionDecision": "deny"'*)
+      trap '' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+      trap '' PWR 2>/dev/null || :
+      trap '' STKFLT 2>/dev/null || :
+      DECIDED=1; printf '%s\n' "$j" >&9 ;;
+  esac
+  exit 0
+}
+no_decision() {
+  [ -n "$DECIDED" ] && return 0
+  DECIDED=1
+  if grep -qE "$GIT_COMMIT_RE" <<<"$CMD" || grep -qE "$COMPOUND_COMMIT_RE" <<<"$CMD"; then
+    builtin printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"branch-preflight: the hook ended before it reached a decision (a helper under .claude/hooks/lib/ ended the hook, or the hook was interrupted) on a command that looks like a git commit, so it cannot say HEAD is on a named branch. Fail-closed. Check with: git symbolic-ref --short HEAD. Bypass (emergencies only): SKIP_BRANCH_PREFLIGHT=1 in the shell that launched Claude Code."}}' >&9
+  fi
+  exit 0
+}
+trap no_decision EXIT
+# A trapped signal would otherwise RETURN to the interrupted command; end the shell instead.
+# PWR and STKFLT do not exist in macOS bash, so each is set on its own line that may fail.
+trap 'no_decision; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+trap 'no_decision; exit 0' PWR 2>/dev/null || :
+trap 'no_decision; exit 0' STKFLT 2>/dev/null || :
+
+# lib_loads <file>: source it in a subshell first. A lib that exits, fails under this file's
+# `set -u`, changes the shell options (errexit left on), or leaves a function named like a
+# builtin or a command this hook calls counts as missing. TWIN of git-safety.sh's lib_loads
+# and _gs_no_shadow. The check runs through `builtin`, so a lib that defines a function called
+# `builtin` defeats it (docs/harness-residuals.md).
+_BP_NO_SHADOW=(. : '[' break builtin cd command compgen continue declare echo eval exec exit
+  export false kill local printf pwd read readonly return set shift shopt source test trap true
+  type typeset unset wait cat ls grep jq awk sed tr sort dirname head wc tail git)
+_bp_no_shadow() {
+  for _bp_f in "${_BP_NO_SHADOW[@]}"; do
+    builtin declare -F -- "$_bp_f" >/dev/null 2>&1 && builtin return 1
+  done
+  builtin return 0
+}
+lib_loads() {
+  [ "$(_o="$-:$SHELLOPTS"; { . "$1"; } >/dev/null 2>&1; _bp_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && printf loaded)" = loaded ]
+}
+
 # Fork-free: a $(cd ...) subshell here is the ENTIRE added cost of reaching the shared
 # fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this HERE now
 # runs on every Bash tool call, not just ones that already matched the old inline filter.
@@ -39,9 +116,16 @@ case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esa
 # do NOT exit here — fall through to the LIB_OK determination below, which already has its
 # own tested fail-closed/fail-open handling per check; losing the cheap pre-filter only costs
 # performance in that (broken-install) case, never a decision.
-if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
-  cmd_fastpath_has "$CMD" '*commit*' '*checkout*' '*switch*' || exit 0
-fi
+# Sourced and called INSIDE one `$(...)` (2026-11-24), never in the hook's own shell: sourced
+# there, a lib that exits took the hook with it, and so did a cmd_fastpath_has that exits. The
+# answer is the function's rc as text; only a clean "1" (no needle) takes the fast way out.
+# Empty means the lib exited, left a shell option changed or a shadowing function (the
+# lib_loads test, inlined to keep this at ONE fork per Bash call), or the function did not
+# return: then the checks below run, as with no filter at all.
+_BP_FP_RC=$(_o="$-:$SHELLOPTS"; { . "$HERE/lib/fastpath-filter.sh"; } >/dev/null 2>&1
+  _bp_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && declare -F cmd_fastpath_has >/dev/null || exit 0
+  cmd_fastpath_has "$CMD" '*commit*' '*checkout*' '*switch*' >/dev/null 2>&1; printf '%s' "$?")
+[ "$_BP_FP_RC" = 1 ] && allow
 
 LIB_OK=0
 # Probe EVERY function the primary path calls, not just the first one. Check 1 now depends on
@@ -50,7 +134,7 @@ LIB_OK=0
 # `git commit -m x` on a detached HEAD — the fail-CLOSED promise in this file's header
 # quietly bypassed (security review, 2026-09-01; verified against a lib with that one
 # function renamed away). Add to this list whenever the primary path grows a dependency.
-if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+if lib_loads "$HERE/lib/cmd-detect.sh" && . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
    && declare -F cmd_is_git_commit >/dev/null \
    && declare -F cmd_git_repo_dir >/dev/null; then
   LIB_OK=1
@@ -72,11 +156,22 @@ REPO_COMMIT="."
 
 # --- Check 1: detached-HEAD commit (unchanged behavior) ------------------------
 IS_COMMIT=0
+# cmd_is_git_commit is called inside `$(...)` (2026-11-24): called directly, one that EXITS
+# ended the hook with no decision. The answer is its rc as text. Anything but a clean 0 or 1
+# (it did not return, or returned something else) is "the lib could not tell", and takes the
+# same fail-closed fallback as a lib that is not there.
+_BP_FALLBACK=0
 if [ "$LIB_OK" = 1 ]; then
-  if cmd_is_git_commit "$CMD"; then
-    REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") && IS_COMMIT=1 || REPO_COMMIT="."
-  fi
+  _BP_IS_COMMIT=$(cmd_is_git_commit "$CMD" >/dev/null 2>&1; printf '%s' "$?")
+  case "$_BP_IS_COMMIT" in
+    0) REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") && IS_COMMIT=1 || REPO_COMMIT="." ;;
+    1) ;;
+    *) _BP_FALLBACK=1 ;;
+  esac
 else
+  _BP_FALLBACK=1
+fi
+if [ "$_BP_FALLBACK" = 1 ]; then
   # Lib unsourceable → this half of the gate is BLOCKING, so fail CLOSED: keep the raw
   # (quote-unaware) match so a real detached-HEAD commit is still caught. A quoted mention
   # may false-DENY — the accepted cost of never fail-OPENing a data-loss gate.
@@ -139,8 +234,6 @@ else
   # class), so it is out of this todo's Scope Contract; tracked as a residual for
   # todos/P2-2026-08-29-branch-preflight-fallback-parity-gaps.md's follow-up rather than fixed
   # here.
-  GIT_COMMIT_RE='^[[:space:]]*[`{(!]?[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
-  COMPOUND_COMMIT_RE='(&&|\|\||\||&|;|[`{(!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
   if grep -qE "$GIT_COMMIT_RE" <<<"$CMD" || grep -qE "$COMPOUND_COMMIT_RE" <<<"$CMD"; then
     IS_COMMIT=1
   fi
@@ -184,8 +277,16 @@ fi
 # trigger — `_CMD_POS_PREFIX` has always absorbed it, so `GIT_DIR=/x git checkout -b foo` was
 # judged against cwd before and still is. Check 1 keeps full `-C` resolution: it is read-only
 # and it is the gate that prevents data loss.
-if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
-   && ! printf '%s' "$CMD" | cmd_words | grep -qE "$_CMD_GIT_REDIRECTS_REPO" \
+# cmd_is_git_branch_create is called inside `$(...)` for the same reason as cmd_is_git_commit.
+# Only a clean 0 runs this check; anything else skips it, as a missing lib always has (this
+# check is hygiene and fails open). The words go to grep as a here-string, never down a pipe:
+# under pipefail, grep -q leaving at its first match reads as 141, "no match".
+_BP_IS_CREATE=1
+if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ]; then
+  _BP_IS_CREATE=$(cmd_is_git_branch_create "$CMD" >/dev/null 2>&1; printf '%s' "$?")
+fi
+if [ "$_BP_IS_CREATE" = 0 ] \
+   && ! grep -qE "$_CMD_GIT_REDIRECTS_REPO" <<<"$(printf '%s' "$CMD" | cmd_words)" \
    && git rev-parse --git-dir >/dev/null 2>&1; then
   BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
   if [ -n "$BRANCH" ]; then
@@ -241,7 +342,7 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
         # rather than allow, a dead network could turn this hygiene-only check into an
         # unintended block — unverified either way; accepted for now, worth revisiting if seen.
         git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
-          "$REMOTE" "${MERGE_REF}:refs/remotes/${REMOTE}/${REMOTE_BRANCH}" 2>/dev/null
+          "$REMOTE" "${MERGE_REF}:refs/remotes/${REMOTE}/${REMOTE_BRANCH}" 2>/dev/null 9>&-
         BEHIND=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "")
         if [ -n "$BEHIND" ] && [ "$BEHIND" -gt 0 ] 2>/dev/null; then
           UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "${REMOTE}/${REMOTE_BRANCH}")
@@ -252,13 +353,6 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
   fi
 fi
 
-[ -n "$REASON" ] || exit 0
+[ -n "$REASON" ] || allow
 
-jq -n --arg r "$REASON" '{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "deny",
-    "permissionDecisionReason": $r
-  }
-}'
-exit 0
+deny "$REASON"

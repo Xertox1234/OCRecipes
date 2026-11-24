@@ -643,9 +643,30 @@ directly (none is called directly today); SIGKILL, which nothing can handle; and
 the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
 could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
 not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
-(2) other blocking hooks source files at top level with no such probe: `branch-preflight.sh`
-and `pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
+(2) one blocking hook still sources files at top level with no such probe:
+`pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
 `scripts/lib/verdict-diff-stamp-path.sh`.
+`branch-preflight.sh` FIXED 2026-11-24 (rows ND0-ND5 in `test-branch-preflight.sh`). Measured
+before the change, a `git commit` on a detached HEAD was allowed in silence when:
+`lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced; `cmd_fastpath_has` or
+`cmd_is_git_commit` exits when called (both ran in the hook's own shell); a lib shadows `jq`,
+`declare`, `git` or `printf`; a signal arrives mid-run; the final `jq` cannot print. Now: the
+fast-path lib is sourced and called inside one `$(...)` and only a clean "1" leaves early;
+`cmd-detect.sh` is probed before it is sourced; `cmd_is_git_commit` and
+`cmd_is_git_branch_create` are called inside `$(...)`, and an answer that is neither 0 nor 1
+takes the same fail-closed regex fallback as a missing lib (for the commit check) or skips the
+check (for the branch-behind-upstream check, which is hygiene and always failed open without
+the lib); the deny builds first; and an EXIT/signal trap denies when the shell ends undecided
+on a command the fallback commit regexes match. Its one `printf | cmd_words | grep -q`
+condition now reads a here-string (under `pipefail` a 141 there read as "no repo redirect",
+which only added denies). Cost: about 2 ms more per Bash call, about 7 ms more on a commit,
+checkout or switch. Still open in `branch-preflight.sh`: the same list as for `git-safety.sh`
+below (a lib that replaces the trap, sets `DECIDED`, assigns a variable the hook reads,
+redefines a function defined above the libs, defines `builtin`, or closes fd 9; SIGKILL, the
+fault, stop and real-time signals); the four exits before the trap (`SKIP_BRANCH_PREFLIGHT`,
+and `jq` unable to read the envelope: with `jq` missing from PATH the hook allows everything,
+on `main` too); a commit `cmd_git_repo_dir` cannot place is not judged (as before); the trap
+speaks only for the commit check. Not tested on bash 3.2 (macOS).
 `guard-outward-cli.sh` FIXED 2026-11-24 (rows ND1-ND6 in `test-guard-outward-cli.sh`).
 Measured before the change, `eas update --branch production` was allowed in silence when:
 `lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced (both were sourced in the
@@ -720,9 +741,9 @@ main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines,
 every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
 (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
 that outlives the hook cannot hold its stdout open.
-NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `branch-preflight.sh`,
-`pr-preflight-guard.sh`, `merge-review-guard.sh`, `guard-worktree-isolation.sh` and
-`core-bare-guard.sh` (all under `pipefail`; `guard-outward-cli.sh` was checked and converted
+NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `pr-preflight-guard.sh`,
+`merge-review-guard.sh`, `guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under
+`pipefail`; `guard-outward-cli.sh` and `branch-preflight.sh` were checked and converted
 2026-11-24). Whether any of
 them is a condition over a large text that fails open is unmeasured; the known pattern is
 `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
