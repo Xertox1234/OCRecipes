@@ -286,6 +286,13 @@ describe("pantry card", () => {
         { key: "protein" as const, current: null, proposed: 150 },
       ],
     };
+    const allergy = { allergen: "tree_nuts" as const };
+    expect(writeCardButtonLabel("allergy", allergy, {})).toBe(
+      "Add to allergies",
+    );
+    expect(writeCardReceipt("allergy", allergy, { severity: "severe" })).toBe(
+      "✓ Tree nuts added to your allergies · severe",
+    );
     expect(writeCardButtonLabel("goals", goals, {})).toBe("Update goals");
     expect(writeCardReceipt("goals", goals, { values: [2100, 150] })).toBe(
       "✓ Goals updated · 2,100 cal · 150 g protein",

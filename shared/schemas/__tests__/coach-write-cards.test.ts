@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  allergyEditsSchema,
   foodEditsSchema,
   goalsCardPayloadSchema,
   goalsEditsSchema,
@@ -121,6 +122,47 @@ describe("goals write card", () => {
     expect(goalsEditsSchema.safeParse({ values: [2000.5] }).success).toBe(
       false,
     );
+  });
+});
+
+describe("allergy write card", () => {
+  const allergyBlock = {
+    type: "write_card",
+    cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+    kind: "allergy",
+    status: "live",
+    payload: { allergen: "shellfish" },
+  };
+
+  it("an allergy block passes the coach block schema, so the app does not drop it", () => {
+    expect(coachBlockSchema.safeParse(allergyBlock).success).toBe(true);
+    expect(writeCardBlockSchema.safeParse(allergyBlock).success).toBe(true);
+  });
+
+  it("an allergy payload under another kind is refused, and so is an allergen the profile cannot hold", () => {
+    expect(
+      writeCardBlockSchema.safeParse({ ...allergyBlock, kind: "goals" })
+        .success,
+    ).toBe(false);
+    expect(
+      writeCardBlockSchema.safeParse({
+        ...allergyBlock,
+        payload: { allergen: "strawberries" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("edits are strict: a severity only", () => {
+    expect(allergyEditsSchema.safeParse({ severity: "mild" }).success).toBe(
+      true,
+    );
+    expect(allergyEditsSchema.safeParse({ severity: "deadly" }).success).toBe(
+      false,
+    );
+    expect(
+      allergyEditsSchema.safeParse({ severity: "mild", allergen: "fish" })
+        .success,
+    ).toBe(false);
   });
 });
 

@@ -399,6 +399,8 @@ export {
 } from "./user-email";
 export {
   getUserProfile,
+  getProfileAllergies,
+  setProfileAllergies,
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,

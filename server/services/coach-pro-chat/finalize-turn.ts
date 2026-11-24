@@ -77,6 +77,35 @@ async function proReplyBlocks(
     }
   }
 
+  // The allergy card (Coach roadmap T1) has no tool: for an app that can draw
+  // it, the Coach's "Add X to your allergies" action card becomes a card the
+  // user saves in the chat. The action card stays when the turn already has
+  // a card (a conversation holds one live card) or none can be built (no
+  // health-data consent on record: the profile screen asks for it).
+  const allergyAt = blocks.findIndex(
+    (b) => b.type === "action_card" && b.action.type === "add_allergy",
+  );
+  const allergyBlock = blocks[allergyAt];
+  if (
+    params.allergyCard &&
+    params.writeCards &&
+    params.isCoachPro &&
+    !reply.writeCardProposal &&
+    !reply.safetyOverridden &&
+    !isAborted() &&
+    allergyBlock?.type === "action_card" &&
+    allergyBlock.action.type === "add_allergy"
+  ) {
+    const card = await createWriteCardBlock(
+      { kind: "allergy", args: { allergen: allergyBlock.action.allergen } },
+      { conversationId, userId, tz: turn.tz },
+    );
+    if (card) {
+      blocks = [...blocks.filter((_, i) => i !== allergyAt), card];
+      wroteCard = true;
+    }
+  }
+
   // The trail leads the reply's blocks, so it sits right under the text and
   // above any card. A safety override replaced the reply: no trail for it.
   const trail = buildTrail(reply.trailEntries);

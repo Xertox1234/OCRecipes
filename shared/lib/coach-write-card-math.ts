@@ -1,4 +1,7 @@
-import type {
+import {
+  allergenWord,
+  type AllergyCardEdits,
+  type AllergyCardPayload,
   FoodCardEdits,
   FoodCardPayload,
   GoalKey,
@@ -166,6 +169,8 @@ export function writeCardButtonLabel(
       return "Update pantry";
     case "goals":
       return "Update goals";
+    case "allergy":
+      return "Add to allergies";
   }
 }
 
@@ -194,6 +199,11 @@ export function writeCardReceipt(
     // (write-cards/pantry.ts); this is the line when no counts exist.
     case "pantry":
       return "✓ Pantry updated";
+    case "allergy": {
+      const word = allergenWord((p as AllergyCardPayload).allergen);
+      const severity = (e as AllergyCardEdits).severity;
+      return `✓ ${word[0].toUpperCase()}${word.slice(1)} added to your allergies${severity ? ` · ${severity}` : ""}`;
+    }
     case "goals":
       return `✓ Goals updated · ${goalsSummary(p as GoalsCardPayload, e as GoalsCardEdits)}`;
   }

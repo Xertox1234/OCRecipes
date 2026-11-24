@@ -234,6 +234,50 @@ describe("coach-write-cards storage", () => {
     expect(await goalOf()).toBe(1800);
   });
 
+  // The whole path on a real database for the allergy card: the kind check
+  // accepts 'allergy', the save adds it to the profile, Undo removes it.
+  it("an allergy card adds the allergy and Undo removes it", async () => {
+    const { performWriteCardSave, revertWriteCardSave } = await import(
+      "../../services/write-cards"
+    );
+    await tx.insert(schema.userProfiles).values({
+      userId: user.id,
+      allergies: [{ name: "milk", severity: "mild" }],
+      healthDataConsentAt: new Date(),
+    });
+    const allergiesOf = async () =>
+      (
+        await tx
+          .select({ allergies: schema.userProfiles.allergies })
+          .from(schema.userProfiles)
+          .where(eq(schema.userProfiles.userId, user.id))
+      )[0].allergies;
+    const { card } = await createWriteCard({
+      userId: user.id,
+      conversationId,
+      kind: "allergy",
+      payload: { allergen: "shellfish" },
+    });
+    const ctx = { userId: user.id, tz: "UTC", now: new Date() };
+    const saved = await saveWriteCard(
+      card.id,
+      user.id,
+      (t, c) => performWriteCardSave(t, c, { severity: "severe" }, ctx),
+      { severity: "severe" },
+    );
+    expect(saved.status).toBe("saved");
+    expect(await allergiesOf()).toEqual([
+      { name: "milk", severity: "mild" },
+      { name: "shellfish", severity: "severe" },
+    ]);
+
+    const undone = await undoWriteCard(card.id, user.id, (t, c) =>
+      revertWriteCardSave(t, c),
+    );
+    expect(undone.status).toBe("undone");
+    expect(await allergiesOf()).toEqual([{ name: "milk", severity: "mild" }]);
+  });
+
   it("undo within 60s reverts and returns card to live", async () => {
     const { card } = await create();
     await saveWriteCard(card.id, user.id, async () => ({

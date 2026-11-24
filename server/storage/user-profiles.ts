@@ -1,4 +1,5 @@
 import {
+  type Allergy,
   type UserProfile,
   type InsertUserProfile,
   users,
@@ -40,6 +41,43 @@ export async function getUserProfile(
     .from(userProfiles)
     .where(eq(userProfiles.userId, userId));
   return profile || undefined;
+}
+
+type AllergiesExecutor = Pick<typeof db, "select" | "update">;
+
+/**
+ * The profile's allergies and whether the health-data consent is on record;
+ * undefined with no profile row. Pass a transaction to read inside it;
+ * `forUpdate` then locks the row until that transaction ends.
+ */
+export async function getProfileAllergies(
+  userId: string,
+  executor: AllergiesExecutor = db,
+  opts: { forUpdate?: boolean } = {},
+): Promise<{ allergies: Allergy[]; hasHealthConsent: boolean } | undefined> {
+  const query = executor
+    .select({
+      allergies: userProfiles.allergies,
+      consentAt: userProfiles.healthDataConsentAt,
+    })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId));
+  const [row] = await (opts.forUpdate ? query.for("update") : query);
+  if (!row) return undefined;
+  return { allergies: row.allergies, hasHealthConsent: row.consentAt != null };
+}
+
+/** Replaces the allergies. Pass a transaction to write inside it. The caller
+ *  has checked the health-data consent (routes/_health-consent.ts). */
+export async function setProfileAllergies(
+  userId: string,
+  allergies: Allergy[],
+  executor: AllergiesExecutor = db,
+): Promise<void> {
+  await executor
+    .update(userProfiles)
+    .set({ allergies, updatedAt: new Date() })
+    .where(eq(userProfiles.userId, userId));
 }
 
 export async function createUserProfile(

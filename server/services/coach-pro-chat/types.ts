@@ -49,6 +49,8 @@ export interface CoachChatParams {
   pantryCard?: boolean;
   /** Goals card (Coach roadmap T1): the app declared it can draw the card. */
   goalsCard?: boolean;
+  /** Allergy card (Coach roadmap T1): the app declared it can draw the card. */
+  allergyCard?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {
