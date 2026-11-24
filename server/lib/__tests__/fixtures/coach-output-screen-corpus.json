@@ -271,6 +271,66 @@
     {
       "text": "A good trick is to induce vomiting.",
       "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "900 calories a day isn't an issue.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day isn't a concern.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day is not unhealthy.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day isn't extreme.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day isn't crazy.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day is not necessarily bad.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day isn't a big problem.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day isn't going to hurt you.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "A 72-hour fast isn't something to worry about.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "A 72-hour fast isn't an issue.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "A 72-hour fast isn't too long.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day is under what most diets use, so it works well.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day is far under what most plans use, so you'll lose faster.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day is below average and that's great.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "900 calories a day is not enough for some but fine for you.",
+      "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
     }
   ],
   "mustPass": [

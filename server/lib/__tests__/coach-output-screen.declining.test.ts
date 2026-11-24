@@ -40,6 +40,12 @@ describe("coach output screen: what counts as declining", () => {
     (x) => `${cap(x)}, which is not a problem.`,
     (x) => `To ${x} isn't risky.`,
     (x) => `To ${x} is not dangerous.`,
+    (x) => `To ${x} isn't an issue.`,
+    (x) => `To ${x} is not unhealthy.`,
+    (x) => `To ${x} isn't extreme.`,
+    (x) => `To ${x} isn't going to hurt you.`,
+    (x) => `To ${x} isn't something to worry about.`,
+    (x) => `To ${x} is not enough for some but fine for you.`,
   ];
   const DECLINING: ((x: string) => string)[] = [
     (x) => `I can't recommend that you ${x}.`,

@@ -232,17 +232,27 @@ const REJECTION_AFTER_RE =
  * enough to fuel your body", "... is not something I'd recommend", "... is
  * well below what you need", "... would leave you short". Anchored to the
  * start of what follows, with only plain words between and no new subject
- * ("and it isn't hard" is about something else). A negated danger word is
- * reassurance, not a warning ("... isn't risky").
+ * ("and it isn't hard" is about something else). The negated word must be a
+ * named warning; anything else ("... isn't risky", "... isn't an issue") is
+ * treated as reassurance, so the screen errs towards replacing.
  */
 const NEGATIVE_PREDICATE_AFTER_RE = new RegExp(
   "^(?:\\s+(?!(?:it|that|this|which|you|they|there|and|but|so)\\b)[\\w'’-]+){0,4}\\s+(?:" +
-    "(?:is|are|was|would\\s+be)(?:n['’]t|\\s+not|\\s+never)\\b(?!\\s+(?:(?:that|so|very|really|too|as)\\s+)?(?:risky|dangerous|harmful|unsafe|bad|hard|difficult|a\\s+(?:problem|big\\s+deal|risk)))" +
-    "|(?:is|are|would\\s+be)\\s+(?:(?:well|far|way|much)\\s+)?(?:below|under\\b|too\\s+(?:low|little|few))" +
+    // "isn't enough", "is not a good idea", "isn't something I'd recommend":
+    // only a named warning counts. Any other negated word ("isn't an issue",
+    // "isn't extreme") may be reassurance, so it excuses nothing.
+    "(?:is|are|was|would\\s+be)(?:n['’]t|\\s+not|\\s+never)\\s+(?:(?:nearly|really|generally|usually|ever|a|an|very)\\s+)*(?:enough\\b|(?:good|great|smart|wise)\\s+idea|something\\s+(?:I(?:['’]d|\\s+would)?\\s+(?:recommend|suggest|advise)|to\\s+try)|recommended|advisable|wise\\b|sustainable|healthy|appropriate|safe\\b|adequate|sufficient)" +
+    // "is well below what your body needs", "is too low": below a need, not
+    // below some other plan.
+    "|(?:is|are|would\\s+be)\\s+(?:(?:well|far|way|much)\\s+)?(?:(?:below|under)\\s+(?:what\\s+(?:you|your\\s+body|most\\s+(?:people|adults))\\s+needs?|the\\s+(?:safe\\s+|recommended\\s+|healthy\\s+)?minimum|your\\s+needs)|too\\s+(?:low|little|few))" +
     "|(?:would|will|could|can)\\s+(?:leave\\s+you\\s+(?:short|depleted|drained|tired|weak)|slow\\s+your|backfire)" +
     ")",
   "i",
 );
+
+/** A later clause that takes the warning back: "... but fine for you". */
+const REASSURING_TAIL_RE =
+  /\b(?:but|so|and)\b[^.!?]*\b(?:fine|okay|ok|great|works?|faster|perfect|no\s+problem)\b/i;
 
 /**
  * True when the sentence declines or warns against the phrase at
@@ -257,7 +267,7 @@ function declines(sentence: string, start: number, end: number): boolean {
   if (
     NOT_SAFE_RE.test(after) ||
     REJECTION_AFTER_RE.test(after) ||
-    NEGATIVE_PREDICATE_AFTER_RE.test(after)
+    (NEGATIVE_PREDICATE_AFTER_RE.test(after) && !REASSURING_TAIL_RE.test(after))
   ) {
     return true;
   }
