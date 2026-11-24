@@ -679,7 +679,9 @@ Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
 `registry_active`, `no_decision`, `_gs_grep`, `_gs_no_shadow`), shadows a name that is not in
 `_GS_NO_SHADOW`, or closes fd 9; SIGKILL, the fault signals (SEGV, BUS, FPE, ILL, TRAP), the
 real-time signals, and PWR/STKFLT (left out because macOS bash has no such names); a signal
-between `deny()` marking the decision and printing it; the three exits before the trap when `jq` is on PATH
+between `deny()` marking the decision and printing it; a here-string larger than the pipe
+buffer needs a temp file, so with an unwritable `TMPDIR` the large-command greps read "no
+match" again (not measured); the three exits before the trap when `jq` is on PATH
 but cannot read the envelope (lines 46-48); a shell that ends before the inline
 `SKIP_WORKTREE_CONTRACT=1` prefix is read is denied even with that prefix (the safe direction);
 an advisory lost to a signal or to a `jq` that cannot print. Not tested on bash 3.2 (macOS).

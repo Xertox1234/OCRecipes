@@ -1843,6 +1843,11 @@ nd_only_deny() {
     && [ "$(printf '%s' "$ND_OUT" | jq -r '.hookSpecificOutput.permissionDecision' 2>/dev/null)" = deny ]
 }
 nd_reason() { printf '%s' "$ND_OUT" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null; }
+# Never `… | grep -q` here: this file runs under pipefail too, and grep leaving at its first
+# match made ND5 (an 8 KB reason) fail about one run in three (SIGPIPE, 141).
+nd_reason_has() { local r; r=$(nd_reason); grep -q -- "$1" <<<"$r"; }
+nd_out_has() { grep -q -- "$1" <<<"$ND_OUT"; }
+nd_out_hasF() { grep -qF -- "$1" <<<"$ND_OUT"; }
 
 # ND1. A lib shadows a builtin the hook calls in its own shell with a function that exits.
 #      (The probe now treats such a lib as missing, so this is the ordinary contract deny;
@@ -1863,7 +1868,7 @@ n="ND1 control: an ordinary command under a contract is still allowed"
 T=$(nd_tree own-agent-worktree.sh 'own_agent_root() { kill -TERM $$; sleep 1; }'); ND_TREES="$ND_TREES $T"
 nd_run "$T" "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
 n="ND2 SIGTERM mid-run under a contract: ended-before-a-decision deny, rc 0"
-nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason | grep -q 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
 nd_run "$T" "$(jq -cn --arg c "$MAIN" '{tool_name:"Bash",session_id:"no-registry-session",agent_id:"ccc",cwd:$c,tool_input:{command:"git commit -m x"}}')"
 n="ND2 control: SIGTERM mid-run with NO contract is silent, rc 0"
 [ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
@@ -1892,7 +1897,7 @@ ND_OLD_PATH=$PATH; PATH="$ND_JQ:$PATH"
 nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
 PATH=$ND_OLD_PATH
 n="ND4 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
-nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason | grep -q 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
 
 # ND5. A deny reason too large for one argv entry (E2BIG at 128 KB on Linux): a registry entry
 #      of 140 KB lands in the reason through registered_list.
@@ -1900,7 +1905,7 @@ head -c 140000 /dev/zero | tr '\0' 'a' > "$REG_DIR/zzzz-huge"
 nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
 rm -f "$REG_DIR/zzzz-huge"
 n="ND5 a 140 KB deny reason: one readable deny of bounded size"
-nd_only_deny && [ "${#ND_OUT}" -lt 20000 ] && nd_reason | grep -q 'Worktree contract violation' && nd_ok "$n" || nd_bad "$n"
+nd_only_deny && [ "${#ND_OUT}" -lt 20000 ] && nd_reason_has 'Worktree contract violation' && nd_ok "$n" || nd_bad "$n"
 
 # ND6. Nothing on stderr for an allow or a deny (a stray line left by an edit prints
 #      "command not found" on every call while every other row stays green).
@@ -1912,18 +1917,18 @@ n="ND6 a deny writes nothing to stderr"
 [ -z "$ND_ERR" ] && nd_only_deny && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
 nd_run "$(dirname "$HOOK")" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
 n="ND6 an advisory writes nothing to stderr"
-[ -z "$ND_ERR" ] && printf '%s' "$ND_OUT" | grep -q '"additionalContext"' && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
+[ -z "$ND_ERR" ] && nd_out_has '"additionalContext"' && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
 
 # ND7. The ADVISOR's two libs were sourced with no probe, so one that exits took the hook with
 #      it and the branch-deletion warning was lost. Now a lib that exits counts as missing.
 T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
 nd_run "$T" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo ; echo gh close')"
 n="ND7 cmd-detect.sh exits when sourced: the branch-deletion advisory still appears"
-printf '%s' "$ND_OUT" | grep -q '"additionalContext"' && printf '%s' "$ND_OUT" | grep -qF "is MERGED" && nd_ok "$n" || nd_bad "$n"
+nd_out_has '"additionalContext"' && nd_out_hasF "is MERGED" && nd_ok "$n" || nd_bad "$n"
 T=$(nd_tree gh-pr-rest.sh 'exit 0'); ND_TREES="$ND_TREES $T"
 FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY='[]' nd_run "$T" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
 n="ND7 gh-pr-rest.sh exits when sourced: the advisory reports UNVERIFIED instead of vanishing"
-printf '%s' "$ND_OUT" | grep -qF 'FAILED (gh unavailable/network)' && nd_ok "$n" || nd_bad "$n"
+nd_out_hasF 'FAILED (gh unavailable/network)' && nd_ok "$n" || nd_bad "$n"
 
 # ND8. A lib leaves a function named like a builtin or a command the hook calls (security
 #      review of this change, each measured as a silent allow under a contract). The probes
@@ -1949,7 +1954,7 @@ nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
 T=$(nd_tree write-targets.sh 'printf() { :; }'); ND_TREES="$ND_TREES $T"
 nd_run "$T" "$(json "$SESSION" "$R_WT" "echo x > $R_MAIN/notes.txt")"
 n="ND8 a shadowing write-targets.sh counts as missing: a write into main denies (did not load)"
-nd_only_deny && nd_reason | grep -q 'did not load' && nd_ok "$n" || nd_bad "$n"
+nd_only_deny && nd_reason_has 'did not load' && nd_ok "$n" || nd_bad "$n"
 
 # ND9. A LARGE command (pre-existing, found by the same review): `printf "$CMD" | grep -q`
 #      under pipefail read 141 as "not write-shaped" once the command outgrew the pipe buffer,
@@ -2002,7 +2007,7 @@ nd_run "$(dirname "$HOOK")" "$(json no-registry-session "$MAIN" 'git branch -D t
 ND_T1=$(date +%s)
 PATH=$ND_OLD_PATH
 n="ND11 a lingering child of gh does not keep the hook's stdout open (answer in under 4 s)"
-[ $((ND_T1 - ND_T0)) -lt 4 ] && printf '%s' "$ND_OUT" | grep -qF 'is MERGED' && nd_ok "$n" || { nd_bad "$n"; echo "  took $((ND_T1 - ND_T0)) s"; }
+[ $((ND_T1 - ND_T0)) -lt 4 ] && nd_out_hasF 'is MERGED' && nd_ok "$n" || { nd_bad "$n"; echo "  took $((ND_T1 - ND_T0)) s"; }
 # shellcheck disable=SC2086
 rm -rf $ND_TREES
 

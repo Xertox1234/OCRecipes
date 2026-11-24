@@ -49,16 +49,16 @@ CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || echo "")
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 
-# deny() builds its JSON inside `$(...)` first and marks the decision only when the text holds
-# the deny: a jq that fails or ends its shell (a 140 KB reason is E2BIG as one argv entry on
-# Linux, so the reason is cut at 8000 characters) then leaves the hook undecided, and
-# no_decision below answers. Written to fd 9, the hook's own stdout saved below.
 # _gs_grep <text> <grep args>: grep over a here-string, never `printf ... | grep -q` (2026-11-24).
 # Under this file's pipefail, grep -q leaves at its first match, the printf still writing a
 # large text dies of SIGPIPE, and the pipeline reads 141: "no match". Measured: a 200 KB
 # heredoc write into the main checkout skipped the whole write-shaped check that way.
 _gs_grep() { grep "${@:2}" <<<"$1"; }
 
+# deny() builds its JSON inside `$(...)` first and marks the decision only when the text holds
+# the deny: a jq that fails or ends its shell (a 140 KB reason is E2BIG as one argv entry on
+# Linux, so the reason is cut at 8000 characters) then leaves the hook undecided, and
+# no_decision below answers. Written to fd 9, the hook's own stdout saved below.
 deny() {
   local j r="$1"
   [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
