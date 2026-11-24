@@ -73,7 +73,7 @@ export async function performGoalsSave(
   const payload = card.payload as GoalsCardPayload;
   const values = goalsValues(payload, parseGoalsEdits(payload, rawEdits));
   // The goals as they are now, not as they were when the card was built.
-  const before = await getUserGoals(ctx.userId, tx);
+  const before = await getUserGoals(ctx.userId, tx, { forUpdate: true });
   if (!before) throw new WriteCardEditError("These changes can't be saved.");
   const goalsRestore: NonNullable<CoachWriteCardSavedRefs["goalsRestore"]> = [];
   payload.rows.forEach((row, i) => {
@@ -103,7 +103,7 @@ export async function revertGoalsSave(
 ): Promise<void> {
   const restore = card.savedRefs?.goalsRestore ?? [];
   if (restore.length === 0) return;
-  const now = await getUserGoals(card.userId, tx);
+  const now = await getUserGoals(card.userId, tx, { forUpdate: true });
   if (!now) return;
   await setUserGoals(
     card.userId,

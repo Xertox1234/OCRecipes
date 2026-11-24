@@ -189,7 +189,8 @@ async function* streamProReply(
         // Only when the app can draw the pantry card and the plan has the
         // pantry: otherwise the model never gets update_pantry.
         ...(pantryCard && { pantryCard: true }),
-        ...(goalsCard && { goalsCard: true }),
+        // Not on a safety turn: the Coach is refusing, not setting goals.
+        ...(goalsCard && intent !== "safety_refusal" && { goalsCard: true }),
       }),
     },
   )) {

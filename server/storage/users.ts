@@ -31,12 +31,17 @@ const GOAL_COLUMNS = {
 
 type GoalsExecutor = Pick<typeof db, "select" | "update">;
 
-/** The user's daily goals. Pass a transaction to read inside it. */
+/**
+ * The user's daily goals. Pass a transaction to read inside it; `forUpdate`
+ * then locks the user's row until that transaction ends, so a read-then-write
+ * cannot lose a change made in between.
+ */
 export async function getUserGoals(
   userId: string,
   executor: GoalsExecutor = db,
+  opts: { forUpdate?: boolean } = {},
 ): Promise<UserGoals | undefined> {
-  const [row] = await executor
+  const query = executor
     .select({
       calories: users.dailyCalorieGoal,
       protein: users.dailyProteinGoal,
@@ -45,6 +50,7 @@ export async function getUserGoals(
     })
     .from(users)
     .where(eq(users.id, userId));
+  const [row] = await (opts.forUpdate ? query.for("update") : query);
   return row;
 }
 
