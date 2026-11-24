@@ -78,6 +78,18 @@ const stable = vi.hoisted(() => ({
   nativeScrollToEnd: vi.fn(),
 }));
 
+// The camera button's send path (picker, compression, upload); the real
+// modules load Expo's native runtime.
+vi.mock("@/hooks/useCoachPhotoSend", () => {
+  // One object for every render: the real hook's callbacks are stable.
+  const value = {
+    openPhotoChooser: vi.fn(),
+    isSendingPhoto: false,
+    isPhotoBusy: () => false,
+  };
+  return { useCoachPhotoSend: () => value };
+});
+
 vi.mock("react-native", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-native")>();
   const FlatList = React.forwardRef<unknown, Record<string, unknown>>(

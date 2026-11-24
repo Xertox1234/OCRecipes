@@ -258,8 +258,13 @@ async function fetchUSDA(
  */
 export async function lookupUSDA(query: string): Promise<NutritionData | null> {
   try {
+    // USDA's search answers 400 when the query holds any of " / ( ) [ ] { }
+    // (measured live 2026-11-23), and a lookup name copied from USDA's own
+    // wording has them: `trimmed to 1/8" fat`. They become spaces in the
+    // search text only; the candidate check below still uses the full query.
+    const searchText = query.replace(/["/()[\]{}]/g, " ");
     const response = await fetchUSDA(
-      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${getUsdaApiKey()}`,
+      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(searchText)}&pageSize=5&api_key=${getUsdaApiKey()}`,
     );
 
     const json = await response.json();

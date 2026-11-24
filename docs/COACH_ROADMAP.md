@@ -37,9 +37,11 @@ Then re-rank.
 
 ## See: the Coach takes photos (rung 7)
 
-- [ ] **S1. Camera button in the message box.** Send a plate photo into the
+- [x] **S1. Camera button in the message box.** Send a plate photo into the
       chat; the reply is an editable portion card. Reuses the photo analysis
-      service. Value: high. Size: M.
+      service. Value: high. Size: M. PR #1984. Shipped as the Coach's food log card
+      (one row per food, sized to the portion seen; counts are whole portions).
+      Left for later: half portions, and showing the photo in the chat.
 - [ ] **S2. Label and barcode in chat.** Scan without leaving the conversation.
       Value: high. Size: M. Needs S1.
 - [ ] **S3. Receipt and menu photos.** A receipt becomes a pantry write card; a

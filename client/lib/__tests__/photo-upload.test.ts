@@ -423,6 +423,11 @@ describe("upload form-field budget (server MULTIPART_LIMITS.fields)", () => {
       fields: [],
     },
     {
+      name: "uploadPhotoToCoach",
+      run: () => photoUpload.uploadPhotoToCoach(PHOTO_URI, 7, "full"),
+      fields: ["openingBrief"],
+    },
+    {
       name: "uploadFrontLabelPhoto",
       run: () => uploadFrontLabelPhoto(PHOTO_URI, "0123456789012"),
       fields: ["barcode"],
@@ -915,6 +920,10 @@ describe("session expiry on photo uploads", () => {
       "uploadFrontLabelPhoto",
       () => uploadFrontLabelPhoto("file:///p.jpg", "0123"),
     ],
+    [
+      "uploadPhotoToCoach",
+      () => photoUpload.uploadPhotoToCoach("file:///p.jpg", 7),
+    ],
   ])("%s passes a 401 to the session-expiry check", async (_name, run) => {
     await expect(run()).rejects.toThrow();
     expect(notifyIfStreamSessionExpired).toHaveBeenCalledWith(
@@ -951,5 +960,49 @@ describe("session expiry on photo uploads", () => {
     mockFetch.mockResolvedValue(response);
     await expect(run()).rejects.toThrow();
     expect(notifyIfSessionExpired).toHaveBeenCalledWith(response, "test-token");
+  });
+});
+
+describe("uploadPhotoToCoach", () => {
+  beforeEach(() => {
+    vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
+    vi.mocked(compressImage).mockResolvedValue({
+      uri: "file:///compressed.jpg",
+      width: 100,
+      height: 100,
+      sizeKB: 10,
+    });
+  });
+
+  it("posts the compressed photo to the conversation, with the device time zone", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 201,
+      body: "{}",
+      headers: {},
+      mimeType: "application/json",
+    });
+
+    await photoUpload.uploadPhotoToCoach("file:///p.jpg", 7);
+
+    const [url, uri, options] = vi.mocked(uploadAsync).mock.calls.at(-1)!;
+    expect(url).toMatch(/\/api\/chat\/conversations\/7\/photo$/);
+    expect(uri).toBe("file:///compressed.jpg");
+    expect(options?.headers).toMatchObject({
+      Authorization: "Bearer test-token",
+      "X-Timezone": expect.any(String),
+    });
+    expect(cleanupImage).toHaveBeenCalledWith("file:///compressed.jpg");
+  });
+
+  it("throws an ApiError carrying the server's code", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 429,
+      body: JSON.stringify({ error: "x", code: "DAILY_LIMIT_REACHED" }),
+      headers: {},
+      mimeType: "application/json",
+    });
+    await expect(
+      photoUpload.uploadPhotoToCoach("file:///p.jpg", 7),
+    ).rejects.toMatchObject({ code: "DAILY_LIMIT_REACHED" });
   });
 });

@@ -26,6 +26,9 @@ import { ChatBubble } from "@/components/ChatBubble";
 import { InlineError } from "@/components/InlineError";
 import { useTTS } from "@/hooks/useTTS";
 import CoachMicButton from "@/components/coach/CoachMicButton";
+import CoachCameraButton from "@/components/coach/CoachCameraButton";
+import { useCoachPhotoSend } from "@/hooks/useCoachPhotoSend";
+import { COACH_PHOTO_USER_TEXT } from "@shared/lib/coach-photo";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
 import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
@@ -613,13 +616,94 @@ export default function CoachChat({
     }
   }, [isListening, transcript, isCoachPro, warmUpHook, setInputText]);
 
+  // A meal photo sent from the message box (Coach roadmap S1). The server
+  // stores the turn and its reply (a food card) in one request, so there is
+  // no stream: show the user's turn, upload, then refetch.
+  // True while a typed send is still creating its conversation: no rendered
+  // state shows that yet, and a photo started then would create a second one.
+  const startingTurnRef = useRef(false);
+  // The pending "Looking at your photo" announcement, so a send that never
+  // starts (the conversation could not be created) or an unmount cancels it.
+  const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const cancelPhotoAnnouncement = useCallback(() => {
+    if (photoAnnounceTimerRef.current) {
+      clearTimeout(photoAnnounceTimerRef.current);
+      photoAnnounceTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => cancelPhotoAnnouncement, [cancelPhotoAnnouncement]);
+  const { openPhotoChooser, isSendingPhoto, isPhotoBusy } = useCoachPhotoSend({
+    disabled: isStreaming || isListening,
+    canStart: () => !startingTurnRef.current,
+    openingBriefForm:
+      !conversationId && openingBrief ? openingBrief.form : undefined,
+    onPickFailure: (message) => toast.error(message),
+    onStart: () => {
+      turnEpochRef.current += 1;
+      followLatest();
+      setPendingSave(null);
+      setOptimisticAfter(lastSavedIdRef.current);
+      setOptimisticMessage(COACH_PHOTO_USER_TEXT);
+      setStreamBlocks([]);
+      setStreamingError(null);
+      setIsAtDailyLimit(false);
+      ttsStop();
+      // The photo path has no stream to announce its start. Delayed so it is
+      // not lost under the camera or picker closing.
+      cancelPhotoAnnouncement();
+      photoAnnounceTimerRef.current = setTimeout(
+        () =>
+          AccessibilityInfo.announceForAccessibility("Looking at your photo"),
+        500,
+      );
+    },
+    ensureConversation: async () => {
+      if (conversationId) return conversationId;
+      try {
+        return await onCreateConversation();
+      } catch {
+        cancelPhotoAnnouncement();
+        setOptimisticMessage(null);
+        setStreamingError("Couldn't start the conversation. Please try again.");
+        return null;
+      }
+    },
+    onSettled: async (convId, failure, sentBrief) => {
+      // An upload that ends inside the delay (offline, a fast refusal) must
+      // not announce "Looking at your photo" over its own outcome.
+      cancelPhotoAnnouncement();
+      activeConvIdRef.current = convId;
+      if (failure?.atDailyLimit) setIsAtDailyLimit(true);
+      else if (failure?.message) setStreamingError(failure.message);
+      // Refetch on failure too: the server may have stored the turn before
+      // the response was lost.
+      const epoch = turnEpochRef.current;
+      await queryClient
+        .invalidateQueries({ queryKey: chatMessagesKey(convId) })
+        .catch(() => undefined);
+      if (turnEpochRef.current === epoch) setOptimisticMessage(null);
+      if (failure) return;
+      if (sentBrief) {
+        // The server saved the brief and cleared its reminders.
+        void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
+        void queryClient.invalidateQueries({ queryKey: COACH_BRIEF_KEY });
+      } else {
+        onMessageSent?.();
+      }
+    },
+  });
+
   const handleSend = useCallback(
     async (text?: string) => {
       // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
       const content = (
         typeof text === "string" ? text : inputTextRef.current
       ).trim();
-      if (!content || isStreaming) return;
+      // isPhotoBusy covers the time the camera or picker is open, before
+      // isSendingPhoto is set: a voice transcript can still finalize then.
+      if (!content || isStreaming || isSendingPhoto || isPhotoBusy()) return;
 
       // Only a tap or the return key buzzes. String callers (voice, quick
       // replies, retry, suggestion hand-off) get feedback from their trigger.
@@ -643,9 +727,11 @@ export default function CoachChat({
       // Only the send that creates the conversation carries the brief form.
       const briefForm = !convId && openingBrief ? openingBrief.form : undefined;
       if (!convId) {
+        startingTurnRef.current = true;
         try {
           convId = await onCreateConversation();
         } catch {
+          startingTurnRef.current = false;
           // The input was already cleared and the optimistic bubble was
           // already shown above — a bare catch here left the user with no
           // feedback and their typed message gone. Restore what they typed
@@ -660,6 +746,7 @@ export default function CoachChat({
         }
       }
 
+      startingTurnRef.current = false;
       activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
       const live = latestLiveWriteCard(writeCardLists);
@@ -687,6 +774,8 @@ export default function CoachChat({
       // transitively depends on it: handleRetry, handleBlockAction,
       // handleQuickReply, renderItem) stays stable across keystrokes.
       isStreaming,
+      isSendingPhoto,
+      isPhotoBusy,
       conversationId,
       onCreateConversation,
       warmUpHook,
@@ -1098,11 +1187,11 @@ export default function CoachChat({
 
   const streamingFooter = useMemo(
     () =>
-      showLiveReply || streamBlocks.length > 0 ? (
+      showLiveReply || isSendingPhoto || streamBlocks.length > 0 ? (
         <StreamingBubble
           streamingContent={streamingContent}
-          statusText={statusText}
-          isStreaming={showLiveReply}
+          statusText={isSendingPhoto ? "Looking at your photo..." : statusText}
+          isStreaming={showLiveReply || isSendingPhoto}
           streamBlocks={lockedStreamBlocks}
           writeCardEdits={writeCardEdits}
           onWriteCardEdit={handleWriteCardEdit}
@@ -1116,6 +1205,7 @@ export default function CoachChat({
       ) : null,
     [
       showLiveReply,
+      isSendingPhoto,
       streamingContent,
       statusText,
       streamBlocks,
@@ -1193,16 +1283,37 @@ export default function CoachChat({
     [isCoachPro, warmUpHook, setInputText],
   );
 
+  // Shown while the input is empty; the send button takes their place on
+  // the first keystroke. The camera is Coach Pro's: its reply is a write card.
   const micAdornment = useMemo(
     () =>
-      hasVoice ? (
-        <CoachMicButton
-          isListening={isListening}
-          volume={volume}
-          onPress={handleMicPress}
-        />
+      hasVoice || isCoachPro ? (
+        <View style={styles.adornments}>
+          {isCoachPro ? (
+            <CoachCameraButton
+              onPress={openPhotoChooser}
+              disabled={isStreaming || isSendingPhoto || isListening}
+            />
+          ) : null}
+          {hasVoice ? (
+            <CoachMicButton
+              isListening={isListening}
+              volume={volume}
+              onPress={handleMicPress}
+            />
+          ) : null}
+        </View>
       ) : null,
-    [hasVoice, isListening, volume, handleMicPress],
+    [
+      hasVoice,
+      isCoachPro,
+      isListening,
+      volume,
+      handleMicPress,
+      openPhotoChooser,
+      isStreaming,
+      isSendingPhoto,
+    ],
   );
 
   const prevIsAtDailyLimitRef = useRef(false);
@@ -1271,7 +1382,7 @@ export default function CoachChat({
       inputText={inputText}
       onChangeText={handleChangeText}
       onSend={handleSend}
-      isStreaming={isStreaming}
+      isStreaming={isStreaming || isSendingPhoto}
       inputAdornment={micAdornment}
       // Multiline like RecipeChef and the Coach overlay: iOS offered no Paste
       // in the single-line input's long-press menu (user report 2026-09-30).
@@ -1321,6 +1432,7 @@ export default function CoachChat({
 }
 
 const styles = StyleSheet.create({
+  adornments: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   messageList: { flex: 1 },
   messageContent: { padding: Spacing.md, paddingBottom: Spacing.lg },
   historyError: {
