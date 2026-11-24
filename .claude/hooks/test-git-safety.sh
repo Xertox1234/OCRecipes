@@ -1818,6 +1818,110 @@ assert_warn_contains "advisor: worktree remove --force warns about uncommitted w
 assert_allow "advisor: gh pr view is not matched" \
   "$(json no-registry-session "$MAIN" 'gh pr view 520')"
 
+# ---------- the hook's shell must not end without a decision (2026-11-24) ----------
+# While a worktree contract is in force this hook is a deny gate, and a PreToolUse hook that
+# ends with no output is an ALLOW. Each tree below is a COPY of the hook beside a copy of
+# lib/ with one line appended to one lib, so the real libs are untouched. Every ND row but the
+# controls was RED before the guard change (silent, or rc 143).
+ND_TREES=""
+nd_tree() {  # $1=lib file  $2=line appended to it ; prints the tree's folder
+  local d; d=$(mktemp -d)
+  cp "$HOOK" "$d/git-safety.sh"; cp -R "$(dirname "$HOOK")/lib" "$d/lib"
+  printf '\n%s\n' "$2" >> "$d/lib/$1"
+  printf '%s' "$d"
+}
+nd_run() {  # $1=tree  $2=payload ; sets ND_OUT ND_RC ND_ERR
+  local e; e=$(mktemp)
+  ND_OUT=$(printf '%s' "$2" | bash "$1/git-safety.sh" 2>"$e"); ND_RC=$?
+  ND_ERR=$(cat "$e"); rm -f "$e"
+}
+nd_ok() { echo "PASS: $1"; PASS=$((PASS+1)); }
+nd_bad() { echo "FAIL: $1"; echo "  got: rc=$ND_RC out=$(printf '%s' "$ND_OUT" | head -c 300)"; FAIL=$((FAIL+1)); }
+# Exactly one JSON value, and it is a deny.
+nd_only_deny() {
+  [ "$(printf '%s' "$ND_OUT" | jq -s 'length' 2>/dev/null)" = 1 ] \
+    && [ "$(printf '%s' "$ND_OUT" | jq -r '.hookSpecificOutput.permissionDecision' 2>/dev/null)" = deny ]
+}
+nd_reason() { printf '%s' "$ND_OUT" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null; }
+
+# ND1. A lib shadows a builtin the hook calls in its own shell with a function that exits.
+T=$(nd_tree write-targets.sh 'read() { exit 0; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+n="ND1 a lib shadows 'read' with a function that exits: ended-before-a-decision deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason | grep -q 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(json no-registry-session "$MAIN" 'git commit -m x')"
+n="ND1 control: the same broken lib with NO contract never blocks"
+[ -z "$ND_OUT" ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(json "$SESSION" "$MAIN" 'ls -la')"
+n="ND1 control: an ordinary command under a contract is still allowed"
+[ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+
+# ND2. The shell is signalled mid-run (a lib function does it here). Under a contract: deny, rc 0.
+#      With no contract: silent, rc 0.
+T=$(nd_tree own-agent-worktree.sh 'own_agent_root() { kill -TERM $$; sleep 1; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
+n="ND2 SIGTERM mid-run under a contract: ended-before-a-decision deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_reason | grep -q 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(jq -cn --arg c "$MAIN" '{tool_name:"Bash",session_id:"no-registry-session",agent_id:"ccc",cwd:$c,tool_input:{command:"git commit -m x"}}')"
+n="ND2 control: SIGTERM mid-run with NO contract is silent, rc 0"
+[ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+for sig in PIPE ALRM USR1 USR2 HUP; do
+  T=$(nd_tree own-agent-worktree.sh "own_agent_root() { kill -$sig \$\$; sleep 1; }"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
+  n="ND2 SIG$sig mid-run under a contract: deny, rc 0"
+  nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+done
+
+# ND3. A lib leaves errexit on. check_repo_target answers by return code (2 = unresolvable),
+#      which under errexit ended the shell before the deny.
+T=$(nd_tree write-targets.sh 'set -e'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "" 'git commit -m x')"
+n="ND3 a lib leaves errexit on: the unresolvable-repo deny still happens"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$(json "$SESSION" "$WT_A" 'git commit -m x')"
+n="ND3 control: with that lib, git inside the registered worktree is allowed, rc 0"
+[ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+
+# ND4. deny() itself cannot print (jq shadowed by a function that exits; jq was called
+#      directly in the hook's shell).
+T=$(nd_tree write-targets.sh 'jq() { exit 0; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+n="ND4 deny() cannot build its JSON: one static deny, rc 0"
+nd_only_deny && [ "$ND_RC" = 0 ] && nd_ok "$n" || nd_bad "$n"
+
+# ND5. A deny reason too large for one argv entry (E2BIG at 128 KB on Linux): a registry entry
+#      of 140 KB lands in the reason through registered_list.
+head -c 140000 /dev/zero | tr '\0' 'a' > "$REG_DIR/zzzz-huge"
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+rm -f "$REG_DIR/zzzz-huge"
+n="ND5 a 140 KB deny reason: one readable deny of bounded size"
+nd_only_deny && [ "${#ND_OUT}" -lt 20000 ] && nd_reason | grep -q 'Worktree contract violation' && nd_ok "$n" || nd_bad "$n"
+
+# ND6. Nothing on stderr for an allow or a deny (a stray line left by an edit prints
+#      "command not found" on every call while every other row stays green).
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'ls -la')"
+n="ND6 an allowed command under a contract writes nothing to stderr"
+[ -z "$ND_ERR" ] && [ -z "$ND_OUT" ] && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
+nd_run "$(dirname "$HOOK")" "$(json "$SESSION" "$MAIN" 'git commit -m x')"
+n="ND6 a deny writes nothing to stderr"
+[ -z "$ND_ERR" ] && nd_only_deny && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
+nd_run "$(dirname "$HOOK")" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
+n="ND6 an advisory writes nothing to stderr"
+[ -z "$ND_ERR" ] && printf '%s' "$ND_OUT" | grep -q '"additionalContext"' && nd_ok "$n" || { nd_bad "$n"; echo "  stderr: $ND_ERR"; }
+
+# ND7. The ADVISOR's two libs were sourced with no probe, so one that exits took the hook with
+#      it and the branch-deletion warning was lost. Now a lib that exits counts as missing.
+T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo ; echo gh close')"
+n="ND7 cmd-detect.sh exits when sourced: the branch-deletion advisory still appears"
+printf '%s' "$ND_OUT" | grep -q '"additionalContext"' && printf '%s' "$ND_OUT" | grep -qF "is MERGED" && nd_ok "$n" || nd_bad "$n"
+T=$(nd_tree gh-pr-rest.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+FAKE_GH_GRAPHQL_BLOCKED=1 FAKE_GH_REST_BODY='[]' nd_run "$T" "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')"
+n="ND7 gh-pr-rest.sh exits when sourced: the advisory reports UNVERIFIED instead of vanishing"
+printf '%s' "$ND_OUT" | grep -qF 'FAILED (gh unavailable/network)' && nd_ok "$n" || nd_bad "$n"
+# shellcheck disable=SC2086
+rm -rf $ND_TREES
+
 CALLER_STATE_AFTER=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
 if [ "$CALLER_STATE_BEFORE" = "$CALLER_STATE_AFTER" ]; then
   echo "PASS: caller repo untouched (hermetic)"; PASS=$((PASS+1))
@@ -1890,7 +1994,10 @@ fi
 # 336 -> 346 (2026-11-01, harness item 8, own agent worktree): +10 = 1 git allow + 3 git denies
 # (fake paths), 2 write allows + 3 write denies (real repo), 1 parent-session git deny. RED before
 # the guard change: the 3 allows failed.
-EXPECTED_TOTAL=353
+# 353 -> 372 (2026-11-24, the hook cannot end without a decision under a contract): +19 =
+# ND1 (three), ND2 (seven), ND3 (two), ND4, ND5, ND6 (three), ND7 (two). RED before the guard
+# change: 14 of them (ND1 first, all of ND2, both ND3, ND4, ND5, both ND7).
+EXPECTED_TOTAL=372
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

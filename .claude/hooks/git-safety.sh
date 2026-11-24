@@ -49,12 +49,22 @@ CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || echo "")
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 
+# deny() builds its JSON inside `$(...)` first and marks the decision only when the text holds
+# the deny: a jq that fails or ends its shell (a 140 KB reason is E2BIG as one argv entry on
+# Linux, so the reason is cut at 8000 characters) then leaves the hook undecided, and
+# no_decision below answers. Written to fd 9, the hook's own stdout saved below.
 deny() {
-  jq -n --arg r "$1" \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
+  local j r="$1"
+  [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
+  j=$(jq -n --arg r "$r" \
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}' 2>/dev/null) || j=""
+  case "$j" in
+    *'"permissionDecision": "deny"'*) DECIDED=1; printf '%s\n' "$j" >&9 ;;
+  esac
   exit 0
 }
 warn() {
+  DECIDED=1
   jq -n --arg c "$1" \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$c}}'
   exit 0
@@ -63,6 +73,42 @@ warn() {
 REG_DIR=""
 [ -n "$SESSION" ] && REG_DIR="/tmp/claude-worktree-contracts-${SESSION}"
 registry_active() { [ -n "$REG_DIR" ] && [ -d "$REG_DIR" ] && [ -n "$(ls -A "$REG_DIR" 2>/dev/null)" ]; }
+
+# From here on, while a worktree contract is in force, the hook's shell must not end without
+# a decision (2026-11-24). A PreToolUse hook that ends silently is an ALLOW, so anything that
+# ended this shell inside the contract branch was a bypass: a lib that shadows a builtin with
+# a function that exits, errexit left on by a lib, a signal, a deny() that could not print.
+# DECIDED is set by deny() and warn(); CONTRACT_DONE once the contract branch has run to its
+# end without denying. Any other end of the shell runs no_decision, which denies when a
+# contract is in force (same test as the branch itself, minus the inline bypass when the shell
+# ended before that was read) and stays silent otherwise: with no contract this hook only
+# advises, and an advisory that is lost is not a bypass. The trap is not inherited by
+# `$(...)`, so the lib probes and every substitution are unaffected. fd 9 is the hook's real
+# stdout: the shell can end inside a command whose stdout is redirected, and the trap would
+# inherit that redirect. Not covered: a lib that replaces the trap, sets DECIDED or
+# CONTRACT_DONE, redefines deny(), or closes fd 9; SIGKILL (docs/harness-residuals.md).
+exec 9>&1
+DECIDED=""
+CONTRACT_DONE=""
+no_decision() {
+  [ -n "$DECIDED" ] && return 0
+  [ -n "$CONTRACT_DONE" ] && return 0
+  [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "${INLINE_BYPASS:-}" ] && registry_active || return 0
+  DECIDED=1
+  printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git-safety: the hook ended before it reached a decision while a worktree contract is active (a helper under .claude/hooks/lib/ ended the hook, or the hook was interrupted), so it cannot say this command stays inside the assigned worktree. Fail-closed. Bypass: SKIP_WORKTREE_CONTRACT=1 as the first text of the command, or scripts/declare-worktree.sh --remove/--clear when the assignment has ended."}}' >&9
+  exit 0
+}
+trap no_decision EXIT
+# A trapped signal would otherwise RETURN to the interrupted command; end the shell instead
+# (rc 0, so a deny printed by no_decision is read as one).
+trap 'no_decision; DECIDED=1; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT
+
+# lib_loads <file>: source it in a subshell first. A lib that exits, fails under this file's
+# `set -u`, or changes the shell options (errexit left on) counts as missing. TWIN of
+# merge-review-guard.sh's lib_loads.
+lib_loads() {
+  [ "$(_o="$-:$SHELLOPTS"; { . "$1"; } >/dev/null 2>&1; [ "$-:$SHELLOPTS" = "$_o" ] && printf loaded)" = loaded ]
+}
 
 # Dot segments defeat lexical prefix matching ($WT/../x, /tmp/../x) — treat any
 # path containing them as matching nothing, which fails toward deny in the
@@ -89,13 +135,15 @@ lex_collapse() {
 # Probed in a subshell first: a brace group is NOT a subshell, so a lib that is PRESENT but
 # BROKEN (e.g. its body runs `exit 0`, or expands an unset var under this file's `set -u`)
 # would otherwise take the whole hook down before the fail-closed check below ever runs.
+# The probe also rejects a lib that changes the shell options (2026-11-24): errexit left on
+# ended the shell at check_repo_target's first non-zero return.
 case "${BASH_SOURCE[0]}" in */*) _WT_HERE="${BASH_SOURCE[0]%/*}" ;; *) _WT_HERE=. ;; esac
-_WT_OK=$( { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1; declare -F emit_write_targets >/dev/null && echo ok )
+_WT_OK=$( _o="$-:$SHELLOPTS"; { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1; [ "$-:$SHELLOPTS" = "$_o" ] && declare -F emit_write_targets >/dev/null && echo ok )
 [ "$_WT_OK" = ok ] && { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1
 # own_agent_root (lib/own-agent-worktree.sh, harness item 8): a subagent's OWN isolation worktree
 # passes the contract check (in_registered below), keyed on the hook input's agent_id plus a cwd
 # inside agent-<agent_id>. Probed the same way; a lib that fails to load means no exception.
-_OA_OK=$( { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1; declare -F own_agent_root >/dev/null && echo ok )
+_OA_OK=$( _o="$-:$SHELLOPTS"; { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1; [ "$-:$SHELLOPTS" = "$_o" ] && declare -F own_agent_root >/dev/null && echo ok )
 [ "$_OA_OK" = ok ] && { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1
 OWN_ROOT=""
 if [ "$_OA_OK" = ok ]; then
@@ -976,6 +1024,9 @@ EOF
   fi
   fi
 fi
+# The contract branch ran to its end without denying (or no contract is in force). From here
+# the hook only advises, so an end of the shell is no longer a decision that is missing.
+CONTRACT_DONE=1
 
 # ============ B) ADVISOR branch (never blocks) ============
 # `gh pr close` detection reads the shared, quote-AWARE command detector
@@ -1016,7 +1067,9 @@ fi
 _CMD_DETECT_OK=""
 if [[ "$CMD" == *gh* && "$CMD" == *close* ]]; then
   case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
-  if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+  # Probed first (2026-11-24): a lib that exits took the whole advisor with it, including
+  # the branch-deletion arms that never use it.
+  if lib_loads "$HERE/lib/cmd-detect.sh" && . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
      && declare -F cmd_gh_pr_write_subcommand >/dev/null \
      && declare -F cmd_gh_pr_ref >/dev/null; then
     _CMD_DETECT_OK=1
@@ -1186,7 +1239,7 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
         # → no retry, the old FAILED warning. Fork-free dir, as for cmd-detect.sh above.
         case "${BASH_SOURCE[0]}" in */*) _PR_HERE="${BASH_SOURCE[0]%/*}" ;; *) _PR_HERE=. ;; esac
         # shellcheck source=/dev/null
-        if . "$_PR_HERE/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null; then
+        if lib_loads "$_PR_HERE/lib/gh-pr-rest.sh" && . "$_PR_HERE/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null; then
           PR_JSON=$(gh_pr_rest_json "$REF" 2>/dev/null)
           case $? in
             0) PR_LOOKUP=found ;;

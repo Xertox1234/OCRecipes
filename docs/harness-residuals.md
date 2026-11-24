@@ -643,11 +643,27 @@ directly (none is called directly today); SIGKILL, which nothing can handle; and
 the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
 could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
 not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
-(2) other blocking hooks source files at top level with no such probe: `git-safety.sh`
-(`cmd-detect.sh` and `gh-pr-rest.sh`; it does probe `write-targets.sh` and
-`own-agent-worktree.sh`), `guard-outward-cli.sh`, `branch-preflight.sh`, and
-`pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
-`scripts/lib/verdict-diff-stamp-path.sh`.
+(2) other blocking hooks source files at top level with no such probe: `guard-outward-cli.sh`,
+`branch-preflight.sh`, and `pr-preflight-guard.sh`, which also sources
+`scripts/lib/preflight-stamp-path.sh` and `scripts/lib/verdict-diff-stamp-path.sh`.
+`git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
+(`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
+finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
+The bypasses were inside the contract branch, measured before the change with a worktree
+contract active: a lib that shadows `read` with a function that exits (silent, rc 0); a lib
+that leaves errexit on (`check_repo_target` answers by return code, so "unresolvable" ended
+the shell with rc 2 and no deny); `deny()` when `jq` cannot print (a shadowed `jq`, or a
+140 KB registry entry in the reason: E2BIG); any signal (rc 129-143, no output). Now: the two
+existing probes reject a lib that changes the shell options; `deny()` builds first and cuts the
+reason at 8000 characters; and an EXIT/signal trap denies when the shell ends undecided before
+the contract branch has finished. The trap denies ONLY while a contract is in force (registry
+non-empty, no `SKIP_WORKTREE_CONTRACT`); with no contract the hook only advises, and it stays
+silent. Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
+`CONTRACT_DONE`, redefines `deny()` or `registry_active()` (both are defined before the libs
+are sourced), or closes fd 9; SIGKILL; the three exits before the trap when `jq` is on PATH
+but cannot read the envelope (lines 46-48); a shell that ends before the inline
+`SKIP_WORKTREE_CONTRACT=1` prefix is read is denied even with that prefix (the safe direction);
+an advisory lost to a signal or to a `jq` that cannot print. Not tested on bash 3.2 (macOS).
 All of these need a change to a reviewed file under `.claude/hooks/lib/` or `scripts/lib/` to
 reach.
 
