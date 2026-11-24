@@ -196,7 +196,10 @@ function verifierRoot(
   return root;
 }
 
-function runGuardRaw(env: Record<string, string>): {
+function runGuardRaw(
+  env: Record<string, string>,
+  script: string = GUARD_SCRIPT,
+): {
   status: number | null;
   stdout: string;
 } {
@@ -206,7 +209,7 @@ function runGuardRaw(env: Record<string, string>): {
   writeFileSync(ghPath, FAKE_GH_SCRIPT);
   chmodSync(ghPath, 0o755);
 
-  const result = spawnSync("bash", [GUARD_SCRIPT, "123"], {
+  const result = spawnSync("bash", [script, "123"], {
     encoding: "utf8",
     env: {
       ...process.env,
@@ -1379,6 +1382,26 @@ describe("todo-automerge-guard.sh (a truncated file list is refused, not gated)"
       FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
+    expect(status).toBe(2);
+    expect(stdout).toContain("could not read the declared changed-file count");
+  });
+
+  // The REST read lives in .claude/hooks/lib/gh-pr-rest.sh. A copy of the guard with no such
+  // file beside it has no second route, so a refused \`gh pr view\` is the same ERROR.
+  it("with GraphQL refused and no gh-pr-rest.sh to source, ERRORs (fail-closed)", () => {
+    const root = mkdtempSync(join(tmpdir(), "guard-nolib-"));
+    tempDirs.push(root);
+    mkdirSync(join(root, "scripts"));
+    const copy = join(root, "scripts", "todo-automerge-guard.sh");
+    writeFileSync(copy, readFileSync(GUARD_SCRIPT));
+    const { status, stdout } = runGuardRaw(
+      {
+        FAKE_GH_GRAPHQL_BLOCKED: "1",
+        FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+        FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+      },
+      copy,
+    );
     expect(status).toBe(2);
     expect(stdout).toContain("could not read the declared changed-file count");
   });

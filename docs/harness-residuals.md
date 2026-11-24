@@ -601,6 +601,11 @@ inline REST retry from #1987. Both now retry through the helper, which also retu
 `headRefName`, `baseRefName`, `body` and `changedFiles` (the count is null for a branch ref, since
 GitHub's PR list omits it; both callers ask by number). No verdict changes: a helper that cannot
 be sourced is the same deny as both routes failing (row G8 in `test-merge-review-guard.sh`).
+Open (found by that review, older than the change): the hook sources its `lib/` files at top
+level, so a lib file that is present but calls `exit 0` would end the hook with no decision, which
+is an allow. All four sourcing sites share this (`fastpath-filter.sh`, `cmd-detect.sh`,
+`review-stamp-path.sh`, `gh-pr-rest.sh`). Reaching it needs a change to a reviewed file under
+`.claude/hooks/lib/`. The fix would be to probe each lib in a subshell first.
 
 Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable folder (chmod 000)"
 row asserted a deny that cannot happen for root, and cloud sessions run as root, so

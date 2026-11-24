@@ -1539,6 +1539,15 @@ denied "$out" && reason "$out" | grep -q "no '## Platform check' section" \
   && ok "graphql refused: a body without a Platform check section still denies" \
   || bad "graphql refused: a body without a Platform check section still denies" "$out"
 
+# G5b. DENY, same route, for the SAME reason: a body that is the word null, and no body at all.
+#      Neither is "could not read": the read worked, the section is missing.
+for b in null ''; do
+  out=$(mcp_payload 938 | run FAKE_GRAPHQL_BLOCKED=1 FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY="$b")
+  denied "$out" && reason "$out" | grep -q "no '## Platform check' section" \
+    && ok "graphql refused: body '${b}' denies on the missing section, not on the read" \
+    || bad "graphql refused: body '${b}' denies on the missing section, not on the read" "$out"
+done
+
 # G6. DENY. todo-automerge-guard.sh's declared-file count comes over REST as well, so a
 #     truncated file list is still refused (declared 5, listed 1). Safe paths and no record
 #     wanted: the only thing that can deny here is the completeness check. G6c is the same
@@ -2031,8 +2040,8 @@ rm -rf "$LG"
 # 226 -> 227 (2026-11-22, security review): +1 = row L6 (a -diff attribute must not hide an upload line).
 # 227 -> 236 (2026-11-23, REST fallback for a refused `gh pr view`): +9 = rows G1-G7 (G6 and G7 assert twice).
 # 236 -> 238 (2026-11-24, locale-independent digest): +2 = rows 9-locale (allow and its control).
-# 238 -> 239 (2026-11-24, REST retry folded into lib/gh-pr-rest.sh): +1 = row G8.
-EXPECTED_TOTAL=239
+# 238 -> 241 (2026-11-24, REST retry folded into lib/gh-pr-rest.sh): +3 = rows G5b (two) and G8.
+EXPECTED_TOTAL=241
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

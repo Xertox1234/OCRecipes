@@ -642,11 +642,13 @@ command -v gh >/dev/null 2>&1 \
 # changes which API answers, never what is asked. $PR is all digits here (checked above), so
 # the helper reads the single-PR resource and never its branch lookup. Both routes failing is
 # still a deny, and so is a lib that cannot be sourced: no second route, the old "could not
-# read". The body read below and the declared-file count in scripts/todo-automerge-guard.sh
+# read". It is sourced from $ROOT, not $HERE: $HERE stays relative when the hook is run by a
+# relative path, and the `cd "$ROOT"` above would then point it at a folder that is not there.
+# The body read below and the declared-file count in scripts/todo-automerge-guard.sh
 # carry the same fallback.
 pr_rest() { return 2; }
 # shellcheck source=/dev/null
-. "$HERE/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null \
+. "$ROOT/.claude/hooks/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null \
   && pr_rest() { gh_pr_rest_json "$PR" 2>/dev/null; }
 VIEW=$(gh pr view "$PR" --json headRefName,headRefOid,baseRefName 2>/dev/null) \
   || VIEW=$(pr_rest) \
