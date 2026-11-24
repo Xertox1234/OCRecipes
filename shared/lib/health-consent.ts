@@ -72,3 +72,28 @@ function carriesValue(value: unknown): boolean {
 export function hasHealthData(input: Record<string, unknown>): boolean {
   return PROFILE_HEALTH_FIELDS.some((field) => carriesValue(input[field]));
 }
+
+/**
+ * Coach's saved notes are paused after a withdrawal (owner ruling 2026-11-24,
+ * coach chat audit M52): from the moment the health-data consent is withdrawn
+ * until it is given again, Coach neither reads the notes nor writes new ones,
+ * and commitment reminders stop. The notes can hold health statements taken
+ * from chat. The user can still see and delete them.
+ *
+ * A user who never answered the consent question is not paused: the ruling
+ * covers withdrawal.
+ */
+export function coachNotesPaused(
+  profile:
+    | {
+        healthDataConsentAt?: Date | string | null;
+        healthDataConsentWithdrawnAt?: Date | string | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  return (
+    profile?.healthDataConsentAt == null &&
+    profile?.healthDataConsentWithdrawnAt != null
+  );
+}

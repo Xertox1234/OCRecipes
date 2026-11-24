@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
-import { hasConsented } from "@/lib/health-consent";
+import { hasConsented, type CoachNotesChoice } from "@/lib/health-consent";
 import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
 
 /**
@@ -28,13 +28,24 @@ export function useHealthConsent() {
     });
   }, [queryClient]);
 
-  /** Withdraws the consent and removes the health details. Rejects on failure. */
-  const withdraw = useCallback(async () => {
-    await apiRequest("POST", "/api/user/health-consent/withdraw");
-    // Allergies, goals and body metrics feed most personalized queries. Not
-    // awaited: the caller's confirmation should not wait on every refetch.
-    void queryClient.invalidateQueries();
-  }, [queryClient]);
+  /**
+   * Withdraws the consent and removes the health details. `coachNotes` is the
+   * user's choice for the notes Coach saved; without it the server keeps
+   * them. Rejects on failure.
+   */
+  const withdraw = useCallback(
+    async (coachNotes?: CoachNotesChoice) => {
+      await apiRequest(
+        "POST",
+        "/api/user/health-consent/withdraw",
+        coachNotes ? { coachNotes } : undefined,
+      );
+      // Allergies, goals and body metrics feed most personalized queries. Not
+      // awaited: the caller's confirmation should not wait on every refetch.
+      void queryClient.invalidateQueries();
+    },
+    [queryClient],
+  );
 
   return { consented, grant, withdraw };
 }

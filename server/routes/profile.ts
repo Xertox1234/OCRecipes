@@ -11,9 +11,15 @@ import {
   resolveRateLimitMax,
 } from "./_rate-limiters";
 import { userProfileInputSchema } from "./_schemas";
-import { handleRouteError } from "./_helpers";
+import { z } from "zod";
+import { formatZodError, handleRouteError } from "./_helpers";
 import { hasHealthConsent, sendHealthConsentRequired } from "./_health-consent";
 import { hasHealthData } from "@shared/lib/health-consent";
+
+/** The withdrawal request: what to do with the notes Coach saved. */
+const withdrawConsentBodySchema = z
+  .object({ coachNotes: z.enum(["delete", "keep"]).optional() })
+  .strict();
 
 // Fields that affect AI-generated suggestions - if any change, invalidate cache
 const cacheAffectingFields = [
@@ -168,7 +174,21 @@ export function register(app: Express): void {
     }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const profile = await storage.withdrawHealthConsent(req.userId);
+        // What to do with the notes Coach saved is the user's choice. No
+        // choice (an older app) keeps them; they are not used while the
+        // consent is withdrawn.
+        const body = withdrawConsentBodySchema.safeParse(req.body ?? {});
+        if (!body.success) {
+          return sendError(
+            res,
+            400,
+            formatZodError(body.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        const profile = await storage.withdrawHealthConsent(req.userId, {
+          deleteCoachNotes: body.data.coachNotes === "delete",
+        });
         if (!profile) {
           return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
         }

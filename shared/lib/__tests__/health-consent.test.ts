@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   HEALTH_CONSENT_VERSION,
   PROFILE_HEALTH_FIELDS,
+  coachNotesPaused,
   hasHealthData,
 } from "../health-consent";
 
@@ -76,5 +77,47 @@ describe("hasHealthData", () => {
 
   it("carries the policy version the consent is recorded against", () => {
     expect(HEALTH_CONSENT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("coachNotesPaused", () => {
+  const at = new Date("2026-11-24T10:00:00Z");
+
+  it("is true once the consent was withdrawn and not given again", () => {
+    expect(
+      coachNotesPaused({
+        healthDataConsentAt: null,
+        healthDataConsentWithdrawnAt: at,
+      }),
+    ).toBe(true);
+  });
+
+  it("is false while the consent is on record", () => {
+    expect(
+      coachNotesPaused({
+        healthDataConsentAt: at,
+        healthDataConsentWithdrawnAt: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("is false after a withdrawal followed by a new consent", () => {
+    expect(
+      coachNotesPaused({
+        healthDataConsentAt: at,
+        healthDataConsentWithdrawnAt: at,
+      }),
+    ).toBe(false);
+  });
+
+  it("is false for a user who never answered the consent question", () => {
+    expect(
+      coachNotesPaused({
+        healthDataConsentAt: null,
+        healthDataConsentWithdrawnAt: null,
+      }),
+    ).toBe(false);
+    expect(coachNotesPaused(undefined)).toBe(false);
+    expect(coachNotesPaused(null)).toBe(false);
   });
 });

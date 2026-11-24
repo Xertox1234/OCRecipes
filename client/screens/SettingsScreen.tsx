@@ -23,7 +23,12 @@ import { DeleteAccountModal } from "@/components/DeleteAccountModal";
 import { ChangeEmailModal } from "@/components/ChangeEmailModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useHealthConsent } from "@/hooks/useHealthConsent";
-import { WITHDRAW_HEALTH_CONSENT_PROMPT } from "@/lib/health-consent";
+import {
+  COACH_NOTES_AT_WITHDRAWAL_PROMPT,
+  WITHDRAW_HEALTH_CONSENT_PROMPT,
+  type CoachNotesChoice,
+} from "@/lib/health-consent";
+import { useNotebookEntries } from "@/hooks/useNotebook";
 import { AI_SHARING_OFF_PROMPT } from "@shared/lib/ai-sharing";
 import { useAiSharing } from "@/hooks/useAiSharing";
 import { openAiSharing } from "@/navigation/openAiSharing";
@@ -129,6 +134,46 @@ export default function SettingsScreen() {
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   const [isExporting, setIsExporting] = useState(false);
+
+  const runWithdrawal = useCallback(
+    (coachNotes?: CoachNotesChoice) => {
+      withdrawHealthConsent(coachNotes).then(
+        () => {
+          toast.success("Health details removed");
+          // The cached account still holds the body measurements.
+          void checkAuth();
+        },
+        (err: unknown) => {
+          logger.error("Health-data consent withdrawal failed", err);
+          toast.error("Couldn't withdraw. Please try again.");
+        },
+      );
+    },
+    [withdrawHealthConsent, toast, checkAuth],
+  );
+
+  // The notes question follows the withdrawal confirmation in the same sheet,
+  // so it waits until that sheet has closed. Asked unless the notes are known
+  // to be empty.
+  const { data: coachNotes } = useNotebookEntries();
+  const hasNoCoachNotes = coachNotes !== undefined && coachNotes.length === 0;
+  const [notesQuestionDue, setNotesQuestionDue] = useState(false);
+  useEffect(() => {
+    if (!notesQuestionDue || isOpen) return;
+    confirm({
+      ...COACH_NOTES_AT_WITHDRAWAL_PROMPT,
+      onConfirm: () => {
+        setNotesQuestionDue(false);
+        runWithdrawal("delete");
+      },
+      // Also a swipe away: the withdrawal was already confirmed, and keeping
+      // is the answer that deletes nothing.
+      onCancel: () => {
+        setNotesQuestionDue(false);
+        runWithdrawal("keep");
+      },
+    });
+  }, [notesQuestionDue, isOpen, confirm, runWithdrawal]);
 
   // The navigator renders the header as a sibling `behindContentA11yProps`
   // can't reach — hide its default back button while the sheet is presented
@@ -320,17 +365,8 @@ export default function SettingsScreen() {
           confirm({
             ...WITHDRAW_HEALTH_CONSENT_PROMPT,
             onConfirm: () => {
-              withdrawHealthConsent().then(
-                () => {
-                  toast.success("Health details removed");
-                  // The cached account still holds the body measurements.
-                  void checkAuth();
-                },
-                (err: unknown) => {
-                  logger.error("Health-data consent withdrawal failed", err);
-                  toast.error("Couldn't withdraw. Please try again.");
-                },
-              );
+              if (hasNoCoachNotes) runWithdrawal();
+              else setNotesQuestionDue(true);
             },
           });
           break;
@@ -372,8 +408,8 @@ export default function SettingsScreen() {
       signInMethodsError,
       refetchSignInMethods,
       toast,
-      withdrawHealthConsent,
-      checkAuth,
+      runWithdrawal,
+      hasNoCoachNotes,
       aiSharingStatus,
       answerAiSharing,
     ],

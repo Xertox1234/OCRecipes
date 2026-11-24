@@ -1,5 +1,6 @@
 import {
   coachNotebook,
+  userProfiles,
   type CoachNotebookEntry,
   type InsertCoachNotebookEntry,
 } from "@shared/schema";
@@ -25,6 +26,32 @@ import {
 } from "drizzle-orm";
 import { createHash } from "crypto";
 import { insightKey, sameTip } from "@shared/lib/coach-stats";
+import { coachNotesPaused } from "@shared/lib/health-consent";
+
+/**
+ * SQL form of `coachNotesPaused` (shared/lib/health-consent.ts): true for a
+ * note whose owner withdrew the health-data consent and has not given it
+ * again. The reads Coach and the reminder job use leave those notes out; the
+ * reads behind the user's own "What Coach knows" screen do not.
+ */
+const ownerNotPaused = sql`NOT EXISTS (
+  SELECT 1 FROM ${userProfiles}
+  WHERE ${userProfiles.userId} = ${coachNotebook.userId}
+    AND ${userProfiles.healthDataConsentAt} IS NULL
+    AND ${userProfiles.healthDataConsentWithdrawnAt} IS NOT NULL
+)`;
+
+/** Whether Coach must leave this user's notes alone (see `coachNotesPaused`). */
+export async function areCoachNotesPaused(userId: string): Promise<boolean> {
+  const [profile] = await db
+    .select({
+      healthDataConsentAt: userProfiles.healthDataConsentAt,
+      healthDataConsentWithdrawnAt: userProfiles.healthDataConsentWithdrawnAt,
+    })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId));
+  return coachNotesPaused(profile);
+}
 
 export async function getActiveNotebookEntries(
   userId: string,
@@ -33,6 +60,7 @@ export async function getActiveNotebookEntries(
   const conditions = [
     eq(coachNotebook.userId, userId),
     eq(coachNotebook.status, "active"),
+    ownerNotPaused,
   ];
   if (types && types.length > 0) {
     conditions.push(inArray(coachNotebook.type, types));
@@ -184,7 +212,11 @@ export async function getNotebookEntryById(
   return entry;
 }
 
-/** Batch form of {@link getNotebookEntryById}; ownership stays in the SQL. */
+/**
+ * Batch form of {@link getNotebookEntryById}; ownership stays in the SQL. Read
+ * for the Coach screen's reminder card, so it returns nothing while the
+ * owner's notes are paused.
+ */
 export async function getNotebookEntriesByIds(
   ids: number[],
   userId: string,
@@ -194,7 +226,11 @@ export async function getNotebookEntriesByIds(
     .select()
     .from(coachNotebook)
     .where(
-      and(inArray(coachNotebook.id, ids), eq(coachNotebook.userId, userId)),
+      and(
+        inArray(coachNotebook.id, ids),
+        eq(coachNotebook.userId, userId),
+        ownerNotPaused,
+      ),
     );
 }
 
@@ -227,6 +263,7 @@ export async function getCommitmentsWithDueFollowUp(
         eq(coachNotebook.type, "commitment"),
         eq(coachNotebook.status, "active"),
         lte(coachNotebook.followUpDate, new Date()),
+        ownerNotPaused,
       ),
     )
     .orderBy(desc(coachNotebook.followUpDate))
@@ -413,6 +450,7 @@ export async function getDueCommitmentsAllUsers(
         eq(coachNotebook.type, "commitment"),
         eq(coachNotebook.status, "active"),
         lte(coachNotebook.followUpDate, new Date()),
+        ownerNotPaused,
         after
           ? or(
               gt(coachNotebook.followUpDate, after.followUpDate),

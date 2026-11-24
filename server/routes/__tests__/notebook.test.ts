@@ -14,6 +14,7 @@ vi.mock("../../storage", () => ({
     getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
     updateNotebookEntry: vi.fn(),
     deleteNotebookEntry: vi.fn(),
+    areCoachNotesPaused: vi.fn().mockResolvedValue(false),
   },
 }));
 
@@ -97,6 +98,34 @@ describe("POST /api/coach/notebook", () => {
       .send({ type: "invalid_type", content: "Test" })
       .set("Authorization", "Bearer valid-token");
     expect(res.status).toBe(400);
+  });
+});
+
+describe("notes paused after a health-consent withdrawal", () => {
+  it("refuses a new note and saves nothing", async () => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValueOnce(true);
+    const res = await request(app)
+      .post("/api/coach/notebook")
+      .send({ type: "goal", content: "Hit 120g protein" })
+      .set("Authorization", "Bearer valid-token");
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+    expect(storage.createNotebookEntry).not.toHaveBeenCalled();
+  });
+
+  it("still lists and deletes the kept notes", async () => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
+    vi.mocked(storage.getNotebookEntries).mockResolvedValue([]);
+    vi.mocked(storage.deleteNotebookEntry).mockResolvedValue(true);
+    const list = await request(app)
+      .get("/api/coach/notebook")
+      .set("Authorization", "Bearer valid-token");
+    const del = await request(app)
+      .delete("/api/coach/notebook/1")
+      .set("Authorization", "Bearer valid-token");
+    expect(list.status).toBe(200);
+    expect(del.status).toBe(204);
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
   });
 });
 

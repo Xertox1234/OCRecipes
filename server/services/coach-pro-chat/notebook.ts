@@ -56,6 +56,9 @@ export async function extractAndStoreNotebook(a: {
     tz,
     wroteCard,
   } = a;
+  // After a health-consent withdrawal Coach saves no notes (owner ruling
+  // 2026-11-24). Checked first: the extraction below is a paid model call.
+  if (await storage.areCoachNotesPaused(userId)) return;
   const allMessages = [
     ...messageHistory,
     { role: "user" as const, content },

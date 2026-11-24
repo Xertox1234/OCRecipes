@@ -38,7 +38,24 @@ export const HEALTH_CONSENT_PROMPT = {
 export const WITHDRAW_HEALTH_CONSENT_PROMPT = {
   title: "Withdraw health-data consent",
   message:
-    "This removes your allergies, health conditions and medications, diet type, body measurements, activity level and goal from OCRecipes. Allergy warnings and personalized targets stop until you add them again. Your food logs, recipes, calorie targets, chats and the notes Coach has saved stay; clear those notes under Coach → What Coach knows.",
+    "This removes your allergies, health conditions and medications, diet type, body measurements, activity level and goal from OCRecipes. Allergy warnings and personalized targets stop until you add them again. Your food logs, recipes, calorie targets and chats stay. Coach stops using the notes it has saved about you until you agree again.",
   confirmLabel: "Withdraw and remove",
   destructive: true,
 } as const;
+
+/**
+ * Asked after the withdrawal is confirmed, when Coach has saved notes (owner
+ * ruling 2026-11-24). Either answer goes on to withdraw; closing the sheet
+ * keeps the notes.
+ */
+export const COACH_NOTES_AT_WITHDRAWAL_PROMPT = {
+  title: "Delete Coach's notes too?",
+  message:
+    "Coach has saved notes about you from your chats, and some may mention your health. Coach won't use them unless you agree to the health-data consent again. Delete them now, or keep them: you can still see and delete them under Coach → What Coach knows.",
+  confirmLabel: "Delete notes",
+  cancelLabel: "Keep notes",
+  destructive: true,
+} as const;
+
+/** The user's answer to COACH_NOTES_AT_WITHDRAWAL_PROMPT. */
+export type CoachNotesChoice = "delete" | "keep";

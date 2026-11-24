@@ -16,7 +16,7 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { coachNotebook } from "@shared/schema";
+import { coachNotebook, userProfiles } from "@shared/schema";
 
 // Mock the db import so the storage functions use our test transaction
 vi.mock("../../db", () => ({
@@ -44,6 +44,7 @@ const {
   getNotebookEntryTotal,
   getNotebookEntryById,
   getNotebookEntriesByIds,
+  areCoachNotesPaused,
 } = await import("../coach-notebook");
 const { logger } = await import("../../lib/logger");
 const { civilDateToInstant } = await import("../../lib/civil-date");
@@ -385,6 +386,85 @@ describe("Coach Notebook Storage", () => {
   // --------------------------------------------------------------------------
   // updateNotebookEntryStatus
   // --------------------------------------------------------------------------
+  // Owner ruling 2026-11-24 (coach chat audit M52): after a health-consent
+  // withdrawal Coach does not use the notes until the user consents again.
+  describe("notes paused after a health-consent withdrawal", () => {
+    const past = new Date(Date.now() - 86_400_000);
+
+    async function seedNotes() {
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "preference",
+        content: "Has type 2 diabetes",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Walk after dinner",
+        status: "active",
+        followUpDate: past,
+      });
+    }
+
+    async function setConsent(state: "withdrawn" | "given-again" | "never") {
+      await tx.insert(userProfiles).values({
+        userId: testUser.id,
+        healthDataConsentAt: state === "given-again" ? new Date() : null,
+        healthDataConsentWithdrawnAt: state === "never" ? null : past,
+      });
+    }
+
+    it("returns no notes to Coach while withdrawn", async () => {
+      await seedNotes();
+      await setConsent("withdrawn");
+
+      expect(await areCoachNotesPaused(testUser.id)).toBe(true);
+      expect(await getActiveNotebookEntries(testUser.id)).toEqual([]);
+      expect(await getCommitmentsWithDueFollowUp(testUser.id)).toEqual([]);
+      const due = await getDueCommitmentsAllUsers();
+      expect(due.filter((e) => e.userId === testUser.id)).toEqual([]);
+      // The reminder card on the Coach screen reads commitments by id.
+      const all = (await tx.select().from(coachNotebook)).filter(
+        (e) => e.userId === testUser.id,
+      );
+      expect(all).toHaveLength(2);
+      expect(
+        await getNotebookEntriesByIds(
+          all.map((e) => e.id),
+          testUser.id,
+        ),
+      ).toEqual([]);
+    });
+
+    it("returns the notes again once the consent is given again", async () => {
+      await seedNotes();
+      await setConsent("given-again");
+
+      expect(await areCoachNotesPaused(testUser.id)).toBe(false);
+      expect(await getActiveNotebookEntries(testUser.id)).toHaveLength(2);
+      expect(await getCommitmentsWithDueFollowUp(testUser.id)).toHaveLength(1);
+      const due = await getDueCommitmentsAllUsers();
+      expect(due.filter((e) => e.userId === testUser.id)).toHaveLength(1);
+    });
+
+    it("does not pause a user who never answered the consent question", async () => {
+      await seedNotes();
+      await setConsent("never");
+
+      expect(await areCoachNotesPaused(testUser.id)).toBe(false);
+      expect(await getActiveNotebookEntries(testUser.id)).toHaveLength(2);
+      expect(await getCommitmentsWithDueFollowUp(testUser.id)).toHaveLength(1);
+    });
+
+    it("does not pause a user with no profile row", async () => {
+      await seedNotes();
+
+      expect(await areCoachNotesPaused(testUser.id)).toBe(false);
+      expect(await getActiveNotebookEntries(testUser.id)).toHaveLength(2);
+    });
+  });
+
   describe("updateNotebookEntryStatus", () => {
     it("changes status and updates updatedAt", async () => {
       const entry = await createNotebookEntry({

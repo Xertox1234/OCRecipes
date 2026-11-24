@@ -19,6 +19,7 @@ import {
   notebookEntryStatusValues,
 } from "@shared/schemas/coach-notebook";
 import { toSecondPerson } from "@shared/lib/notebook-text";
+import { refusedWhileCoachNotesPaused } from "./_health-consent";
 
 /** Ids the save popup / "What Coach knows" page acts on (visible memory). */
 const idsSchema = z.object({
@@ -109,6 +110,7 @@ export function register(app: Express): void {
             formatZodError(parsed.error),
             ErrorCode.VALIDATION_ERROR,
           );
+        if (await refusedWhileCoachNotesPaused(req.userId, res)) return;
         const confirmed = await storage.confirmNotebookEntries(
           req.userId,
           parsed.data.ids,
@@ -223,6 +225,7 @@ export function register(app: Express): void {
             formatZodError(parsed.error),
             ErrorCode.VALIDATION_ERROR,
           );
+        if (await refusedWhileCoachNotesPaused(req.userId, res)) return;
         const { type, content, followUpDate } = parsed.data;
         // A ceiling on what one account can add: the rate limit alone let
         // it reach tens of thousands of rows, which every Coach turn and
