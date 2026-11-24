@@ -257,12 +257,7 @@ describe("useCoachPhotoSend", () => {
         "full",
       );
       expect(uploadPhotoToCoach).not.toHaveBeenCalled();
-      expect(args.onSettled).toHaveBeenCalledWith(
-        7,
-        null,
-        true,
-        "I found it.",
-      );
+      expect(args.onSettled).toHaveBeenCalledWith(7, null, true, "I found it.");
       expect(result.current.isSendingPhoto).toBe(false);
     });
 
