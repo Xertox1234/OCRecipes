@@ -215,7 +215,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     );
   });
 
-  it("says nothing could be shown when the card could not be stored", async () => {
+  it("asks for the photo again when the card could not be stored", async () => {
     vi.mocked(createWriteCardBlock).mockResolvedValue(null);
     const res = await post(app);
     expect(res.status).toBe(201);
@@ -223,7 +223,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
       1,
       "1",
       "assistant",
-      expect.stringMatching(/couldn't/i),
+      expect.stringMatching(/couldn't make the card/i),
       null,
     );
   });

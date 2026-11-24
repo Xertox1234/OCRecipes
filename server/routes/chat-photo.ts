@@ -33,7 +33,6 @@ import { isRecipeOfferEnabled } from "../services/recipe-finder";
 import {
   buildPhotoReply,
   photoCardProposal,
-  photoReplyText,
   COACH_PHOTO_USER_TEXT,
 } from "../services/coach-photo";
 import { createWriteCardBlock } from "../services/coach-pro-chat/write-card-context";
@@ -41,6 +40,10 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const ANALYSIS_FAILED_TEXT =
   "I couldn't read that photo just now. Please try again in a moment.";
+// The photo was read (a meal, a label or a barcode) but its card could not
+// be stored.
+const CARD_FAILED_TEXT =
+  "I read your photo but couldn't make the card just now. Please send it again.";
 const PHOTO_CAP_TEXT =
   "You've reached today's photo limit. Tell me what you ate and I'll log it for you.";
 
@@ -190,8 +193,7 @@ export function register(app: Express): void {
                 )
               : null;
             if (card) blocks = [card];
-            // A card that could not be stored reads as "nothing to show".
-            text = payload && !card ? photoReplyText(0, 0) : reply.text;
+            text = payload && !card ? CARD_FAILED_TEXT : reply.text;
           }
         } catch (err) {
           logger.error({ err: toError(err) }, "coach photo analysis failed");
