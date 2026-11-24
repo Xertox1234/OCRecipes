@@ -23,6 +23,12 @@ case "$BRANCH" in -*)
   echo "verify-branch-merged: flag-like branch name '$BRANCH' — NOT safe to delete" >&2
   exit 1 ;;
 esac
+# <owner>:<branch> is how gh names a FORK's branch. It is never a branch of this repository
+# (a git branch name cannot hold a colon), so there would be no local tip to compare below.
+case "$BRANCH" in *:*)
+  echo "verify-branch-merged: '$BRANCH' is not a branch of this repository — NOT safe to delete" >&2
+  exit 1 ;;
+esac
 
 # `gh pr view --json` is GraphQL, which a Claude Code cloud session refuses: retry over REST
 # (same fields, same OPEN|CLOSED|MERGED states, and like gh an open PR wins on a reused branch
