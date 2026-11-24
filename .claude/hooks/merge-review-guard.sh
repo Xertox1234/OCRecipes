@@ -95,9 +95,6 @@ deny() {
   esac
   exit 0
 }
-  }'
-  exit 0
-}
 
 # lib_loads <file>: rc 0 only when <file> can be sourced into THIS shell without breaking it.
 # Every lib is sourced into the hook's own shell, so the hook inherits whatever the file does

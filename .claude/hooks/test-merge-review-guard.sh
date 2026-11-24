@@ -269,6 +269,12 @@ export FAKE_FILES="$FILES_ONE"
 # 1. ALLOW CONTROL. An unrelated Bash command is silent — it never reaches gh at all.
 out=$(bash_payload "npm run lint" | run)
 assert_allowed "unrelated Bash command exits silently" "$out"
+# 1b. ...and silent on STDERR too. A stray token in the hook (a leftover line that bash runs
+#     as a command: "command not found") changes no decision today and so passes every other
+#     row; this is the row that sees it. Found 2026-11-24 by review of a bad patch.
+err=$(bash_payload "npm run lint" | env PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" bash "$HOOK" 2>&1 >/dev/null)
+[ -z "$err" ] && ok "unrelated Bash command writes nothing to stderr" \
+              || bad "unrelated Bash command writes nothing to stderr" "$err"
 
 # 2. ALLOW CONTROL for the fast path's coarseness. `git commit -m "fix highlight for pr
 #    merge"` MATCHES the '*gh*pr*merge*' necessary-substring filter ("gh" inside
@@ -2194,7 +2200,8 @@ rm -rf "$LG"
 # 253 -> 261 (2026-11-24, a lib FUNCTION that exits when called, and the EXIT-trap net):
 # +8 = rows I1 (four), I2 (two), I3 and I4.
 # 261 -> 268 (2026-11-24, deny() cannot be the silent exit): +7 = rows I5 (two), I6, I7 (four).
-EXPECTED_TOTAL=268
+# 268 -> 269 (2026-11-24): +1 = row 1b, nothing on stderr for an ordinary command.
+EXPECTED_TOTAL=269
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
