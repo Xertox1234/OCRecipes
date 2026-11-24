@@ -624,9 +624,25 @@ a deny (or, for the fast-path filter, into "no filter, read the command"). Rows 
 `test-merge-review-guard.sh`; all but the H1 control were allows, or unreadable output, before.
 Cost: about 1 ms per Bash call (one fork).
 Open, same shape, not fixed here:
-(1) a lib FUNCTION that calls `exit` when it is called directly in the hook's shell still ends the
-hook (one called inside `$(...)` cannot); so does a trap a lib installs, or a lib that exits only
-outside a subshell.
+(1) FIXED 2026-11-24: a lib FUNCTION that calls `exit` when it is called directly in the hook's
+shell ended the hook (one called inside `$(...)` cannot). The two direct calls
+(`cmd_fastpath_has`, `cmd_gh_pr_has_merge`) now run inside `$(...)` and report their rc as text,
+so "did not return" reads as "could not tell". Under that, an EXIT/TERM/INT/HUP trap
+(`no_decision`) denies whenever the hook's shell ends without `deny()`, `exempt()` or `allow()`
+having run; this also covers a lib that exits only outside a subshell, a lib that shadows a
+builtin with an exiting function, and errexit deaths. Rows I1-I4 in
+`test-merge-review-guard.sh`. Cost: one more fork per Bash call (about 1 ms).
+Found by the security review of that change and fixed with it: `deny()` marked the decision before
+`jq` had printed anything, so a `jq` failure inside `deny()` was a silent allow (measured: a
+140 KB findings entry makes `jq --arg` fail with E2BIG; a lib that shadows `jq`). `deny()` now
+builds the JSON first, cuts the reason at 8000 characters, and leaves the net to answer when the
+build fails. The trap also takes PIPE, ALRM, USR1, USR2, QUIT and ABRT. Rows I5-I7.
+Still open here: a lib that replaces the trap (`trap ... EXIT`), sets `DECIDED` itself, or closes
+fd 9 (the saved stdout the trap writes to); a lib function that PRINTS to stdout when called
+directly (none is called directly today); SIGKILL, which nothing can handle; and the exit BEFORE
+the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
+could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
+not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
 (2) other blocking hooks source files at top level with no such probe: `git-safety.sh`
 (`cmd-detect.sh` and `gh-pr-rest.sh`; it does probe `write-targets.sh` and
 `own-agent-worktree.sh`), `guard-outward-cli.sh`, `branch-preflight.sh`, and

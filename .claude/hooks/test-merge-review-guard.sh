@@ -269,6 +269,12 @@ export FAKE_FILES="$FILES_ONE"
 # 1. ALLOW CONTROL. An unrelated Bash command is silent — it never reaches gh at all.
 out=$(bash_payload "npm run lint" | run)
 assert_allowed "unrelated Bash command exits silently" "$out"
+# 1b. ...and silent on STDERR too. A stray token in the hook (a leftover line that bash runs
+#     as a command: "command not found") changes no decision today and so passes every other
+#     row; this is the row that sees it. Found 2026-11-24 by review of a bad patch.
+err=$(bash_payload "npm run lint" | env PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" bash "$HOOK" 2>&1 >/dev/null)
+[ -z "$err" ] && ok "unrelated Bash command writes nothing to stderr" \
+              || bad "unrelated Bash command writes nothing to stderr" "$err"
 
 # 2. ALLOW CONTROL for the fast path's coarseness. `git commit -m "fix highlight for pr
 #    merge"` MATCHES the '*gh*pr*merge*' necessary-substring filter ("gh" inside
@@ -1655,6 +1661,72 @@ for lib in review-stamp-path.sh gh-pr-rest.sh; do
                    || bad "H6 $lib that prints: the output is the deny and nothing else" "$out"
   rm -rf "$E0"
 done
+# I1-I4. DENY. A lib FUNCTION that ends the shell when it is CALLED (the file itself sources
+#     cleanly, so lib_loads passes it). Two lib functions used to be called directly in the
+#     hook's shell, and `exit` inside either ended the hook with no decision. Both are now
+#     called inside a command substitution, and an EXIT trap turns any other undecided end
+#     into a deny.
+MERGE_CMD="gh pr merge 938 --auto --squash"
+for code in 0 1; do
+  E0=$(exit0_tree fastpath-filter.sh keep "cmd_fastpath_has() { exit $code; }")
+  out=$(bash_payload "$MERGE_CMD" | run_tree "$E0")
+  only_deny "$out" && ok "I1 cmd_fastpath_has that calls exit $code: the merge is still read, and denies" \
+                   || bad "I1 cmd_fastpath_has that calls exit $code: the merge is still read, and denies" "$out"
+  out=$(bash_payload "ls -la" | run_tree "$E0"); rc=$?
+  [ -z "$out" ] && [ "$rc" = 0 ] && ok "I1 control (exit $code): an ordinary command is still allowed" \
+                                || bad "I1 control (exit $code): an ordinary command is still allowed" "rc=$rc out=$out"
+  rm -rf "$E0"
+  E0=$(exit0_tree cmd-detect.sh keep "cmd_gh_pr_has_merge() { exit $code; }")
+  out=$(bash_payload "$MERGE_CMD" | run_tree "$E0")
+  only_deny "$out" && reason "$out" | grep -q 'could not determine whether' \
+    && ok "I2 cmd_gh_pr_has_merge that calls exit $code: could-not-determine deny" \
+    || bad "I2 cmd_gh_pr_has_merge that calls exit $code: could-not-determine deny" "$out"
+  rm -rf "$E0"
+done
+# I3. The net under everything else: the hook's shell ends at a point where no decision has
+#     been made (here a lib function that signals it). The EXIT trap answers with a deny, rc 0.
+E0=$(exit0_tree review-stamp-path.sh keep 'review_stamp_dir() { kill -TERM $$; sleep 1; }')
+out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && reason "$out" | grep -q 'ended before it reached a decision' \
+  && ok "I3 the hook's shell is ended mid-run: ended-before-a-decision deny, rc 0" \
+  || bad "I3 the hook's shell is ended mid-run: ended-before-a-decision deny, rc 0" "rc=$rc out=$out"
+rm -rf "$E0"
+# I4. Same net, reached by a lib that shadows a builtin the hook calls directly.
+E0=$(exit0_tree gh-pr-rest.sh keep 'declare() { exit 0; }')
+out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && reason "$out" | grep -q 'ended before it reached a decision' \
+  && ok "I4 a lib shadows a builtin with a function that exits: ended-before-a-decision deny" \
+  || bad "I4 a lib shadows a builtin with a function that exits: ended-before-a-decision deny" "rc=$rc out=$out"
+rm -rf "$E0"
+# I5-I7. deny() itself must not be the silent exit. It used to mark the decision and THEN run
+#     jq, so a jq that failed there printed nothing and the net stayed quiet.
+# I5. A findings record whose first entry is 140 KB: `jq --arg` with it is E2BIG (one argument
+#     is capped at 128 KB on Linux). The record is written through stdin for the same reason.
+mkdir -p "$ROOT/$SHA"
+head -c 140000 /dev/zero | tr '\0' 'x' | jq -Rs --arg s "$SHA" --arg d "$DIGEST_ONE" \
+  '{head_sha:$s, reviewed_files_digest:$d, agent_type:"code-reviewer", verdict:"findings",
+    unresolved:[.], written_by:"review-stamp-writer.sh", written_at:"2026-09-09T00:00:00Z"}' \
+  > "$ROOT/$SHA/code-reviewer.json"
+out=$(mcp_payload 938 | run); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && ok "I5 a 140 KB findings entry: still one readable deny" \
+                                 || bad "I5 a 140 KB findings entry: still one readable deny" "rc=$rc bytes=${#out}"
+[ "${#out}" -lt 20000 ] && ok "I5 the deny reason is cut to a bounded size" \
+                        || bad "I5 the deny reason is cut to a bounded size" "bytes=${#out}"
+clear_stamps
+# I6. A lib that shadows jq with a function that exits: deny() cannot print, the net does.
+E0=$(exit0_tree gh-pr-rest.sh keep 'jq() { exit 0; }')
+out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && ok "I6 a lib shadows jq with a function that exits: denies" \
+                                 || bad "I6 a lib shadows jq with a function that exits: denies" "rc=$rc out=$out"
+rm -rf "$E0"
+# I7. Signals beyond TERM/INT/HUP that would end the shell with a non-zero rc.
+for sig in PIPE ALRM USR1 USR2; do
+  E0=$(exit0_tree review-stamp-path.sh keep "review_stamp_dir() { kill -$sig \$\$; sleep 1; }")
+  out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+  only_deny "$out" && [ "$rc" = 0 ] && ok "I7 SIG$sig mid-run: deny, rc 0" \
+                                   || bad "I7 SIG$sig mid-run: deny, rc 0" "rc=$rc out=$out"
+  rm -rf "$E0"
+done
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 
 # G7. CONTROL. With GraphQL answering, the REST PR resource is never read: the fallback is a
@@ -2125,7 +2197,11 @@ rm -rf "$LG"
 # 238 -> 241 (2026-11-24, REST retry folded into lib/gh-pr-rest.sh): +3 = rows G5b (two) and G8.
 # 241 -> 253 (2026-11-24, a lib that exits, prints or changes shell options is "could not load"):
 # +12 = rows H1 (two), H2-H5, H6 (four) and H7 (two).
-EXPECTED_TOTAL=253
+# 253 -> 261 (2026-11-24, a lib FUNCTION that exits when called, and the EXIT-trap net):
+# +8 = rows I1 (four), I2 (two), I3 and I4.
+# 261 -> 268 (2026-11-24, deny() cannot be the silent exit): +7 = rows I5 (two), I6, I7 (four).
+# 268 -> 269 (2026-11-24): +1 = row 1b, nothing on stderr for an ordinary command.
+EXPECTED_TOTAL=269
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

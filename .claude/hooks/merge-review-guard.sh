@@ -74,14 +74,25 @@ ROOT="$(cd "$HERE/../.." && pwd)" || ROOT=""
 
 BYPASS='Bypass (emergencies only): SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code — not in the command.'
 
+# deny <reason>: print the deny, then end. The JSON is BUILT first and the decision marked only
+# once there is something to print (2026-11-24). Marking first made deny() itself a silent
+# exit when jq failed here: a 140 KB findings entry in the reason is E2BIG for `jq --arg`, and
+# a lib can shadow jq. Now a failed build leaves DECIDED empty and no_decision (below) prints
+# its static deny. The reason is cut to 8000 characters for the same E2BIG reason. Written to
+# fd 9, the hook's real stdout. Every call site is after the trap and fd 9 are set up.
 deny() {
-  jq -n --arg r "$1" '{
+  local j r="$1"
+  [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
+  j=$(jq -n --arg r "$r" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
       "permissionDecisionReason": $r
     }
-  }'
+  }' 2>/dev/null) || j=""
+  case "$j" in
+    *'"permissionDecision": "deny"'*) DECIDED=1; printf '%s\n' "$j" >&9 ;;
+  esac
   exit 0
 }
 
@@ -111,6 +122,7 @@ lib_loads() {
 # no review" (the #1535 residual). Context only — no permissionDecision, so permission handling
 # is exactly what a silent exit 0 gave. systemMessage reaches the owner, additionalContext the agent.
 exempt() {
+  DECIDED=1
   local m="merge-review-guard: PR #$PR needs no review record — $1"
   jq -n --arg m "$m" '{
     "systemMessage": $m,
@@ -122,10 +134,39 @@ exempt() {
   exit 0
 }
 
+# From here to the end, the hook's shell must not end without a decision. A PreToolUse hook
+# that ends silently is an ALLOW, so anything that ends this shell early was a bypass: a lib
+# function that calls `exit` when called directly, a lib that shadows a builtin with a
+# function that exits, errexit left on, a signal. DECIDED is set only by the three intended
+# ways out: deny(), exempt() and allow() (the silent "this is not a merge I gate" / "the
+# review record is good" exit). Any other end runs no_decision, which denies with rc 0.
+# The trap is not inherited by `$(...)`, so the lib_loads probe and every substitution are
+# unaffected. Two details, each measured by a row (I3, I4 in the test):
+#   - The catchable signals that end a shell are trapped too. On one of them bash runs the
+#     EXIT trap and then dies OF the signal (rc 143 for TERM), and a non-zero rc makes the
+#     harness ignore the JSON. Trapped, the handler's own `exit 0` is what ends the shell.
+#   - The deny goes to fd 9, a copy of the hook's real stdout. The shell can end inside a
+#     command that has stdout redirected (`declare -F x >/dev/null`), and the trap inherits
+#     that redirect: the deny went to /dev/null.
+# fd 9 is inherited by children; the one child that can leave a process behind (git fetch
+# and its auto-maintenance) is started with `9>&-` so it cannot hold the harness's pipe open.
+# Not covered: a lib that replaces this trap, sets DECIDED or closes fd 9
+# (docs/harness-residuals.md).
+exec 9>&1
+DECIDED=""
+allow() { DECIDED=1; exit 0; }
+no_decision() {
+  [ -n "$DECIDED" ] && return 0
+  DECIDED=1
+  printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked: merge-review-guard ended before it reached a decision (a helper under .claude/hooks/lib/ ended the hook, or the hook was interrupted), so it cannot say this is not an unreviewed PR merge. Fail-closed. Bypass (emergencies only): SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code."}}' >&9
+  exit 0
+}
+trap no_decision EXIT TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT
+
 PR=""
 case "$TOOL" in
   Bash)
-    CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
+    CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || allow
     # Fast path FIRST — this hook runs on EVERY Bash call (project_per_bash_hook_overhead).
     # It is a NECESSARY-substring filter, not a decision: `git commit -m "fix highlight
     # for pr merge"` matches it ("gh" inside "highlight", then "pr", then "merge"). Only
@@ -145,7 +186,12 @@ case "$TOOL" in
     # passing unchanged (measured by running the suite after this change).
     if lib_loads "$HERE/lib/fastpath-filter.sh" \
        && . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
-      cmd_fastpath_has "$CMD" '*gh*pr*merge*' '*gh*api*merge*' || exit 0
+      # Called inside `$(...)` so a cmd_fastpath_has that EXITS cannot end the hook: the
+      # answer is then empty, and only a clean "1" (no needle present) takes the fast way out.
+      # Anything else reads the command with the precise detector, as with no filter at all.
+      # One fork per Bash call (about 1 ms).
+      FP_RC=$(cmd_fastpath_has "$CMD" '*gh*pr*merge*' '*gh*api*merge*' >/dev/null 2>&1; printf '%s' "$?")
+      [ "$FP_RC" = 1 ] && allow
     fi
     # Detection and ref resolution go through the SHARED library. Do not re-derive
     # positional extraction: cmd_gh_pr_ref's header documents three construction-proven
@@ -527,12 +573,14 @@ case "$TOOL" in
           # reachable by corrupting a shared constant, inverted to ALLOW under the old shape
           # too. "I could not tell" is not "there is no merge here", and only one of those is
           # safe to answer with exit 0.
-          MRG_HAS_RC=0
-          cmd_gh_pr_has_merge "$CMD" || MRG_HAS_RC=$?
-          if [ "$MRG_HAS_RC" -ne 0 ] && [ "$MRG_HAS_RC" -ne 1 ]; then
-            deny "Blocked: merge-review-guard could not determine whether this command contains a \`gh pr merge\`. The existence check returned $MRG_HAS_RC, which is neither \"found\" (0) nor \"absent\" (1) -- so this fails closed rather than guessing. $BYPASS"
+          # Called inside `$(...)` (2026-11-24): called directly, a cmd_gh_pr_has_merge that
+          # EXITS ended the hook with no decision. Now the answer is empty when the function
+          # did not return, and "empty" is one more "I could not tell".
+          MRG_HAS_RC=$(cmd_gh_pr_has_merge "$CMD" >/dev/null 2>&1; printf '%s' "$?")
+          if [ "$MRG_HAS_RC" != 0 ] && [ "$MRG_HAS_RC" != 1 ]; then
+            deny "Blocked: merge-review-guard could not determine whether this command contains a \`gh pr merge\`. The existence check returned '${MRG_HAS_RC:-nothing (it ended its shell)}', which is neither \"found\" (0) nor \"absent\" (1) -- so this fails closed rather than guessing. $BYPASS"
           fi
-          if [ "$MRG_HAS_RC" -eq 1 ]; then
+          if [ "$MRG_HAS_RC" = 1 ]; then
           # EXISTENCE, NOT FIRST-OCCURRENCE -- this is the one ALLOW-shaped read in this
           # file, so it must be monotone under a widening of the shared grammar. It used to
           # ask `[ "$SUB" != "merge" ]`, i.e. "is the FIRST gh-pr clause a merge", and $SUB
@@ -555,7 +603,7 @@ case "$TOOL" in
           # create decoy. A QUOTED mention is unaffected -- `git commit -m "gh pr merge 42"`
           # still allows, because cmd_bare blanks the quoted span -- which is the row that
           # would matter if this were over-denying in practice.
-            exit 0
+            allow
           fi
           PR=$(cmd_gh_pr_ref "$CMD") || PR=""
         fi
@@ -616,7 +664,7 @@ case "$TOOL" in
       fi
     fi
     ;;
-  *) exit 0 ;;
+  *) allow ;;
 esac
 
 case "$PR" in
@@ -705,7 +753,7 @@ pr_diff() {
   local head_ref="refs/merge-review-guard/pr-$PR-head" base_ref="refs/merge-review-guard/pr-$PR-base"
   local rc=1
   if git fetch -q --no-tags origin "+refs/pull/$PR/head:$head_ref" "+refs/heads/$BASE_REF:$base_ref" \
-       >/dev/null 2>&1 \
+       >/dev/null 2>&1 9>&- \
      && [ "$(git rev-parse -q --verify "$head_ref^{commit}" 2>/dev/null)" = "$HEAD_SHA" ]; then
     rc=0
     git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --text -M \
@@ -918,4 +966,4 @@ done <<< "$RECORDS"
 [ -n "$MATCHED" ] \
   || deny "Blocked: $(printf '%s\n' "$RECORDS" | wc -l | tr -d ' ') review record(s) exist for head ${HEAD_SHA:0:7}, but none was scoped to PR #$PR's changed files (this diff's digest over $(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') file(s) is ${WANT_DIGEST}). The recorded review covered a different file set, so its verdict says nothing about this diff. Re-review this commit's actual changed files. $BYPASS"
 
-exit 0
+allow
