@@ -56,7 +56,7 @@ describe("useCoachPhotoSend", () => {
 
   it("uploads the picked photo to the conversation and settles clean", async () => {
     vi.mocked(pickCoachPhoto).mockResolvedValue("file:///meal.jpg");
-    vi.mocked(uploadPhotoToCoach).mockResolvedValue(undefined);
+    vi.mocked(uploadPhotoToCoach).mockResolvedValue("I found 2 foods.");
     const { result, args } = setup({ openingBriefForm: "short" });
 
     await choose(result, "Take Photo");
@@ -68,7 +68,12 @@ describe("useCoachPhotoSend", () => {
       7,
       "short",
     );
-    expect(args.onSettled).toHaveBeenCalledWith(7, null, true);
+    expect(args.onSettled).toHaveBeenCalledWith(
+      7,
+      null,
+      true,
+      "I found 2 foods.",
+    );
     expect(result.current.isSendingPhoto).toBe(false);
   });
 
@@ -95,6 +100,7 @@ describe("useCoachPhotoSend", () => {
       7,
       { atDailyLimit: true, message: null },
       false,
+      null,
     );
     expect(result.current.isSendingPhoto).toBe(false);
   });
@@ -114,7 +120,7 @@ describe("useCoachPhotoSend", () => {
   // brief flag must be the one from when the photo was picked.
   it("reports the brief as sent even after the host drops the brief form", async () => {
     vi.mocked(pickCoachPhoto).mockResolvedValue("file:///meal.jpg");
-    vi.mocked(uploadPhotoToCoach).mockResolvedValue(undefined);
+    vi.mocked(uploadPhotoToCoach).mockResolvedValue(null);
     const onSettled = vi.fn();
     const base = {
       disabled: false,
@@ -140,7 +146,7 @@ describe("useCoachPhotoSend", () => {
       7,
       "full",
     );
-    expect(onSettled).toHaveBeenCalledWith(7, null, true);
+    expect(onSettled).toHaveBeenCalledWith(7, null, true, null);
   });
 
   it("does not open while another turn is starting", () => {

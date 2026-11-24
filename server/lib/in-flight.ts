@@ -38,20 +38,31 @@ export function createInFlightGuard(): InFlightGuard {
  * requireAuth and choose a key that names the write — the user plus the
  * session or the payload — so two different writes never block each other.
  */
-export function rejectOverlapping(keyOf: (req: Request) => string) {
+export function rejectOverlapping(
+  keyOf: (req: Request) => string,
+  message = "This is already being saved",
+) {
   const guard = createInFlightGuard();
   return (req: Request, res: Response, next: NextFunction) => {
     const key = keyOf(req);
     if (!guard.claim(key)) {
-      sendError(
-        res,
-        409,
-        "This is already being saved",
-        ErrorCode.REQUEST_IN_FLIGHT,
-      );
+      sendError(res, 409, message, ErrorCode.REQUEST_IN_FLIGHT);
       return;
     }
     res.on("close", () => guard.release(key));
     next();
   };
 }
+
+/**
+ * One turn at a time in a chat conversation: a typed message and a photo are
+ * both turns, so both routes mount this one instance and share its claims. A
+ * second turn sent while the first is still being answered is refused before
+ * anything is stored. The app already holds its send controls while a turn
+ * runs; this covers a second device or another client. Releasing on close
+ * means a turn the user stopped frees the conversation at once.
+ */
+export const rejectOverlappingChatTurn = rejectOverlapping(
+  (req) => `${req.userId}:${Number(req.params.id)}`,
+  "The Coach is still answering. Please wait for the reply.",
+);

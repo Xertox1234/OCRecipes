@@ -253,6 +253,8 @@ export async function updateUser(
 /**
  * Atomically update user goals AND upsert profile data in a single transaction.
  * Prevents partial writes where one table is updated but the other fails.
+ * Lock order: `users`, then `user_profiles`. Every transaction that writes
+ * both must keep that order (`user-profiles.concurrent.test.ts`).
  */
 export async function updateUserGoalsAndProfile(
   userId: string,

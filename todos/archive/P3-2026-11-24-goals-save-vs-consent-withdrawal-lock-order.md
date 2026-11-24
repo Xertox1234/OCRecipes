@@ -1,6 +1,6 @@
 ---
 title: "Goals save and consent withdrawal lock users and user_profiles in opposite orders"
-status: backlog
+status: done
 priority: low
 created: 2026-11-24
 updated: 2026-11-24
@@ -29,10 +29,10 @@ the same instant, so it is rare. Found by reading; not reproduced.
 
 ## Acceptance Criteria
 
-- [ ] A real-database test (multi-connection, like `server/storage/__tests__/coach-write-cards.concurrent.test.ts`) reproduces the clash first; if it does not reproduce, close with a note.
-- [ ] Every transaction that writes both `users` and `user_profiles` takes the two locks in the same order.
-- [ ] The order chosen still agrees with the Coach card saves: an allergy card locks its card and then the profile; a goals card locks its card and then `users`; the withdrawal closes allergy cards first.
-- [ ] The test passes after the change.
+- [x] A real-database test (multi-connection, like `server/storage/__tests__/coach-write-cards.concurrent.test.ts`) reproduces the clash first; if it does not reproduce, close with a note.
+- [x] Every transaction that writes both `users` and `user_profiles` takes the two locks in the same order.
+- [x] The order chosen still agrees with the Coach card saves: an allergy card locks its card and then the profile; a goals card locks its card and then `users`; the withdrawal closes allergy cards first.
+- [x] The test passes after the change.
 
 ## Implementation Notes
 
@@ -59,3 +59,9 @@ the same instant, so it is rare. Found by reading; not reproduced.
 ### 2026-11-24
 
 - Initial creation
+
+### 2026-11-24 (done)
+
+- Done in PR #PRNUM.
+- Reproduced on the real database in `server/storage/__tests__/user-profiles.concurrent.test.ts`: a goals save clashed with the withdrawal and also with the onboarding save (`upsertProfileWithOnboarding`), which this todo did not list.
+- The order is now `users`, then `user_profiles`, in all three. The goals save already had it. The onboarding save's `users` update moved to the top. The withdrawal takes a row lock on `users` after closing the allergy cards and before the profile update; its own `users` update stays after the profile check, so a user with no profile row is left untouched as before. That is one added lock statement, where the scope contract asked for reordering only: moving the update itself would have cleared goals for a user with no profile.

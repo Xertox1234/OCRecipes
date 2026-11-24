@@ -168,6 +168,33 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(res.body.assistantMessage.metadata.blocks[0].cardId).toBe(CARD_ID);
   });
 
+  it("refuses a second photo while the first is still being answered, and stores nothing for it", async () => {
+    let finish!: () => void;
+    vi.mocked(buildPhotoFoodCard).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ payload, skipped: 0 });
+        }),
+    );
+    const first = post(app).then((r) => r);
+    await vi.waitFor(() => expect(buildPhotoFoodCard).toHaveBeenCalled());
+
+    const second = await post(app);
+
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe("REQUEST_IN_FLIGHT");
+    expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledTimes(1);
+    expect(storage.claimDailyAiCall).toHaveBeenCalledTimes(1);
+
+    // Another conversation is not held up by this one.
+    expect((await post(app, 2)).status).toBe(201);
+
+    finish();
+    expect((await first).status).toBe(201);
+    // The conversation is free again once the first turn has answered.
+    expect((await post(app)).status).toBe(201);
+  });
+
   it("replies in text, with no card, when no food could be shown", async () => {
     vi.mocked(buildPhotoFoodCard).mockResolvedValue({
       payload: null,

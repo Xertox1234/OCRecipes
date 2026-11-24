@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import express from "express";
+import { EventEmitter } from "node:events";
+import express, { type Request, type Response } from "express";
 import request from "supertest";
 import { buildCoachBrief } from "../../services/coach-brief";
 
 import { storage } from "../../storage";
 import { logger } from "../../lib/logger";
 import { sendError } from "../../lib/api-errors";
+import { rejectOverlappingChatTurn } from "../../lib/in-flight";
 import { requireAuth } from "../../middleware/auth";
 import {
   generateCoachResponse,
@@ -480,6 +482,34 @@ describe("Chat Routes", () => {
         .send({ content: "Hello" });
 
       expect(res.status).toBe(404);
+    });
+
+    it("refuses a message while another turn in the conversation is still being answered", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      // A photo turn holds the conversation through the same guard.
+      const holder = new EventEmitter();
+      const next = vi.fn();
+      rejectOverlappingChatTurn(
+        { userId: "1", params: { id: "1" } } as unknown as Request,
+        holder as unknown as Response,
+        next,
+      );
+      expect(next).toHaveBeenCalled();
+
+      try {
+        const res = await request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send({ content: "Hello" });
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("REQUEST_IN_FLIGHT");
+        expect(storage.getChatConversation).not.toHaveBeenCalled();
+      } finally {
+        holder.emit("close");
+      }
     });
 
     it("returns 400 for empty content", async () => {

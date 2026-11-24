@@ -31,6 +31,13 @@ export function coachPhotoFailure(err: unknown): CoachPhotoFailure {
           atDailyLimit: false,
           message: "This photo is too large to send. Please try another.",
         };
+      case ErrorCode.REQUEST_IN_FLIGHT:
+        // Another turn in this conversation has not been answered yet.
+        return {
+          atDailyLimit: false,
+          message:
+            "The Coach is still answering. Send the photo after the reply.",
+        };
       case ErrorCode.PREMIUM_REQUIRED:
         return {
           atDailyLimit: false,

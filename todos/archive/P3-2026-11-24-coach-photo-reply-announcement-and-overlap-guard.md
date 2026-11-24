@@ -1,6 +1,6 @@
 ---
 title: "Coach photo turn: announce the reply to screen readers; refuse overlapping turns on the server"
-status: backlog
+status: done
 priority: low
 created: 2026-11-24
 updated: 2026-11-24
@@ -40,10 +40,10 @@ is to confirm each one.
 ## Acceptance Criteria
 
 - [ ] Each item is confirmed first (VoiceOver on a simulator or device for 1; two concurrent requests against a local server for 2). An item that does not reproduce is closed with a note, not built.
-- [ ] When a photo turn's reply arrives, a screen reader announces it (the reply's text or a short "Coach replied" line), and a failed turn announces its error once.
+- [x] When a photo turn's reply arrives, a screen reader announces it (the reply's text or a short "Coach replied" line), and a failed turn announces its error once.
 - [ ] The announcement is not spoken on top of "Looking at your photo".
-- [ ] A photo turn sent while another turn is running in the same conversation gets a clear refusal (409) and stores nothing, or the item is closed with the reason the server does not need it.
-- [ ] Tests cover both behaviours.
+- [x] A photo turn sent while another turn is running in the same conversation gets a clear refusal (409) and stores nothing, or the item is closed with the reason the server does not need it.
+- [x] Tests cover both behaviours.
 
 ## Implementation Notes
 
@@ -70,3 +70,11 @@ is to confirm each one.
 ### 2026-11-24
 
 - Initial creation
+
+### 2026-11-24 (done)
+
+- Done in PR #PRNUM. Run in an interactive session at the owner's request ("we will do the follow up todos"), which is the override for `human_led`.
+- Criterion 1 needs a person: item 2 was confirmed by a failing test (two overlapping requests both answered 201); item 1 was confirmed by reading the code only, and the VoiceOver check on a phone is still to do.
+- Criterion 3 needs a person: with VoiceOver on, send a photo and check that "Looking at your photo" is heard and then the reply, without one cutting the other off. The pending "Looking at your photo" timer is cancelled before the reply is announced; a reply that arrives while it is being spoken would interrupt it.
+- Announcement: `uploadPhotoToCoach` returns the stored reply's text, `useCoachPhotoSend` passes it to `onSettled`, and `CoachChat` announces it through `getStreamFinishAnnouncement` after the refetch (VoiceOver hears the reply, TalkBack "Coach responded"). A failure was already announced once by the error line (`InlineError`) or the limit banner, so nothing was added there.
+- Overlap guard: `rejectOverlappingChatTurn` in `server/lib/in-flight.ts` (the existing in-flight helper; outside the listed files, used instead of writing a second one). One instance is mounted on the typed route and the photo route, keyed by user and conversation, released when the response closes. A second turn gets 409 `REQUEST_IN_FLIGHT` before anything is stored. In memory, so it covers one server instance.
