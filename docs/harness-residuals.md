@@ -661,7 +661,9 @@ hook does not block ordinary commands. Cost: one fork, about 1-2 ms per Bash cal
 Found by the security review of that change, both on `main` too, both fixed with it (rows
 ND3b, ND5b): (a) a lib function named `wc` made the occurrence counters read an empty count
 as 0, and a PR merge and a REST merge reached the final allow; `wc` and `tail` joined the
-names a lib may not shadow, and the `gh api` counters deny when a count is not a number.
+names a lib may not shadow. Only that route is closed: with `wc` MISSING from the hook's
+`PATH`, or printing nothing, both merges are still allowed (`_out_max_count` reads the broken
+count as `${n:-0}`, so the occurrence count is 0 and the family's block is skipped).
 (b) LARGE commands: the piped-grep bypass of `git-safety.sh` does not exist here (100 KB
 tails after an OTA update, a PR merge and a REST merge all denied on `main`; the conditions
 already read here-strings, and the nine `printf | grep -q` conditions left were converted),
@@ -673,14 +675,28 @@ replaces the trap, sets `DECIDED`, assigns a variable the hook reads such as `CM
 redefines a function defined before the libs are sourced, defines `builtin`, or closes fd 9;
 SIGKILL, the fault signals, which print the deny but leave rc 132-139, the real-time and stop
 signals); the ambient `ALLOW_OUTWARD_CLI` exit, the no-`jq` arm and the read of stdin run
-before the trap; a command between about 250 KB and 300000 characters on a busy machine can
-still run past the timeout; and the trap and the "unsourceable" fallback are only as wide as
+before the trap; the size cap does NOT bound a command dense in `$(...)` or backtick
+substitutions: `lib/cmd-detect.sh` runs one awk per substitution body (about 6.5 ms each,
+loops at lines 986 and 1642), so an outward command followed by such lines takes 15.2 s at
+60 KB and 42 s at 150 KB, on `main` too. Past the timeout a SIGTERM gets the trap's deny for
+what the crude smell test recognises, and a SIGKILL gets nothing. A fix is a bound on the
+substitution count next to the size cap, or one awk run for all bodies; it needs a corpus
+row. A command of inert text between about 250 KB and 300000 characters can also pass the
+timeout on a busy machine; and the trap and the "unsourceable" fallback are only as wide as
 `crude_smells_outward`, which misses families the precise matcher denies: `npx eas-cli
 update`, `yarn dlx`/`pnpm dlx`/`bunx eas-cli update`, `node node_modules/eas-cli/bin/run
 update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with a global
 flag before the subcommand (`gh -R o/r pr merge 1 --squash`, `gh -R o/r api -X PUT x`,
-`gh -R o/r release create v1`). With `cmd-detect.sh` broken, or a signal mid-run, those are
-allowed (measured). Not tested on bash 3.2 (macOS).
+`gh -R o/r release create v1`), and `npx @railway/cli up`. With `cmd-detect.sh` broken, or
+a signal mid-run, those are allowed (measured). Not tested on bash 3.2 (macOS).
+SEPARATE, found by the same review, on `main`, NOT fixed here (2026-11-24): the PRECISE path
+of a healthy install allows an OTA update spelled `npm exec eas-cli -- update --branch
+preview` (also `npm exec eas -- update …` and `npm x eas-cli -- update …`): silent, rc 0.
+With a harmless local stub, npm 11.19.1 hands the stub `update --branch preview`, so the
+spelling is a real publish. Denied controls: `npm exec -- eas-cli update …`,
+`npm exec eas-cli update …`, `npm exec --package=eas-cli -- eas update …`. The launcher
+grammar (from line 2711) does not let the launcher-to-verb separator absorb a `--` after the
+package word, as the `explore` arm near line 2894 does.
 `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
 (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
 finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.

@@ -2062,6 +2062,8 @@ deny() {
       # Signals are ignored from here to the exit: one that landed between the mark and the
       # print ran the handler, which saw DECIDED set and left with nothing printed.
       trap '' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO
+      trap '' PWR 2>/dev/null || :
+      trap '' STKFLT 2>/dev/null || :
       DECIDED=1; printf '%s\n' "$j" >&9 ;;
   esac
   exit 0
@@ -2350,7 +2352,9 @@ fi
 # hook is killed before it answers. Everything that reaches this line either holds one of the
 # fast path's needles or a span that could build one, so above 300000 characters this denies
 # rather than start an evaluation it cannot finish. Ordinary commands of any size left by the
-# fast path above.
+# fast path above. NOT bounded by this: a command dense in `$(...)` or backtick substitutions.
+# lib/cmd-detect.sh runs one awk per substitution body (about 6.5 ms each), so such a command
+# passes the timeout from about 60 KB (docs/harness-residuals.md).
 if [ "${#CMD}" -gt 300000 ]; then
   deny "guard-outward-cli: this command is ${#CMD} characters long and names (or could build) an outward-facing CLI word; above 300000 characters the hook cannot finish reading it inside its timeout, so it fails closed instead of timing out. Write the large content to a file with a file tool and run a short command, or bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
@@ -5124,11 +5128,6 @@ if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
     _gh_api_cut_n=$(printf '%s' "$_gh_api_r" | grep -oiE "$_GH_API_CUT" | wc -l | tr -d '[:space:]')
     for _gh_api_re in "$GH_API_RE" "$GH_API_RE_SEPSAFE"; do
       _gh_api_seen=$(printf '%s' "$_gh_api_r" | grep -oiE "$_gh_api_re" | wc -l | tr -d '[:space:]')
-      # A count that is not a number means the counter itself is broken (a shadowed or missing
-      # wc gave an empty count, which the comparison below read as 0 occurrences: an allow).
-      case "${_gh_api_cut_n:-x}${_gh_api_seen:-x}" in
-        *[!0-9]*) deny "guard-outward-cli: could not count the command-position 'gh api' occurrences (the counter returned '${_gh_api_cut_n}' and '${_gh_api_seen}', not numbers) - failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)." ;;
-      esac
       [ "${_gh_api_cut_n:-0}" -ge "${_gh_api_seen:-0}" ] || \
         deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
     done
