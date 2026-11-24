@@ -616,9 +616,14 @@ GHEOF
   chmod +x "$dir/gh"
   printf '%s' "$dir"
 }
+# The hook runs inside a throwaway repo on a KNOWN branch: the create path resolves "the
+# current branch", and CI checks this repo out detached (no current branch), so running in
+# the real checkout made the create rows depend on where the suite happened to run.
+CLOUD_REPO=$(mktemp -d)
+git -C "$CLOUD_REPO" init -q -b cloud/feature-x
 run_hook_cloud() {  # $1 = hook input JSON, $2 = stub mode; sets OUT and ARGV
   local stubdir; stubdir=$(make_stub_gh_cloud "$2")
-  OUT=$(printf '%s' "$1" | PATH="$stubdir:$PATH" bash "$HOOK" 2>/dev/null)
+  OUT=$(cd "$CLOUD_REPO" && printf '%s' "$1" | PATH="$stubdir:$PATH" bash "$HOOK" 2>/dev/null)
   ARGV=$(cat "$stubdir/argv.log" 2>/dev/null)
   rm -rf "$stubdir"
 }
@@ -636,7 +641,16 @@ assert_contains "cloud: MCP merge asks the PR's own REST resource" "api repos/{o
 run_hook_cloud "$MCP_CREATE_INPUT" rest-ok
 assert_contains "cloud: MCP create verified over REST" "PR state verified post-command — #77" "$OUT"
 assert_contains "cloud: MCP create reports the open state" "state: OPEN" "$OUT"
-assert_contains "cloud: MCP create asks by the current branch" "head={owner}%3A$(enc "$(git branch --show-current)")" "$ARGV"
+assert_contains "cloud: MCP create asks by the current branch" "head={owner}%3A$(enc cloud/feature-x)" "$ARGV"
+
+# C2b: with NO current branch (a detached checkout) the create path has nothing to key on:
+# the honest WARNING, and never a REST lookup of something else.
+git -C "$CLOUD_REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$CLOUD_REPO" checkout -q --detach
+run_hook_cloud "$MCP_CREATE_INPUT" rest-ok
+assert_contains "cloud: MCP create on a detached checkout keeps the WARNING" "WARNING: could not verify" "$OUT"
+assert_not_contains "cloud: MCP create on a detached checkout makes no REST call" "api " "$ARGV"
+git -C "$CLOUD_REPO" checkout -q cloud/feature-x
 
 # C3: the Bash forms take the same retry — a number and a branch name.
 run_hook_cloud "$(bash_input 'gh pr merge 42 --squash')" rest-ok
@@ -662,6 +676,8 @@ assert_contains "cloud: unresolvable ref keeps the WARNING" "WARNING: could not 
 # C6: a URL outside the configured host is dropped before any lookup, REST included.
 run_hook_cloud "$(bash_input 'gh pr merge https://exfil.example.test/o/r/pull/1')" rest-ok
 assert_silent "cloud: foreign-host URL ref — gh is never invoked, REST included" "$ARGV"
+
+rm -rf "$CLOUD_REPO"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
