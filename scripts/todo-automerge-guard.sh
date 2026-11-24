@@ -418,9 +418,20 @@ fi
 # declared, so the guard returned OK and the protected markdown went from HOLD to a merge-gate
 # pass -- the exact bypass this detector exists to prevent.
 # `gh pr view` is GraphQL, refused in Claude Code cloud sessions (see merge-review-guard.sh's
-# PR read); the REST PR resource carries the same count as `changed_files`.
+# PR read); the REST PR resource carries the same count, and .claude/hooks/lib/gh-pr-rest.sh
+# reads it. By NUMBER only: for anything else the helper would look a branch up, and its list
+# answer has no count. A lib that cannot be sourced, or a failed read, is the ERROR below.
+rest_changed_files() {
+  local lib json
+  case "$PR" in '' | *[!0-9]*) return 2 ;; esac
+  lib="$(cd "$(dirname "$0")/.." && pwd)/.claude/hooks/lib/gh-pr-rest.sh" || return 2
+  # shellcheck source=/dev/null
+  . "$lib" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null || return 2
+  json="$(gh_pr_rest_json "$PR" 2>/dev/null)" || return 2
+  printf '%s' "$json" | jq -r '.changedFiles'
+}
 declared_files="$(gh pr view "$PR" --json changedFiles --jq .changedFiles 2>/dev/null)" \
-  || declared_files="$(gh api "repos/{owner}/{repo}/pulls/$PR" --jq .changed_files)" || {
+  || declared_files="$(rest_changed_files)" || {
   echo "guard: ERROR PR #$PR — could not read the declared changed-file count. Fail-closed."
   exit 2
 }
