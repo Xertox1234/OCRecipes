@@ -91,7 +91,10 @@ vi.mock("../coach-prompt", () => ({
   getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
 }));
 
-vi.mock("../coach-blocks", () => ({
+vi.mock("../coach-blocks", async () => ({
+  dropCommitmentCards: (
+    await vi.importActual<typeof import("../coach-blocks")>("../coach-blocks")
+  ).dropCommitmentCards,
   parseBlocksFromContent: vi.fn().mockReturnValue({ text: "", blocks: [] }),
   BLOCKS_SYSTEM_PROMPT: "[BLOCKS_SYSTEM_PROMPT]",
   getBlocksSystemPrompt: vi.fn().mockReturnValue("[BLOCKS_SYSTEM_PROMPT]"),
@@ -944,6 +947,62 @@ describe("handleCoachChat", () => {
         "assistant",
         "Try soy yogurt.",
         { blocks: [{ type: "memory_refs", ids: [5] }] },
+      );
+    });
+  });
+
+  describe("commitment cards while Coach's notes are paused", () => {
+    const card: CoachBlock = {
+      type: "commitment_card",
+      title: "10,000 steps daily",
+      followUpText: "Check in on your steps",
+      followUpDate: "2026-11-30",
+    };
+    const replies: CoachBlock = {
+      type: "quick_replies",
+      options: [
+        { label: "A", message: "a" },
+        { label: "B", message: "b" },
+      ],
+    };
+
+    it("drops the card after a health-consent withdrawal", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        makeProfile({
+          healthDataConsentAt: null,
+          healthDataConsentWithdrawnAt: new Date("2026-11-20T00:00:00Z"),
+        }),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Good plan.",
+        blocks: [card, replies],
+      });
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        "Good plan.",
+        { blocks: [replies] },
+      );
+    });
+
+    it("keeps the card for a user whose notes are in use", async () => {
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Good plan.",
+        blocks: [card, replies],
+      });
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        "Good plan.",
+        { blocks: [card, replies] },
       );
     });
   });

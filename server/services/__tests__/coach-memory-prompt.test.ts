@@ -168,3 +168,32 @@ describe("buildSystemPrompt — recall phrasing", () => {
     expect(p).not.toMatch(/mood score/i);
   });
 });
+
+describe("assembleCoachContext — Coach's notes paused", () => {
+  const withdrawn = createMockUserProfile({
+    healthDataConsentAt: null,
+    healthDataConsentWithdrawnAt: new Date("2026-11-20T00:00:00Z"),
+  });
+
+  it("offers no commitment card after a health-consent withdrawal", () => {
+    const ctx = assemble({ profile: withdrawn });
+    expect(ctx.notesPaused).toBe(true);
+    expect(ctx.blocksPrompt).not.toContain("commitment_card");
+    expect(ctx.blocksPrompt).toMatch(/cannot save a commitment/);
+    expect(buildSystemPrompt(ctx)).not.toContain("commitment_card");
+  });
+
+  it("offers it to a user who consents, and to one who never answered", () => {
+    const consenting = assemble({
+      profile: createMockUserProfile({
+        healthDataConsentAt: new Date("2026-11-21T00:00:00Z"),
+        healthDataConsentWithdrawnAt: new Date("2026-11-20T00:00:00Z"),
+      }),
+    });
+    expect(consenting.notesPaused).toBe(false);
+    expect(consenting.blocksPrompt).toContain("commitment_card");
+    const unanswered = assemble({ profile: undefined });
+    expect(unanswered.notesPaused).toBe(false);
+    expect(unanswered.blocksPrompt).toContain("commitment_card");
+  });
+});

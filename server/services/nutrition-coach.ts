@@ -252,6 +252,7 @@ export async function* generateCoachProResponse(
         blocksPrompt: getBlocksSystemPrompt(isRecipeFinderEnabled(), {
           offer: true,
           writeCards: !!options?.writeCards,
+          notesPaused: context.notesPaused,
         }),
       }
     : context;

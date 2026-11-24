@@ -12,6 +12,7 @@ vi.mock("../../storage", () => ({
     deleteChatMessage: vi.fn(),
     refundUndeliveredMessage: vi.fn(),
     createChatMessage: vi.fn(),
+    areCoachNotesPaused: vi.fn(),
   },
 }));
 
@@ -135,6 +136,35 @@ describe("runTurn (coach path)", () => {
 
     expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(501, "u1");
     expect(storage.createChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("a kept partial carries no commitment card while Coach's notes are paused", async () => {
+    const fence =
+      'Good plan.\n```coach_blocks\n[{"type":"commitment_card","title":"10,000 steps daily","followUpText":"Check in","followUpDate":"2026-11-30"},{"type":"quick_replies","options":[{"label":"A","message":"a"},{"label":"B","message":"b"}]}]\n```';
+    for (const paused of [true, false]) {
+      vi.resetAllMocks();
+      const res = makeRes();
+      vi.mocked(handleCoachChat).mockImplementation(async function* () {
+        yield { type: "content", content: fence };
+        res.emit("close");
+        throw new Error("aborted");
+      } as unknown as typeof handleCoachChat);
+      vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+      vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(paused);
+
+      await runTurn({
+        ...makeInput(res),
+        features: { coachPro: true },
+      } as unknown as TurnInput);
+
+      const saved = vi.mocked(storage.createChatMessage).mock.calls[0];
+      const types = (saved[4] as { blocks: { type: string }[] }).blocks.map(
+        (b) => b.type,
+      );
+      expect(types).toEqual(
+        paused ? ["quick_replies"] : ["commitment_card", "quick_replies"],
+      );
+    }
   });
 
   it("H6: a disconnect after content keeps the partial as the reply", async () => {

@@ -136,13 +136,40 @@ const WRITE_CARDS_RULES = [
   "- Food can be logged for today or yesterday only; for an earlier day, tell the user to use Quick Log on the Home screen.",
 ].join("\n");
 
+const COMMITMENT_CARD_LINE =
+  '- commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }';
+const NOTES_PAUSED_RULE =
+  "- The user has turned Coach's notes off, so you cannot save a commitment or check in later. Never say you noted, saved or will follow up on something; you can still encourage the plan in this reply";
+
+/** Drops commitment cards: for a reply made while Coach's notes are paused. */
+export function dropCommitmentCards(blocks: CoachBlock[]): CoachBlock[] {
+  return blocks.filter((b) => b.type !== "commitment_card");
+}
+
 /**
  * BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. `offer`
- * swaps the finder rule for the offer_recipe tool rule.
+ * swaps the finder rule for the offer_recipe tool rule. `notesPaused` takes
+ * the commitment card away.
  */
 export function getBlocksSystemPrompt(
   finderEnabled: boolean,
-  opts: { offer?: boolean; writeCards?: boolean } = {},
+  opts: { offer?: boolean; writeCards?: boolean; notesPaused?: boolean } = {},
+): string {
+  const withCards = blocksPromptFor(finderEnabled, opts);
+  if (!opts.notesPaused) return withCards;
+  // Coach's notes are paused (health consent withdrawn): a commitment card
+  // offers a check-in that nothing would save. Not offered, and said so.
+  return withCards
+    .replace(`${COMMITMENT_CARD_LINE}\n`, "")
+    .replace(
+      "\n\nExample response",
+      `\n${NOTES_PAUSED_RULE}\n\nExample response`,
+    );
+}
+
+function blocksPromptFor(
+  finderEnabled: boolean,
+  opts: { offer?: boolean; writeCards?: boolean },
 ): string {
   const base = !finderEnabled
     ? BLOCKS_SYSTEM_PROMPT

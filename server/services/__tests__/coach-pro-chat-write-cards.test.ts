@@ -986,9 +986,10 @@ describe("handleCoachChat with write cards", () => {
       .calls[0][1] as CoachContext;
     expect(context.liveWriteCard).toContain("3 × large egg");
     expect(context.blocksPrompt).toBe("[BLOCKS+WRITE]");
-    expect(getBlocksSystemPrompt).toHaveBeenCalledWith(expect.any(Boolean), {
-      writeCards: true,
-    });
+    expect(getBlocksSystemPrompt).toHaveBeenCalledWith(
+      expect.any(Boolean),
+      expect.objectContaining({ writeCards: true }),
+    );
   });
 
   it("ignores liveCard edits that do not parse, and a card from another conversation", async () => {

@@ -5,6 +5,7 @@ import {
   parseBlocksFromContent,
   BLOCKS_SYSTEM_PROMPT,
   getBlocksSystemPrompt,
+  dropCommitmentCards,
 } from "../coach-blocks";
 import {
   coachBlockSchema,
@@ -357,5 +358,45 @@ describe("write-card prompt rules", () => {
     expect(getBlocksSystemPrompt(false, { writeCards: false })).toBe(
       BLOCKS_SYSTEM_PROMPT,
     );
+  });
+});
+
+describe("commitment cards while Coach's notes are paused", () => {
+  it("leaves the commitment card out of the prompt and says nothing can be saved", () => {
+    const paused = getBlocksSystemPrompt(false, { notesPaused: true });
+    expect(paused).not.toContain("commitment_card");
+    expect(paused).toMatch(/cannot save a commitment or check in later/);
+    // Every other block type is still offered.
+    expect(paused).toContain("- quick_replies:");
+    expect(paused).toContain("- inline_chart:");
+  });
+
+  it("holds with the finder, the offer tool and write cards on", () => {
+    const paused = getBlocksSystemPrompt(true, {
+      offer: true,
+      writeCards: true,
+      notesPaused: true,
+    });
+    expect(paused).not.toContain("commitment_card");
+    expect(paused).toMatch(/cannot save a commitment or check in later/);
+  });
+
+  it("changes nothing when the notes are not paused", () => {
+    expect(getBlocksSystemPrompt(false, { notesPaused: false })).toBe(
+      BLOCKS_SYSTEM_PROMPT,
+    );
+  });
+
+  it("dropCommitmentCards removes only commitment cards", () => {
+    const { blocks } = parseBlocksFromContent(
+      'Done.\n```coach_blocks\n[{"type":"commitment_card","title":"10,000 steps daily","followUpText":"Check in","followUpDate":"2026-11-30"},{"type":"quick_replies","options":[{"label":"A","message":"a"},{"label":"B","message":"b"}]}]\n```',
+    );
+    expect(blocks.map((b) => b.type)).toEqual([
+      "commitment_card",
+      "quick_replies",
+    ]);
+    expect(dropCommitmentCards(blocks).map((b) => b.type)).toEqual([
+      "quick_replies",
+    ]);
   });
 });

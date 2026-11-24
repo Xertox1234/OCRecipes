@@ -14,6 +14,7 @@ import type { PremiumFeatures } from "@shared/types/premium";
 import type { MeasurementUnit } from "@shared/lib/units";
 import type { CoachNotebookEntry, DailyLog, UserProfile } from "@shared/schema";
 import { decayedMood, moodBand } from "@shared/lib/mood";
+import { coachNotesPaused } from "@shared/lib/health-consent";
 
 /** The only notebook types the coach may mention (visible memory, 2026-11-08). */
 const SPEAKABLE_TYPES = new Set(["goal", "preference", "commitment"]);
@@ -475,10 +476,16 @@ export function assembleCoachContext(a: {
     );
   }
 
+  // After a health-consent withdrawal Coach's notes are paused: the turn is
+  // given no notes and saves none, so it must not offer a commitment card.
+  context.notesPaused = coachNotesPaused(profile);
+
   // ── Coach Pro: inject notebook context ──────────────
   if (isCoachPro) {
     // Always provide blocks formatting instructions for Pro responses
-    context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled());
+    context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled(), {
+      notesPaused: context.notesPaused,
+    });
 
     // notebookEntries fetched in parallel above (audit 2026-05-10, H4)
     if (notebookEntries.length > 0) {
