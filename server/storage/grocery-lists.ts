@@ -152,8 +152,10 @@ export async function getGroceryListWithItems(
 export async function verifyGroceryListOwnership(
   id: number,
   userId: string,
+  /** A write-card save passes its `tx`: the read then uses that connection. */
+  executor: Pick<typeof db, "select"> = db,
 ): Promise<boolean> {
-  const [row] = await db
+  const [row] = await executor
     .select({ id: groceryLists.id })
     .from(groceryLists)
     .where(and(eq(groceryLists.id, id), eq(groceryLists.userId, userId)));

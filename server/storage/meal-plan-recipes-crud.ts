@@ -32,11 +32,16 @@ import {
 // MEAL PLAN RECIPES (CRUD)
 // ============================================================================
 
+/** A caller inside a transaction (a write-card save) passes its `tx`, so the
+ *  read uses the connection the transaction already holds. */
+type ReadExecutor = Pick<typeof db, "select">;
+
 export async function getMealPlanRecipe(
   id: number,
   userId: string,
+  executor: ReadExecutor = db,
 ): Promise<MealPlanRecipe | undefined> {
-  const [recipe] = await db
+  const [recipe] = await executor
     .select()
     .from(mealPlanRecipes)
     .where(
@@ -52,15 +57,21 @@ export async function getMealPlanRecipe(
 export async function getMealPlanRecipeWithIngredients(
   id: number,
   userId: string,
+  executor?: ReadExecutor,
 ): Promise<(MealPlanRecipe & { ingredients: RecipeIngredient[] }) | undefined> {
-  const [recipe, ingredients] = await Promise.all([
-    getMealPlanRecipe(id, userId),
-    db
+  const readIngredients = (from: ReadExecutor) =>
+    from
       .select()
       .from(recipeIngredients)
       .where(eq(recipeIngredients.recipeId, id))
-      .orderBy(recipeIngredients.displayOrder),
-  ]);
+      .orderBy(recipeIngredients.displayOrder);
+  // One after the other on a transaction's single connection; at once on the pool.
+  const [recipe, ingredients] = executor
+    ? [
+        await getMealPlanRecipe(id, userId, executor),
+        await readIngredients(executor),
+      ]
+    : await Promise.all([getMealPlanRecipe(id, userId), readIngredients(db)]);
 
   if (!recipe) return undefined;
 
@@ -71,10 +82,11 @@ export async function getMealPlanRecipeWithIngredients(
 export async function getMealPlanRecipesByIds(
   ids: number[],
   userId: string,
+  executor: ReadExecutor = db,
 ): Promise<MealPlanRecipe[]> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return [];
-  return db
+  return executor
     .select()
     .from(mealPlanRecipes)
     .where(

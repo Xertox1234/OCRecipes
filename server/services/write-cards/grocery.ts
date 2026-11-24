@@ -192,7 +192,7 @@ export async function performGrocerySave(
   // Only a list the card offered, and only if it is still the user's.
   if (
     !payload.lists.some((l) => l.id === choice) ||
-    !(await verifyGroceryListOwnership(choice, ctx.userId))
+    !(await verifyGroceryListOwnership(choice, ctx.userId, tx))
   ) {
     throw new WriteCardEditError("That list isn't available.");
   }
