@@ -18,7 +18,10 @@ import {
   writeCardReceipt,
 } from "@shared/lib/coach-write-card-math";
 import { isRecipeSafeForAllergies } from "@shared/constants/allergens";
-import { getUserProfile } from "../../storage/user-profiles";
+import {
+  getProfileAllergies,
+  getUserProfile,
+} from "../../storage/user-profiles";
 import { getVisibleCommunityRecipesByIds } from "../../storage/community-recipes";
 import {
   type AfterCommit,
@@ -308,11 +311,17 @@ export async function performPlanSave(
   const mineIds = kept
     .filter((r) => r.recipe.source === "mine")
     .map((r) => r.recipe.id);
-  const [communityRows, mineRows, profile] = await Promise.all([
-    getVisibleCommunityRecipesByIds(communityIds, ctx.userId),
-    getMealPlanRecipesByIds(mineIds, ctx.userId),
-    getUserProfile(ctx.userId),
-  ]);
+  // Every read in a save goes through `tx`, one after the other: a read
+  // through the pool needs a second connection while the save holds one, and
+  // enough parallel saves then hold the whole pool (audit 2026-11-24, M47).
+  const communityRows = await getVisibleCommunityRecipesByIds(
+    communityIds,
+    ctx.userId,
+    tx,
+  );
+  const mineRows = await getMealPlanRecipesByIds(mineIds, ctx.userId, tx);
+  // No row lock: the allergy card takes that lock, and this is only a read.
+  const profile = await getProfileAllergies(ctx.userId, tx);
   // Re-checked at save: allergies can change between showing and saving.
   const community = new Map(
     communityRows
@@ -348,6 +357,7 @@ export async function performPlanSave(
         const full = await getMealPlanRecipeWithIngredients(
           row.recipe.id,
           ctx.userId,
+          tx,
         );
         shopping.push(...(full?.ingredients ?? []));
       }
@@ -405,11 +415,11 @@ export async function performPlanSave(
 
   if (
     choice !== "new" &&
-    !(await verifyGroceryListOwnership(choice, ctx.userId))
+    !(await verifyGroceryListOwnership(choice, ctx.userId, tx))
   ) {
     throw new WriteCardEditError("That grocery list isn't available.");
   }
-  const pantry = await getPantryItems(ctx.userId);
+  const pantry = await getPantryItems(ctx.userId, undefined, tx);
   // Same rule as the grocery card. The plan card has no per-item ticks, so
   // only "covered" leaves an item off; "unsure" is bought.
   const byKey = groupPantryByKey(pantry, new Date());

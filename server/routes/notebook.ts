@@ -19,6 +19,7 @@ import {
   notebookEntryStatusValues,
 } from "@shared/schemas/coach-notebook";
 import { toSecondPerson } from "@shared/lib/notebook-text";
+import { refusedWhileCoachNotesPaused } from "./_health-consent";
 
 /** Ids the save popup / "What Coach knows" page acts on (visible memory). */
 const idsSchema = z.object({
@@ -109,6 +110,7 @@ export function register(app: Express): void {
             formatZodError(parsed.error),
             ErrorCode.VALIDATION_ERROR,
           );
+        if (await refusedWhileCoachNotesPaused(req.userId, res)) return;
         const confirmed = await storage.confirmNotebookEntries(
           req.userId,
           parsed.data.ids,
@@ -223,6 +225,7 @@ export function register(app: Express): void {
             formatZodError(parsed.error),
             ErrorCode.VALIDATION_ERROR,
           );
+        if (await refusedWhileCoachNotesPaused(req.userId, res)) return;
         const { type, content, followUpDate } = parsed.data;
         // A ceiling on what one account can add: the rate limit alone let
         // it reach tens of thousands of rows, which every Coach turn and
@@ -292,6 +295,22 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         const { content, type, followUpDate, status } = parsed.data;
+        // While the notes are paused a kept note can be put away (archived,
+        // completed, rejected) but not rewritten or brought back: an edit
+        // also confirms the note, and it would be used once the consent is
+        // given again.
+        const putsAway =
+          status === "archived" ||
+          status === "completed" ||
+          status === "rejected";
+        if (
+          (content !== undefined ||
+            type !== undefined ||
+            followUpDate !== undefined ||
+            (status !== undefined && !putsAway)) &&
+          (await refusedWhileCoachNotesPaused(req.userId, res))
+        )
+          return;
         const updated = await storage.updateNotebookEntry(id, req.userId, {
           ...(content !== undefined && { content }),
           ...(type !== undefined && { type }),

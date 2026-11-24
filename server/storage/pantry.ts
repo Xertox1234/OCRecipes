@@ -95,8 +95,10 @@ export async function createPantryItemsUnderCap(
 export async function getPantryItems(
   userId: string,
   limit = 200,
+  /** A write-card save passes its `tx`: the read then uses that connection. */
+  executor: Pick<typeof db, "select"> = db,
 ): Promise<PantryItem[]> {
-  return db
+  return executor
     .select()
     .from(pantryItems)
     .where(eq(pantryItems.userId, userId))

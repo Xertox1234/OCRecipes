@@ -7,10 +7,15 @@ import {
 } from "@shared/schema";
 import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { clearFamilyHealthData } from "./family-profiles";
 import { expireAllergyCards } from "./coach-write-cards";
-import { coachResponseCache, mealSuggestionCache } from "@shared/schema";
+import {
+  coachNotebook,
+  coachResponseCache,
+  mealSuggestionCache,
+  pendingReminders,
+} from "@shared/schema";
 import {
   HEALTH_CONSENT_VERSION,
   type HealthConsentEvent,
@@ -199,9 +204,36 @@ const CLEARED_USER_HEALTH = {
  */
 export async function withdrawHealthConsent(
   userId: string,
+  opts: { deleteCoachNotes?: boolean } = {},
 ): Promise<UserProfile | undefined> {
   return db.transaction(async (tx) => {
     const now = new Date();
+    // The user's choice at withdrawal (owner ruling 2026-11-24): delete the
+    // notes Coach saved, with the copies of commitment text held in the
+    // reminder rows, or keep them. Kept notes are not used while the consent
+    // is withdrawn (`coachNotesPaused`). Before the profile row is touched:
+    // "Clear everything Coach knows" deletes the notes and then updates the
+    // profile, and the other order here would deadlock with it.
+    // Only for an account that has a profile: without one there is no
+    // consent to withdraw and the caller is told so, and nothing is deleted.
+    // A plain read, no row lock.
+    const [hasProfile] = opts.deleteCoachNotes
+      ? await tx
+          .select({ userId: userProfiles.userId })
+          .from(userProfiles)
+          .where(eq(userProfiles.userId, userId))
+      : [];
+    if (hasProfile) {
+      await tx.delete(coachNotebook).where(eq(coachNotebook.userId, userId));
+      await tx
+        .delete(pendingReminders)
+        .where(
+          and(
+            eq(pendingReminders.userId, userId),
+            eq(pendingReminders.type, "commitment"),
+          ),
+        );
+    }
     // The Coach's allergy cards hold an allergen and the severity chosen.
     // First, before the profile row is touched: a card save locks its card and
     // then the profile, and taking the two in the other order here deadlocks

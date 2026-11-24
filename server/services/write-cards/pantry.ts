@@ -222,7 +222,7 @@ export async function performPantrySave(
   // The plan is checked when the card is built, and again here: a card can
   // outlive the subscription, and the pantry screen refuses the same user.
   // Undo is not gated, so a save made in time can always be taken back.
-  const tier = await getEffectiveTierForUser(ctx.userId);
+  const tier = await getEffectiveTierForUser(ctx.userId, tx);
   if (!TIER_FEATURES[tier].pantryTracking) {
     throw new WriteCardEditError("Your plan no longer includes the pantry.");
   }

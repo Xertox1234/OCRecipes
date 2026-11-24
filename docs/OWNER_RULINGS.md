@@ -57,6 +57,12 @@ user data.
 - **Scan cost cap** (2026-11-05): unconfirmed analyses get a separate claim-first cap (photo
   analysis 100, receipt scan 20); the daily scan limit is unchanged. Cook-mode round-then-sum is
   accepted.
+- **Coach's notes stop being used when the health-data consent is withdrawn** (2026-11-24, coach
+  chat audit). Owner: "If consent is withdrawn we should not do it"; for the existing notes, "Ask
+  the user what they want to do with it". At withdrawal the app asks whether to delete the notes or
+  keep them. Until the consent is given again Coach reads none, saves none and sends no commitment
+  reminders; the user can still see and delete kept notes. A user who never answered the consent
+  question is not covered by this ruling.
 
 ## AI providers
 

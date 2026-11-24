@@ -16,7 +16,7 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { coachNotebook, userProfiles } from "@shared/schema";
+import { coachNotebook, pendingReminders, userProfiles } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
@@ -43,6 +43,8 @@ const {
   clearNotebook,
   updateMoodScore,
 } = await import("../coach-notebook-memory");
+
+const { withdrawHealthConsent } = await import("../user-profiles");
 
 let tx: NodePgDatabase<typeof schema>;
 let user: schema.User;
@@ -338,6 +340,103 @@ describe("visible memory storage", () => {
       await expect(
         updateMoodScore(user.id, 1, new Date()),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // Owner ruling 2026-11-24 (coach chat audit M52, R179): at withdrawal the
+  // user chooses what happens to the notes Coach saved.
+  describe("withdrawHealthConsent and Coach's notes", () => {
+    async function seed() {
+      await tx
+        .insert(userProfiles)
+        .values({ userId: user.id, healthDataConsentAt: new Date() });
+      await tx.insert(userProfiles).values({ userId: other.id });
+      for (const u of [user, other]) {
+        await createNotebookEntries([
+          {
+            userId: u.id,
+            type: "commitment",
+            content: "Check blood sugar after dinner",
+            status: "active",
+            dedupeKey: `withdraw-${u.id}`,
+          },
+        ]);
+        await tx.insert(pendingReminders).values([
+          {
+            userId: u.id,
+            type: "commitment",
+            context: { label: "Check blood sugar after dinner" },
+            scheduledFor: new Date(),
+          },
+          {
+            userId: u.id,
+            type: "meal-log",
+            context: {},
+            scheduledFor: new Date(),
+          },
+        ]);
+      }
+    }
+    const notesOf = (id: string) =>
+      tx.select().from(coachNotebook).where(eq(coachNotebook.userId, id));
+    const remindersOf = async (id: string) =>
+      (
+        await tx
+          .select()
+          .from(pendingReminders)
+          .where(eq(pendingReminders.userId, id))
+      )
+        .map((r) => r.type)
+        .sort();
+
+    it("deletes the notes and their reminder copies when asked to", async () => {
+      await seed();
+
+      await withdrawHealthConsent(user.id, { deleteCoachNotes: true });
+
+      expect(await notesOf(user.id)).toEqual([]);
+      expect(await remindersOf(user.id)).toEqual(["meal-log"]);
+      // Another account is untouched.
+      expect(await notesOf(other.id)).toHaveLength(1);
+      expect(await remindersOf(other.id)).toEqual(["commitment", "meal-log"]);
+    });
+
+    // R179: "Clear everything Coach knows" left the commitment text behind
+    // in the reminder rows.
+    it("clearNotebook removes the reminder copies of commitments too", async () => {
+      await seed();
+
+      await clearNotebook(user.id);
+
+      expect(await notesOf(user.id)).toEqual([]);
+      expect(await remindersOf(user.id)).toEqual(["meal-log"]);
+      expect(await remindersOf(other.id)).toEqual(["commitment", "meal-log"]);
+    });
+
+    it("deletes nothing for an account with no profile (nothing to withdraw)", async () => {
+      await createNotebookEntries([
+        {
+          userId: user.id,
+          type: "goal",
+          content: "Eat more fibre",
+          status: "active",
+          dedupeKey: "no-profile",
+        },
+      ]);
+
+      expect(
+        await withdrawHealthConsent(user.id, { deleteCoachNotes: true }),
+      ).toBeUndefined();
+      expect(await notesOf(user.id)).toHaveLength(1);
+    });
+
+    it("keeps the notes when not asked to delete them", async () => {
+      await seed();
+
+      await withdrawHealthConsent(user.id);
+
+      expect(await notesOf(user.id)).toHaveLength(1);
+      expect(await remindersOf(user.id)).toEqual(["commitment", "meal-log"]);
     });
   });
 });

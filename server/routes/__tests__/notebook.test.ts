@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
@@ -14,6 +14,7 @@ vi.mock("../../storage", () => ({
     getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
     updateNotebookEntry: vi.fn(),
     deleteNotebookEntry: vi.fn(),
+    areCoachNotesPaused: vi.fn().mockResolvedValue(false),
   },
 }));
 
@@ -97,6 +98,67 @@ describe("POST /api/coach/notebook", () => {
       .send({ type: "invalid_type", content: "Test" })
       .set("Authorization", "Bearer valid-token");
     expect(res.status).toBe(400);
+  });
+});
+
+describe("notes paused after a health-consent withdrawal", () => {
+  afterEach(() => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
+  });
+
+  it("refuses a new note and saves nothing", async () => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
+    const res = await request(app)
+      .post("/api/coach/notebook")
+      .send({ type: "goal", content: "Hit 120g protein" })
+      .set("Authorization", "Bearer valid-token");
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
+    expect(storage.createNotebookEntry).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["new text", { content: "Updated" }],
+    ["a new type", { type: "goal" }],
+    ["a follow-up date", { followUpDate: "2026-12-01" }],
+    ["reactivation", { status: "active" }],
+  ])("refuses an edit with %s", async (_label, body) => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
+    const res = await request(app)
+      .patch("/api/coach/notebook/1")
+      .send(body)
+      .set("Authorization", "Bearer valid-token");
+    expect(res.status).toBe(403);
+    expect(storage.updateNotebookEntry).not.toHaveBeenCalled();
+  });
+
+  it.each(["archived", "completed", "rejected"])(
+    "still lets a kept note be put away as %s",
+    async (status) => {
+      vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
+      vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+        createMockCoachNotebookEntry({}),
+      );
+      const res = await request(app)
+        .patch("/api/coach/notebook/1")
+        .send({ status })
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(200);
+    },
+  );
+
+  it("still lists and deletes the kept notes", async () => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
+    vi.mocked(storage.getNotebookEntries).mockResolvedValue([]);
+    vi.mocked(storage.deleteNotebookEntry).mockResolvedValue(true);
+    const list = await request(app)
+      .get("/api/coach/notebook")
+      .set("Authorization", "Bearer valid-token");
+    const del = await request(app)
+      .delete("/api/coach/notebook/1")
+      .set("Authorization", "Bearer valid-token");
+    expect(list.status).toBe(200);
+    expect(del.status).toBe(204);
   });
 });
 

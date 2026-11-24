@@ -257,10 +257,12 @@ export async function getCommunityRecipe(
 export async function getVisibleCommunityRecipesByIds(
   ids: number[],
   userId: string,
+  /** A write-card save passes its `tx`: the read then uses that connection. */
+  executor: Pick<typeof db, "select"> = db,
 ): Promise<CommunityRecipe[]> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return [];
-  return db
+  return executor
     .select()
     .from(communityRecipes)
     .where(

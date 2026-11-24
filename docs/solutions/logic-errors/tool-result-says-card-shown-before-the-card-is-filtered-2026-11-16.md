@@ -7,6 +7,7 @@ module: server
 applies_to: ["server/services/coach-tools.ts", "server/services/coach-pro-chat.ts", "server/services/write-cards/**/*.ts"]
 symptoms: ["the coach's reply lists items the card under it does not show", "the coach says 'tap the card' and no card appears", "a write tool returns a fixed 'card shown' message and the real card is built after the model has finished its reply", "a builder that can throw or drop rows runs at end of turn, with its error only logged"]
 created: 2026-11-16
+last_updated: 2026-11-24
 severity: medium
 ---
 
@@ -57,6 +58,9 @@ Work the card out inside the tool call and return what changed.
 - Widening a callback from sync to async needs an `await` at every existing
   call site; the food and plan tools were missed and only the push lint gate
   (`no-floating-promises`) caught it.
+
+
+- 2026-11-24 (PR #2010): the plan and food write tools still returned a fixed "shown" message. They now build the card during the tool call and return `{kind, shown, ...}`; when the card cannot be built the result says so and no card is sent.
 
 ## Related Files
 

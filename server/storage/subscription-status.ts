@@ -52,8 +52,10 @@ export async function getSubscriptionStatus(userId: string): Promise<
  */
 export async function getEffectiveTierForUser(
   userId: string,
+  /** A write-card save passes its `tx`: the read then uses that connection. */
+  executor: Pick<typeof db, "select"> = db,
 ): Promise<SubscriptionTier> {
-  const [row] = await db
+  const [row] = await executor
     .select({
       tier: users.subscriptionTier,
       expiresAt: users.subscriptionExpiresAt,

@@ -121,6 +121,10 @@ vi.mock("@/hooks/useHealthConsent", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useNotebook", () => ({
+  useNotebookEntries: () => ({ data: notebook.entries }),
+}));
+
 vi.mock("@/hooks/useAiSharing", () => ({
   useAiSharing: () => ({
     status: aiSharing.status,
@@ -144,13 +148,13 @@ vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({ isPremium: false }),
 }));
 
-const { healthConsent, mockWithdrawConsent, mockCheckAuth } = vi.hoisted(
-  () => ({
+const { healthConsent, notebook, mockWithdrawConsent, mockCheckAuth } =
+  vi.hoisted(() => ({
+    notebook: { entries: [] as { id: number }[] | undefined },
     healthConsent: { given: false },
     mockWithdrawConsent: vi.fn(),
     mockCheckAuth: vi.fn(),
-  }),
-);
+  }));
 
 const { mockToast, mockClearImportBrowserData } = vi.hoisted(() => ({
   mockToast: {
@@ -500,6 +504,65 @@ describe("SettingsScreen — withdraw health-data consent", () => {
     await waitFor(() => expect(mockToast.success).toHaveBeenCalledTimes(1));
     expect(mockWithdrawConsent).toHaveBeenCalledTimes(1);
     expect(mockCheckAuth).toHaveBeenCalledTimes(1);
+  });
+
+  // Owner ruling 2026-11-24: at withdrawal the user says what happens to the
+  // notes Coach saved.
+  describe("when Coach has saved notes", () => {
+    beforeEach(() => {
+      notebook.entries = [{ id: 1 }];
+    });
+    afterEach(() => {
+      notebook.entries = [];
+    });
+
+    function confirmWithdrawal() {
+      renderComponent(<SettingsScreen />);
+      fireEvent.click(
+        screen.getByRole("button", { name: /Withdraw health-data consent/ }),
+      );
+      act(() => mockConfirm.mock.calls[0]?.[0]?.onConfirm());
+      return mockConfirm.mock.calls[1]?.[0];
+    }
+
+    it("asks about the notes before it withdraws", () => {
+      const question = confirmWithdrawal();
+
+      expect(mockWithdrawConsent).not.toHaveBeenCalled();
+      expect(question).toEqual(
+        expect.objectContaining({
+          title: "Delete Coach's notes too?",
+          confirmLabel: "Delete notes",
+          cancelLabel: "Keep notes",
+        }),
+      );
+    });
+
+    it("withdraws and deletes the notes on Delete notes", async () => {
+      const question = confirmWithdrawal();
+      act(() => question?.onConfirm());
+
+      await waitFor(() => expect(mockToast.success).toHaveBeenCalledTimes(1));
+      expect(mockWithdrawConsent).toHaveBeenCalledTimes(1);
+      expect(mockWithdrawConsent).toHaveBeenCalledWith("delete");
+    });
+
+    it("withdraws and keeps the notes on Keep notes or a dismissal", async () => {
+      const question = confirmWithdrawal();
+      act(() => question?.onCancel?.());
+
+      await waitFor(() => expect(mockToast.success).toHaveBeenCalledTimes(1));
+      expect(mockWithdrawConsent).toHaveBeenCalledTimes(1);
+      expect(mockWithdrawConsent).toHaveBeenCalledWith("keep");
+    });
+
+    it("asks too when the notes have not loaded", () => {
+      notebook.entries = undefined;
+      const question = confirmWithdrawal();
+
+      expect(mockWithdrawConsent).not.toHaveBeenCalled();
+      expect(question?.title).toBe("Delete Coach's notes too?");
+    });
   });
 
   it("says so when the withdrawal fails", async () => {

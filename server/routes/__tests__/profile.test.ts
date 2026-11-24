@@ -662,12 +662,44 @@ describe("Profile Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      expect(storage.withdrawHealthConsent).toHaveBeenCalledWith("1");
+      // No choice sent (an older app): the notes are kept, never deleted.
+      expect(storage.withdrawHealthConsent).toHaveBeenCalledWith("1", {
+        deleteCoachNotes: false,
+      });
       expect(res.body.healthDataConsentAt).toBeNull();
       await lastFireAndForgetPromise;
       expect(storage.invalidateSuggestionCacheForUser).toHaveBeenCalledWith(
         "1",
       );
+    });
+
+    it.each([
+      ["delete", true],
+      ["keep", false],
+    ] as const)("passes the notes choice %s on", async (coachNotes, flag) => {
+      vi.mocked(storage.withdrawHealthConsent).mockResolvedValue(
+        unconsentedProfile,
+      );
+
+      const res = await request(app)
+        .post("/api/user/health-consent/withdraw")
+        .set("Authorization", "Bearer token")
+        .send({ coachNotes });
+
+      expect(res.status).toBe(200);
+      expect(storage.withdrawHealthConsent).toHaveBeenCalledWith("1", {
+        deleteCoachNotes: flag,
+      });
+    });
+
+    it("refuses an unknown notes choice and withdraws nothing", async () => {
+      const res = await request(app)
+        .post("/api/user/health-consent/withdraw")
+        .set("Authorization", "Bearer token")
+        .send({ coachNotes: "shred" });
+
+      expect(res.status).toBe(400);
+      expect(storage.withdrawHealthConsent).not.toHaveBeenCalled();
     });
 
     it("returns 404 when the user has no profile", async () => {

@@ -39,6 +39,7 @@ vi.mock("../../../server/storage", () => ({
   storage: {
     createNotebookEntry: vi.fn(),
     getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
+    areCoachNotesPaused: vi.fn().mockResolvedValue(false),
     updateNotebookEntry: vi.fn(),
   },
 }));
