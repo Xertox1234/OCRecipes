@@ -43,7 +43,7 @@ Then re-rank.
       (one row per food, sized to the portion seen; counts are whole portions).
       Left for later: half portions, and showing the photo in the chat.
 - [x] **S2. Label and barcode in chat.** Scan without leaving the conversation.
-      Value: high. Size: M. Needs S1. PR #PRNUM. The photo button now takes a
+      Value: high. Size: M. Needs S1. PR #2018. The photo button now takes a
       nutrition label or a barcode as well as a meal: the photo is classified
       first, a label is read into a one-serving food card, and a barcode
       number read from the photo is looked up into the same card (with the
