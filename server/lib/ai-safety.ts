@@ -228,6 +228,23 @@ const REJECTION_AFTER_RE =
   /\b(?:i|we)\s+(?:can(?:['’]|\s+no)?t|cannot|won['’]?t|will\s+not|wouldn['’]?t)\b|(?:\bnot|n['’]t)\s+something\s+(?:i|we)\s+can\b|\blet['’]?s\s+not\b|\bbelow\s+the\b|\bonly\s+(?:used|done|safe)\s+under\b|\bmak(?:e|es)\s+(?:things|it)\s+(?:harder|worse)\b|\bplease\s+(?:don['’]?t|do\s+not)\b/i;
 
 /**
+ * A negative statement about the phrase itself, straight after it: "... isn't
+ * enough to fuel your body", "... is not something I'd recommend", "... is
+ * well below what you need", "... would leave you short". Anchored to the
+ * start of what follows, with only plain words between and no new subject
+ * ("and it isn't hard" is about something else). A negated danger word is
+ * reassurance, not a warning ("... isn't risky").
+ */
+const NEGATIVE_PREDICATE_AFTER_RE = new RegExp(
+  "^(?:\\s+(?!(?:it|that|this|which|you|they|there|and|but|so)\\b)[\\w'’-]+){0,4}\\s+(?:" +
+    "(?:is|are|was|would\\s+be)(?:n['’]t|\\s+not|\\s+never)\\b(?!\\s+(?:(?:that|so|very|really|too|as)\\s+)?(?:risky|dangerous|harmful|unsafe|bad|hard|difficult|a\\s+(?:problem|big\\s+deal|risk)))" +
+    "|(?:is|are|would\\s+be)\\s+(?:(?:well|far|way|much)\\s+)?(?:below|under\\b|too\\s+(?:low|little|few))" +
+    "|(?:would|will|could|can)\\s+(?:leave\\s+you\\s+(?:short|depleted|drained|tired|weak)|slow\\s+your|backfire)" +
+    ")",
+  "i",
+);
+
+/**
  * True when the sentence declines or warns against the phrase at
  * [start, end): a refusal leads into it, or what follows says it is unsafe.
  * A declining word that does not govern the phrase excuses nothing: "Eat
@@ -237,7 +254,13 @@ const REJECTION_AFTER_RE =
 function declines(sentence: string, start: number, end: number): boolean {
   if (REFUSAL_BEFORE_RE.test(sentence.slice(0, start))) return true;
   const after = sentence.slice(end);
-  if (NOT_SAFE_RE.test(after) || REJECTION_AFTER_RE.test(after)) return true;
+  if (
+    NOT_SAFE_RE.test(after) ||
+    REJECTION_AFTER_RE.test(after) ||
+    NEGATIVE_PREDICATE_AFTER_RE.test(after)
+  ) {
+    return true;
+  }
   for (const m of after.matchAll(DANGER_WORD_RE)) {
     if (!NEGATOR_BEFORE_RE.test(after.slice(0, m.index))) return true;
   }

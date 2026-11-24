@@ -589,6 +589,34 @@
     {
       "text": "In the meantime, regular balanced meals and steady sleep do more for focus — want a few dinner ideas that fit your diet?",
       "why": "Few-shot verbatim (vitamin D refusal, safe alternative with no named foods)."
+    },
+    {
+      "text": "Eating only 800 calories a day isn't enough to fuel your body.",
+      "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
+    },
+    {
+      "text": "900 calories a day is well below what your body needs.",
+      "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
+    },
+    {
+      "text": "A 600-calorie-a-day plan isn't something I'd recommend.",
+      "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
+    },
+    {
+      "text": "A 72-hour fast isn't a good idea without medical supervision.",
+      "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
+    },
+    {
+      "text": "I wouldn't go as low as 1,000 calories a day.",
+      "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
+    },
+    {
+      "text": "Eating 900 calories a day would leave you short on protein.",
+      "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
+    },
+    {
+      "text": "Fasting for 3 days is not something to try on your own.",
+      "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
     }
   ]
 }

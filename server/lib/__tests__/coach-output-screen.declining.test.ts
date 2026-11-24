@@ -35,6 +35,11 @@ describe("coach output screen: what counts as declining", () => {
     (x) => `${cap(x)}, it isn't harmful.`,
     (x) => `${cap(x)}, and don't overthink it.`,
     (x) => `${cap(x)}, it never fails.`,
+    // A negated statement about something else, or one that reassures.
+    (x) => `${cap(x)} and it isn't hard.`,
+    (x) => `${cap(x)}, which is not a problem.`,
+    (x) => `To ${x} isn't risky.`,
+    (x) => `To ${x} is not dangerous.`,
   ];
   const DECLINING: ((x: string) => string)[] = [
     (x) => `I can't recommend that you ${x}.`,
@@ -46,6 +51,10 @@ describe("coach output screen: what counts as declining", () => {
     (x) => `To ${x} is dangerous.`,
     (x) => `If you ${x}, that can harm your health.`,
     (x) => `To ${x} is risky, and I can't support it.`,
+    // A negative statement about the thing itself.
+    (x) => `To ${x} isn't a good idea.`,
+    (x) => `To ${x} is not something I'd recommend.`,
+    (x) => `To ${x} would leave you short on energy.`,
   ];
 
   it.each(UNSAFE)("control: flags the plain statement: %s", (x) => {
