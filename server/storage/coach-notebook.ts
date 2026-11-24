@@ -272,12 +272,21 @@ export async function archiveOldEntries(
   return result.length;
 }
 
-/** Every entry the user holds, whatever its type or status (the cap's count). */
+/**
+ * The entries the user holds, of every type, except archived ones: the count
+ * MAX_NOTEBOOK_ENTRIES is checked against. Archiving is the Coach's own
+ * housekeeping (`archiveOldEntries`), so it frees room.
+ */
 export async function getNotebookEntryTotal(userId: string): Promise<number> {
   const [result] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(coachNotebook)
-    .where(eq(coachNotebook.userId, userId));
+    .where(
+      and(
+        eq(coachNotebook.userId, userId),
+        ne(coachNotebook.status, "archived"),
+      ),
+    );
   return result?.count ?? 0;
 }
 

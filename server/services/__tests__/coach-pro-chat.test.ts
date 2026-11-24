@@ -36,6 +36,7 @@ import {
   SAFETY_CRISIS_FALLBACK_MESSAGE,
 } from "../../lib/ai-safety";
 import { extractNotebookEntries } from "../notebook-extraction";
+import { MAX_NOTEBOOK_ENTRIES } from "@shared/schemas/coach-notebook";
 import { civilDateToInstant } from "../../lib/civil-date";
 import express from "express";
 import request from "supertest";
@@ -1285,6 +1286,48 @@ describe("handleCoachChat", () => {
   // ── Notebook extraction after response ────────────────────
 
   describe("notebook extraction", () => {
+    // Review of d611fbf56: the 500-entry ceiling also bounds what the Coach
+    // writes on its own, not only the manual add route.
+    describe("the notebook ceiling", () => {
+      const twoNotes = [
+        { type: "preference", content: "Likes lentils", label: null },
+        { type: "preference", content: "Dislikes olives", label: null },
+      ] as Awaited<ReturnType<typeof extractNotebookEntries>>;
+
+      async function runWithTotal(total: number) {
+        vi.mocked(generateCoachProResponse).mockReturnValue(
+          fakeProStream(["Noted."]),
+        );
+        vi.mocked(parseBlocksFromContent).mockReturnValue({
+          text: "Noted.",
+          blocks: [],
+        });
+        vi.mocked(extractNotebookEntries).mockResolvedValue(twoNotes);
+        vi.mocked(storage.getNotebookEntryTotal).mockResolvedValue(total);
+        await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+        await flushNotebookExtraction();
+      }
+
+      it("writes nothing once the account is at the ceiling", async () => {
+        await runWithTotal(MAX_NOTEBOOK_ENTRIES);
+        expect(storage.createNotebookEntries).not.toHaveBeenCalled();
+      });
+
+      it("writes only as many as there is room for", async () => {
+        await runWithTotal(MAX_NOTEBOOK_ENTRIES - 1);
+        expect(
+          vi.mocked(storage.createNotebookEntries).mock.calls[0][0],
+        ).toHaveLength(1);
+      });
+
+      it("control: writes them all when there is room", async () => {
+        await runWithTotal(0);
+        expect(
+          vi.mocked(storage.createNotebookEntries).mock.calls[0][0],
+        ).toHaveLength(2);
+      });
+    });
+
     it("triggers notebook extraction for Coach Pro after response", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
         fakeProStream(["Advice here."]),

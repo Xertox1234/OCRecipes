@@ -435,7 +435,7 @@ describe("Coach Notebook Storage", () => {
   });
 
   describe("getNotebookEntryTotal", () => {
-    it("counts every entry of the user, whatever its type or status", async () => {
+    it("counts the user's entries of every type, except archived ones", async () => {
       await createNotebookEntry({
         userId: testUser.id,
         type: "goal",
@@ -447,6 +447,13 @@ describe("Coach Notebook Storage", () => {
         type: "preference",
         content: "b",
         status: "rejected",
+      });
+      // Archived: the Coach's own housekeeping, so it frees room.
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "old",
+        status: "archived",
       });
       const other = await createTestUser(tx);
       await createNotebookEntry({

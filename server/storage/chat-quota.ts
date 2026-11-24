@@ -165,11 +165,11 @@ export async function createFinderUserMessage(
             lt(chatMessages.createdAt, endOfDay),
           ),
         );
-      // Never below today's typed-message claims: a deleted message keeps
-      // its slot (audit 2026-11-24, H4).
+      // Never below today's claims, typed and tapped: a deleted message
+      // or tap keeps its slot (audit 2026-11-24, H4).
       const used = Math.max(
         Number(row?.count ?? 0),
-        await countClaimsToday(tx, userId, "coach_message"),
+        await countCoachClaimsToday(tx, userId, { includeTaps: true }),
       );
       if (used >= opts.coachDailyLimit) {
         return { status: "limit_reached" as const };
@@ -188,6 +188,11 @@ export async function createFinderUserMessage(
         },
       })
       .returning();
+    // A tap that was checked against the Coach limit records its own claim,
+    // so deleting it does not hand the slot back.
+    if (opts.coachDailyLimit !== undefined) {
+      await recordMessageClaim(tx, userId, message.id, "coach_tap");
+    }
     await tx
       .update(chatConversations)
       .set({ updatedAt: new Date() })
@@ -204,16 +209,34 @@ export async function createFinderUserMessage(
  */
 export type MessageClaimKind =
   | "coach_message"
+  /** A Coach finder button tap, counted only when taps count (see below). */
+  | "coach_tap"
   | "recipe_message"
   | "remix_generation"
   | "remix_refinement";
 
 const MESSAGE_CLAIM_KINDS: MessageClaimKind[] = [
   "coach_message",
+  "coach_tap",
   "recipe_message",
   "remix_generation",
   "remix_refinement",
 ];
+
+/**
+ * Today's Coach claims: typed messages, plus button taps unless the caller
+ * leaves taps out of the limit (`excludeFinderTaps`, the offer flag). The
+ * floor under both Coach row counts, so the two always agree on what counts.
+ */
+export async function countCoachClaimsToday(
+  tx: ChatTx,
+  userId: string,
+  opts: { includeTaps: boolean },
+): Promise<number> {
+  const typedCount = await countClaimsToday(tx, userId, "coach_message");
+  if (!opts.includeTaps) return typedCount;
+  return typedCount + (await countClaimsToday(tx, userId, "coach_tap"));
+}
 
 type ClaimKind = "recipe_generation" | "spoonacular_search" | MessageClaimKind;
 

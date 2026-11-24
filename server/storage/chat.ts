@@ -13,6 +13,7 @@ import { escapeLike } from "./helpers";
 import { quotaDayBounds } from "./quota-day";
 import { fireAndForget } from "../lib/fire-and-forget";
 import {
+  countCoachClaimsToday,
   countMessageClaimsToday,
   countRecipeGenerationsToday,
   lockUser,
@@ -459,7 +460,9 @@ export async function createChatMessageWithLimitCheck(
       // does not hand the slot back (audit 2026-11-24, H4).
       const currentCount = Math.max(
         Number(countResult[0]?.count ?? 0),
-        await countMessageClaimsToday(tx, userId, "coach_message"),
+        await countCoachClaimsToday(tx, userId, {
+          includeTaps: !opts?.excludeFinderTaps,
+        }),
       );
       if (currentCount >= dailyLimit) {
         return null;

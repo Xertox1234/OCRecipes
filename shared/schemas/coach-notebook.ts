@@ -59,9 +59,12 @@ export const extractionResultSchema = z.object({
 export type ExtractionResult = z.infer<typeof extractionResultSchema>;
 
 /**
- * The most notebook entries one account may hold, of any type and status.
- * Each Coach turn reads this table, and the daily reminder job sends one
- * push per due commitment, so the count needs a ceiling (coach chat audit
- * 2026-11-24, M45). Far above real use: the Coach archives old entries.
+ * The most notebook entries one account may hold, of any type, not counting
+ * archived ones. Both writers respect it: the manual add route refuses at
+ * the ceiling, and the Coach's own extraction writes only what there is
+ * room for. Each Coach turn reads this table, and the daily reminder job
+ * sends one push per due commitment, so the count needs a ceiling (coach
+ * chat audit 2026-11-24, M45). Far above real use: the Coach archives
+ * entries older than 30 days, which frees room.
  */
 export const MAX_NOTEBOOK_ENTRIES = 500;

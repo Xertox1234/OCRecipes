@@ -590,3 +590,59 @@ describe("chat quota — a deleted message does not hand its slot back", () => {
     expect(await send(conv.id, "remix")).toBeNull();
   });
 });
+
+// Review of d611fbf56: a Coach finder tap is quota-checked too, so it has to
+// keep its slot when deleted, like a typed message.
+describe("chat quota — a deleted Coach tap does not hand its slot back", () => {
+  beforeEach(async () => {
+    tx = await setupTestTransaction();
+    testUser = await createTestUser(tx);
+  });
+
+  afterEach(async () => {
+    await rollbackTestTransaction();
+  });
+
+  const tap = (conversationId: number, limit: number) =>
+    createFinderUserMessage(conversationId, testUser.id, "tap", {
+      coachDailyLimit: limit,
+    });
+  const typed = (
+    conversationId: number,
+    limit: number,
+    opts?: { excludeFinderTaps?: boolean },
+  ) =>
+    createChatMessageWithLimitCheck(
+      conversationId,
+      testUser.id,
+      "typed",
+      limit,
+      "coach",
+      opts,
+    );
+
+  it("a deleted tap still counts against the next tap", async () => {
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    const first = await tap(conv.id, 1);
+    if (first.status !== "created") throw new Error("expected created");
+    expect(await deleteChatMessage(first.message.id, testUser.id)).toBe(true);
+    expect((await tap(conv.id, 1)).status).toBe("limit_reached");
+  });
+
+  it("a deleted tap still counts against a typed message when taps count", async () => {
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    const first = await tap(conv.id, 1);
+    if (first.status !== "created") throw new Error("expected created");
+    expect(await deleteChatConversation(conv.id, testUser.id)).toBe(true);
+    const next = await createChatConversation(testUser.id, "Coach", "coach");
+    expect(await typed(next.id, 1)).toBeNull();
+  });
+
+  it("control: with taps left out of the typed limit, a tap claim does not count against it", async () => {
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    const first = await tap(conv.id, 5);
+    if (first.status !== "created") throw new Error("expected created");
+    expect(await deleteChatMessage(first.message.id, testUser.id)).toBe(true);
+    expect(await typed(conv.id, 1, { excludeFinderTaps: true })).not.toBeNull();
+  });
+});
