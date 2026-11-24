@@ -22,6 +22,7 @@ import {
   groceryKept,
   mealLabel,
   planKept,
+  planShoppingOn,
   writeCardReceipt,
 } from "@shared/lib/coach-write-card-math";
 import type { WriteCardTx } from "../../storage/coach-write-cards";
@@ -43,6 +44,8 @@ import {
 import {
   buildPlanPayload,
   performPlanSave,
+  planReceipt,
+  planShoppingList,
   revertPlanSave,
   startPlanImageJobs,
 } from "./plan";
@@ -78,7 +81,9 @@ export async function buildWriteCardPayload(
     case "grocery":
       return buildGroceryPayload(p.args, ctx.userId);
     case "plan":
-      return buildPlanPayload(p.args, ctx.userId, p.pool);
+      return buildPlanPayload(p.args, ctx.userId, p.pool, {
+        shopping: p.shopping,
+      });
     case "pantry":
       return buildPantryPayload(p.args, ctx.userId);
     case "goals":
@@ -171,6 +176,9 @@ export function writeCardReceiptFor(card: CoachWriteCard): string {
   if (card.kind === "pantry") {
     return pantryReceipt(card, edits as PantryCardEdits);
   }
+  if (card.kind === "plan") {
+    return planReceipt(card, edits as PlanCardEdits);
+  }
   return writeCardReceipt(card.kind, card.payload as WriteCardPayload, edits);
 }
 
@@ -214,12 +222,20 @@ function describeGrocery(p: GroceryCardPayload, e: GroceryCardEdits): string {
 }
 
 function describePlan(p: PlanCardPayload, e: PlanCardEdits): string {
-  return planKept(p, e)
+  const meals = planKept(p, e)
     .map(
       (r) =>
         `${r.plannedDate} ${r.mealType}: ${r.recipe.title} (${fmt(r.recipe.calories)} cal, ${fmt(r.recipe.protein)} g protein)`,
     )
     .join("; ");
+  // A combined card (A1): the model must know the list is already handled.
+  const list = planShoppingList(p, e);
+  if (list === null) return meals;
+  return `${meals}; shopping for these meals: ${
+    planShoppingOn(p, e)
+      ? `added to ${list} on save`
+      : "switched off by the user"
+  }`;
 }
 
 const KIND_LABEL: Record<WriteCardKind, string> = {

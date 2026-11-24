@@ -78,6 +78,7 @@ export async function* handleCoachChat(
   const writeCards = !!params.writeCards && isCoachPro;
   const pantryCard = writeCards && !!params.pantryCard;
   const goalsCard = writeCards && !!params.goalsCard;
+  const planShopCard = writeCards && !!params.planShopCard;
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
@@ -123,6 +124,7 @@ export async function* handleCoachChat(
     writeCards,
     pantryCard,
     goalsCard,
+    planShopCard,
   });
   yield* finalizeTurn(params, turn, reply);
 }

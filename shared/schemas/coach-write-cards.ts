@@ -99,6 +99,24 @@ export const planRecipeRefSchema = z.object({
 });
 export type PlanRecipeRef = z.infer<typeof planRecipeRefSchema>;
 
+/** "community:12": the key a plan card's shopping section names a recipe by. */
+export const planRecipeKey = (r: { source: string; id: number }) =>
+  `${r.source}:${r.id}`;
+
+/**
+ * The plan card's shopping section (Coach roadmap A1): present when the user
+ * asked for the meals and the grocery list in one go. The card then saves
+ * both, and the section starts switched on.
+ */
+export const planShoppingSchema = z.object({
+  lists: z.array(z.object({ id: z.number().int(), title: z.string() })).max(4),
+  defaultListId: z.number().int().nullable(),
+  newListName: z.string().min(1).max(100),
+  /** Ingredient names per recipe (`planRecipeKey`), for the card's preview. */
+  ingredients: z.record(z.string(), z.array(z.string().max(80)).max(30)),
+});
+export type PlanShopping = z.infer<typeof planShoppingSchema>;
+
 export const planCardPayloadSchema = z.object({
   rows: z
     .array(
@@ -113,6 +131,7 @@ export const planCardPayloadSchema = z.object({
     .min(1)
     .max(7),
   shoppingListId: z.number().int().nullable(),
+  shopping: planShoppingSchema.optional(),
 });
 export type PlanCardPayload = z.infer<typeof planCardPayloadSchema>;
 
@@ -228,6 +247,8 @@ export const planEditsSchema = z
     removed: z.array(z.boolean()).max(7),
     chosen: z.array(z.number().int().min(0).max(2).nullable()).max(7),
     addShopping: z.boolean(),
+    /** Only for a card with a shopping section: one of its lists, or a new one. */
+    shoppingListId: z.union([z.number().int(), z.literal("new")]),
   })
   .partial()
   .strict();

@@ -92,3 +92,10 @@ export function planDayLabel(plannedDate: string): string {
     day: "numeric",
   });
 }
+
+/** "Chicken, Rice and 5 more": the plan card's shopping preview (A1). */
+export function planShoppingPreview(names: string[], max = 8): string {
+  const shown = names.slice(0, max).join(", ");
+  const rest = names.length - max;
+  return rest > 0 ? `${shown} and ${rest} more` : shown;
+}

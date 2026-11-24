@@ -60,7 +60,7 @@ export interface TurnInput {
     /** Coach write cards (spec 2026-11-09). */
     writeCards?: true;
     /** Card kinds beyond the first three that this app can draw. */
-    cardKinds?: ("pantry" | "goals" | "allergy")[];
+    cardKinds?: ("pantry" | "goals" | "allergy" | "plan_shop")[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
   userMessage: ChatMessage;
@@ -458,6 +458,7 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     // The goals card needs only an app that can draw it.
     goalsCard: !!ctx.body.cardKinds?.includes("goals"),
     allergyCard: !!ctx.body.cardKinds?.includes("allergy"),
+    planShopCard: !!ctx.body.cardKinds?.includes("plan_shop"),
     liveCard: ctx.body.liveCard,
     turnKey: coachTurnKey,
     isCoachPro: !!features.coachPro,

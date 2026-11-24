@@ -197,3 +197,81 @@ describe("pantry card in the dispatcher", () => {
     ).toBe("✓ Pantry updated · 1 used");
   });
 });
+
+describe("plan card with a shopping section (A1)", () => {
+  const combined = {
+    ...planCard,
+    payload: {
+      ...(planCard.payload as object),
+      shopping: {
+        lists: [{ id: 7, title: "Weekly shop" }],
+        defaultListId: 7,
+        newListName: "Meal plan shopping",
+        ingredients: { "community:1": ["Chicken", "Rice"] },
+      },
+    },
+  };
+
+  it("the card on screen says where the shopping goes", () => {
+    expect(describeLiveCard(combined)).toContain(
+      "protein); shopping for these meals: added to Weekly shop on save.",
+    );
+    expect(
+      describeLiveCard({ ...combined, edits: { shoppingListId: "new" } }),
+    ).toContain('added to a new list "Meal plan shopping" on save');
+    expect(
+      describeLiveCard({ ...combined, edits: { addShopping: false } }),
+    ).toContain("shopping for these meals: switched off by the user");
+    expect(describeLiveCard(planCard)).not.toContain("shopping");
+  });
+
+  it("the receipt counts the meals and what the shopping added", () => {
+    expect(
+      writeCardReceiptFor({
+        ...combined,
+        savedRefs: { mealPlanItemIds: [1], listId: 7, groceryItemIds: [1, 2] },
+      }),
+    ).toBe("✓ 1 dinner added · 2 items added to Weekly shop");
+    expect(
+      writeCardReceiptFor({
+        ...combined,
+        savedRefs: {
+          mealPlanItemIds: [1],
+          listId: 9,
+          createdListId: 9,
+          groceryItemIds: [1],
+          groceryListFull: 3,
+        },
+      }),
+    ).toBe(
+      "✓ 1 dinner added · 1 item added to Meal plan shopping · 3 didn't fit (list full)",
+    );
+  });
+
+  it("says so when the shopping added nothing, and nothing when it was off", () => {
+    expect(
+      writeCardReceiptFor({
+        ...combined,
+        savedRefs: { mealPlanItemIds: [1], listId: 7, groceryItemIds: [] },
+      }),
+    ).toBe("✓ 1 dinner added · nothing new to buy");
+    expect(
+      writeCardReceiptFor({ ...combined, savedRefs: { mealPlanItemIds: [1] } }),
+    ).toBe("✓ 1 dinner added · nothing new to buy");
+    expect(
+      writeCardReceiptFor({
+        ...combined,
+        edits: { addShopping: false },
+        savedRefs: { mealPlanItemIds: [1] },
+      }),
+    ).toBe("✓ 1 dinner added");
+    // The older tick keeps a short line of its own.
+    expect(
+      writeCardReceiptFor({
+        ...planCard,
+        edits: { addShopping: true },
+        savedRefs: { mealPlanItemIds: [1], listId: 7, groceryItemIds: [1] },
+      }),
+    ).toBe("✓ 1 dinner added · 1 item added to your grocery list");
+  });
+});

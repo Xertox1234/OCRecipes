@@ -19,7 +19,7 @@ export interface CoachStreamExtras {
  * The server gives Coach a card's tool only when its kind is listed, so a
  * build without the card is never told one is on screen.
  */
-const EXTRA_CARD_KINDS = ["pantry", "goals", "allergy"] as const;
+const EXTRA_CARD_KINDS = ["pantry", "goals", "allergy", "plan_shop"] as const;
 
 /** The POST body for a coach message; unset extras are left out. */
 export function buildCoachStreamBody(

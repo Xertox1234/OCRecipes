@@ -10,6 +10,13 @@ export const CARD_SHOWN_MESSAGE =
  * lists an item the card does not show or points at a card that is not there.
  */
 export function groceryCardResult(outcome: void | WriteCardOutcome) {
+  if (outcome?.kind === "grocery_on_plan_card") {
+    return {
+      card_shown: false,
+      message:
+        "No separate grocery card was made: the meal plan card on screen already adds these meals' shopping to the user's grocery list when they save it. Do not list items to buy; tell them the one card does both.",
+    };
+  }
   if (!outcome || outcome.kind !== "grocery") {
     return { card_shown: true, message: CARD_SHOWN_MESSAGE };
   }
@@ -32,6 +39,21 @@ export function groceryCardResult(outcome: void | WriteCardOutcome) {
     card_shown: true,
     message: [CARD_SHOWN_MESSAGE, ...notes].join(" "),
   };
+}
+
+/**
+ * The plan card's result (Coach roadmap A1): when the model asked for the
+ * grocery list too, whether this card saves it.
+ */
+export function planCardResult(outcome: void | WriteCardOutcome) {
+  if (!outcome || outcome.kind !== "plan") {
+    return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+  }
+  const note =
+    outcome.groceryList === "on_card"
+      ? "The same card also adds these meals' ingredients to the user's grocery list when they save it (they can switch that off or pick the list on the card); what their pantry already covers is left off. Do not call add_to_grocery_list for these meals, and do not write out the ingredients."
+      : "This card does not include the grocery list. Do not call add_to_grocery_list in this turn: it would replace this card. Tell the user to save the plan first, then ask for the grocery list.";
+  return { card_shown: true, message: `${CARD_SHOWN_MESSAGE} ${note}` };
 }
 
 /**

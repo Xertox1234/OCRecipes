@@ -384,6 +384,80 @@ describe("handleCoachChat with write cards", () => {
     );
   });
 
+  describe("plan and grocery list in one card (A1)", () => {
+    const planArgs = {
+      rows: [
+        {
+          plannedDate: "2026-11-09",
+          mealType: "dinner" as const,
+          recipe: { source: "community" as const, id: 1 },
+          alternatives: [],
+        },
+      ],
+    };
+    /** Fires a plan proposal, then a grocery one; records both outcomes. */
+    const planThenGrocery = (outcomes: unknown[], withGroceryList?: boolean) =>
+      async function* (
+        ...args: Parameters<typeof generateCoachProResponse>
+      ): AsyncGenerator<CoachProChunk> {
+        const propose = args[7]?.onWriteCardProposal;
+        outcomes.push(
+          await propose?.({
+            kind: "plan",
+            args: { ...planArgs, withGroceryList },
+            pool: [],
+          }),
+        );
+        outcomes.push(await propose?.({ kind: "grocery", args: groceryArgs }));
+        const chunk: CoachProChunk = { type: "content", content: "Here." };
+        yield chunk;
+      };
+
+    it("the plan card takes the shopping, and a grocery call in the same turn is turned away", async () => {
+      const outcomes: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        planThenGrocery(outcomes, true),
+      );
+      await collect(
+        handleCoachChat(makeParams({ writeCards: true, planShopCard: true })),
+      );
+      expect(outcomes).toEqual([
+        { kind: "plan", groceryList: "on_card" },
+        { kind: "grocery_on_plan_card" },
+      ]);
+      expect(planGroceryCard).not.toHaveBeenCalled();
+      expect(buildWriteCardPayload).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "plan", shopping: true }),
+        expect.anything(),
+      );
+      expect(storage.createWriteCard).toHaveBeenCalledTimes(1);
+    });
+
+    it("an app that cannot draw the section is told the list is not on the card", async () => {
+      const outcomes: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        planThenGrocery(outcomes, true),
+      );
+      await collect(handleCoachChat(makeParams({ writeCards: true })));
+      expect(outcomes[0]).toEqual({ kind: "plan", groceryList: "not_on_card" });
+      // As before: the later grocery card replaces the plan card.
+      expect(outcomes[1]).toMatchObject({ kind: "grocery", shown: true });
+      expect(buildWriteCardPayload).not.toHaveBeenCalled();
+    });
+
+    it("a plan the user did not ask a list for is unchanged", async () => {
+      const outcomes: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        planThenGrocery(outcomes),
+      );
+      await collect(
+        handleCoachChat(makeParams({ writeCards: true, planShopCard: true })),
+      );
+      expect(outcomes[0]).toBeUndefined();
+      expect(outcomes[1]).toMatchObject({ kind: "grocery", shown: true });
+    });
+  });
+
   const pantryArgs = {
     changes: [{ action: "remove" as const, itemId: 7 }],
   };

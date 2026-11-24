@@ -11,7 +11,12 @@ import {
   type PlanCardPayload,
   type PlanRecipeRef,
 } from "@shared/schemas/coach-write-cards";
-import { planKept } from "@shared/lib/coach-write-card-math";
+import { planRecipeKey } from "@shared/schemas/coach-write-cards";
+import {
+  planKept,
+  planShoppingOn,
+  writeCardReceipt,
+} from "@shared/lib/coach-write-card-math";
 import { isRecipeSafeForAllergies } from "@shared/constants/allergens";
 import { getUserProfile } from "../../storage/user-profiles";
 import { getVisibleCommunityRecipesByIds } from "../../storage/community-recipes";
@@ -30,8 +35,11 @@ import {
 } from "../../storage/meal-plan-items";
 import {
   insertGroceryListItemsUnderCap,
+  createGroceryListWithLimitCheck,
+  deleteGroceryList,
   deleteGroceryListItem,
   getGroceryLists,
+  getUncheckedGroceryListItems,
   verifyGroceryListOwnership,
 } from "../../storage/grocery-lists";
 import { getPantryItems } from "../../storage/pantry";
@@ -40,6 +48,7 @@ import { generateGroceryItems } from "../grocery-generation";
 import { groupPantryByKey, matchKey, pantryVerdict } from "../pantry-deduction";
 import { autoGenerateRecipeImage } from "../recipe-auto-image";
 import { fireAndForget } from "../../lib/fire-and-forget";
+import { LISTS_OFFERED, MAX_GROCERY_LISTS, lineKey } from "./grocery";
 import { WriteCardEditError } from "./errors";
 import type { AddMealPlanCardArgs, RecipeRefArg } from "./tool-args";
 
@@ -57,7 +66,18 @@ export {
  * shopping it added.
  */
 
-const refKey = (r: { source: string; id: number }) => `${r.source}:${r.id}`;
+const refKey = planRecipeKey;
+
+/** The new list a combined card (A1) makes when the user picks none. */
+const SHOPPING_LIST_NAME = "Meal plan shopping";
+/** The preview's caps (planShoppingSchema). */
+const PREVIEW_NAMES = 30;
+const PREVIEW_NAME_LENGTH = 80;
+const previewNames = (ingredients: { name: string }[]) =>
+  ingredients
+    .slice(0, PREVIEW_NAMES)
+    .map((i) => i.name.trim().slice(0, PREVIEW_NAME_LENGTH))
+    .filter(Boolean);
 
 function toRef(
   source: "community" | "mine",
@@ -131,7 +151,10 @@ export async function buildPlanPayload(
   args: AddMealPlanCardArgs,
   userId: string,
   pool: number[] = [],
+  /** `shopping`: the app can draw the shopping section (A1). */
+  opts: { shopping?: boolean } = {},
 ): Promise<PlanCardPayload> {
+  const withShopping = !!opts.shopping && args.withGroceryList === true;
   const poolRefs: RecipeRefArg[] = [...new Set(pool)].map((id) => ({
     source: "community",
     id,
@@ -149,7 +172,7 @@ export async function buildPlanPayload(
       getVisibleCommunityRecipesByIds(ids("community"), userId),
       getMealPlanRecipesByIds(ids("mine"), userId),
       getMealPlanItems(userId, dates[0], dates[dates.length - 1]),
-      getGroceryLists(userId, 1),
+      getGroceryLists(userId, withShopping ? LISTS_OFFERED : 1),
       getUserProfile(userId),
     ],
   );
@@ -200,7 +223,41 @@ export async function buildPlanPayload(
     throw new WriteCardEditError("None of those recipes could be found.");
   }
   topUpSwapChoices(rows, poolResolved);
-  return { rows, shoppingListId: lists[0]?.id ?? null };
+  const payload: PlanCardPayload = {
+    rows,
+    shoppingListId: lists[0]?.id ?? null,
+  };
+  if (!withShopping) return payload;
+
+  // Ingredient names for every recipe the card can end up planning, so the
+  // preview follows a Swap. Names only: the save reads the amounts itself.
+  const onCard = new Map(
+    rows
+      .flatMap((r) => [r.recipe, ...r.alternatives])
+      .map((r) => [refKey(r), r]),
+  );
+  const ingredients: Record<string, string[]> = {};
+  for (const c of communityRows) {
+    const key = refKey({ source: "community", id: c.id });
+    if (onCard.has(key)) ingredients[key] = previewNames(c.ingredients);
+  }
+  await Promise.all(
+    [...onCard.values()]
+      .filter((r) => r.source === "mine")
+      .map(async (r) => {
+        const full = await getMealPlanRecipeWithIngredients(r.id, userId);
+        ingredients[refKey(r)] = previewNames(full?.ingredients ?? []);
+      }),
+  );
+  return {
+    ...payload,
+    shopping: {
+      lists: lists.map((l) => ({ id: l.id, title: l.title })),
+      defaultListId: lists[0]?.id ?? null,
+      newListName: SHOPPING_LIST_NAME,
+      ingredients,
+    },
+  };
 }
 
 function parsePlanEdits(p: PlanCardPayload, raw: unknown): PlanCardEdits {
@@ -212,7 +269,12 @@ function parsePlanEdits(p: PlanCardPayload, raw: unknown): PlanCardEdits {
   if (
     (removed && removed.length !== p.rows.length) ||
     (chosen && chosen.length !== p.rows.length) ||
-    chosen?.some((c, i) => c != null && !p.rows[i].alternatives[c])
+    chosen?.some((c, i) => c != null && !p.rows[i].alternatives[c]) ||
+    // A list choice needs the shopping section, and one of its lists.
+    (parsed.data.shoppingListId !== undefined &&
+      (!p.shopping ||
+        (parsed.data.shoppingListId !== "new" &&
+          !p.shopping.lists.some((l) => l.id === parsed.data.shoppingListId))))
   ) {
     throw new WriteCardEditError("These changes can't be saved.");
   }
@@ -236,6 +298,7 @@ export async function performPlanSave(
   const edits = parsePlanEdits(payload, rawEdits);
   const kept = planKept(payload, edits);
   if (kept.length === 0) throw new WriteCardEditError("Nothing to plan.");
+  const addShopping = planShoppingOn(payload, edits);
 
   // Re-read the recipes now: a copy is made from the server's row, never from
   // anything the card or the app carried.
@@ -281,7 +344,7 @@ export async function performPlanSave(
         throw new WriteCardEditError("A recipe on this plan is gone.");
       }
       mealPlanItemIds.push(item.id);
-      if (edits.addShopping) {
+      if (addShopping) {
         const full = await getMealPlanRecipeWithIngredients(
           row.recipe.id,
           ctx.userId,
@@ -329,20 +392,29 @@ export async function performPlanSave(
     );
     copiedRecipeIds.push(created.recipeId);
     mealPlanItemIds.push(created.mealPlanItemId);
-    if (edits.addShopping) shopping.push(...ingredients);
+    if (addShopping) shopping.push(...ingredients);
   }
 
   const refs: CoachWriteCardSavedRefs = { mealPlanItemIds, copiedRecipeIds };
-  const listId = payload.shoppingListId;
-  if (edits.addShopping && listId !== null && shopping.length > 0) {
-    if (!(await verifyGroceryListOwnership(listId, ctx.userId))) {
-      throw new WriteCardEditError("That grocery list isn't available.");
-    }
-    const pantry = await getPantryItems(ctx.userId);
-    // Same rule as the grocery card. The plan card has no per-item ticks, so
-    // only "covered" leaves an item off; "unsure" is bought.
-    const byKey = groupPantryByKey(pantry, new Date());
-    const items = generateGroceryItems(shopping).filter(
+  // A combined card (A1) names its list, or makes one; the older tick adds
+  // to the user's latest list and is hidden when they have none.
+  const choice = payload.shopping
+    ? (edits.shoppingListId ?? payload.shopping.defaultListId ?? "new")
+    : payload.shoppingListId;
+  if (!addShopping || choice === null || shopping.length === 0) return refs;
+
+  if (
+    choice !== "new" &&
+    !(await verifyGroceryListOwnership(choice, ctx.userId))
+  ) {
+    throw new WriteCardEditError("That grocery list isn't available.");
+  }
+  const pantry = await getPantryItems(ctx.userId);
+  // Same rule as the grocery card. The plan card has no per-item ticks, so
+  // only "covered" leaves an item off; "unsure" is bought.
+  const byKey = groupPantryByKey(pantry, new Date());
+  const items = generateGroceryItems(shopping)
+    .filter(
       (i) =>
         pantryVerdict(
           {
@@ -351,23 +423,52 @@ export async function performPlanSave(
           },
           byKey.get(matchKey(i.name)) ?? [],
         ) !== "covered",
-    );
-    // A full list takes what fits; the meals are still planned.
-    const { created, skipped } = await insertGroceryListItemsUnderCap(
-      listId,
-      ctx.userId,
-      items.map((i) => ({
-        name: i.name,
-        quantity: i.quantity === null ? null : String(i.quantity),
-        unit: i.unit,
-        category: i.category,
-      })),
+    )
+    .map((i) => ({
+      name: i.name,
+      quantity: i.quantity === null ? null : String(i.quantity),
+      unit: i.unit,
+      category: i.category,
+    }));
+
+  if (choice === "new") {
+    // Nothing to buy: no empty list is made.
+    if (items.length === 0) return refs;
+    const days = kept.map((r) => r.plannedDate).sort();
+    const made = await createGroceryListWithLimitCheck(
+      {
+        userId: ctx.userId,
+        title: payload.shopping?.newListName ?? SHOPPING_LIST_NAME,
+        dateRangeStart: days[0],
+        dateRangeEnd: days[days.length - 1],
+      },
+      items,
+      MAX_GROCERY_LISTS,
       tx,
     );
-    refs.listId = listId;
-    refs.groceryItemIds = created.map((r) => r.id);
-    if (skipped > 0) refs.groceryListFull = skipped;
+    if (!made) throw new WriteCardEditError("You have too many grocery lists.");
+    refs.createdListId = made.list.id;
+    refs.listId = made.list.id;
+    refs.groceryItemIds = made.items.map((r) => r.id);
+    if (made.skipped > 0) refs.groceryListFull = made.skipped;
+    return refs;
   }
+
+  // As on the grocery card: a line still waiting on the list, with the same
+  // amount, is not added again.
+  const waiting = new Set(
+    (await getUncheckedGroceryListItems(choice, ctx.userId, tx)).map(lineKey),
+  );
+  // A full list takes what fits; the meals are still planned.
+  const { created, skipped } = await insertGroceryListItemsUnderCap(
+    choice,
+    ctx.userId,
+    items.filter((row) => !waiting.has(lineKey(row))),
+    tx,
+  );
+  refs.listId = choice;
+  refs.groceryItemIds = created.map((r) => r.id);
+  if (skipped > 0) refs.groceryListFull = skipped;
   return refs;
 }
 
@@ -384,11 +485,52 @@ export async function revertPlanSave(
   for (const id of refs.copiedRecipeIds ?? []) {
     await deleteMealPlanRecipe(id, card.userId, tx, afterCommit);
   }
-  if (refs.listId) {
+  if (refs.createdListId) {
+    // Items cascade with the list this save created.
+    await deleteGroceryList(refs.createdListId, card.userId, tx);
+  } else if (refs.listId) {
     for (const id of refs.groceryItemIds ?? []) {
       await deleteGroceryListItem(id, refs.listId, card.userId, tx);
     }
   }
+}
+
+/** The list a combined card's shopping goes to, as the user sees it. */
+export function planShoppingList(
+  p: PlanCardPayload,
+  e: PlanCardEdits,
+): string | null {
+  if (!p.shopping) return null;
+  const choice = e.shoppingListId ?? p.shopping.defaultListId ?? "new";
+  if (choice === "new") return `a new list "${p.shopping.newListName}"`;
+  return p.shopping.lists.find((l) => l.id === choice)?.title ?? "a list";
+}
+
+/**
+ * The saved card's one line: the meals, then what the shopping really added
+ * (fewer than the ingredients when the pantry or the list already had some).
+ */
+export function planReceipt(
+  card: CoachWriteCard,
+  edits: PlanCardEdits = {},
+): string {
+  const payload = card.payload as PlanCardPayload;
+  const base = writeCardReceipt("plan", payload, edits);
+  if (!planShoppingOn(payload, edits)) return base;
+  const refs = card.savedRefs;
+  const added = refs?.groceryItemIds?.length ?? 0;
+  const full = refs?.groceryListFull ?? 0;
+  if (added === 0) {
+    return `${base} · ${full > 0 ? "your list is full" : "nothing new to buy"}`;
+  }
+  const list = !payload.shopping
+    ? "your grocery list"
+    : refs?.createdListId
+      ? payload.shopping.newListName
+      : (payload.shopping.lists.find((l) => l.id === refs?.listId)?.title ??
+        "your grocery list");
+  const fullNote = full > 0 ? ` · ${full} didn't fit (list full)` : "";
+  return `${base} · ${added} ${added === 1 ? "item" : "items"} added to ${list}${fullNote}`;
 }
 
 /**
