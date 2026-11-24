@@ -23,6 +23,11 @@ printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 [ "$1" = "api" ] || { echo "HTTP 403: GitHub GraphQL is not available" >&2; exit 1; }
 [ -z "${FAKE_REST_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
 # a --paginate call prints every page (FAKE_REST_PAGES); a plain call prints page one
+# a list asked for a NAMED head owner (a fork) answers with FAKE_REST_FORK_BODY when that is set
+case "$*" in
+  *'head={owner}%3A'*) ;;
+  *'head='*) if [ -n "${FAKE_REST_FORK_BODY+x}" ]; then printf '%s\n' "$FAKE_REST_FORK_BODY"; exit 0; fi ;;
+esac
 case " $* " in *" --paginate "*) printf '%s\n' "${FAKE_REST_PAGES:-$FAKE_REST_BODY}" ;; *) printf '%s\n' "$FAKE_REST_BODY" ;; esac
 EOF
 chmod +x "$T/bin/gh"
@@ -204,6 +209,72 @@ FAKE_REST_BODY="[$(with_repos "$(pr 5 open null feat/x abc123)" "")]"
 lookup feat/x
 assert_eq "a deleted fork (null head repo): rc 2, nothing printed" "2|" "$RC|$OUT"
 
+# 7e. A fork's PR, asked for the way `gh pr view` takes it: <owner>:<branch>. The list is then
+#     filtered by THAT owner, and a row counts only when its head is that owner's (GitHub logins
+#     compare without case) and that branch. A bare name still never matches a fork (7c).
+fork_call() { printf 'api repos/{owner}/{repo}/pulls?state=all&per_page=100&head=%s%%3A%s' "$(enc "$1")" "$(enc "$2")"; }
+by() { jq -c --arg u "$2" '.head.user = {login: $u} | .head.repo = {full_name: "\($u)/r"} | .base = {repo: {full_name: "o/r"}}' <<<"$1"; }
+FAKE_REST_BODY="[$(by "$(pr 6 open null feat/x f0rk66)" Fork)]"
+lookup fork:feat/x
+assert_eq "owner:branch: the fork's PR is found" "0|6 f0rk66" "$RC|$(jq -r '"\(.number) \(.headRefOid)"' <<<"$OUT")"
+assert_eq "owner:branch: the list is asked by that owner, both parts encoded" "$(fork_call fork feat/x)" "$(cat "$FAKE_GH_LOG")"
+FAKE_REST_BODY="[$(by "$(pr 6 open null feat/x f0rk66)" someone-else)]"
+lookup fork:feat/x
+assert_eq "owner:branch: a row from another owner is rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_BODY="[$(by "$(pr 6 open null other f0rk66)" fork)]"
+lookup fork:feat/x
+assert_eq "owner:branch: a row for another branch is rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_BODY="[$(pr 6 open null feat/x f0rk66)]"
+lookup fork:feat/x
+assert_eq "owner:branch: a row with no head owner is rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_BODY='[]'
+lookup fork:feat/x
+assert_eq "owner:branch: an empty list is rc 1" "1|" "$RC|$OUT"
+for bad in a:b:c :x x: o_o:x '{owner}:x' 'o/r:x' '-o:x'; do
+  lookup "$bad"
+  assert_eq "malformed owner:branch '$bad': rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
+done
+
+# 7f. No ref (the current branch), pushed to a fork. `gh pr view` with no argument finds that
+#     PR through the branch's push remote; so does this, but only after the same-repository
+#     lookup said "none", and only for the no-ref form (a NAMED bare branch stays same-repo).
+FREPO="$T/forkrepo"; mkdir -p "$FREPO"
+git -C "$FREPO" init -q -b my-branch
+git -C "$FREPO" remote add origin https://github.com/o/r.git
+git -C "$FREPO" remote add mine git@github.com:Fork/r.git
+git -C "$FREPO" config branch.my-branch.remote origin
+git -C "$FREPO" config branch.my-branch.pushRemote mine
+export FAKE_REST_FORK_BODY
+FAKE_REST_BODY='[]'
+FAKE_REST_FORK_BODY="[$(by "$(pr 6 open null my-branch f0rk66)" fork)]"
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, pushed to a fork: the fork's PR is found" "0|6" "$RC|$(jq -r .number <<<"$OUT")"
+assert_eq "no ref, pushed to a fork: same repository first, then the push remote's owner" \
+  "$(list_call my-branch)
+$(fork_call Fork my-branch)" "$(cat "$FAKE_GH_LOG")"
+FAKE_REST_FORK_BODY='[]'
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, pushed to a fork, no PR in either: rc 1" "1|" "$RC|$OUT"
+FAKE_REST_FORK_BODY='{"message":"Server Error"}'
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, the fork lookup failing: rc 2, not 'no PR'" "2|" "$RC|$OUT"
+FAKE_REST_FORK_BODY="[$(by "$(pr 6 open null my-branch f0rk66)" fork)]"
+FAKE_REST_BODY="[$(pr 5 open null my-branch abc123)]"
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, a same-repository PR exists: it wins, the fork is never asked" \
+  "0|5|$(list_call my-branch)" "$RC|$(jq -r .number <<<"$OUT")|$(cat "$FAKE_GH_LOG")"
+FAKE_REST_BODY='[]'
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json my-branch 2>/dev/null); RC=$?
+assert_eq "a NAMED bare branch never looks at the fork: rc 1 after ONE request" \
+  "1|$(list_call my-branch)" "$RC|$(cat "$FAKE_GH_LOG")"
+# A push remote whose URL gives no usable owner: no second request, still "no PR".
+git -C "$FREPO" remote set-url mine /srv/git/r.git
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, push remote with no owner in its URL: rc 1 after ONE request" \
+  "1|$(list_call my-branch)" "$RC|$(cat "$FAKE_GH_LOG")"
+unset FAKE_REST_FORK_BODY
+FAKE_REST_BODY="[$(pr 5 open null feat/x abc123)]"
+
 # 7d. A URL whose owner or repo is a dot segment never reaches gh (gh does not normalise
 #     the path).
 for u in https://github.com/../../pull/1 https://github.com/./r/pull/1 https://github.com/o/../pull/1; do
@@ -216,7 +287,8 @@ lookup --repo
 assert_eq "flag-like ref: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
 
 echo "$PASS passed, $FAIL failed"
-EXPECTED_TOTAL=50
+# 50 -> 70 (2026-11-24, fork PRs): +13 = rows 7e, +7 = rows 7f.
+EXPECTED_TOTAL=70
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL"; exit 1
 fi

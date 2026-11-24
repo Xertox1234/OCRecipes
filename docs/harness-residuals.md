@@ -592,9 +592,19 @@ branch with more PRs than that could miss its open PR and answer with a closed o
 every page (`gh api --paginate`) when the first page is full, after the head-filter check has passed on
 that first page.
 
-Still open, by design: a PR whose head lives in a fork is never matched by branch name (the
-lookup asks for this repository's owner and rejects a row from another repository), so it reads as
-"no PR" or "could not look"; this repository takes no fork PRs.
+FIXED 2026-11-24: a PR whose head lives in a fork was never matched by branch name (the lookup
+asked for this repository's owner and rejected a row from another repository), so it read as "no
+PR" or "could not look". The helper now treats forks as `gh pr view` does. `<owner>:<branch>` asks
+for that owner's branch and accepts only a row whose head is theirs. With no ref (the current
+branch), a "no PR" answer from this repository is followed by one more lookup under the owner of
+the branch's push remote (`branch.<name>.pushRemote`, `remote.pushDefault`, `branch.<name>.remote`).
+A bare branch name stays this repository's branch, so a fork's PR under the same name is still
+never an answer to it. Rows 7e and 7f in `test-gh-pr-rest.sh`.
+
+Still open, by design: callers that pass a bare branch name (`git-safety.sh` before a branch
+deletion, `scripts/verify-branch-merged.sh`) do not find a fork's PR, the same as `gh pr view
+<branch>`. Guessing the fork from local config there could report another branch's merged PR as
+this one's. This repository takes no fork PRs.
 
 FIXED 2026-11-24: `merge-review-guard.sh` and `scripts/todo-automerge-guard.sh` kept their own
 inline REST retry from #1987. Both now retry through the helper, which also returns
