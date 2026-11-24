@@ -1,6 +1,6 @@
 ---
 title: "Label cards and hook import pure helpers from client/screens"
-status: backlog
+status: done
 priority: low
 created: 2026-11-23
 updated: 2026-11-23
@@ -27,9 +27,9 @@ out of scope (that todo's contract allowed no new files).
 
 ## Acceptance Criteria
 
-- [ ] No file outside `client/screens/` and `client/navigation/` imports from
+- [x] No file outside `client/screens/` and `client/navigation/` imports from
       `@/screens/label-analysis-utils` (test files beside the screen excepted).
-- [ ] The helpers keep their Vitest coverage after the move.
+- [x] The helpers keep their Vitest coverage after the move.
 
 ## Implementation Notes
 
@@ -46,3 +46,7 @@ Move the helpers the cards and the hook use to a utils module under `client/comp
 ## Dependencies
 
 - PR #1993 merged.
+
+## Updates
+
+- 2026-11-23: Done. The whole module moved to `client/lib/label-analysis-utils.ts` (its test to `client/lib/__tests__/`); the screen, both cards and the hook import `@/lib/label-analysis-utils`. Path comments in two server files, one client file and two solution docs were updated to match.

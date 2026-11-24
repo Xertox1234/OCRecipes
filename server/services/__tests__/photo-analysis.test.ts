@@ -603,7 +603,7 @@ describe("getPromptForIntent", () => {
     expect(prompt).toMatch(/not printed[^\n]*null[^\n]*never 0/i);
     expect(prompt).toMatch(/plain numbers?[^\n]*no unit/i);
     expect(prompt).not.toMatch(/Include units/i);
-    // client/screens/label-analysis-utils.ts shows vitamin D as mcg and the
+    // client/lib/label-analysis-utils.ts shows vitamin D as mcg and the
     // minerals as mg, so a %DV-only row must not arrive as a number.
     expect(prompt).toMatch(/mcg for vitamin D/);
     expect(prompt).toMatch(/only as a % Daily Value[^\n]*null/);

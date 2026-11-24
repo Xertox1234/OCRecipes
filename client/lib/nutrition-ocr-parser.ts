@@ -307,7 +307,7 @@ const FIELD_PATTERNS: FieldPattern[] = [
 // figure has nothing to compare against, so `per100.saturatedFat` still rides
 // into `mergedPer100g` uncorroborated whenever another field triggers a
 // conflict on such a record. Nothing else re-checks the number either —
-// `shouldReplaceWithAI` (client/screens/label-analysis-utils.ts) compares only
+// `shouldReplaceWithAI` (client/lib/label-analysis-utils.ts) compares only
 // calories/fat/protein/carbs/sodium. While glued forms were declined outright
 // that path was rarely reached; this is the first rule that populates
 // `saturatedFat` by INFERENCE, so it is now exercised routinely.

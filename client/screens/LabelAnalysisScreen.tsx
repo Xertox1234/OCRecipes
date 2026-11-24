@@ -63,7 +63,7 @@ import {
   getLogButtonPresentation,
   scaleByServings,
   labelLogErrorMessage,
-} from "./label-analysis-utils";
+} from "@/lib/label-analysis-utils";
 import { frontLabelSavedKey } from "./FrontLabelConfirmScreen";
 
 type LabelAnalysisNavigationProp = NativeStackNavigationProp<

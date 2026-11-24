@@ -6,7 +6,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { servingsCountLabel } from "@/screens/label-analysis-utils";
+import { servingsCountLabel } from "@/lib/label-analysis-utils";
 
 interface LabelServingsCardProps {
   servingSize: string | null | undefined;

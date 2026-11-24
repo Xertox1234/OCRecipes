@@ -8,10 +8,7 @@ import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import {
-  scaleByServings,
-  type NutrientRow,
-} from "@/screens/label-analysis-utils";
+import { scaleByServings, type NutrientRow } from "@/lib/label-analysis-utils";
 
 interface LabelNutritionFactsCardProps {
   macroRows: NutrientRow[];
