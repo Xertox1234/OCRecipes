@@ -304,8 +304,10 @@ describe("verify-branch-merged.sh", () => {
   // so there is no local tip to compare: a fork's merged PR must not read as "safe to delete".
   it("exit 1 on an <owner>:<branch> argument", () => {
     expect(
-      run(["someone:feat/x"], { FAKE_GH_STATE: "MERGED", FAKE_GH_OID: "abc123" })
-        .status,
+      run(["someone:feat/x"], {
+        FAKE_GH_STATE: "MERGED",
+        FAKE_GH_OID: "abc123",
+      }).status,
     ).toBe(1);
   });
 
