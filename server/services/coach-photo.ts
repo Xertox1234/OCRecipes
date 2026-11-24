@@ -185,7 +185,7 @@ const BARCODE_UNKNOWN_SERVING_TEXT =
   " I don't know this product's serving size, so check the amount on the card.";
 const BARCODE_GAPS_TEXT =
   " Some numbers are missing for this product, so some show as 0.";
-const BARCODE_LOOKUP_DOWN_TEXT =
+export const BARCODE_LOOKUP_DOWN_TEXT =
   "I couldn't look that product up just now. Please try again in a moment.";
 /** What the barcode lookup calls a product it has no name for. */
 const LOOKUP_PLACEHOLDER_NAME = "Unknown Product";

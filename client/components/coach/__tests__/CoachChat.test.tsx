@@ -934,12 +934,12 @@ describe("CoachChat — 'Coach responded' announcement", () => {
 describe("CoachChat — camera button", () => {
   it("is in the message box for Coach Pro", () => {
     renderCoachChat({ isCoachPro: true });
-    expect(screen.getByLabelText("Send a photo of your meal")).toBeDefined();
+    expect(screen.getByLabelText("Log with the camera")).toBeDefined();
   });
 
   it("is absent on the free tier", () => {
     renderCoachChat();
-    expect(screen.queryByLabelText("Send a photo of your meal")).toBeNull();
+    expect(screen.queryByLabelText("Log with the camera")).toBeNull();
   });
 });
 

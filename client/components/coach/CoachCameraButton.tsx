@@ -30,7 +30,7 @@ export default function CoachCameraButton({ onPress, disabled }: Props) {
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityLabel="Send a photo of your meal"
+      accessibilityLabel="Log with the camera"
       accessibilityHint="Scans a barcode, or takes or chooses a photo, for the Coach to log"
       accessibilityState={{ disabled: !!disabled }}
     >

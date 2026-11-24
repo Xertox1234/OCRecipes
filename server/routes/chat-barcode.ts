@@ -35,13 +35,12 @@ import { isRecipeOfferEnabled } from "../services/recipe-finder";
 import {
   scannedBarcodeReply,
   photoCardProposal,
+  BARCODE_LOOKUP_DOWN_TEXT,
   COACH_BARCODE_USER_TEXT,
 } from "../services/coach-photo";
 import { createWriteCardBlock } from "../services/coach-pro-chat/write-card-context";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
-const LOOKUP_FAILED_TEXT =
-  "I couldn't look that product up just now. Please try again in a moment.";
 const SCAN_CAP_TEXT =
   "You've reached today's scan limit. Tell me what you ate and I'll log it for you.";
 const CARD_FAILED_TEXT =
@@ -155,7 +154,7 @@ export function register(app: Express): void {
         // The user's turn is stored, so every outcome from here answers it
         // in the conversation rather than leaving a question with no reply.
         const tz = parseTimezone(req.headers["x-timezone"]);
-        let text = LOOKUP_FAILED_TEXT;
+        let text = BARCODE_LOOKUP_DOWN_TEXT;
         let blocks: CoachBlock[] = [];
         try {
           // Claimed last: a turn refused above (message limit) spends none.

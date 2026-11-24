@@ -8,14 +8,14 @@ describe("CoachCameraButton", () => {
   it("calls onPress", () => {
     const onPress = vi.fn();
     renderComponent(<CoachCameraButton onPress={onPress} />);
-    fireEvent.click(screen.getByLabelText("Send a photo of your meal"));
+    fireEvent.click(screen.getByLabelText("Log with the camera"));
     expect(onPress).toHaveBeenCalledOnce();
   });
 
   it("does nothing while disabled", () => {
     const onPress = vi.fn();
     renderComponent(<CoachCameraButton onPress={onPress} disabled />);
-    fireEvent.click(screen.getByLabelText("Send a photo of your meal"));
+    fireEvent.click(screen.getByLabelText("Log with the camera"));
     expect(onPress).not.toHaveBeenCalled();
   });
 });
