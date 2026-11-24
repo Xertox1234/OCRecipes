@@ -1,8 +1,9 @@
 /**
- * POST /api/chat/conversations/:id/photo — a meal photo sent into the Coach
- * chat (Coach roadmap S1). The reply is a stored assistant message carrying a
- * food log card; nothing is logged until the user taps the card. The photo
- * is analyzed in memory and never stored.
+ * POST /api/chat/conversations/:id/photo — a photo sent into the Coach chat:
+ * a meal (Coach roadmap S1), a nutrition label or a barcode (S2). The reply
+ * is a stored assistant message carrying a food log card; nothing is logged
+ * until the user taps the card. The photo is analyzed in memory and never
+ * stored.
  */
 import type { Express, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
@@ -30,7 +31,7 @@ import { upload } from "./_upload";
 import { CONVERSATION_CONFIG } from "../services/chat-turn";
 import { isRecipeOfferEnabled } from "../services/recipe-finder";
 import {
-  buildPhotoFoodCard,
+  buildPhotoReply,
   photoCardProposal,
   photoReplyText,
   COACH_PHOTO_USER_TEXT,
@@ -175,10 +176,12 @@ export function register(app: Express): void {
           if (!claimed) {
             text = PHOTO_CAP_TEXT;
           } else {
-            const { payload, skipped } = await buildPhotoFoodCard(imageBase64, {
+            const reply = await buildPhotoReply(imageBase64, {
               tz,
               now: new Date(),
+              userId: req.userId,
             });
+            const { payload } = reply;
             const card = payload
               ? await createWriteCardBlock(
                   photoCardProposal(payload),
@@ -188,8 +191,7 @@ export function register(app: Express): void {
               : null;
             if (card) blocks = [card];
             // A card that could not be stored reads as "nothing to show".
-            const shown = card ? (payload?.items.length ?? 0) : 0;
-            text = photoReplyText(shown, skipped);
+            text = payload && !card ? photoReplyText(0, 0) : reply.text;
           }
         } catch (err) {
           logger.error({ err: toError(err) }, "coach photo analysis failed");

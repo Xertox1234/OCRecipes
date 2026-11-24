@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
-import { buildPhotoFoodCard } from "../../services/coach-photo";
+import { buildPhotoReply } from "../../services/coach-photo";
 import { createWriteCardBlock } from "../../services/coach-pro-chat/write-card-context";
 import { saveOpeningBrief } from "../chat-admit";
 import { register } from "../chat-photo";
@@ -30,7 +30,7 @@ vi.mock("../../lib/openai", () => ({
 
 vi.mock("../../services/coach-photo", async (orig) => {
   const actual = await orig<typeof import("../../services/coach-photo")>();
-  return { ...actual, buildPhotoFoodCard: vi.fn() };
+  return { ...actual, buildPhotoReply: vi.fn() };
 });
 
 vi.mock("../../services/coach-pro-chat/write-card-context", () => ({
@@ -120,7 +120,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     );
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
-      createMockChatMessage({ id: 10, content: "Photo of my meal" }),
+      createMockChatMessage({ id: 10, content: "Sent a photo" }),
     );
     vi.mocked(storage.createChatMessage).mockImplementation(
       async (conversationId, _userId, role, content, metadata) =>
@@ -132,7 +132,10 @@ describe("POST /api/chat/conversations/:id/photo", () => {
           metadata: metadata ?? null,
         }),
     );
-    vi.mocked(buildPhotoFoodCard).mockResolvedValue({ payload, skipped: 0 });
+    vi.mocked(buildPhotoReply).mockResolvedValue({
+      payload,
+      text: "Here's what I see. Change any portion that looks off.",
+    });
     vi.mocked(createWriteCardBlock).mockResolvedValue(cardBlock);
     app = createApp();
   });
@@ -141,14 +144,14 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     const res = await post(app);
 
     expect(res.status).toBe(201);
-    expect(buildPhotoFoodCard).toHaveBeenCalledWith(
+    expect(buildPhotoReply).toHaveBeenCalledWith(
       VALID_JPEG.toString("base64"),
-      expect.objectContaining({ tz: "America/Los_Angeles" }),
+      expect.objectContaining({ tz: "America/Los_Angeles", userId: "1" }),
     );
     expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
       1,
       "1",
-      "Photo of my meal",
+      "Sent a photo",
       expect.any(Number),
       "coach",
     );
@@ -170,14 +173,14 @@ describe("POST /api/chat/conversations/:id/photo", () => {
 
   it("refuses a second photo while the first is still being answered, and stores nothing for it", async () => {
     let finish!: () => void;
-    vi.mocked(buildPhotoFoodCard).mockImplementationOnce(
+    vi.mocked(buildPhotoReply).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          finish = () => resolve({ payload, skipped: 0 });
+          finish = () => resolve({ payload, text: "Here's what I see." });
         }),
     );
     const first = post(app).then((r) => r);
-    await vi.waitFor(() => expect(buildPhotoFoodCard).toHaveBeenCalled());
+    await vi.waitFor(() => expect(buildPhotoReply).toHaveBeenCalled());
 
     const second = await post(app);
 
@@ -196,9 +199,9 @@ describe("POST /api/chat/conversations/:id/photo", () => {
   });
 
   it("replies in text, with no card, when no food could be shown", async () => {
-    vi.mocked(buildPhotoFoodCard).mockResolvedValue({
+    vi.mocked(buildPhotoReply).mockResolvedValue({
       payload: null,
-      skipped: 0,
+      text: "I couldn't read the calories on that label.",
     });
     const res = await post(app);
     expect(res.status).toBe(201);
@@ -212,8 +215,21 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     );
   });
 
+  it("says nothing could be shown when the card could not be stored", async () => {
+    vi.mocked(createWriteCardBlock).mockResolvedValue(null);
+    const res = await post(app);
+    expect(res.status).toBe(201);
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "1",
+      "assistant",
+      expect.stringMatching(/couldn't/i),
+      null,
+    );
+  });
+
   it("replies in text when the analysis fails after the turn was stored", async () => {
-    vi.mocked(buildPhotoFoodCard).mockRejectedValue(new Error("vision down"));
+    vi.mocked(buildPhotoReply).mockRejectedValue(new Error("vision down"));
     const res = await post(app);
     expect(res.status).toBe(201);
     expect(storage.createChatMessage).toHaveBeenCalledWith(
@@ -231,7 +247,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(res.status).toBe(404);
     expect(storage.getChatConversation).toHaveBeenCalledWith(1, "1");
     expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
-    expect(buildPhotoFoodCard).not.toHaveBeenCalled();
+    expect(buildPhotoReply).not.toHaveBeenCalled();
   });
 
   it("refuses a recipe conversation", async () => {
@@ -240,7 +256,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     );
     const res = await post(app);
     expect(res.status).toBe(400);
-    expect(buildPhotoFoodCard).not.toHaveBeenCalled();
+    expect(buildPhotoReply).not.toHaveBeenCalled();
   });
 
   it("is Coach Pro only", async () => {
@@ -248,7 +264,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     const res = await post(app);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("PREMIUM_REQUIRED");
-    expect(buildPhotoFoodCard).not.toHaveBeenCalled();
+    expect(buildPhotoReply).not.toHaveBeenCalled();
   });
 
   it("rejects a file that is not an image", async () => {
@@ -273,7 +289,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
       "photoAnalysis",
       expect.any(Number),
     );
-    expect(buildPhotoFoodCard).not.toHaveBeenCalled();
+    expect(buildPhotoReply).not.toHaveBeenCalled();
     expect(storage.createChatMessage).toHaveBeenCalledWith(
       1,
       "1",
@@ -289,7 +305,7 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
     expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
-    expect(buildPhotoFoodCard).not.toHaveBeenCalled();
+    expect(buildPhotoReply).not.toHaveBeenCalled();
   });
 
   it("saves the opening brief first when the photo opens a new chat", async () => {

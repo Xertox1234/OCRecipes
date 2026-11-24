@@ -42,8 +42,15 @@ Then re-rank.
       service. Value: high. Size: M. PR #1984. Shipped as the Coach's food log card
       (one row per food, sized to the portion seen; counts are whole portions).
       Left for later: half portions, and showing the photo in the chat.
-- [ ] **S2. Label and barcode in chat.** Scan without leaving the conversation.
-      Value: high. Size: M. Needs S1.
+- [x] **S2. Label and barcode in chat.** Scan without leaving the conversation.
+      Value: high. Size: M. Needs S1. PR #PRNUM. The photo button now takes a
+      nutrition label or a barcode as well as a meal: the photo is classified
+      first, a label is read into a one-serving food card, and a barcode
+      number read from the photo is looked up into the same card (with the
+      allergy check a scan gets). Left for later: a live barcode scanner
+      opened from the chat (a number read from a still photo is often not
+      legible; the Coach then asks for the label), and the label's
+      micronutrients (the card carries calories and the three macros).
 - [ ] **S3. Receipt and menu photos.** A receipt becomes a pantry write card; a
       menu becomes a "what should I order" card. Value: medium. Size: M.
       Needs S1.

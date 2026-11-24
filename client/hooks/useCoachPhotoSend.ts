@@ -124,7 +124,7 @@ export function useCoachPhotoSend(args: Args) {
     if (blocked()) return;
     Alert.alert(
       "Send a photo",
-      "The Coach will find the foods in your meal and offer to log them.",
+      "A meal, a nutrition label or a barcode. The Coach will offer to log it.",
       [
         { text: "Take Photo", onPress: () => send("camera") },
         { text: "Choose from Library", onPress: () => send("library") },

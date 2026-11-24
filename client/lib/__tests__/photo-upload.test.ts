@@ -998,7 +998,7 @@ describe("uploadPhotoToCoach", () => {
     vi.mocked(uploadAsync).mockResolvedValue({
       status: 201,
       body: JSON.stringify({
-        userMessage: { id: 10, content: "Photo of my meal" },
+        userMessage: { id: 10, content: "Sent a photo" },
         assistantMessage: { id: 11, content: "I found 2 foods." },
       }),
       headers: {},
