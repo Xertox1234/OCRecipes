@@ -16,7 +16,10 @@ import {
   classifyPhoto,
   type FoodItem,
 } from "./photo-analysis";
-import { loadBarcodeScanContext } from "./barcode-scan-context";
+import {
+  loadAllergyProfile,
+  loadBarcodeScanContext,
+} from "./barcode-scan-context";
 import { buildScanResponseFlags } from "./scan-flags";
 import type { BarcodeLookupResult } from "./barcode-lookup";
 import type { ProfileOutcome } from "./scan-flags";
@@ -156,6 +159,16 @@ const LABEL_NO_CALORIES_TEXT =
 const LABEL_TEXT =
   "Here's what I read from that label, per serving. Check it against the pack, set how many servings you had, then log it.";
 const LABEL_GAPS_TEXT = " I couldn't read every number, so some show as 0.";
+const LABEL_UNSURE_TEXT =
+  " The label was hard to read, so check each number before you log it.";
+// A label photo shows no ingredients list the Coach can check. Said only to
+// a user who has allergies on their profile, or whose profile could not be
+// read (fail-dangerous, as on a scan).
+const LABEL_ALLERGY_TEXT =
+  " I can't check ingredients from a label photo, so read the pack for your allergies.";
+/** A row the food card's rules refuse: numbers out of range, or text it screens out. */
+const ROW_REFUSED_TEXT =
+  "I couldn't turn that into something I can log. Tell me what it was and how much you had, and I'll log it for you.";
 const BARCODE_UNREAD_TEXT =
   "I can see a barcode but couldn't read its number. Try again closer and straight on, or send a photo of the nutrition label.";
 const BARCODE_UNKNOWN_TEXT =
@@ -164,10 +177,16 @@ const BARCODE_NO_NUTRITION_TEXT =
   "I found that product but it has no nutrition data. Send a photo of its nutrition label and I'll read that instead.";
 const BARCODE_TEXT =
   "I found this product from its barcode. Check it's the right one, set how many servings you had, then log it.";
-const BARCODE_ESTIMATED_SERVING_TEXT = " The serving size is an estimate.";
+const BARCODE_UNKNOWN_SERVING_TEXT =
+  " I don't know this product's serving size, so check the amount on the card.";
+const BARCODE_GAPS_TEXT =
+  " Some numbers are missing for this product, so some show as 0.";
+/** What the barcode lookup calls a product it has no name for. */
+const LOOKUP_PLACEHOLDER_NAME = "Unknown Product";
 // Fixed wording that names no allergen: the product's allergen data comes
 // from Open Food Facts and is never stored (see BarcodeLookupResult), and
-// this line is saved with the message.
+// this line is saved with the message. What the saved message does record
+// is the outcome of the check for this user (a match, or no check possible).
 const ALLERGEN_MATCH_TEXT =
   " Allergy check: this product may contain something on your allergy list. Read the pack before you eat it.";
 const ALLERGEN_UNCHECKED_TEXT =
@@ -219,6 +238,7 @@ function onePackagedFood(
 /** A nutrition label read from a photo, as a one-serving card. */
 export function labelPhotoReply(
   label: LabelExtractionResult,
+  profileOutcome: ProfileOutcome,
   ctx: { tz: string; now: Date },
 ): PhotoReply {
   if (label.calories === null) {
@@ -237,14 +257,20 @@ export function labelPhotoReply(
       fat: round1(label.totalFat ?? 0),
     },
   );
-  if (!item) return { payload: null, text: LABEL_NO_CALORIES_TEXT };
+  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
   const gaps =
     label.protein === null ||
     label.totalCarbs === null ||
     label.totalFat === null;
+  const allergyCheckOwed =
+    !profileOutcome.ok || profileOutcome.allergies.length > 0;
   return {
     payload: onePackagedFood(item, ctx),
-    text: LABEL_TEXT + (gaps ? LABEL_GAPS_TEXT : ""),
+    text:
+      LABEL_TEXT +
+      (gaps ? LABEL_GAPS_TEXT : "") +
+      (label.confidence < CLASSIFY_CONFIDENCE ? LABEL_UNSURE_TEXT : "") +
+      (allergyCheckOwed ? LABEL_ALLERGY_TEXT : ""),
   };
 }
 
@@ -256,20 +282,26 @@ export function barcodePhotoReply(
 ): PhotoReply {
   if (!product) return { payload: null, text: BARCODE_UNKNOWN_TEXT };
   const per = product.perServing;
-  const item =
-    per.calories === undefined
-      ? null
-      : packagedFoodRow(
-          [product.brandName, product.productName].filter(Boolean).join(" "),
-          product.servingInfo.displayLabel,
-          {
-            calories: round1(per.calories),
-            protein: round1(per.protein ?? 0),
-            carbs: round1(per.carbs ?? 0),
-            fat: round1(per.fat ?? 0),
-          },
-        );
-  if (!item) return { payload: null, text: BARCODE_NO_NUTRITION_TEXT };
+  if (per.calories === undefined) {
+    return { payload: null, text: BARCODE_NO_NUTRITION_TEXT };
+  }
+  const productName =
+    product.productName === LOOKUP_PLACEHOLDER_NAME ? "" : product.productName;
+  const item = packagedFoodRow(
+    [product.brandName, productName].filter(Boolean).join(" "),
+    product.servingInfo.displayLabel,
+    {
+      calories: round1(per.calories),
+      protein: round1(per.protein ?? 0),
+      carbs: round1(per.carbs ?? 0),
+      fat: round1(per.fat ?? 0),
+    },
+  );
+  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
+  const gaps =
+    per.protein === undefined ||
+    per.carbs === undefined ||
+    per.fat === undefined;
 
   // The same allergen check a scan on the Scan screen gets.
   const flags = buildScanResponseFlags(
@@ -289,7 +321,8 @@ export function barcodePhotoReply(
     payload: onePackagedFood(item, ctx),
     text:
       BARCODE_TEXT +
-      (product.isServingDataTrusted ? "" : BARCODE_ESTIMATED_SERVING_TEXT) +
+      (product.isServingDataTrusted ? "" : BARCODE_UNKNOWN_SERVING_TEXT) +
+      (gaps ? BARCODE_GAPS_TEXT : "") +
       allergy,
   };
 }
@@ -323,7 +356,11 @@ export async function buildPhotoReply(
     return mealPhotoReply(imageBase64, ctx);
   }
   if (seen.contentType === "nutrition_label") {
-    return labelPhotoReply(await analyzeLabelPhoto(imageBase64), ctx);
+    const [label, profileOutcome] = await Promise.all([
+      analyzeLabelPhoto(imageBase64),
+      loadAllergyProfile(ctx.userId),
+    ]);
+    return labelPhotoReply(label, profileOutcome, ctx);
   }
   if (seen.contentType === "has_barcode") {
     if (!seen.barcode || !hasValidCheckDigit(seen.barcode)) {

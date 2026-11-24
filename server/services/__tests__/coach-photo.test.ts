@@ -4,7 +4,10 @@ import {
   analyzeLabelPhoto,
   classifyPhoto,
 } from "../photo-analysis";
-import { loadBarcodeScanContext } from "../barcode-scan-context";
+import {
+  loadAllergyProfile,
+  loadBarcodeScanContext,
+} from "../barcode-scan-context";
 import type { BarcodeLookupResult } from "../barcode-lookup";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
 import { batchNutritionLookup } from "../nutrition-lookup";
@@ -26,6 +29,7 @@ vi.mock("../photo-analysis", () => ({
 }));
 vi.mock("../barcode-scan-context", () => ({
   loadBarcodeScanContext: vi.fn(),
+  loadAllergyProfile: vi.fn(),
 }));
 vi.mock("../nutrition-lookup", () => ({ batchNutritionLookup: vi.fn() }));
 
@@ -292,6 +296,10 @@ describe("buildPhotoReply", () => {
     vi.mocked(batchNutritionLookup).mockResolvedValue(
       new Map([["chicken breast", per100g()]]),
     );
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: [],
+    });
   });
 
   it("treats a meal photo as before", async () => {
@@ -382,13 +390,51 @@ describe("buildPhotoReply", () => {
       expect(reply.text).toMatch(/calories/i);
     });
 
-    it("offers no card for numbers the food card would refuse", async () => {
+    it("offers no card for numbers the food card would refuse, and does not blame the photo", async () => {
       vi.mocked(analyzeLabelPhoto).mockResolvedValue(
         label({ calories: 9_999_999 }),
       );
       const reply = await buildPhotoReply("BASE64", ctx);
       expect(reply.payload).toBeNull();
+      expect(reply.text).toMatch(/tell me what it was/i);
     });
+
+    it("asks for a check of every number when the label was hard to read", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(
+        label({ confidence: 0.4 }),
+      );
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload).not.toBeNull();
+      expect(reply.text).toMatch(/hard to read/i);
+    });
+
+    it("says nothing about allergies to a user who has none", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(label());
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(loadAllergyProfile).toHaveBeenCalledWith("u1");
+      expect(reply.text).not.toMatch(/allerg/i);
+    });
+
+    it.each([
+      [
+        "has allergies",
+        {
+          ok: true as const,
+          allergies: [{ name: "milk", severity: "severe" as const }],
+        },
+      ],
+      ["could not be read", { ok: false as const }],
+    ])(
+      "says it cannot check ingredients when the profile %s",
+      async (_name, outcome) => {
+        vi.mocked(analyzeLabelPhoto).mockResolvedValue(label());
+        vi.mocked(loadAllergyProfile).mockResolvedValue(outcome);
+        const reply = await buildPhotoReply("BASE64", ctx);
+        expect(reply.payload).not.toBeNull();
+        expect(reply.text).toMatch(/can't check ingredients/i);
+        expect(reply.text).not.toMatch(/milk/i);
+      },
+    );
   });
 
   describe("a barcode", () => {
@@ -453,11 +499,39 @@ describe("buildPhotoReply", () => {
       expect(reply.text).toMatch(/no nutrition/i);
     });
 
-    it("says the serving is an estimate when it is", async () => {
+    it("says so when the product's serving size is not known", async () => {
       seen("4006381333931");
       scanContext(product({ isServingDataTrusted: false }));
       const reply = await buildPhotoReply("BASE64", ctx);
-      expect(reply.text).toMatch(/serving size is an estimate/i);
+      expect(reply.text).toMatch(/don't know this product's serving size/i);
+    });
+
+    it("says so when a macro is missing, and shows it as 0", async () => {
+      seen("4006381333931");
+      scanContext(product({ perServing: { calories: 115, protein: 2.5 } }));
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload?.items[0].perUnit).toEqual({
+        calories: 115,
+        protein: 2.5,
+        carbs: 0,
+        fat: 0,
+      });
+      expect(reply.text).toMatch(/some show as 0/i);
+    });
+
+    it("does not show the lookup's placeholder name", async () => {
+      seen("4006381333931");
+      scanContext(product({ productName: "Unknown Product", brandName: "" }));
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload?.items[0].name).toBe("Packaged food");
+    });
+
+    it("does not call a refused row a product with no nutrition", async () => {
+      seen("4006381333931");
+      scanContext(product({ perServing: { calories: 9_999_999 } }));
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload).toBeNull();
+      expect(reply.text).toMatch(/tell me what it was/i);
     });
 
     it("warns, without naming it, when the product has one of the user's allergens", async () => {
