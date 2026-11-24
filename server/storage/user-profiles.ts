@@ -202,6 +202,12 @@ export async function withdrawHealthConsent(
 ): Promise<UserProfile | undefined> {
   return db.transaction(async (tx) => {
     const now = new Date();
+    // The Coach's allergy cards hold an allergen and the severity chosen.
+    // First, before the profile row is touched: a card save locks its card and
+    // then the profile, and taking the two in the other order here deadlocks
+    // with it.
+    await expireAllergyCards(userId, tx);
+
     const [profile] = await tx
       .update(userProfiles)
       .set({
@@ -233,9 +239,6 @@ export async function withdrawHealthConsent(
     // Family profiles' allergies and notes are health data under the same
     // consent; names stay.
     await clearFamilyHealthData(userId, tx);
-
-    // The Coach's allergy cards hold an allergen and the severity chosen.
-    await expireAllergyCards(userId, tx);
 
     return profile;
   });
