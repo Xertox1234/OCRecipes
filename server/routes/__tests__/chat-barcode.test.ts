@@ -115,16 +115,10 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
       BARCODE,
       expect.objectContaining({ tz: "America/Los_Angeles", userId: "1" }),
     );
-    expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
-      1,
-      "1",
-      "Scanned a barcode",
-      expect.anything(),
-      "coach",
-      ...vi
-        .mocked(storage.createChatMessageWithLimitCheck)
-        .mock.calls[0].slice(5),
-    );
+    const turn = vi.mocked(storage.createChatMessageWithLimitCheck).mock
+      .calls[0];
+    expect(turn.slice(0, 3)).toEqual([1, "1", "Scanned a barcode"]);
+    expect(turn[4]).toBe("coach");
     expect(createWriteCardBlock).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "food" }),
       { conversationId: 1, userId: "1", tz: "America/Los_Angeles" },
@@ -146,9 +140,10 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
   it("the number is never written into the conversation", async () => {
     const res = await post(app);
     expect(JSON.stringify(res.body)).not.toContain(BARCODE);
-    const stored = vi
-      .mocked(storage.createChatMessageWithLimitCheck)
-      .mock.calls[0].concat(vi.mocked(storage.createChatMessage).mock.calls[0]);
+    const stored: unknown[] = [
+      ...vi.mocked(storage.createChatMessageWithLimitCheck).mock.calls[0],
+      ...vi.mocked(storage.createChatMessage).mock.calls[0],
+    ];
     expect(JSON.stringify(stored)).not.toContain(BARCODE);
   });
 
