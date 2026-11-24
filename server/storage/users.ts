@@ -16,6 +16,55 @@ export type { SafeUser } from "./user-columns";
 // USER CRUD
 // ============================================================================
 
+/** The daily goals, by the short key the Coach's goals card uses. */
+export type UserGoals = Record<
+  "calories" | "protein" | "carbs" | "fat",
+  number | null
+>;
+
+const GOAL_COLUMNS = {
+  calories: "dailyCalorieGoal",
+  protein: "dailyProteinGoal",
+  carbs: "dailyCarbsGoal",
+  fat: "dailyFatGoal",
+} as const;
+
+type GoalsExecutor = Pick<typeof db, "select" | "update">;
+
+/** The user's daily goals. Pass a transaction to read inside it. */
+export async function getUserGoals(
+  userId: string,
+  executor: GoalsExecutor = db,
+): Promise<UserGoals | undefined> {
+  const [row] = await executor
+    .select({
+      calories: users.dailyCalorieGoal,
+      protein: users.dailyProteinGoal,
+      carbs: users.dailyCarbsGoal,
+      fat: users.dailyFatGoal,
+    })
+    .from(users)
+    .where(eq(users.id, userId));
+  return row;
+}
+
+/** Writes only the goals given. Pass a transaction to write inside it. */
+export async function setUserGoals(
+  userId: string,
+  goals: Partial<UserGoals>,
+  executor: GoalsExecutor = db,
+): Promise<void> {
+  const updates: Partial<
+    Record<(typeof GOAL_COLUMNS)[keyof typeof GOAL_COLUMNS], number | null>
+  > = {};
+  for (const key of Object.keys(GOAL_COLUMNS) as (keyof UserGoals)[]) {
+    const value = goals[key];
+    if (value !== undefined) updates[GOAL_COLUMNS[key]] = value;
+  }
+  if (Object.keys(updates).length === 0) return;
+  await executor.update(users).set(updates).where(eq(users.id, userId));
+}
+
 export async function getUser(id: string): Promise<SafeUser | undefined> {
   const [user] = await db
     .select(safeUserColumns)

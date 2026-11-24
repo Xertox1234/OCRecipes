@@ -1540,7 +1540,7 @@ export const coachWriteCards = pgTable(
       .notNull(),
     kind: text("kind")
       .notNull()
-      .$type<"food" | "grocery" | "plan" | "pantry">(),
+      .$type<"food" | "grocery" | "plan" | "pantry" | "goals">(),
     payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
     edits: jsonb("edits")
       .notNull()
@@ -1559,7 +1559,9 @@ export const coachWriteCards = pgTable(
   (table) => [
     check(
       "coach_write_cards_kind_check",
-      sql`${table.kind} IN ('food', 'grocery', 'plan', 'pantry')`,
+      // 'allergy' is allowed here ahead of its card (migration 0050), so the
+      // production constraint is widened once for both.
+      sql`${table.kind} IN ('food', 'grocery', 'plan', 'pantry', 'goals', 'allergy')`,
     ),
     check(
       "coach_write_cards_status_check",
@@ -1586,6 +1588,13 @@ export interface CoachWriteCardSavedRefs {
   groceryListFull?: number;
   mealPlanItemIds?: number[];
   copiedRecipeIds?: number[];
+  /** Goals card: each goal the save changed, as it was before and after.
+   *  Undo restores a goal only while it still holds `after`. */
+  goalsRestore?: {
+    key: "calories" | "protein" | "carbs" | "fat";
+    before: number | null;
+    after: number;
+  }[];
   /** Pantry card: the rows this save inserted (Undo deletes them). */
   pantryAddedIds?: number[];
   /** Pantry card: each row the save changed or deleted, as it was before. */

@@ -189,6 +189,51 @@ describe("coach-write-cards storage", () => {
     expect((await getWriteCard(card.id, user.id))?.status).toBe("live");
   });
 
+  // The whole path on a real database: the kind check accepts 'goals'
+  // (migration 0050), the save writes the user's goals, Undo puts them back.
+  it("a goals card saves the user's goals and Undo restores them", async () => {
+    const { performWriteCardSave, revertWriteCardSave } = await import(
+      "../../services/write-cards"
+    );
+    const goalOf = async () =>
+      (
+        await tx
+          .select({ calories: schema.users.dailyCalorieGoal })
+          .from(schema.users)
+          .where(eq(schema.users.id, user.id))
+      )[0].calories;
+    await tx
+      .update(schema.users)
+      .set({ dailyCalorieGoal: 1800 })
+      .where(eq(schema.users.id, user.id));
+    const { card } = await createWriteCard({
+      userId: user.id,
+      conversationId,
+      kind: "goals",
+      payload: {
+        rows: [{ key: "calories", current: 1800, proposed: 2000 }],
+      },
+    });
+    const ctx = { userId: user.id, tz: "UTC", now: new Date() };
+    const saved = await saveWriteCard(
+      card.id,
+      user.id,
+      (t, c) => performWriteCardSave(t, c, { values: [2100] }, ctx),
+      { values: [2100] },
+    );
+    expect(saved.status).toBe("saved");
+    expect(await goalOf()).toBe(2100);
+    expect((await getWriteCard(card.id, user.id))?.savedRefs).toEqual({
+      goalsRestore: [{ key: "calories", before: 1800, after: 2100 }],
+    });
+
+    const undone = await undoWriteCard(card.id, user.id, (t, c) =>
+      revertWriteCardSave(t, c),
+    );
+    expect(undone.status).toBe("undone");
+    expect(await goalOf()).toBe(1800);
+  });
+
   it("undo within 60s reverts and returns card to live", async () => {
     const { card } = await create();
     await saveWriteCard(card.id, user.id, async () => ({

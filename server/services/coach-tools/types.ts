@@ -63,6 +63,11 @@ export interface ExecuteToolOptions {
    * because a model can call a tool name it was never offered.
    */
   pantryCard?: boolean;
+  /**
+   * The goals card is on for this turn: the app listed the kind.
+   * set_nutrition_goals is refused without it.
+   */
+  goalsCard?: boolean;
   /** Receives each validated write-tool call in write-card mode. */
   onWriteCardProposal?: (
     p: WriteCardProposal,

@@ -3,6 +3,8 @@ import {
   WRITE_CARD_EDITS_SCHEMAS,
   type FoodCardEdits,
   type FoodCardPayload,
+  type GoalsCardEdits,
+  type GoalsCardPayload,
   type GroceryCardEdits,
   type GroceryCardPayload,
   type PantryCardEdits,
@@ -42,6 +44,12 @@ import {
   revertPlanSave,
   startPlanImageJobs,
 } from "./plan";
+import {
+  buildGoalsPayload,
+  describeGoals,
+  performGoalsSave,
+  revertGoalsSave,
+} from "./goals";
 import { WriteCardEditError } from "./errors";
 import type { WriteCardProposal } from "./tool-args";
 
@@ -50,6 +58,7 @@ export { WriteCardEditError };
 export type { WriteCardOutcome, WriteCardProposal } from "./tool-args";
 export { planGroceryCard, type GroceryCardPlan } from "./grocery";
 export { planPantryCard, pantryRowLine, type PantryCardPlan } from "./pantry";
+export { buildGoalsPayload, describeGoals } from "./goals";
 
 export async function buildWriteCardPayload(
   p: WriteCardProposal,
@@ -64,6 +73,8 @@ export async function buildWriteCardPayload(
       return buildPlanPayload(p.args, ctx.userId, p.pool);
     case "pantry":
       return buildPantryPayload(p.args, ctx.userId);
+    case "goals":
+      return buildGoalsPayload(p.args, ctx.userId);
   }
 }
 
@@ -106,6 +117,8 @@ export async function performWriteCardSave(
         userId: ctx.userId,
         now: ctx.now,
       });
+    case "goals":
+      return performGoalsSave(tx, card, parsed.data, { userId: ctx.userId });
   }
 }
 
@@ -123,6 +136,8 @@ export async function revertWriteCardSave(
       return revertPlanSave(tx, card, afterCommit);
     case "pantry":
       return revertPantrySave(tx, card);
+    case "goals":
+      return revertGoalsSave(tx, card);
   }
 }
 
@@ -147,6 +162,7 @@ const TOOL_FOR_KIND: Record<WriteCardKind, string> = {
   grocery: "add_to_grocery_list",
   plan: "add_to_meal_plan",
   pantry: "update_pantry",
+  goals: "set_nutrition_goals",
 };
 
 const fmt = (n: number) => String(Math.round(n));
@@ -192,6 +208,7 @@ const KIND_LABEL: Record<WriteCardKind, string> = {
   grocery: "grocery list",
   plan: "meal plan",
   pantry: "pantry",
+  goals: "daily goals",
 };
 
 /**
@@ -218,6 +235,12 @@ export function describeLiveCard(card: CoachWriteCard): string {
       body = describePantry(
         card.payload as PantryCardPayload,
         e as PantryCardEdits,
+      );
+      break;
+    case "goals":
+      body = describeGoals(
+        card.payload as GoalsCardPayload,
+        e as GoalsCardEdits,
       );
       break;
   }

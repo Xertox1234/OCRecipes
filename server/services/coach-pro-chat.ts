@@ -77,6 +77,7 @@ export async function* handleCoachChat(
   // Write cards ride on Coach Pro's blocks; the free tier never gets them.
   const writeCards = !!params.writeCards && isCoachPro;
   const pantryCard = writeCards && !!params.pantryCard;
+  const goalsCard = writeCards && !!params.goalsCard;
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
@@ -121,6 +122,7 @@ export async function* handleCoachChat(
     offerOn,
     writeCards,
     pantryCard,
+    goalsCard,
   });
   yield* finalizeTurn(params, turn, reply);
 }

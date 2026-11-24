@@ -39,6 +39,26 @@ export const WRITE_CARD_TOOL_DEFINITIONS = Object.freeze(
 export const PANTRY_CARD_TOOL_DEFINITIONS = Object.freeze(
   getToolDefinitions({ writeCards: true, pantryCard: true }),
 );
+/** Write-card mode plus the goals card (Coach roadmap T1), without and with
+ *  the pantry card. */
+const GOALS_CARD_TOOL_DEFINITIONS = Object.freeze(
+  getToolDefinitions({ writeCards: true, goalsCard: true }),
+);
+const PANTRY_GOALS_CARD_TOOL_DEFINITIONS = Object.freeze(
+  getToolDefinitions({ writeCards: true, pantryCard: true, goalsCard: true }),
+);
+
+/** The hoisted list for a write-card turn's extra card kinds. */
+function writeCardToolList(pantryCard: boolean, goalsCard: boolean) {
+  if (goalsCard) {
+    return pantryCard
+      ? PANTRY_GOALS_CARD_TOOL_DEFINITIONS
+      : GOALS_CARD_TOOL_DEFINITIONS;
+  }
+  return pantryCard
+    ? PANTRY_CARD_TOOL_DEFINITIONS
+    : WRITE_CARD_TOOL_DEFINITIONS;
+}
 
 /**
  * Sentinel yielded by generateCoachResponse when the safety check fires after
@@ -193,6 +213,8 @@ export async function* generateCoachProResponse(
     writeCards?: boolean;
     /** The app can show the pantry card and the plan has the pantry. */
     pantryCard?: boolean;
+    /** The app can show the goals card. */
+    goalsCard?: boolean;
     onWriteCardProposal?: ExecuteToolOptions["onWriteCardProposal"];
     planRecipePool?: ExecuteToolOptions["planRecipePool"];
   },
@@ -231,9 +253,7 @@ export async function* generateCoachProResponse(
   // replaces (spec §3.3). Flag off → today's tools.
   const toolList = !options?.writeCards
     ? TOOL_DEFINITIONS
-    : options.pantryCard
-      ? PANTRY_CARD_TOOL_DEFINITIONS
-      : WRITE_CARD_TOOL_DEFINITIONS;
+    : writeCardToolList(!!options.pantryCard, !!options.goalsCard);
   const baseTools = isRecipeFinderEnabled()
     ? toolList.filter(
         (t) => !("function" in t && t.function.name === "search_recipes"),
@@ -505,6 +525,7 @@ export async function* generateCoachProResponse(
                   {
                     writeCards: true,
                     pantryCard: !!options.pantryCard,
+                    goalsCard: !!options.goalsCard,
                     onWriteCardProposal: options.onWriteCardProposal,
                     planRecipePool: options.planRecipePool,
                   },

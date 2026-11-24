@@ -58,3 +58,24 @@ export function pantryCardResult(outcome: void | WriteCardOutcome) {
     message: `${CARD_SHOWN_MESSAGE} The card shows: ${rows}.${left}`,
   };
 }
+
+/**
+ * The goals card's result. The line holds only goal names and numbers the
+ * server worked out, so it needs no sanitizing.
+ */
+export function goalsCardResult(outcome: void | WriteCardOutcome) {
+  if (!outcome || outcome.kind !== "goals") {
+    return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+  }
+  if (!outcome.shown) {
+    return {
+      card_shown: false,
+      message:
+        "No goals card was made: these are already the user's goals, and nothing has changed. Do not tell the user to tap a card.",
+    };
+  }
+  return {
+    card_shown: true,
+    message: `${CARD_SHOWN_MESSAGE} The card shows: ${outcome.rows}.`,
+  };
+}

@@ -1160,6 +1160,91 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(JSON.stringify(result)).toMatch(/get_pantry_items/);
   });
 
+  it("set_nutrition_goals is offered only when the app can show the goals card", () => {
+    expect(toolNames({ writeCards: true })).not.toContain(
+      "set_nutrition_goals",
+    );
+    expect(toolNames({ goalsCard: true })).not.toContain("set_nutrition_goals");
+    expect(toolNames({ writeCards: true, goalsCard: true })).toContain(
+      "set_nutrition_goals",
+    );
+  });
+
+  it("set_nutrition_goals is refused without the goals card, even if called", async () => {
+    const onWriteCardProposal = vi.fn();
+    for (const opts of [{ writeCards: true, onWriteCardProposal }, {}]) {
+      await expect(
+        executeToolCall(
+          "set_nutrition_goals",
+          { calories: 2000 },
+          "user-1",
+          null,
+          "UTC",
+          opts,
+        ),
+      ).rejects.toThrow(/Unknown tool/);
+    }
+    expect(onWriteCardProposal).not.toHaveBeenCalled();
+  });
+
+  it("set_nutrition_goals proposes a card and tells the coach what it shows", async () => {
+    const onWriteCardProposal = vi.fn().mockResolvedValue({
+      kind: "goals",
+      shown: true,
+      rows: "calories 2000 (now 1800)",
+    });
+    const result = await executeToolCall(
+      "set_nutrition_goals",
+      { calories: 2000 },
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true, goalsCard: true, onWriteCardProposal },
+    );
+    expect(onWriteCardProposal).toHaveBeenCalledWith({
+      kind: "goals",
+      args: { calories: 2000 },
+    });
+    expect(result).toMatchObject({ card_shown: true });
+    expect(JSON.stringify(result)).toMatch(/calories 2000 \(now 1800\)/);
+    expect(JSON.stringify(result)).toMatch(/Nothing has been saved/);
+  });
+
+  it("set_nutrition_goals says when no card was made", async () => {
+    const result = await executeToolCall(
+      "set_nutrition_goals",
+      { calories: 1800 },
+      "user-1",
+      null,
+      "UTC",
+      {
+        writeCards: true,
+        goalsCard: true,
+        onWriteCardProposal: async () => ({
+          kind: "goals" as const,
+          shown: false,
+          rows: "",
+        }),
+      },
+    );
+    expect(result).toMatchObject({ card_shown: false });
+    expect(JSON.stringify(result)).toMatch(/already/);
+  });
+
+  it("set_nutrition_goals rejects calories under the 1,200 floor", async () => {
+    const onWriteCardProposal = vi.fn();
+    const result = await executeToolCall(
+      "set_nutrition_goals",
+      { calories: 900 },
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true, goalsCard: true, onWriteCardProposal },
+    );
+    expect(result).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    expect(onWriteCardProposal).not.toHaveBeenCalled();
+  });
+
   it("update_pantry rejects arguments that do not parse", async () => {
     const onWriteCardProposal = vi.fn();
     const result = await executeToolCall(

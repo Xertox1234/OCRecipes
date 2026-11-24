@@ -15,6 +15,9 @@ const OPTION_SETS = [
   { writeCards: true },
   { pantryCard: true },
   { writeCards: true, pantryCard: true },
+  { goalsCard: true },
+  { writeCards: true, goalsCard: true },
+  { writeCards: true, pantryCard: true, goalsCard: true },
 ];
 
 const ALL_TOOL_NAMES = [
@@ -31,9 +34,14 @@ const ALL_TOOL_NAMES = [
   "get_my_recipes",
   "find_plan_recipes",
   "update_pantry",
+  "set_nutrition_goals",
 ];
 
-function offeredNames(opts: { writeCards?: boolean; pantryCard?: boolean }) {
+function offeredNames(opts: {
+  writeCards?: boolean;
+  pantryCard?: boolean;
+  goalsCard?: boolean;
+}) {
   return getToolDefinitions(opts).map((t) =>
     "function" in t ? t.function.name : "",
   );
@@ -76,7 +84,17 @@ describe("coach tool registry: offered and executable are one rule", () => {
       ALL_TOOL_NAMES.slice(0, 12),
     );
     expect(offeredNames({ writeCards: true, pantryCard: true })).toEqual(
-      ALL_TOOL_NAMES,
+      ALL_TOOL_NAMES.slice(0, 13),
+    );
+    expect(
+      offeredNames({ writeCards: true, pantryCard: true, goalsCard: true }),
+    ).toEqual(ALL_TOOL_NAMES);
+    expect(offeredNames({ writeCards: true, goalsCard: true })).toEqual([
+      ...ALL_TOOL_NAMES.slice(0, 12),
+      "set_nutrition_goals",
+    ]);
+    expect(offeredNames({ goalsCard: true })).toEqual(
+      ALL_TOOL_NAMES.slice(0, 10),
     );
     // pantryCard alone never enables write-card-only tools.
     expect(offeredNames({ pantryCard: true })).toEqual(

@@ -738,6 +738,15 @@ describe("Chat Routes", () => {
       expect(
         vi.mocked(generateCoachProResponse).mock.calls[0][7],
       ).toMatchObject({ pantryCard: true });
+
+      // The goals card rides the same list, with no plan check.
+      vi.mocked(generateCoachProResponse).mockClear();
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect((await send({ cardKinds: ["goals"] })).status).toBe(200);
+      const goalsOpts = vi.mocked(generateCoachProResponse).mock.calls[0][7];
+      expect(goalsOpts).toMatchObject({ goalsCard: true });
+      expect(goalsOpts).not.toHaveProperty("pantryCard");
     });
 
     it("rejects a card kind it does not know (400)", async () => {
