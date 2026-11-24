@@ -6,6 +6,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { servingsCountLabel } from "@/screens/label-analysis-utils";
 
 interface LabelServingsCardProps {
   servingSize: string | null | undefined;
@@ -52,7 +53,7 @@ export function LabelServingsCard({
           <ThemedText
             type="h3"
             style={styles.servingValue}
-            accessibilityLabel={`${servings} servings`}
+            accessibilityLabel={servingsCountLabel(servings)}
           >
             {servings}
           </ThemedText>

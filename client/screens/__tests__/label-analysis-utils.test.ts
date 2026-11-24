@@ -8,6 +8,7 @@ import {
   labelLogErrorMessage,
   labelSessionReducer,
   initialLabelSessionState,
+  servingsCountLabel,
 } from "../label-analysis-utils";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { LabelExtractionResult } from "@/lib/photo-upload";
@@ -463,5 +464,17 @@ describe("labelSessionReducer", () => {
     expect(
       labelSessionReducer(failed, { type: "uploadFailed", message: "x" }),
     ).toBe(failed);
+  });
+});
+
+describe("servingsCountLabel", () => {
+  it("is singular at exactly 1", () => {
+    expect(servingsCountLabel(1)).toBe("1 serving");
+  });
+
+  it("is plural for every other amount", () => {
+    expect(servingsCountLabel(0.5)).toBe("0.5 servings");
+    expect(servingsCountLabel(1.5)).toBe("1.5 servings");
+    expect(servingsCountLabel(2)).toBe("2 servings");
   });
 });

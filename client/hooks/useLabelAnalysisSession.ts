@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import { useToast } from "@/context/ToastContext";
 import { ApiError } from "@/lib/api-error";
@@ -45,6 +45,14 @@ export function useLabelAnalysisSession({
   localPreview: LabelExtractionResult | null;
 }) {
   const toast = useToast();
+  // The toast context value changes identity when Reduce Motion is toggled.
+  // The upload only calls it on a failure, so it is read through a ref and is
+  // not a dependency: a re-run would upload the photo again (a second AI call
+  // and a new session).
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
   const [state, dispatch] = useReducer(
     labelSessionReducer,
     localPreview,
@@ -60,10 +68,10 @@ export function useLabelAnalysisSession({
   // Clear the failed state in the tap's own commit (as the pre-hook screen
   // did), not one render later when the effect re-runs.
   const retry = useCallback(() => {
-    toast.dismiss();
+    toastRef.current.dismiss();
     dispatch({ type: "uploadStarted" });
     bumpRetryToken();
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,15 +90,22 @@ export function useLabelAnalysisSession({
         if (cancelled) return;
         // Never surface the raw error.message — the upload helper throws
         // ApiError("Upload failed: <status>", code). Show static copy.
+        const rateLimited =
+          err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED;
         dispatch({
           type: "uploadFailed",
-          message:
-            err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
-              ? "Too many requests. Please wait a moment and try again."
-              : "Couldn't read this label. Try again with better lighting.",
+          message: rateLimited
+            ? "Too many requests. Please wait a moment and try again."
+            : "Couldn't read this label. Try again with better lighting.",
         });
-        if (hasLocalPreview) {
-          toast.error(
+        if (hasLocalPreview && rateLimited) {
+          // No Retry action: retrying straight away hits the limiter again.
+          // The log button still offers the retry.
+          toastRef.current.error(
+            "Too many requests. Wait a moment, then retry before logging.",
+          );
+        } else if (hasLocalPreview) {
+          toastRef.current.error(
             "Couldn't verify this label with AI. Retry before logging.",
             { action: { label: "Retry", onPress: retry } },
           );
@@ -105,7 +120,7 @@ export function useLabelAnalysisSession({
     return () => {
       cancelled = true;
     };
-  }, [imageUri, barcode, retryToken, toast, retry, hasLocalPreview]);
+  }, [imageUri, barcode, retryToken, retry, hasLocalPreview]);
 
   // Auto-hide the "Updated with AI analysis" toast.
   useEffect(() => {

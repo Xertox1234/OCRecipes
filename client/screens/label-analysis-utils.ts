@@ -197,6 +197,11 @@ export function labelLogErrorMessage(code: string | undefined): string {
   }
 }
 
+/** Spoken value of the servings stepper: "1 serving", "1.5 servings". */
+export function servingsCountLabel(servings: number): string {
+  return `${servings} ${servings === 1 ? "serving" : "servings"}`;
+}
+
 /** Upload/AI-reconcile state of the label screen (see useLabelAnalysisSession). */
 export interface LabelSessionState {
   /**
