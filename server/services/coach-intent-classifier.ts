@@ -101,7 +101,11 @@ const PURGING =
   "|\\b(?:purg(?:e|ing)|throw(?:ing)?\\s+up|vomit(?:ing)?|puk(?:e|ing))\\s+(?:up\\s+)?(?:after\\b|to\\s+(?:undo|get\\s+rid|lose|make\\s+up|cancel)\\b|(?:my|a|the)\\s+(?:food|meals?|dinner|lunch|breakfast|binge)\\b|what\\s+i\\s+(?:ate|eat)\\b|everything\\s+i\\s+(?:ate|eat)\\b)" +
   // "want to throw up" as distress; not "the smell makes me want to vomit"
   // and not "want to purge my pantry".
-  "|(?<!ma(?:kes?|de|king)\\s+me\\s+)\\b(?:want|need|have|trying|going)\\s+to\\s+(?:throw\\s+up|purge|vomit)\\b(?!\\s+(?:my|the|some|a|an|out)\\b)";
+  "|(?<!ma(?:kes?|de|king)\\s+me\\s+)\\b(?:want|need|have|trying|going)\\s+to\\s+(?:throw\\s+up|purge|vomit)\\b(?!\\s+(?:my|the|some|a|an|out)\\b)" +
+  // Said plainly about oneself: "I binge and purge", "I purged last night",
+  // "How do I purge?". A kitchen object after it is not this.
+  "|\\bbinge(?:s|d|ing)?\\s+and\\s+purg" +
+  "|\\bi\\s+(?:(?:have\\s+been|keep|just|always|sometimes|often)\\s+)?purg(?:e|ed|ing)\\b(?!\\s+(?:my|the|our|all|some|clams?|mussels?|shellfish)\\b)";
 
 const DISORDERED_EATING_RE = new RegExp(
   `${PURGING}|${SELF_HARM_RE.source}`,
@@ -141,7 +145,7 @@ const EXTREME_FASTING_RE = new RegExp(
  * stay ordinary (audit 2026-11-24, M31).
  */
 const INJECTION_IGNORE_RE =
-  /\b(?:ignore|disregard|forget|override)\b[\s\S]{0,2000}?(?:\b(?:your|all|any|previous|prior|above|earlier|system|safety)\s+(?:\w+\s+){0,2}(?:instructions?|rules?|guidelines?|prompts?|restrictions?)\b|\bthe\s+(?:instructions?|rules?|guidelines?)\b(?!\s+(?:on|of|for|in|from)\b)|\beverything\s+you\s+(?:were|have\s+been|\'ve\s+been)\s+told\b)/i;
+  /\b(?:ignore|disregard|forget|override)\b[\s\S]{0,2000}?(?:\b(?:your|all|any|every|these|those|previous|prior|above|earlier|system)\s+(?:\w+\s+){0,2}(?:instructions?|rules?|guidelines?|prompts?|restrictions?|guardrails?|training|protocols?)\b|(?<!\bfood\s)\bsafety\b(?!\s+(?:dates?|valve|seal|cap|labels?|tips?)\b)|\bthe\s+(?:instructions?|rules?|guidelines?)\b(?!\s+(?:on|of|for|in|from)\s+(?!(?:this|our)\s+(?:chat|conversation|session)\b|your\s+(?:developers?|creators?|makers?)\b))|\beverything\s+you\s+(?:were|have\s+been|\'ve\s+been)\s+told\b)/i;
 
 /**
  * Laxatives, diuretics or diet pills used for weight control. A question
@@ -233,7 +237,7 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     // newlines; the bound equals the 2000-char message cap (see above) so a
     // padded injection cannot push the keyword past the gap.
     pattern:
-      /(unrestricted[\s\S]{0,2000}\b(?:ai|assistant|coach|bot|chatbot|model|mode|persona|guru|expert|advis[eo]r|trainer|nutritionist|dietitian)\b|no safety guidelines|you are now \w+bot)/i,
+      /(unrestricted[\s\S]{0,2000}\b(?:ai|assistant|coach|bot|chatbot|model|mode|persona|guru|expert|advis[eo]r|trainer|nutritionist|dietitian)\b|unrestricted\s+(?:\w+\s+){0,2}(?:advice|answers?|responses?)\b|no safety guidelines|you are now \w+bot)/i,
     name: "jailbreak_persona",
   },
 ];
@@ -243,8 +247,9 @@ const IU_UPPER_LIMIT = 4000;
 
 /** "50,000 IU", "20000 IU": a dose in IU above the upper limit. */
 function isIuMegadose(message: string): boolean {
-  for (const m of message.matchAll(/(\d[\d,]*)\s*iu\b/gi)) {
-    if (Number(m[1].replace(/,/g, "")) > IU_UPPER_LIMIT) return true;
+  // "50,000", "50 000" and "50.000" are the same dose.
+  for (const m of message.matchAll(/(\d{1,3}(?:[ ,.]\d{3})+|\d+)\s*iu\b/gi)) {
+    if (Number(m[1].replace(/[ ,.]/g, "")) > IU_UPPER_LIMIT) return true;
   }
   return false;
 }
@@ -252,9 +257,13 @@ function isIuMegadose(message: string): boolean {
 /** A calorie figure with its unit: "900 calories", "1100 kcal", "600 calorie". */
 const CALORIE_FIGURE_RE =
   /(?<![\d.])(\d{2,4})(?!\d)\s*-?\s*(?:k?cal(?:orie)?s?|kilocalories)\b/gi;
-/** Right after the figure: "per day", "a day", "daily", "/day". */
+/**
+ * Right after the figure: "per day", "a day", "daily", "/day", with at most
+ * a plan word between ("500 calorie meal plan for each day", "800 calories
+ * total per day"). A meal noun between them makes it a per-meal figure.
+ */
 const DAILY_AFTER_RE =
-  /^(?:\s*\/\s*day\b|[\s-]+(?:(?:per|a|each|every)[\s-]+day|daily)\b)/i;
+  /^(?:\s*\/\s*day\b|[\s-]+(?:(?:total|in\s+total|meal\s+plan|plan|diet|limit|target|max|maximum)\s+)?(?:(?:per|a|each|every|in\s+a|for\s+the|for\s+each|all)[\s-]+day|daily)\b)/i;
 /** Before the figure: an amount to change by or burned, not an intake. */
 const CALORIE_CHANGE_BEFORE_RE =
   /\b(?:cut(?:ting)?|trim(?:ming)?|burn(?:s|ed|ing)?|add(?:ing)?|sav(?:e|ing)|deficit\s+of|surplus\s+of|by|extra|another)\s+(?:(?:about|around|roughly|up\s+to)\s+)*$/i;

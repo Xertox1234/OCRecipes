@@ -36,12 +36,13 @@ const INJECTION_PATTERNS: RegExp[] = [
   // DAN". "you are now a nutrition ..." is allowed, and so are "you are now
   // my go-to for dinner ideas" and "you are now showing net carbs".
   new RegExp(
-    `you\\s+are\\s+now\\s+(?!a\\s+nutrition|a\\s+food)(?:an?\\s+[\\w-]+|\\w*bot\\b|\\w*gpt\\b|dan\\b)`,
+    `you\\s+are\\s+now\\s+(?!a\\s+nutrition|a\\s+food)(?:an?\\s+[\\w-]+|in\\s+${JAILBREAK_MODE}\\s+mode\\b|\\w*bot\\b|\\w*gpt\\b|dan\\b)`,
     "i",
   ),
-  // An instruction, at the start of a sentence: not "my son likes to pretend
-  // to be a chef" or "let's not pretend you are going to ...".
-  /(?:^|[.!?:]\s+|\bplease\s+|\bnow\s+)pretend\s+(?:to\s+be|you\s+are|you['’]re)\s+(?!going\b)/i,
+  // An instruction: at the start of a sentence or clause, or after "you to" /
+  // "can you". Not "my son likes to pretend to be a chef" or "let's not
+  // pretend you are going to ...".
+  /(?:^|[.!?:,]\s+|\n\s*|\bplease\s+|\bnow\s+|\byou\s+to\s+|\b(?:can|could|will|would)\s+you\s+)pretend\s+(?:to\s+be|you\s+are|you['’]re)\s+(?!going\b)/i,
   new RegExp(
     `\\bact\\s+as\\s+(?:if\\s+you\\s+(?:are|were)\\s+(?:an?\\s+)?(?:[\\w-]+\\s+){0,2}${AI_NOUN}\\b|a\\s+different\\s+${AI_NOUN}\\b)`,
     "i",
@@ -63,7 +64,12 @@ const INJECTION_PATTERNS: RegExp[] = [
     "i",
   ),
   new RegExp(
-    `${EXTRACT_VERB}\\s+your\\s+(?:(?:hidden|initial|original|secret)\\s+)?(?:instructions|rules)\\b(?!\\s+(?:for|on|of|about|to|when|regarding|around)\\b)`,
+    `${EXTRACT_VERB}\\s+your\\s+(?:(?:hidden|initial|original|secret)\\s+)?(?:instructions|rules)\\b(?!\\s+(?:for|on|of|about|when|regarding|around)\\s+(?!(?:this|the|our)\\s+(?:chat|conversation|session)\\b|me\\b|us\\b))`,
+    "i",
+  ),
+  // "the instructions" is recipe talk, unless they are the assistant's own.
+  new RegExp(
+    `${EXTRACT_VERB}\\s+the\\s+instructions\\s+(?:above|you\\s+were\\s+given|you\\s+(?:got|received|have\\s+been\\s+given))`,
     "i",
   ),
 
@@ -74,8 +80,9 @@ const INJECTION_PATTERNS: RegExp[] = [
   /<\|im_start\|>/i,
 
   // Attempts to override safety/content policy. Not "gastric bypass
-  // restrictions" or "bypass filtering the stock".
-  /\bbypass\s+(?:(?:your|the|all|any)\s+)?(?:content\s+(?:filters?|polic(?:y|ies))|safety\s+(?:filters?|restrictions?|guidelines?|rules?|polic(?:y|ies))|(?:your|all|any)\s+(?:filters?|restrictions?|rules?|guidelines?))\b/i,
+  // restrictions", "bypass filtering the stock" or "bypass the safety valve
+  // step".
+  /(?<!gastric\s)\bbypass\s+(?:(?:your|the|all|any)\s+)?(?:content\s+)?(?:safety|restrictions?|filters?|polic(?:y|ies)|guidelines?|rules?)\b(?!\s+(?:valve|step|lock|cap|seal|catch|device|feature)\b)/i,
   /jailbreak/i,
   /\bDAN\s+(?:mode|prompt)\b/i,
 ];
@@ -126,7 +133,7 @@ export function validateAiResponse<T>(
 // which covers every point Coach Pro may release text at: see
 // server/services/coach-sentence-release.ts) and asks two
 // questions: does the sentence name something unsafe, and is the coach
-// recommending it or declining it? A hit replaces the whole reply, so a
+// recommending it or declining it (`declines`)? A hit replaces the whole reply, so a
 // refusal that names the unsafe thing ("I can't build a 500 cal/day plan")
 // must pass, and so must the coach prompt's own example answers. Both sides
 // are pinned by server/lib/__tests__/fixtures/coach-output-screen-corpus.json.
@@ -137,7 +144,7 @@ export function validateAiResponse<T>(
  * coach-sentence-release.ts), and line breaks, so one list item cannot
  * excuse the next.
  */
-const SENTENCE_BREAK = /(?<=[.!?]["'”’)\]*_]*)\s+|\s*\n+\s*/;
+const SENTENCE_BREAK = /(?<=[.!?]["'”’)\]*_]*)\s+|\n+/;
 
 /** Below this daily intake the coach must not recommend a plan. */
 const MIN_SAFE_DAILY_CALORIES = 1200;
@@ -180,9 +187,9 @@ export const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
   /\bthinsp(?:o|i|iration)\b/i,
   /\bpurging\s+(?:is|can\s+be)\s+(?:an?\s+)?(?:good|great|effective|helpful|easy|quick)/i,
   /\bmak(?:e|ing)\s+yourself\s+(?:throw\s+up|vomit|sick|puke)\b/i,
-  // Addressed to the user, or an instruction: "Raw kidney beans can induce
+  // Any use, except a food as the subject: "Raw kidney beans can induce
   // vomiting" is a food-safety fact.
-  /\b(?:you|yourself)(?:\s+[\w'’-]+){0,4}\s+induc(?:e|ing)\s+vomiting|^induce\s+vomiting|\bhow\s+to\s+induce\s+vomiting/i,
+  /(?<!\b(?:beans?|peas|lentils|mushrooms?|shellfish|oysters?|rhubarb|potatoes|food|it|they|this|that|which|toxins?|lectins?|poisoning)\s+(?:can|may|might|could|will|would)\s+)\binduc(?:e|ing)\s+vomiting\b/i,
   /\bchew(?:\s+[\w'’-]+){0,5}\s+spit\b/i,
 
   // Dangerous supplement/substance advice
@@ -196,13 +203,45 @@ export const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
 ];
 
 /**
- * Wording that shows the coach is declining, warning against or correcting
- * the unsafe thing in the same sentence. Read on the sentence with the
- * matched phrase removed, so "Don't eat anything for 24 hours" is not excused
- * by its own "Don't".
+ * A refusal leading straight into the flagged phrase: "I can't recommend
+ * that you ...", "Please don't ...", "You should never ...", "I'd avoid
+ * ...". Read on the text before the phrase, and anchored to its end with
+ * only plain words between, so a refusal in an earlier clause ("Don't worry,
+ * ...") does not reach it. "can't go wrong" and "don't worry" are
+ * reassurance, not refusal.
  */
-const DECLINING_RE =
-  /\b(?:can(?:['’]|\s+no)?t|cannot|won['’]?t|will\s+not|don['’]?t|do\s+not|shouldn['’]?t|should\s+not|isn['’]?t|is\s+not|aren['’]?t|not\s+safe|unsafe|never|avoid|risks?|risky|dangerous|harm(?:s|ful)?|damag(?:e|es|ing)|toxic|fatal|illegal|steer\s+clear|let['’]?s\s+not|not\s+something|too\s+low|below\s+the|medical\s+supervision|medically\s+supervised|mak(?:e|es)\s+(?:things|it)\s+(?:harder|worse)|mute|unfollow)\b/i;
+const REFUSAL_BEFORE_RE =
+  /\b(?:can(?:['’]|\s+no)?t|cannot|won['’]?t|will\s+not|wouldn['’]?t|would\s+not|don['’]?t|do\s+not|shouldn['’]?t|should\s+not|never|avoid|steer\s+clear\s+of|stay\s+away\s+from|let['’]?s\s+not|not\s+going\s+to|no\s+need\s+to)(?!\s+(?:go\s+wrong|worry|hesitate|be\s+afraid|fear|stress|panic|overthink))(?:\s+[\w'’-]+){0,7}\s*$/i;
+
+/** Words that say the thing is unsafe, unless a negator sits just before them. */
+const DANGER_WORD_RE =
+  /\b(?:unsafe|dangerous|risky|risks?|harm(?:s|ful)?|damag(?:e|es|ing)|toxic|fatal|illegal|unsustainable|too\s+low)\b/gi;
+/** "not risky", "little risk", "isn't harmful": reassurance. */
+const NEGATOR_BEFORE_RE =
+  /(?:\bnot|n['’]t|\bno|\blittle|\blow|\bminimal|\bzero|\bwithout|\bhardly|\bbarely|\bnever)\s+(?:(?:a|an|any|that|very|too|so|really|at\s+all)\s+)*$/i;
+/** "isn't safe", "never a safe way", "not safe": a warning. */
+const NOT_SAFE_RE =
+  /(?:\bnot|n['’]t|\bnever)\s+(?:(?:a|an|very|really|at\s+all)\s+)*safe\b/i;
+/** Other ways the rest of the sentence rejects the phrase it follows. */
+const REJECTION_AFTER_RE =
+  /\b(?:i|we)\s+(?:can(?:['’]|\s+no)?t|cannot|won['’]?t|will\s+not|wouldn['’]?t)\b|(?:\bnot|n['’]t)\s+something\s+(?:i|we)\s+can\b|\blet['’]?s\s+not\b|\bbelow\s+the\b|\bonly\s+(?:used|done|safe)\s+under\b|\bmak(?:e|es)\s+(?:things|it)\s+(?:harder|worse)\b|\bplease\s+(?:don['’]?t|do\s+not)\b/i;
+
+/**
+ * True when the sentence declines or warns against the phrase at
+ * [start, end): a refusal leads into it, or what follows says it is unsafe.
+ * A declining word that does not govern the phrase excuses nothing: "Eat
+ * only 900 calories a day, it is not risky" and "..., and avoid snacks" are
+ * still recommendations (review of 2582c6aa7).
+ */
+function declines(sentence: string, start: number, end: number): boolean {
+  if (REFUSAL_BEFORE_RE.test(sentence.slice(0, start))) return true;
+  const after = sentence.slice(end);
+  if (NOT_SAFE_RE.test(after) || REJECTION_AFTER_RE.test(after)) return true;
+  for (const m of after.matchAll(DANGER_WORD_RE)) {
+    if (!NEGATOR_BEFORE_RE.test(after.slice(0, m.index))) return true;
+  }
+  return false;
+}
 
 /** A calorie figure with its unit: "900 calories", "1100 kcal", "700-calorie". */
 const CALORIE_FIGURE_RE =
@@ -220,7 +259,7 @@ const CHANGE_BEFORE_RE =
 const CHANGE_AFTER_RE = /^\s*(?:less|fewer|more|extra|over|above|under)\b/i;
 /** A meal or snack named just before the figure: "a daily snack of 200 calories". */
 const MEAL_BEFORE_RE =
-  /\b(?:snacks?|breakfast|lunch|dinner|meal|serving|dessert)\b[^.!?]{0,15}$/i;
+  /\b(?:snacks?|breakfast|lunch|dinner|meal|serving|dessert)\s+(?:of|at|around|about|with)\s+(?:(?:about|around|roughly|just)\s+)*~?$/i;
 /** A verb that sets an intake: "eat only 600 cal", "aim for 900 calories". */
 const INTAKE_VERB_BEFORE_RE =
   /\b(?:eat|consume|have|aim|target|stay|stick|keep|limit\s+yourself)\b[^.!?\d]{0,25}$/i;
@@ -260,13 +299,6 @@ function lowCalorieTargetSpan(sentence: string): [number, number] | null {
     }
   }
   return null;
-}
-
-/** True when the sentence, without the flagged phrase, declines or warns. */
-function declines(sentence: string, start: number, end: number): boolean {
-  return DECLINING_RE.test(
-    `${sentence.slice(0, start)} ${sentence.slice(end)}`,
-  );
 }
 
 function isDangerousDietarySentence(sentence: string): boolean {

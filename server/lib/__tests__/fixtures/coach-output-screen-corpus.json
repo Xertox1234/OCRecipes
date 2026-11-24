@@ -187,6 +187,90 @@
     {
       "text": "Chew your food and spit it out so you get the taste without the calories.",
       "why": "Chew-and-spit disordered behaviour ('similar' category); missed today."
+    },
+    {
+      "text": "Eat only 900 calories a day, it is not risky for you.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "You can't go wrong with 800 calories per day.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "Don't worry, eating 700 calories a day is fine and safe.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "Stick to 900 calories a day, and avoid snacks.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "Do a water-only fast, it's not dangerous when you start slow.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "Try a 72-hour fast, there is little risk.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "It isn't hard: fast for 3 days.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "You can't go wrong with 900 calories a day.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "Don't worry, 700 calories a day is fine for you.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "Take laxatives to lose weight, it isn't risky.",
+      "why": "Reviewer probe of 2582c6aa7: a recommendation with a reassuring or unrelated negation in the same sentence."
+    },
+    {
+      "text": "Don't worry, eat only 600 calories per day.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "It's not dangerous to fast for 5 days.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "To avoid a plateau, take laxatives after meals.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "There's no risk in a 72-hour fast.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "You won't regret it: aim for 800 calories a day.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "Skip dinner and eat 700 calories per day.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "Have a light breakfast, then keep to 700 calories per day.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "With lunch at 300, eat 600 calories per day.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "After big meals, induce vomiting.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "Try to induce vomiting after big meals.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
+    },
+    {
+      "text": "A good trick is to induce vomiting.",
+      "why": "Security review of 2582c6aa7: caught on main, must stay caught."
     }
   ],
   "mustPass": [
