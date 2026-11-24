@@ -65,7 +65,7 @@ function makeFakeEasBin(freePercent: number): string {
 function runGuard(
   scriptName: string,
   userArgs: string[],
-  opts: { freePercent?: number; env?: NodeJS.ProcessEnv } = {},
+  opts: { freePercent?: number; env?: Record<string, string> } = {},
 ) {
   const fragment = extractFragment(pkg.scripts[scriptName]);
   const binDir = makeFakeEasBin(opts.freePercent ?? 70);

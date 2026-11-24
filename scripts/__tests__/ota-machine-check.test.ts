@@ -35,14 +35,17 @@ function freeAt(percent: number): string {
   return `echo "Pageouts: 1"\necho "System-wide memory free percentage: ${percent}%"`;
 }
 
-function run(memoryPressureBody: string | null, env: NodeJS.ProcessEnv = {}) {
+function run(
+  memoryPressureBody: string | null,
+  env: Record<string, string> = {},
+) {
   const binDir = makeBin(memoryPressureBody);
   // PATH holds only the fake directory, node, and the basic shell tools, so a
   // missing fake cannot fall through to the real /usr/bin/memory_pressure.
   const result = spawnSync(process.execPath, [script], {
     encoding: "utf8",
     timeout: 15_000,
-    env: { PATH: `${binDir}:${nodeDir}:/bin`, ...env },
+    env: { NODE_ENV: "test", PATH: `${binDir}:${nodeDir}:/bin`, ...env },
   });
   return {
     status: result.status ?? -1,
