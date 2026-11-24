@@ -74,6 +74,8 @@ npm run backfill:recipe-images   # overwrites our AI hero images in place (R2 ke
 
 # EAS Update — --message is REQUIRED; the scripts set CI=1, EXPO_PUBLIC_DOMAIN, EXPO_PUBLIC_SENTRY_DSN
 # and --platform all. Never pass --platform yourself (the script rejects it).
+# They refuse to start under 40% free memory (the bundle needs 3–4 GB and has crashed the laptop):
+# let other jobs finish; OTA_ALLOW_BUSY=1 overrides one run. Never start one unattended.
 npm run update:preview -- --message "fix login"
 npm run update:production -- --message "ship it"
 ```

@@ -13,4 +13,17 @@ const { getSentryExpoConfig } = require("@sentry/react-native/metro");
 
 const config = getSentryExpoConfig(__dirname);
 
+// Worker cap for the OTA publish. `npm run update:*` sets METRO_MAX_WORKERS=2
+// and `eas update` passes its environment to `expo export`, which has no
+// worker flag of its own there. Measured 2026-11-23 on cold exports of both
+// platforms (peak memory of the process tree): 3.2 GB on average with 2
+// workers (4 runs, 2.8–3.6) against 3.75 GB uncapped (3 runs, 3.6–4.0), and
+// about 12 s slower (61 s against 49 s). A modest saving, and a noisy one.
+// Unset (dev server, E2E, native builds) or not a whole number above zero:
+// Metro keeps its default.
+const maxWorkers = process.env.METRO_MAX_WORKERS ?? "";
+if (/^[1-9]\d*$/.test(maxWorkers)) {
+  config.maxWorkers = Number(maxWorkers);
+}
+
 module.exports = config;
