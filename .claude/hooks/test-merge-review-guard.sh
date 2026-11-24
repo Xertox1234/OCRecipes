@@ -1655,6 +1655,43 @@ for lib in review-stamp-path.sh gh-pr-rest.sh; do
                    || bad "H6 $lib that prints: the output is the deny and nothing else" "$out"
   rm -rf "$E0"
 done
+# I1-I4. DENY. A lib FUNCTION that ends the shell when it is CALLED (the file itself sources
+#     cleanly, so lib_loads passes it). Two lib functions used to be called directly in the
+#     hook's shell, and `exit` inside either ended the hook with no decision. Both are now
+#     called inside a command substitution, and an EXIT trap turns any other undecided end
+#     into a deny.
+MERGE_CMD="gh pr merge 938 --auto --squash"
+for code in 0 1; do
+  E0=$(exit0_tree fastpath-filter.sh keep "cmd_fastpath_has() { exit $code; }")
+  out=$(bash_payload "$MERGE_CMD" | run_tree "$E0")
+  only_deny "$out" && ok "I1 cmd_fastpath_has that calls exit $code: the merge is still read, and denies" \
+                   || bad "I1 cmd_fastpath_has that calls exit $code: the merge is still read, and denies" "$out"
+  out=$(bash_payload "ls -la" | run_tree "$E0"); rc=$?
+  [ -z "$out" ] && [ "$rc" = 0 ] && ok "I1 control (exit $code): an ordinary command is still allowed" \
+                                || bad "I1 control (exit $code): an ordinary command is still allowed" "rc=$rc out=$out"
+  rm -rf "$E0"
+  E0=$(exit0_tree cmd-detect.sh keep "cmd_gh_pr_has_merge() { exit $code; }")
+  out=$(bash_payload "$MERGE_CMD" | run_tree "$E0")
+  only_deny "$out" && reason "$out" | grep -q 'could not determine whether' \
+    && ok "I2 cmd_gh_pr_has_merge that calls exit $code: could-not-determine deny" \
+    || bad "I2 cmd_gh_pr_has_merge that calls exit $code: could-not-determine deny" "$out"
+  rm -rf "$E0"
+done
+# I3. The net under everything else: the hook's shell ends at a point where no decision has
+#     been made (here a lib function that signals it). The EXIT trap answers with a deny, rc 0.
+E0=$(exit0_tree review-stamp-path.sh keep 'review_stamp_dir() { kill -TERM $$; sleep 1; }')
+out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && reason "$out" | grep -q 'ended before it reached a decision' \
+  && ok "I3 the hook's shell is ended mid-run: ended-before-a-decision deny, rc 0" \
+  || bad "I3 the hook's shell is ended mid-run: ended-before-a-decision deny, rc 0" "rc=$rc out=$out"
+rm -rf "$E0"
+# I4. Same net, reached by a lib that shadows a builtin the hook calls directly.
+E0=$(exit0_tree gh-pr-rest.sh keep 'declare() { exit 0; }')
+out=$(mcp_payload 938 | run_tree "$E0"); rc=$?
+only_deny "$out" && [ "$rc" = 0 ] && reason "$out" | grep -q 'ended before it reached a decision' \
+  && ok "I4 a lib shadows a builtin with a function that exits: ended-before-a-decision deny" \
+  || bad "I4 a lib shadows a builtin with a function that exits: ended-before-a-decision deny" "rc=$rc out=$out"
+rm -rf "$E0"
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 
 # G7. CONTROL. With GraphQL answering, the REST PR resource is never read: the fallback is a
@@ -2125,7 +2162,9 @@ rm -rf "$LG"
 # 238 -> 241 (2026-11-24, REST retry folded into lib/gh-pr-rest.sh): +3 = rows G5b (two) and G8.
 # 241 -> 253 (2026-11-24, a lib that exits, prints or changes shell options is "could not load"):
 # +12 = rows H1 (two), H2-H5, H6 (four) and H7 (two).
-EXPECTED_TOTAL=253
+# 253 -> 261 (2026-11-24, a lib FUNCTION that exits when called, and the EXIT-trap net):
+# +8 = rows I1 (four), I2 (two), I3 and I4.
+EXPECTED_TOTAL=261
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
