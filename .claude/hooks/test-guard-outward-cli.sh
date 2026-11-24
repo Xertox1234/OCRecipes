@@ -6855,8 +6855,12 @@ done
 for sig in TERM PIPE ALRM USR1 USR2 HUP XCPU PROF IO; do
   T=$(nd_tree cmd-detect.sh "cmd_words() { kill -$sig \$\$; sleep 1; }"); ND_TREES="$ND_TREES $T"
   nd_run "$T" "$ND_OUTWARD"
-  n="ND4 SIG$sig mid-run on an outward command: ended-before-a-decision deny, rc 0"
-  nd_only_deny && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
+  # A signal the shell inherited as IGNORED cannot be trapped or reset by a non-interactive
+  # bash, so the kill does nothing there (CI runners ignore SIGPIPE: this row was red in CI
+  # with a correct deny). The stub then returns nothing and the hook denies through its
+  # empty-rendering check instead. Either deny is right; ND5 pins the trap's own text.
+  n="ND4 SIG$sig mid-run on an outward command: one deny, rc 0 (the trap's, or the empty-rendering one where the signal is ignored)"
+  nd_only_deny && { nd_reason_has 'ended before it reached a decision' || nd_reason_has 'rendering came back empty'; } && nd_ok "$n" || nd_bad "$n"
 done
 nd_run "$T" 'npm test'
 n="ND4 control: a signal mid-run on a command that does not smell outward is silent, rc 0"
