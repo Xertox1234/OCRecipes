@@ -14,6 +14,7 @@ describe("coachPhotoFailure", () => {
     [ErrorCode.RATE_LIMITED, /wait/i],
     [ErrorCode.IMAGE_TOO_LARGE, /too large/i],
     [ErrorCode.PREMIUM_REQUIRED, /Coach Pro/],
+    [ErrorCode.REQUEST_IN_FLIGHT, /still answering/i],
   ])("has its own line for %s", (code, pattern) => {
     const failure = coachPhotoFailure(new ApiError("x", code));
     expect(failure.atDailyLimit).toBe(false);

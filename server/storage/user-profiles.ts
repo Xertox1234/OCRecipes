@@ -208,6 +208,15 @@ export async function withdrawHealthConsent(
     // with it.
     await expireAllergyCards(userId, tx);
 
+    // Then the user's row, before the profile row: every transaction that
+    // writes both takes `users` first (a goals save does), and the other
+    // order deadlocks with it. The same lock strength as the UPDATE below.
+    await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("no key update");
+
     const [profile] = await tx
       .update(userProfiles)
       .set({
@@ -311,6 +320,14 @@ export async function upsertProfileWithOnboarding(
   void _strip;
 
   return db.transaction(async (tx) => {
+    // The user's row first, before the profile row: every transaction that
+    // writes both takes `users` first (a goals save does), and the other
+    // order deadlocks with it.
+    await tx
+      .update(users)
+      .set({ onboardingCompleted: true })
+      .where(eq(users.id, userId));
+
     const [existing] = await tx
       .select()
       .from(userProfiles)
@@ -353,11 +370,6 @@ export async function upsertProfileWithOnboarding(
         .values({ ...insertData, userId })
         .returning();
     }
-
-    await tx
-      .update(users)
-      .set({ onboardingCompleted: true })
-      .where(eq(users.id, userId));
 
     return result;
   });

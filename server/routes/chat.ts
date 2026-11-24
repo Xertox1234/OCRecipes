@@ -21,6 +21,7 @@ import {
 import { CHAT_MESSAGE_REPORT_REASON_IDS } from "@shared/constants/chat-message-report";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { sendError } from "../lib/api-errors";
+import { rejectOverlappingChatTurn } from "../lib/in-flight";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { logger, toError } from "../lib/logger";
 import { tryArchiveNotebook } from "../services/coach-pro-chat";
@@ -265,6 +266,7 @@ export function register(app: Express): void {
     "/api/chat/conversations/:id/messages",
     requireAuth,
     chatRateLimit,
+    rejectOverlappingChatTurn,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);

@@ -11,6 +11,7 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { logger, toError } from "../lib/logger";
+import { rejectOverlappingChatTurn } from "../lib/in-flight";
 import { parseTimezone } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -66,6 +67,8 @@ export function register(app: Express): void {
       legacyHeaders: false,
       keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
     }),
+    // Before the upload is read: a refused turn costs nothing.
+    rejectOverlappingChatTurn,
     upload.single("photo"),
     async (req: AuthenticatedRequest, res: Response) => {
       try {

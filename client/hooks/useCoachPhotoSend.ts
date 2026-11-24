@@ -32,11 +32,14 @@ interface Args {
    * The upload ended; `failure` is null when the server stored the turn.
    * `sentBrief` is whether this send carried the opening brief, latched when
    * the photo was picked (the host's own state has moved on by now).
+   * `replyText` is the Coach's stored reply, for the screen reader; null on a
+   * failure or when the answer could not be read.
    */
   onSettled: (
     conversationId: number,
     failure: CoachPhotoFailure | null,
     sentBrief: boolean,
+    replyText: string | null,
   ) => void | Promise<void>;
   /** The camera or library could not be opened (static copy). */
   onPickFailure: (message: string) => void;
@@ -59,8 +62,13 @@ async function runPhotoSend(
   const conversationId = await a.ensureConversation();
   if (conversationId === null) return;
   let failure: CoachPhotoFailure | null = null;
+  let replyText: string | null = null;
   try {
-    await uploadPhotoToCoach(uri, conversationId, a.openingBriefForm);
+    replyText = await uploadPhotoToCoach(
+      uri,
+      conversationId,
+      a.openingBriefForm,
+    );
   } catch (err) {
     failure = coachPhotoFailure(err);
   }
@@ -68,6 +76,7 @@ async function runPhotoSend(
     conversationId,
     failure,
     a.openingBriefForm !== undefined,
+    replyText,
   );
 }
 

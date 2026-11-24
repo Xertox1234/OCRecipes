@@ -191,7 +191,7 @@ export async function uploadPhotoToCoach(
   conversationId: number,
   /** Set on the send that opens a new chat which showed the opening brief. */
   openingBrief?: "full" | "short",
-): Promise<void> {
+): Promise<string | null> {
   const token = await tokenStorage.get();
   if (!token) {
     throw new Error("Not authenticated");
@@ -220,10 +220,25 @@ export async function uploadPhotoToCoach(
     if (uploadResult.status < 200 || uploadResult.status >= 300) {
       throw await uploadError(uploadResult.status, uploadResult.body, token);
     }
+    return coachReplyText(uploadResult.body);
   } finally {
     if (compressedUri) {
       await cleanupImage(compressedUri);
     }
+  }
+}
+
+/**
+ * The stored reply's text from the photo route's answer, or null. Only the
+ * screen-reader announcement uses it (the chat refetches what it shows), so
+ * an answer that cannot be read is not an error.
+ */
+function coachReplyText(body: string): string | null {
+  try {
+    const content: unknown = JSON.parse(body)?.assistantMessage?.content;
+    return typeof content === "string" && content.length > 0 ? content : null;
+  } catch {
+    return null;
   }
 }
 

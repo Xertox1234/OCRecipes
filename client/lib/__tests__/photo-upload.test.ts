@@ -994,6 +994,36 @@ describe("uploadPhotoToCoach", () => {
     expect(cleanupImage).toHaveBeenCalledWith("file:///compressed.jpg");
   });
 
+  it("returns the Coach's reply text, for the screen reader", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 201,
+      body: JSON.stringify({
+        userMessage: { id: 10, content: "Photo of my meal" },
+        assistantMessage: { id: 11, content: "I found 2 foods." },
+      }),
+      headers: {},
+      mimeType: "application/json",
+    });
+    await expect(
+      photoUpload.uploadPhotoToCoach("file:///p.jpg", 7),
+    ).resolves.toBe("I found 2 foods.");
+  });
+
+  it.each(["{}", "not json", JSON.stringify({ assistantMessage: {} })])(
+    "returns null when the stored reply cannot be read from %s",
+    async (body) => {
+      vi.mocked(uploadAsync).mockResolvedValue({
+        status: 201,
+        body,
+        headers: {},
+        mimeType: "application/json",
+      });
+      await expect(
+        photoUpload.uploadPhotoToCoach("file:///p.jpg", 7),
+      ).resolves.toBeNull();
+    },
+  );
+
   it("throws an ApiError carrying the server's code", async () => {
     vi.mocked(uploadAsync).mockResolvedValue({
       status: 429,

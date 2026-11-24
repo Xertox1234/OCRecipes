@@ -38,6 +38,12 @@ describe("chatRequestErrorCopy", () => {
     );
   });
 
+  it("says the Coach is still answering when a turn overlaps another", () => {
+    expect(chatRequestErrorCopy("REQUEST_IN_FLIGHT")).toMatch(
+      /still answering/i,
+    );
+  });
+
   it("falls back to generic copy for any other or missing code", () => {
     expect(chatRequestErrorCopy("SERVER_ERROR")).toBe(CHAT_GENERIC_ERROR);
     expect(chatRequestErrorCopy(undefined)).toBe(CHAT_GENERIC_ERROR);

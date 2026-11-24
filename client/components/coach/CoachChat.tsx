@@ -670,7 +670,7 @@ export default function CoachChat({
         return null;
       }
     },
-    onSettled: async (convId, failure, sentBrief) => {
+    onSettled: async (convId, failure, sentBrief, replyText) => {
       // An upload that ends inside the delay (offline, a fast refusal) must
       // not announce "Looking at your photo" over its own outcome.
       cancelPhotoAnnouncement();
@@ -684,7 +684,16 @@ export default function CoachChat({
         .invalidateQueries({ queryKey: chatMessagesKey(convId) })
         .catch(() => undefined);
       if (turnEpochRef.current === epoch) setOptimisticMessage(null);
+      // A failure is announced by the error line or the limit banner.
       if (failure) return;
+      // The photo path has no stream, so nothing else says the reply is here.
+      // After the refetch, so the reply is on screen when it is spoken. As
+      // for a typed turn: VoiceOver hears the reply, TalkBack a short cue.
+      if (turnEpochRef.current === epoch) {
+        AccessibilityInfo.announceForAccessibility(
+          getStreamFinishAnnouncement(replyText ?? "", "", Platform.OS),
+        );
+      }
       if (sentBrief) {
         // The server saved the brief and cleared its reminders.
         void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
