@@ -139,6 +139,67 @@ describe("deleteAccount", () => {
     errorSpy.mockRestore();
   });
 
+  // deleteImage resolves without deleting when a guard stops it, when the
+  // url is under a base it does not know, or when a disk file cannot be
+  // removed. Those pictures are ours and still there, so they count.
+  it.each(["refused", "unknown-base", "unlink-failed"])(
+    "counts and logs a picture deleteImage left behind (%s)",
+    async (outcome) => {
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      deleteImage.mockImplementation(async (url: string | null) =>
+        url === "https://cdn/x/recipe.jpg" ? outcome : "deleted",
+      );
+
+      await expect(
+        deleteAccount({ id: "u1", avatarUrl: "a" }, { awaitCleanup: true }),
+      ).resolves.toEqual({ cleanupFailures: 1 });
+
+      const logged = errorSpy.mock.calls
+        .map((c) => c[0] as { url?: string; kind?: string; reason?: string })
+        .filter((o) => o.url !== undefined);
+      expect(logged).toEqual([
+        { url: "https://cdn/x/recipe.jpg", kind: "recipe", reason: outcome },
+      ]);
+      errorSpy.mockRestore();
+    },
+  );
+
+  it("counts an avatar deleteImage left behind", async () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    deleteImage.mockImplementation(async (url: string | null) =>
+      url === "https://old/avatars/me.jpg" ? "unknown-base" : "deleted",
+    );
+    await expect(
+      deleteAccount(
+        { id: "u1", avatarUrl: "https://old/avatars/me.jpg" },
+        { awaitCleanup: true },
+      ),
+    ).resolves.toEqual({ cleanupFailures: 1 });
+    expect(errorSpy).toHaveBeenCalledWith(
+      {
+        url: "https://old/avatars/me.jpg",
+        kind: "avatar",
+        reason: "unknown-base",
+      },
+      "account-deletion: a stored picture was not deleted",
+    );
+    errorSpy.mockRestore();
+  });
+
+  // Correct by design: no picture, or a picture on another site.
+  it.each(["no-url", "not-ours"])(
+    "does not count a skip that left nothing of ours behind (%s)",
+    async (outcome) => {
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      deleteImage.mockResolvedValue(outcome);
+      await expect(
+        deleteAccount({ id: "u1", avatarUrl: null }, { awaitCleanup: true }),
+      ).resolves.toEqual({ cleanupFailures: 0 });
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    },
+  );
+
   it("a waited deletion with every image removed reports no failures", async () => {
     await expect(
       deleteAccount({ id: "u1", avatarUrl: "a" }, { awaitCleanup: true }),
