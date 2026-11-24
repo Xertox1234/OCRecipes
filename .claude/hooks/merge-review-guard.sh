@@ -780,7 +780,9 @@ RECORDS=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null | sort)
 # failed `gh pr diff` straight into shasum yields the digest of the EMPTY STRING, which is
 # a perfectly well-formed value that simply matches nothing, so the real cause (gh failed)
 # would surface as a scope-mismatch denial pointing at the wrong thing.
-CHANGED=$(pr_diff --name-only | sed '/^$/d' | sort -u)
+# LC_ALL=C: byte order in every shell, so this digest equals the one review-stamp-writer.sh
+# stored whatever LC_COLLATE either ran under (the writer pins it too; change both together).
+CHANGED=$(pr_diff --name-only | sed '/^$/d' | LC_ALL=C sort -u)
 [ -n "$CHANGED" ] \
   || deny "Blocked: could not re-read PR #$PR's changed files, so merge-review-guard cannot verify that the recorded review covered them. Fail-closed. $BYPASS"
 WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum 2>/dev/null | cut -c1-16)

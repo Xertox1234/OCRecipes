@@ -28,7 +28,17 @@ case "$1 $2" in
   "api repos/{owner}/{repo}/pulls/42")
              [ -z "${FAKE_REST_FAIL:-}" ] || exit 1
              printf '{"number":42,"html_url":"u","title":"t","state":"open","merged_at":null,"head":{"ref":"b","sha":"%s"}}\n' "$FAKE_SHA" ;;
-  "pr diff") printf 'b.ts\n\na.ts\nb.ts\n' ;;   # blank line and a duplicate: the gate drops both
+  "pr diff") if [ -n "${FAKE_TOO_LARGE:-}" ]; then   # GitHub refuses a diff over 20,000 lines
+               echo "could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000) (PullRequest.diff too_large)" >&2
+               exit 1
+             fi
+             [ -z "${FAKE_DIFF_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
+             printf 'b.ts\n\na.ts\nb.ts\n' ;;   # blank line and a duplicate: the gate drops both
+  "api --paginate")   # the REST file list: `--jq .[].filename` prints one name per line
+             [ "$3" = 'repos/{owner}/{repo}/pulls/42/files?per_page=100' ] || exit 1
+             [ -z "${FAKE_FILES_FAIL:-}" ] || exit 1
+             if [ -n "${FAKE_FILES_3000:-}" ]; then i=0; while [ "$i" -lt 3000 ]; do echo "f$i.ts"; i=$((i+1)); done
+             else printf 'b.ts\na.ts\n'; fi ;;
   *) exit 1 ;;
 esac
 EOF
@@ -101,6 +111,40 @@ assert_eq "graphql refused: head_sha from REST" "$SHA" "$(field head_sha <<<"$ou
 assert_eq "graphql refused: the record still matches" "clean code-reviewer" "$(field match <<<"$out")"
 FAKE_GRAPHQL_BLOCKED=1 FAKE_REST_FAIL=1 run 42 >/dev/null 2>&1; rc=$?
 assert_eq "graphql refused and REST failing: exit 3" 3 "$rc"
+
+# 8c. The digest is the gate's, whatever the caller's locale: byte order, not LC_COLLATE.
+# A stand-in `sort` for a locale whose collation is not byte order (en_CA.UTF-8 puts `_x a b B`
+# where C puts `B _x a b`). CI and the cloud container have only C locales installed, so the
+# real thing cannot be reproduced there: this one sorts in REVERSE unless it is run with
+# LC_ALL=C. A digest computed through it is therefore right only if the hook pins the locale.
+LOCALE_BIN=$(mktemp -d)
+REAL_SORT=$(command -v sort)
+cat > "$LOCALE_BIN/sort" <<EOF
+#!/bin/sh
+if [ "\${LC_ALL:-}" = C ]; then exec "$REAL_SORT" "\$@"; else exec "$REAL_SORT" -r "\$@"; fi
+EOF
+chmod +x "$LOCALE_BIN/sort"
+reset; rec code-reviewer code-reviewer clean "$DIGEST"
+out=$(PATH="$LOCALE_BIN:$PATH" run 42)
+assert_eq "non-C collation: digest is still the byte-order one" "$DIGEST" "$(field digest <<<"$out")"
+assert_eq "non-C collation: the record still matches" "clean code-reviewer" "$(field match <<<"$out")"
+rm -rf "$LOCALE_BIN"
+
+# 8d. A PR over 20,000 diff lines: `gh pr diff --name-only` is refused (too_large), so the
+#     names come from the REST file list and the digest is the same one.
+reset; rec code-reviewer code-reviewer clean "$DIGEST"
+out=$(FAKE_TOO_LARGE=1 run 42); rc=$?
+assert_eq "too-large diff: exit 0" 0 "$rc"
+assert_eq "too-large diff: same digest from the REST file list" "$DIGEST" "$(field digest <<<"$out")"
+assert_eq "too-large diff: the record still matches" "clean code-reviewer" "$(field match <<<"$out")"
+# Any OTHER gh failure is not retried: exit 3, as before.
+FAKE_DIFF_FAIL=1 run 42 >/dev/null 2>&1; rc=$?
+assert_eq "pr diff failing for another reason: exit 3, no REST retry" 3 "$rc"
+FAKE_TOO_LARGE=1 FAKE_FILES_FAIL=1 run 42 >/dev/null 2>&1; rc=$?
+assert_eq "too-large diff and the REST list failing: exit 3" 3 "$rc"
+# GitHub's file list stops at 3,000 files; a list that long may be cut, so it is not trusted.
+FAKE_TOO_LARGE=1 FAKE_FILES_3000=1 run 42 >/dev/null 2>&1; rc=$?
+assert_eq "too-large diff with 3,000 listed files (GitHub's cap): exit 3" 3 "$rc"
 
 # 9. Usage.
 run >/dev/null 2>&1; rc=$?

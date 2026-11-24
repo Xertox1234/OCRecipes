@@ -1101,7 +1101,37 @@ wait
 # 88 -> 94 (2026-09-23, finding-line CRITICAL detection): case 8 keeps 2 rows (re-pinned), +6 (cases 55-60).
 # 94 -> 111 (2026-09-23, #1018 review follow-up): +17, finding-line shapes (cases 61-77).
 # 111 -> 117 (2026-10-30): +6, the late hand-back wait (cases 78-80).
-EXPECTED_TOTAL=117
+# Locale-independent digest (harness-residuals, "Review-record digest sorts the file list in the
+# caller's locale"). The writer and merge-review-guard.sh must hash the same bytes whatever
+# LC_COLLATE each shell has, or every gated merge between them denies.
+# A stand-in `sort` for a locale whose collation is not byte order (en_CA.UTF-8 puts `_x a b B`
+# where C puts `B _x a b`). CI and the cloud container have only C locales installed, so the
+# real thing cannot be reproduced there: this one sorts in REVERSE unless it is run with
+# LC_ALL=C. A digest computed through it is therefore right only if the hook pins the locale.
+LOCALE_BIN=$(mktemp -d)
+REAL_SORT=$(command -v sort)
+cat > "$LOCALE_BIN/sort" <<EOF
+#!/bin/sh
+if [ "\${LC_ALL:-}" = C ]; then exec "$REAL_SORT" "\$@"; else exec "$REAL_SORT" -r "\$@"; fi
+EOF
+chmod +x "$LOCALE_BIN/sort"
+MIXED_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/b.ts
+client/B.ts
+client/_x.ts
+client/a.ts
+
+No findings.'
+payload "code-reviewer" "$MIXED_MSG" | PATH="$LOCALE_BIN:$PATH" run_hook locale
+want=$(printf 'client/B.ts\nclient/_x.ts\nclient/a.ts\nclient/b.ts\n' | shasum | cut -c1-16)
+got=$(jq -r '.reviewed_files_digest // ""' "$(case_stamp locale)" 2>/dev/null)
+[ "$got" = "$want" ] && ok "digest is the byte-order one under a non-C collation" \
+                     || { bad "digest is the byte-order one under a non-C collation"; echo "  want: $want"; echo "  got:  $got"; }
+rm -rf "$LOCALE_BIN"
+
+# 117 -> 118 (2026-11-24, locale-independent digest): +1.
+EXPECTED_TOTAL=118
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

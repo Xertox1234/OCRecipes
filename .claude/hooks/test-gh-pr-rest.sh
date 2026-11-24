@@ -22,7 +22,8 @@ cat > "$T/bin/gh" <<'EOF'
 printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 [ "$1" = "api" ] || { echo "HTTP 403: GitHub GraphQL is not available" >&2; exit 1; }
 [ -z "${FAKE_REST_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
-printf '%s\n' "$FAKE_REST_BODY"
+# a --paginate call prints every page (FAKE_REST_PAGES); a plain call prints page one
+case " $* " in *" --paginate "*) printf '%s\n' "${FAKE_REST_PAGES:-$FAKE_REST_BODY}" ;; *) printf '%s\n' "$FAKE_REST_BODY" ;; esac
 EOF
 chmod +x "$T/bin/gh"
 export FAKE_GH_LOG="$T/gh.log"
@@ -38,7 +39,8 @@ pr() {  # $1=number $2=state $3=merged_at-json $4=head-ref $5=sha
 lookup() { : > "$FAKE_GH_LOG"; OUT=$(gh_pr_rest_json "$@" 2>/dev/null); RC=$?; }
 # The branch arm percent-encodes EVERY byte of the name (see the lib for why).
 enc() { printf '%s' "$1" | od -v -An -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
-list_call() { printf 'api repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%%3A%s' "$(enc "$1")"; }
+LIST_REST='repos/{owner}/{repo}/pulls?state=all&per_page=100&head={owner}%3A'
+list_call() { printf 'api %s%s' "$LIST_REST" "$(enc "$1")"; }
 
 # 1. A number: one PR object, mapped to gh pr view's field names.
 export FAKE_REST_BODY; FAKE_REST_BODY=$(pr 42 open null feat/x abc123)
@@ -81,6 +83,43 @@ assert_eq "branch: the name is sent fully percent-encoded" \
 FAKE_REST_BODY="[$(pr 9 closed '"2026-11-23T00:00:00Z"' feat/x new999),$(pr 3 closed null feat/x old333)]"
 lookup feat/x
 assert_eq "branch, none open: the newest (first listed) PR" "9 MERGED new999" "$(jq -r '"\(.number) \(.state) \(.headRefOid)"' <<<"$OUT")"
+
+# 4b. More PRs than one page. GitHub pages the list at 100: a FULL first page means there may
+#     be more, and only then is every page read (--paginate). The open PR on a later page must
+#     still win; reading page one alone took the newest closed PR (harness-residuals, 2026-11-24).
+hundred() {  # $1 = head ref: one page of 100 closed PRs, as a JSON array
+  jq -cn --arg b "$1" '[range(0; 100) | {number: (1000 - .), html_url: "u", title: "t", state: "closed",
+    merged_at: null, head: {ref: $b, sha: "old"}}]'
+}
+PAGE1=$(hundred feat/x)
+PAGINATED="api --paginate ${LIST_REST}$(enc feat/x)"
+FAKE_REST_BODY="$PAGE1"
+export FAKE_REST_PAGES; FAKE_REST_PAGES="$PAGE1
+[$(pr 8 open null feat/x open888)]"
+lookup feat/x
+assert_eq "full first page: the open PR on page two wins" "0|8" "$RC|$(jq -r .number <<<"$OUT")"
+assert_eq "full first page: page one, then every page" "$(list_call feat/x)
+$PAGINATED" "$(cat "$FAKE_GH_LOG")"
+FAKE_REST_PAGES="$PAGE1
+[$(pr 8 closed null some/other-branch old888)]"
+lookup feat/x
+assert_eq "a foreign row on a later page: rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_PAGES='{"message":"Server Error"}'
+lookup feat/x
+assert_eq "the paged read answering with an error object: rc 2" "2|" "$RC|$OUT"
+# The head-filter check runs on page one BEFORE any paging: if GitHub ignored the filter, a
+# full page of other branches must not send the hook through every PR in the repository
+# (security review, 2026-11-24: the hooks that call this have a 15 s budget).
+FAKE_REST_BODY=$(hundred some/other-branch)
+FAKE_REST_PAGES="$FAKE_REST_BODY"
+lookup feat/x
+assert_eq "full first page of other branches: rc 2 after ONE request" "2|$(list_call feat/x)" "$RC|$(cat "$FAKE_GH_LOG")"
+# A short first page is the whole answer: no second request.
+FAKE_REST_BODY="[$(pr 9 closed null feat/x new999)]"
+FAKE_REST_PAGES="[$(pr 8 open null feat/x open888)]"
+lookup feat/x
+assert_eq "short first page: answered from it, no paging" "0|9|$(list_call feat/x)" "$RC|$(jq -r .number <<<"$OUT")|$(cat "$FAKE_GH_LOG")"
+unset FAKE_REST_PAGES
 
 # 5. No PR is rc 1 — only on an EMPTY list. Rows for some other branch mean the head filter
 #    was not applied (GitHub ignores a malformed one and lists everything): that is rc 2.
@@ -166,7 +205,7 @@ lookup --repo
 assert_eq "flag-like ref: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
 
 echo "$PASS passed, $FAIL failed"
-EXPECTED_TOTAL=41
+EXPECTED_TOTAL=47
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL"; exit 1
 fi
