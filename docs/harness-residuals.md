@@ -597,7 +597,9 @@ asked for this repository's owner and rejected a row from another repository), s
 PR" or "could not look". The helper now treats forks as `gh pr view` does. `<owner>:<branch>` asks
 for that owner's branch and accepts only a row whose head is theirs. With no ref (the current
 branch), a "no PR" answer from this repository is followed by one more lookup under the owner of
-the branch's push remote (`branch.<name>.pushRemote`, `remote.pushDefault`, `branch.<name>.remote`).
+the branch's push remote (`branch.<name>.pushRemote`, `remote.pushDefault`, `branch.<name>.remote`),
+only when that remote is on gh's host, and only a PR whose head is that remote's repository
+counts. Narrower than gh: no fallback to `origin`, and a remote given as a bare URL is not followed.
 A bare branch name stays this repository's branch, so a fork's PR under the same name is still
 never an answer to it. Rows 7e and 7f in `test-gh-pr-rest.sh`.
 

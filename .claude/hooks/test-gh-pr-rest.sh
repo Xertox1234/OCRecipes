@@ -23,10 +23,12 @@ printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 [ "$1" = "api" ] || { echo "HTTP 403: GitHub GraphQL is not available" >&2; exit 1; }
 [ -z "${FAKE_REST_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
 # a --paginate call prints every page (FAKE_REST_PAGES); a plain call prints page one
-# a list asked for a NAMED head owner (a fork) answers with FAKE_REST_FORK_BODY when that is set
+# A list asked for one NAMED head (FAKE_REST_FORK_HEAD, "<owner>%3A<branch>" as it is sent)
+# answers with FAKE_REST_FORK_BODY. Any other named head gets the default body, so a request
+# for the wrong owner or branch cannot pass on the fork body.
 case "$*" in
   *'head={owner}%3A'*) ;;
-  *'head='*) if [ -n "${FAKE_REST_FORK_BODY+x}" ]; then printf '%s\n' "$FAKE_REST_FORK_BODY"; exit 0; fi ;;
+  *"head=${FAKE_REST_FORK_HEAD:-<unset>}") printf '%s\n' "${FAKE_REST_FORK_BODY:-[]}"; exit 0 ;;
 esac
 case " $* " in *" --paginate "*) printf '%s\n' "${FAKE_REST_PAGES:-$FAKE_REST_BODY}" ;; *) printf '%s\n' "$FAKE_REST_BODY" ;; esac
 EOF
@@ -230,6 +232,14 @@ assert_eq "owner:branch: a row with no head owner is rc 2, nothing printed" "2|"
 FAKE_REST_BODY='[]'
 lookup fork:feat/x
 assert_eq "owner:branch: an empty list is rc 1" "1|" "$RC|$OUT"
+# More than one page under a named owner: the same full-page rule as a bare branch (4b).
+PAGE1=$(hundred feat/x | jq -c 'map(.head.user = {login: "fork"})')
+FAKE_REST_BODY="$PAGE1"
+export FAKE_REST_PAGES; FAKE_REST_PAGES="$PAGE1
+[$(by "$(pr 8 open null feat/x open888)" fork)]"
+lookup fork:feat/x
+assert_eq "owner:branch, full first page: the open PR on page two wins" "0|8" "$RC|$(jq -r .number <<<"$OUT")"
+unset FAKE_REST_PAGES
 for bad in a:b:c :x x: o_o:x '{owner}:x' 'o/r:x' '-o:x'; do
   lookup "$bad"
   assert_eq "malformed owner:branch '$bad': rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
@@ -244,7 +254,9 @@ git -C "$FREPO" remote add origin https://github.com/o/r.git
 git -C "$FREPO" remote add mine git@github.com:Fork/r.git
 git -C "$FREPO" config branch.my-branch.remote origin
 git -C "$FREPO" config branch.my-branch.pushRemote mine
-export FAKE_REST_FORK_BODY
+export FAKE_REST_FORK_BODY FAKE_REST_FORK_HEAD
+FAKE_REST_FORK_HEAD="$(enc Fork)%3A$(enc my-branch)"
+unset GH_HOST
 FAKE_REST_BODY='[]'
 FAKE_REST_FORK_BODY="[$(by "$(pr 6 open null my-branch f0rk66)" fork)]"
 : > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
@@ -267,12 +279,29 @@ FAKE_REST_BODY='[]'
 : > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json my-branch 2>/dev/null); RC=$?
 assert_eq "a NAMED bare branch never looks at the fork: rc 1 after ONE request" \
   "1|$(list_call my-branch)" "$RC|$(cat "$FAKE_GH_LOG")"
+# The PR must come from the push remote's REPOSITORY, not just its owner: the same login can
+# hold another repository with a same-named branch (security review, 2026-11-24).
+FAKE_REST_FORK_BODY="[$(by "$(pr 6 open null my-branch f0rk66)" fork | jq -c '.head.repo.full_name = "fork/other"')]"
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, the owner's PR is from another repository: rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_FORK_BODY="[$(by "$(pr 6 open null my-branch f0rk66)" fork | jq -c '.head.repo = null')]"
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, the owner's PR has no head repository: rc 2, nothing printed" "2|" "$RC|$OUT"
+FAKE_REST_FORK_BODY="[$(by "$(pr 6 open null my-branch f0rk66)" fork)]"
+# A push remote on another host names an owner THERE, not on GitHub: the same login here can
+# be anyone. No second request, still "no PR". With GH_HOST naming that host it is gh's host.
+git -C "$FREPO" remote set-url mine https://user:secret@gitlab.example.com:8443/Fork/r.git
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, push remote on another host: rc 1 after ONE request" \
+  "1|$(list_call my-branch)" "$RC|$(cat "$FAKE_GH_LOG")"
+: > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && GH_HOST=GitLab.example.com gh_pr_rest_json "" 2>/dev/null); RC=$?
+assert_eq "no ref, push remote on gh's own host (GH_HOST): the fork's PR is found" "0|6" "$RC|$(jq -r .number <<<"$OUT")"
 # A push remote whose URL gives no usable owner: no second request, still "no PR".
 git -C "$FREPO" remote set-url mine /srv/git/r.git
 : > "$FAKE_GH_LOG"; OUT=$(cd "$FREPO" && gh_pr_rest_json "" 2>/dev/null); RC=$?
 assert_eq "no ref, push remote with no owner in its URL: rc 1 after ONE request" \
   "1|$(list_call my-branch)" "$RC|$(cat "$FAKE_GH_LOG")"
-unset FAKE_REST_FORK_BODY
+unset FAKE_REST_FORK_BODY FAKE_REST_FORK_HEAD
 FAKE_REST_BODY="[$(pr 5 open null feat/x abc123)]"
 
 # 7d. A URL whose owner or repo is a dot segment never reaches gh (gh does not normalise
@@ -287,8 +316,8 @@ lookup --repo
 assert_eq "flag-like ref: rc 2, gh never called" "2|" "$RC|$(cat "$FAKE_GH_LOG")"
 
 echo "$PASS passed, $FAIL failed"
-# 50 -> 70 (2026-11-24, fork PRs): +13 = rows 7e, +7 = rows 7f.
-EXPECTED_TOTAL=70
+# 50 -> 75 (2026-11-24, fork PRs): +14 = rows 7e, +11 = rows 7f.
+EXPECTED_TOTAL=75
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL"; exit 1
 fi
