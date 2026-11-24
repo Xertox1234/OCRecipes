@@ -157,13 +157,27 @@ export async function* generateCoachResponse(
   }
 
   let fullResponse = "";
+  // How much of the reply has been checked and yielded. Text is released a
+  // finished sentence at a time, each release checked together with
+  // everything before it (coach-sentence-release.ts), so the user never
+  // reads text the screen has not passed.
+  let released = 0;
 
   try {
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
-        yield delta; // stream each token to the caller as it arrives
+        const len = releasableLength(fullResponse.slice(released));
+        if (len > 0) {
+          const upTo = released + len;
+          if (containsUnsafeCoachAdvice(fullResponse.slice(0, upTo))) {
+            yield SAFETY_OVERRIDE_SENTINEL;
+            return;
+          }
+          yield fullResponse.slice(released, upTo);
+          released = upTo;
+        }
       }
     }
   } catch (error) {
@@ -176,16 +190,18 @@ export async function* generateCoachResponse(
       return;
     }
     log.error({ err: toError(error) }, "coach streaming error");
-    yield "Sorry, the response was interrupted. Please try again.";
+    // Text after the last released sentence was never checked: it is dropped.
+    yield `${released > 0 ? " " : ""}Sorry, the response was interrupted. Please try again.`;
     return;
   }
 
   if (containsUnsafeCoachAdvice(fullResponse)) {
-    // Deltas already sent — signal caller to replace content client-side
+    // Signal the caller to replace whatever was shown with the safety message
     yield SAFETY_OVERRIDE_SENTINEL;
     return;
   }
-  // No final yield — individual deltas are already in the caller's buffer
+  // The tail after the last finished sentence, now that the whole reply passed
+  if (released < fullResponse.length) yield fullResponse.slice(released);
 }
 
 /**

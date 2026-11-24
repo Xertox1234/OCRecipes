@@ -601,59 +601,15 @@ describe("handleCoachChat", () => {
       },
     );
 
-    // The eating-focused text would be wrong, and could read as dismissive,
-    // for someone who wrote about suicide or self-harm.
-    it.each([
-      [false, "I've been thinking about suicide"],
-      [true, "I've been thinking about suicide"],
-      [false, "I want to self-harm"],
-      [false, "I keep thinking about self harm"],
-      // No "suicid" stem: the router and the message picker share one pattern.
-      [false, "I want to kill myself"],
-      [true, "I don't want to live anymore"],
-      // Both kinds of signal: the crisis message wins.
-      [false, "I want to throw up and I am thinking about suicide"],
-    ])(
-      "uses the crisis message for self-harm or suicide (pro=%s): %s",
-      async (isCoachPro, content) => {
-        vi.mocked(generateCoachResponse).mockReturnValue(fakeStream([REFUSAL]));
-        vi.mocked(generateCoachProResponse).mockReturnValue(
-          fakeProStream([REFUSAL]),
-        );
-        vi.mocked(parseBlocksFromContent).mockImplementation(
-          (text: string) => ({ text, blocks: [] }),
-        );
-        const events = await collectEvents(
-          handleCoachChat(makeParams({ isCoachPro, content })),
-        );
-
-        expect(events).toContainEqual({
-          type: "safety_override",
-          message: SAFETY_CRISIS_FALLBACK_MESSAGE,
-        });
-        expect(storage.createChatMessage).toHaveBeenCalledWith(
-          1,
-          "user-42",
-          "assistant",
-          SAFETY_CRISIS_FALLBACK_MESSAGE,
-          null,
-        );
-      },
-    );
-
     it("keeps a reply that already carries a referral", async () => {
-      const WITH_REFERRAL = "I can't help with that, but please call 988.";
+      const WITH_REFERRAL =
+        "I can't help with that, but please talk to a dietitian.";
       vi.mocked(generateCoachResponse).mockReturnValue(
         fakeStream([WITH_REFERRAL]),
       );
 
       const events = await collectEvents(
-        handleCoachChat(
-          makeParams({
-            isCoachPro: false,
-            content: "I've been thinking about suicide",
-          }),
-        ),
+        handleCoachChat(makeParams({ isCoachPro: false, content: DISTRESS })),
       );
 
       expect(events.some((e) => e.type === "safety_override")).toBe(false);
@@ -694,6 +650,78 @@ describe("handleCoachChat", () => {
       );
 
       expect(events.some((e) => e.type === "safety_override")).toBe(false);
+    });
+  });
+
+  // Audit 2026-11-24 (H3): the crisis message must not depend on the model
+  // happening to give a bare refusal. A message about suicide or self-harm
+  // never reaches the model: the server answers with the crisis text itself.
+  describe("suicide or self-harm message", () => {
+    const FOOD_REPLY =
+      "You've logged 800 calories today. Please talk to a dietitian. Want a couple of balanced dinner ideas?";
+
+    it.each([
+      [false, "I want to kill myself, I can't stop eating"],
+      [true, "I want to kill myself, I can't stop eating"],
+      [true, "I don't want to be alive anymore"],
+      [true, "I don't want to live anymore"],
+      [false, "I keep thinking about self harm"],
+      [false, "I want to self-harm"],
+      [false, "I've been thinking about suicide"],
+      [true, "I've been thinking about suicide"],
+      // Both kinds of signal: the crisis message wins over the eating text.
+      [false, "I want to throw up and I am thinking about suicide"],
+    ])(
+      "answers with the crisis message and never calls the model (pro=%s, %s)",
+      async (isCoachPro, content) => {
+        // A reply that follows the food-anchored refusal template: not a flat
+        // refusal, so the old replacement would have kept it.
+        vi.mocked(generateCoachResponse).mockReturnValue(
+          fakeStream([FOOD_REPLY]),
+        );
+        vi.mocked(generateCoachProResponse).mockReturnValue(
+          fakeProStream([FOOD_REPLY]),
+        );
+        vi.mocked(parseBlocksFromContent).mockImplementation(
+          (text: string) => ({ text, blocks: [] }),
+        );
+
+        const events = await collectEvents(
+          handleCoachChat(makeParams({ isCoachPro, content })),
+        );
+
+        expect(events).toEqual([
+          { type: "content", content: SAFETY_CRISIS_FALLBACK_MESSAGE },
+        ]);
+        expect(generateCoachResponse).not.toHaveBeenCalled();
+        expect(generateCoachProResponse).not.toHaveBeenCalled();
+        expect(storage.createChatMessage).toHaveBeenCalledWith(
+          1,
+          "user-42",
+          "assistant",
+          SAFETY_CRISIS_FALLBACK_MESSAGE,
+          null,
+        );
+        // Not cached, not mined for coach notes, and the chat is not titled
+        // with what the user wrote.
+        expect(storage.setCoachCachedResponse).not.toHaveBeenCalled();
+        expect(extractNotebookEntries).not.toHaveBeenCalled();
+        expect(storage.updateChatConversationTitle).not.toHaveBeenCalled();
+      },
+    );
+
+    it("saves nothing when the client already left", async () => {
+      const events = await collectEvents(
+        handleCoachChat(
+          makeParams({
+            content: "I want to kill myself",
+            isAborted: () => true,
+          }),
+        ),
+      );
+
+      expect(events).toEqual([]);
+      expect(storage.createChatMessage).not.toHaveBeenCalled();
     });
   });
 

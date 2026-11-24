@@ -1033,30 +1033,76 @@ describe("generateCoachResponse", () => {
     ]);
   });
 
-  it("yields SAFETY_OVERRIDE_SENTINEL as last chunk when response is unsafe", async () => {
-    const longContent = "A".repeat(250);
-    const stream = createMockStream([
-      { content: longContent },
-      { finish_reason: "stop" },
-    ]);
-    vi.mocked(aiChat).mockResolvedValue(stream as any);
-    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
-
-    const messages = [{ role: "user" as const, content: "Extreme diet plan" }];
-    const chunks: string[] = [];
-    for await (const chunk of generateCoachResponse(
-      messages,
-      DEFAULT_CONTEXT,
-    )) {
-      chunks.push(chunk);
+  // Audit 2026-11-24 (M46): the free tier releases a vetted sentence at a
+  // time, like Coach Pro. Text that fails the screen is never yielded, so the
+  // user cannot read it before the override replaces the reply.
+  describe("sentence-by-sentence release (free tier)", () => {
+    async function collectChunks(gen: AsyncGenerator<string>) {
+      const chunks: string[] = [];
+      for await (const chunk of gen) chunks.push(chunk);
+      return chunks;
     }
+    const messages = [{ role: "user" as const, content: "Extreme diet plan" }];
 
-    // First chunk is the delta content (already streamed)
-    expect(chunks[0]).toBe(longContent);
-    // Last chunk is the sentinel signal
-    expect(chunks[chunks.length - 1]).toBe(SAFETY_OVERRIDE_SENTINEL);
-    // Safe message is NOT directly returned by generateCoachResponse
-    expect(chunks.join("")).not.toContain("I need to be careful");
+    it("yields only the sentinel when the whole reply is unsafe", async () => {
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "A".repeat(250) },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
+
+      const chunks = await collectChunks(
+        generateCoachResponse(messages, DEFAULT_CONTEXT),
+      );
+
+      expect(chunks).toEqual([SAFETY_OVERRIDE_SENTINEL]);
+    });
+
+    it("never yields a sentence that fails the screen", async () => {
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "A fine opening sentence. " },
+          { content: "Then some UNSAFE" },
+          { content: " advice here. And a tail." },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      vi.mocked(containsUnsafeCoachAdvice).mockImplementation((text) =>
+        text.includes("UNSAFE"),
+      );
+
+      const chunks = await collectChunks(
+        generateCoachResponse(messages, DEFAULT_CONTEXT),
+      );
+
+      expect(chunks.at(-1)).toBe(SAFETY_OVERRIDE_SENTINEL);
+      expect(chunks.join("")).not.toContain("UNSAFE");
+      expect(chunks[0]).toBe("A fine opening sentence.");
+    });
+
+    it("yields the whole of a safe reply, in order", async () => {
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "First sentence. Sec" },
+          { content: "ond sentence. And an unfinished tail" },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+
+      const chunks = await collectChunks(
+        generateCoachResponse(messages, DEFAULT_CONTEXT),
+      );
+
+      expect(chunks.join("")).toBe(
+        "First sentence. Second sentence. And an unfinished tail",
+      );
+      expect(chunks).not.toContain(SAFETY_OVERRIDE_SENTINEL);
+      // Nothing is yielded before its sentence has ended.
+      expect(chunks[0]).toBe("First sentence.");
+    });
   });
 
   it("injects screenContext into the system prompt", async () => {
@@ -1166,7 +1212,10 @@ describe("generateCoachResponse", () => {
                 done: false,
                 value: {
                   choices: [
-                    { delta: { content: "Partial " }, finish_reason: null },
+                    {
+                      delta: { content: "A finished sentence. Partial " },
+                      finish_reason: null,
+                    },
                   ],
                 },
               };
@@ -1189,11 +1238,10 @@ describe("generateCoachResponse", () => {
       ),
     );
 
-    // Unlike Pro, the free-tier generator yields each delta as it arrives
-    // (not after the loop), so content streamed before the throw is already
-    // in the caller's buffer.
+    // The finished sentence was checked and released before the throw; the
+    // unfinished "Partial " was never checked, so it is dropped.
     expect(result).toBe(
-      "Partial Sorry, the response was interrupted. Please try again.",
+      "A finished sentence. Sorry, the response was interrupted. Please try again.",
     );
     // Control: a real (non-abort) mid-stream failure still logs at ERROR.
     expect(mockLog.error).toHaveBeenCalledWith(
@@ -1215,7 +1263,10 @@ describe("generateCoachResponse", () => {
                 done: false,
                 value: {
                   choices: [
-                    { delta: { content: "Partial " }, finish_reason: null },
+                    {
+                      delta: { content: "A finished sentence. Partial " },
+                      finish_reason: null,
+                    },
                   ],
                 },
               };
@@ -1234,10 +1285,10 @@ describe("generateCoachResponse", () => {
       generateCoachResponse(messages, DEFAULT_CONTEXT, controller.signal),
     );
 
-    // Content already streamed before the abort stays delivered; only the
+    // The sentence released before the abort stays delivered; only the
     // interrupted-message yield is skipped (the route breaks on
     // `isAborted()` before it would ever reach the client anyway).
-    expect(result).toBe("Partial ");
+    expect(result).toBe("A finished sentence.");
     expect(mockLog.error).not.toHaveBeenCalled();
     expect(mockLog.debug).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
@@ -1270,10 +1321,11 @@ describe("generateCoachResponse", () => {
     );
   });
 
-  it("yields each delta individually rather than the full response at once", async () => {
+  it("yields a sentence at a time rather than the full response at once", async () => {
     const stream = createMockStream([
       { content: "Hello " },
-      { content: "there!" },
+      { content: "there! More " },
+      { content: "to come." },
       { finish_reason: "stop" },
     ]);
     vi.mocked(aiChat).mockResolvedValue(stream as any);
@@ -1287,8 +1339,8 @@ describe("generateCoachResponse", () => {
       chunks.push(chunk);
     }
 
-    // Must yield two separate chunks, not one concatenated string
-    expect(chunks).toEqual(["Hello ", "there!"]);
+    // Two separate chunks, not one concatenated string
+    expect(chunks).toEqual(["Hello there!", " More to come."]);
   });
 
   it("includes a vague-message clarifying-question instruction in the system prompt", async () => {

@@ -13,8 +13,15 @@
  */
 
 import { storage } from "../storage";
-import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
-import { STANDARD_SAFETY_MESSAGE } from "../lib/ai-safety";
+import {
+  classifyIntent,
+  matchesSelfHarm,
+  type CoachIntent,
+} from "./coach-intent-classifier";
+import {
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
+  STANDARD_SAFETY_MESSAGE,
+} from "../lib/ai-safety";
 import {
   buildMealPatternSummary,
   type CoachChatUser,
@@ -30,6 +37,7 @@ import { resolveFinderEntry } from "./coach-pro-chat/finder-gate";
 import { loadTurnContext } from "./coach-pro-chat/load-turn-context";
 import { streamReply } from "./coach-pro-chat/stream-reply";
 import { finalizeTurn } from "./coach-pro-chat/finalize-turn";
+import { persistCoachReply } from "./coach-pro-chat/offer-delivery";
 import {
   ARCHIVE_THROTTLE_MS,
   lastArchivedAt,
@@ -79,6 +87,24 @@ export async function* handleCoachChat(
   const pantryCard = writeCards && !!params.pantryCard;
   const goalsCard = writeCards && !!params.goalsCard;
   const planShopCard = writeCards && !!params.planShopCard;
+
+  // Suicide or self-harm: the crisis message, from the server, on both tiers
+  // (audit 2026-11-24, H3). The model is never called, so the reply cannot
+  // open on the food log or close with a meal offer. Nothing else runs for
+  // this turn: no finder, no cache write, no chat title from the user's
+  // words, and no notebook extraction.
+  if (matchesSelfHarm(content)) {
+    if (params.isAborted()) return;
+    yield { type: "content", content: SAFETY_CRISIS_FALLBACK_MESSAGE };
+    await persistCoachReply(
+      conversationId,
+      userId,
+      turnKey,
+      SAFETY_CRISIS_FALLBACK_MESSAGE,
+      null,
+    );
+    return;
+  }
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
