@@ -11,8 +11,11 @@ const MAX_FIELDS = 4;
 /** A number field is a − / + stepper, so its range must be walkable. */
 const MAX_NUMBER_STEPS = 200;
 
-const label = z.string().trim().min(1).max(120);
-const option = z.string().trim().min(1).max(60);
+// Sized so the longest answer message (4 multi-choice fields, every option
+// ticked: 4 × (100 + 2 + 8 × 40 + 14) + 3 = 1747) fits a chat message's
+// 2000 characters (server/routes/chat.ts).
+const label = z.string().trim().min(1).max(100);
+const option = z.string().trim().min(1).max(40);
 
 const distinct = (values: readonly string[]) =>
   new Set(values.map((v) => v.toLowerCase())).size === values.length;

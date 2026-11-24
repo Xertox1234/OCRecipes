@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { FormBlock } from "@shared/schemas/coach-form";
+import { formBlockSchema, type FormBlock } from "@shared/schemas/coach-form";
 import {
   canSubmitForm,
   formAnswerMessage,
@@ -48,6 +48,25 @@ describe("formAnswerMessage", () => {
     expect(formAnswerMessage(block, ["Brunch", ["Dairy", "Nuts"], 2])).toBe(
       "Avoid: Dairy\nServings: 2 plates",
     );
+  });
+});
+
+describe("formAnswerMessage length", () => {
+  it("fits a chat message (2000 characters) for the largest form the schema allows", () => {
+    const biggest = formBlockSchema.parse({
+      type: "form",
+      fields: [0, 1, 2, 3].map((f) => ({
+        kind: "multi_choice",
+        label: `${f}`.padEnd(100, "l"),
+        options: [0, 1, 2, 3, 4, 5, 6, 7].map((o) => `${o}`.padEnd(40, "o")),
+      })),
+    });
+    const all = biggest.fields.map((f) =>
+      f.kind === "multi_choice" ? f.options : [],
+    );
+    const message = formAnswerMessage(biggest, all);
+    expect(message.length).toBeGreaterThan(1700);
+    expect(message.length).toBeLessThanOrEqual(2000);
   });
 });
 

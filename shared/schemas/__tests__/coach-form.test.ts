@@ -102,7 +102,7 @@ describe("formBlockSchema", () => {
     expect(
       formBlockSchema.safeParse({
         type: "form",
-        fields: [{ ...choice, label: "x".repeat(121) }],
+        fields: [{ ...choice, label: "x".repeat(101) }],
       }).success,
     ).toBe(false);
   });
