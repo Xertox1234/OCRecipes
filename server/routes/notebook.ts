@@ -295,6 +295,22 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         const { content, type, followUpDate, status } = parsed.data;
+        // While the notes are paused a kept note can be put away (archived,
+        // completed, rejected) but not rewritten or brought back: an edit
+        // also confirms the note, and it would be used once the consent is
+        // given again.
+        const putsAway =
+          status === "archived" ||
+          status === "completed" ||
+          status === "rejected";
+        if (
+          (content !== undefined ||
+            type !== undefined ||
+            followUpDate !== undefined ||
+            (status !== undefined && !putsAway)) &&
+          (await refusedWhileCoachNotesPaused(req.userId, res))
+        )
+          return;
         const updated = await storage.updateNotebookEntry(id, req.userId, {
           ...(content !== undefined && { content }),
           ...(type !== undefined && { type }),

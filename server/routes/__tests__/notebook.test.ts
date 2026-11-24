@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
@@ -102,8 +102,12 @@ describe("POST /api/coach/notebook", () => {
 });
 
 describe("notes paused after a health-consent withdrawal", () => {
+  afterEach(() => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
+  });
+
   it("refuses a new note and saves nothing", async () => {
-    vi.mocked(storage.areCoachNotesPaused).mockResolvedValueOnce(true);
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
     const res = await request(app)
       .post("/api/coach/notebook")
       .send({ type: "goal", content: "Hit 120g protein" })
@@ -112,6 +116,36 @@ describe("notes paused after a health-consent withdrawal", () => {
     expect(res.body.code).toBe("HEALTH_CONSENT_REQUIRED");
     expect(storage.createNotebookEntry).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["new text", { content: "Updated" }],
+    ["a new type", { type: "goal" }],
+    ["a follow-up date", { followUpDate: "2026-12-01" }],
+    ["reactivation", { status: "active" }],
+  ])("refuses an edit with %s", async (_label, body) => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
+    const res = await request(app)
+      .patch("/api/coach/notebook/1")
+      .send(body)
+      .set("Authorization", "Bearer valid-token");
+    expect(res.status).toBe(403);
+    expect(storage.updateNotebookEntry).not.toHaveBeenCalled();
+  });
+
+  it.each(["archived", "completed", "rejected"])(
+    "still lets a kept note be put away as %s",
+    async (status) => {
+      vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
+      vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+        createMockCoachNotebookEntry({}),
+      );
+      const res = await request(app)
+        .patch("/api/coach/notebook/1")
+        .send({ status })
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(200);
+    },
+  );
 
   it("still lists and deletes the kept notes", async () => {
     vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(true);
@@ -125,7 +159,6 @@ describe("notes paused after a health-consent withdrawal", () => {
       .set("Authorization", "Bearer valid-token");
     expect(list.status).toBe(200);
     expect(del.status).toBe(204);
-    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
   });
 });
 

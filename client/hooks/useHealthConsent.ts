@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { hasConsented, type CoachNotesChoice } from "@/lib/health-consent";
 import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
+import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 
 /**
  * The user's health-data consent: whether it is on record, and the two ways
@@ -42,6 +43,10 @@ export function useHealthConsent() {
       );
       // Allergies, goals and body metrics feed most personalized queries. Not
       // awaited: the caller's confirmation should not wait on every refetch.
+      // Commitment reminders this device scheduled carry the note's text and
+      // would still fire. They are the only local notifications the app
+      // schedules, and the helper never throws.
+      void clearScheduledCoachReminders();
       void queryClient.invalidateQueries();
     },
     [queryClient],

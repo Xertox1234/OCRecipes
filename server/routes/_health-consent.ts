@@ -37,7 +37,7 @@ export async function refusedWhileCoachNotesPaused(
   sendError(
     res,
     403,
-    "Coach's notes are off since you withdrew the health-data consent. Agree to it again to add notes.",
+    "Coach's notes are off since you withdrew the health-data consent. Agree to it again to add or change notes.",
     ErrorCode.HEALTH_CONSENT_REQUIRED,
   );
   return true;

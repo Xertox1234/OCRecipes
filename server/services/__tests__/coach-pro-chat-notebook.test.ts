@@ -49,6 +49,19 @@ describe("extractAndStoreNotebook after a health-consent withdrawal", () => {
     expect(storage.createNotebookEntries).not.toHaveBeenCalled();
   });
 
+  // The extraction is a model call that takes seconds: a withdrawal can land
+  // while it runs.
+  it("saves nothing when the withdrawal lands during the extraction", async () => {
+    vi.mocked(storage.areCoachNotesPaused)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    await extractAndStoreNotebook(turn);
+
+    expect(extractNotebookEntries).toHaveBeenCalledTimes(1);
+    expect(storage.createNotebookEntries).not.toHaveBeenCalled();
+  });
+
   it("saves notes as before when not paused", async () => {
     vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
 

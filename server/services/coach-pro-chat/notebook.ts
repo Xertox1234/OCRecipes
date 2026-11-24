@@ -86,7 +86,9 @@ export async function extractAndStoreNotebook(a: {
       ? MAX_NOTEBOOK_ENTRIES - (await storage.getNotebookEntryTotal(userId))
       : 0;
   const toWrite = entries.slice(0, Math.max(0, room));
-  if (toWrite.length > 0) {
+  // Checked again: the extraction above takes seconds, and a withdrawal (with
+  // "delete the notes") can land while it runs.
+  if (toWrite.length > 0 && !(await storage.areCoachNotesPaused(userId))) {
     // Build a per-entry dedup fingerprint so SSE retries that replay
     // the same conversation turn do not create duplicate rows. The
     // unique index on `dedupeKey` combined with `onConflictDoNothing`

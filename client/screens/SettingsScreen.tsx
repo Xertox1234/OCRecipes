@@ -153,8 +153,10 @@ export default function SettingsScreen() {
   );
 
   // The notes question follows the withdrawal confirmation in the same sheet,
-  // so it waits until that sheet has closed. Asked unless the notes are known
-  // to be empty.
+  // so it waits until that sheet has closed. Asked unless the list on the
+  // "What Coach knows" screen is known to be empty. That list leaves out
+  // archived and rejected notes, which Coach never reads: an account with
+  // only those is not asked and keeps them.
   const { data: coachNotes } = useNotebookEntries();
   const hasNoCoachNotes = coachNotes !== undefined && coachNotes.length === 0;
   const [notesQuestionDue, setNotesQuestionDue] = useState(false);
