@@ -81,17 +81,61 @@ describe("writeWeeklyReport", () => {
     vi.mocked(logger.error).mockClear();
   });
 
-  it("an AI-call failure is logged as an error with the user and week (M8)", async () => {
+  // One Sentry error per user turned a provider outage into an error flood.
+  // The writer warns and names the fault; the scheduler raises one error for
+  // the whole run (reliability audit 2026-11-12 M8, revised 2026-11-23).
+  it("an AI-call failure is a warn with the user and week, and is named in the result", async () => {
     mockAi.mockImplementation(async () => {
       throw new Error("timeout");
     });
-    await writeWeeklyReport(facts(), { aiAllowed: true, userId: "u1" });
-    expect(logger.error).toHaveBeenCalledTimes(1);
-    expect(logger.error).toHaveBeenCalledWith(
+    const r = await writeWeeklyReport(facts(), {
+      aiAllowed: true,
+      userId: "u1",
+    });
+    expect(r.aiFault).toBe("call");
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
       { err: expect.any(Error), userId: "u1", weekStart: "2026-11-01" },
-      expect.any(String),
+      "weekly report: AI call failed, using template",
     );
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  // Owner ruling 2026-11-23: a reply that is not usable JSON is handled by
+  // the template, so it is a warn and never an error.
+  it("a reply that is not JSON is a warn, never an error, and is named in the result", async () => {
+    mockAi.mockResolvedValue(reply("sorry, here is your week"));
+    const r = await writeWeeklyReport(facts(), {
+      aiAllowed: true,
+      userId: "u1",
+    });
+    expect(r.aiFault).toBe("reply");
+    expect(logger.warn).toHaveBeenCalledWith(
+      { err: expect.any(Error), userId: "u1", weekStart: "2026-11-01" },
+      "weekly report: unusable AI reply, using template",
+    );
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it("a template chosen without an AI fault names none", async () => {
+    const off = await writeWeeklyReport(facts(), {
+      aiAllowed: false,
+      userId: "u1",
+    });
+    expect(off.aiFault).toBeNull();
+    mockAi.mockResolvedValue(reply({ ...good, watch: ["You skipped lunch."] }));
+    const rejected = await writeWeeklyReport(facts(), {
+      aiAllowed: true,
+      userId: "u1",
+    });
+    expect(rejected.source).toBe("template");
+    expect(rejected.aiFault).toBeNull();
+    mockAi.mockResolvedValue(reply(good));
+    const ok = await writeWeeklyReport(facts(), {
+      aiAllowed: true,
+      userId: "u1",
+    });
+    expect(ok.aiFault).toBeNull();
   });
 
   it("a guard rejection is a warn with the reason code, user and week (M8)", async () => {

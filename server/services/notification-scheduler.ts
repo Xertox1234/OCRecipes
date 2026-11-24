@@ -356,6 +356,9 @@ export async function sendMealLogReminders(
   }
 }
 
+/** Fewest users tried before "failed for every user it tried" is an alarm. */
+const WEEKLY_REPORT_ALL_FAILED_MIN_TRIED = 2;
+
 /**
  * Coach weekly report, run every hour: write the report for each user whose
  * local time is Sunday 18:00–21:59 (the later ticks catch up a missed one —
@@ -372,6 +375,10 @@ export async function runWeeklyReports(now: Date): Promise<void> {
     skippedNotPro: 0,
     skippedDisabled: 0,
     failed: 0,
+    // Of `created`: reports written with the template because the AI call
+    // failed, or because its reply was unusable.
+    aiCallFailed: 0,
+    badReply: 0,
   };
   try {
     await forEachUserPaged(async (pageUserIds) => {
@@ -397,7 +404,13 @@ export async function runWeeklyReports(now: Date): Promise<void> {
             parseTimezone(tzMap.get(userId)),
           );
           if (result === "created") counts.created++;
-          else if (result === "exists") counts.exists++;
+          else if (result === "created-ai-call-failed") {
+            counts.created++;
+            counts.aiCallFailed++;
+          } else if (result === "created-bad-reply") {
+            counts.created++;
+            counts.badReply++;
+          } else if (result === "exists") counts.exists++;
           else if (result === "skipped-not-pro") counts.skippedNotPro++;
           else counts.skippedDisabled++;
         } catch (err) {
@@ -427,10 +440,24 @@ export async function runWeeklyReports(now: Date): Promise<void> {
       counts.exists -
       counts.skippedNotPro -
       counts.skippedDisabled;
-    if (counts.failed > 0 && counts.failed === tried) {
+    // A single failing user is that user's problem (logged above), not a
+    // systemic one: in a catch-up hour everyone else already has the report,
+    // so `tried` shrinks to whoever failed last time.
+    if (
+      tried >= WEEKLY_REPORT_ALL_FAILED_MIN_TRIED &&
+      counts.failed === tried
+    ) {
       logger.error(
         { inWindow: counts.inWindow, tried, failed: counts.failed },
         "notification-scheduler: weekly report failed for every user it tried",
+      );
+    }
+    // One error for the run, not one per user: the writer only warns. An
+    // unusable reply is counted in the summary and raises nothing.
+    if (counts.aiCallFailed > 0) {
+      logger.error(
+        { created: counts.created, aiCallFailed: counts.aiCallFailed },
+        "notification-scheduler: weekly report AI call failed, template text used",
       );
     }
   }

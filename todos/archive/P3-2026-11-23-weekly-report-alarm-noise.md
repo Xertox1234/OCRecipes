@@ -1,6 +1,6 @@
 ---
 title: "Weekly report alarms can fire for one user, and once per user in an outage"
-status: backlog
+status: done
 priority: low
 created: 2026-11-23
 updated: 2026-11-23
@@ -32,11 +32,11 @@ deferred because each needs a threshold or log-level decision.
 
 ## Acceptance Criteria
 
-- [ ] The all-failed alarm does not fire when a single user fails in a catch-up hour (a
+- [x] The all-failed alarm does not fire when a single user fails in a catch-up hour (a
       minimum `tried`, or first hour of the window only).
-- [ ] A provider outage raises one alarm for the run, not one per user; the run summary counts
+- [x] A provider outage raises one alarm for the run, not one per user; the run summary counts
       template fallbacks.
-- [ ] The owner decides whether a reply-shape failure stays at `error` or drops to `warn`.
+- [x] The owner decides whether a reply-shape failure stays at `error` or drops to `warn`.
 
 ## Implementation Notes
 
@@ -55,3 +55,7 @@ single-user catch-up case and the outage case there first.
 ## Dependencies
 
 - None.
+
+## Updates
+
+- 2026-11-23: done. The all-failed alarm needs at least 2 users tried. The writer warns and names the AI fault; the scheduler counts `aiCallFailed` and `badReply` in the run summary and raises one error per run when an AI call failed. Owner ruling 2026-11-23: a reply-shape failure drops to `warn` (counted, never an error).
