@@ -665,7 +665,7 @@ export function buildLabelConflict(
   // trade in different clothes: the label stays the source of truth for what it
   // read, and the check only ever narrows what it may CONDEMN. Nothing
   // downstream re-checks it either — `shouldReplaceWithAI`
-  // (client/screens/label-analysis-utils.ts) compares only
+  // (client/lib/label-analysis-utils.ts) compares only
   // calories/fat/protein/carbs/sodium. What partially bounds it:
   // `evaluateUniversalFlags`'s FSA "high in saturated fat" flag has a safety
   // asymmetry — a wrong-LOW value suppressing a real record-sourced flag is

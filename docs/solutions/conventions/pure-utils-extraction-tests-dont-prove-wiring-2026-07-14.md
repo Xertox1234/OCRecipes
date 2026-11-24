@@ -13,7 +13,7 @@ last_updated: '2026-07-15'
 
 ## When this applies
 
-The project's established `*-utils.ts` extraction convention (`docs/legacy-patterns` / `code-reviewer.md` Testing section) pulls pure derivation logic out of a component/hook so Vitest can unit-test it without the React Native render harness — e.g. `client/screens/label-analysis-utils.ts`'s `getLogButtonPresentation()`. That convention is correct and should keep being followed. The gap is stopping there: a thoroughly-tested pure function proves the *derivation* is correct, not that the *component* actually calls it with the right inputs, or that the *effects/mutations* feeding those inputs (a retry callback, an `onError` handler) behave correctly.
+The project's established `*-utils.ts` extraction convention (`docs/legacy-patterns` / `code-reviewer.md` Testing section) pulls pure derivation logic out of a component/hook so Vitest can unit-test it without the React Native render harness — e.g. `client/lib/label-analysis-utils.ts`'s `getLogButtonPresentation()`. That convention is correct and should keep being followed. The gap is stopping there: a thoroughly-tested pure function proves the *derivation* is correct, not that the *component* actually calls it with the right inputs, or that the *effects/mutations* feeding those inputs (a retry callback, an `onError` handler) behave correctly.
 
 ## Smell patterns
 
@@ -39,8 +39,8 @@ Skipping the wiring test is a defensible, explicit trade-off (not a silent gap) 
 ## Related Files
 
 - `client/screens/LabelAnalysisScreen.tsx` — the wiring left untested in PR #617
-- `client/screens/label-analysis-utils.ts` — the pure function that *was* tested
-- `client/screens/__tests__/label-analysis-utils.test.ts`
+- `client/lib/label-analysis-utils.ts` — the pure function that *was* tested
+- `client/lib/__tests__/label-analysis-utils.test.ts`
 
 ## See Also
 

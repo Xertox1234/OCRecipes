@@ -10,7 +10,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import {
   initialLabelSessionState,
   labelSessionReducer,
-} from "@/screens/label-analysis-utils";
+} from "@/lib/label-analysis-utils";
 
 const UPDATED_TOAST_MS = 3000;
 

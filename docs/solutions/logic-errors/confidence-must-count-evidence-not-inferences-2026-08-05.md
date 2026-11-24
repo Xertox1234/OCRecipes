@@ -198,7 +198,7 @@ gives a reconciliation step something to prioritise.
 
 - `client/lib/nutrition-ocr-parser.ts` — the deferred adoption pass and its `extracted` comment
 - `client/screens/LabelAnalysisScreen.tsx` — the `>= 0.6` instant-preview gate
-- `client/screens/label-analysis-utils.ts` — `shouldReplaceWithAI`, the fields the AI pass reconciles
+- `client/lib/label-analysis-utils.ts` — `shouldReplaceWithAI`, the fields the AI pass reconciles
 - `client/lib/__tests__/nutrition-ocr-parser.test.ts` — the confidence assertion plus its populated-fields counterpart
 - `server/services/label-override.ts` — `cmp` (the `requiresDirectRead` provenance gate, the clamped label-rounding floor) and `basisDisproven` (the blanking scope)
 - `server/services/__tests__/label-override-provenance-integration.test.ts` — the parser→payload→server seam: one panel, one glyph different, same parsed value; inferred is not compared, direct is
