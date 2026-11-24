@@ -70,7 +70,7 @@ Then re-rank.
 
 - [x] **A1. Multi-step jobs.** "Plan my week and build the grocery list" as one
       chained run with one combined approval. Value: high. Size: M.
-      Done in PR #PRNUM: the meal plan card takes the shopping as well (a
+      Done in PR #2005: the meal plan card takes the shopping as well (a
       ticked section naming what the kept meals need, with a list picker), so
       one Save plans the meals and adds the shopping and one Undo reverts
       both. A grocery call in the same turn is turned away in favour of that
