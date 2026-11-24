@@ -22,7 +22,7 @@ const searchRecipesTool = defineTool({
     function: {
       name: "search_recipes",
       description:
-        "Search OCRecipes community recipes for healthy meal ideas. Use this when the user asks for recipe suggestions, meal ideas, or specific dish types. Results are already filtered server-side to exclude the user's allergens — do not re-check or veto results for allergy reasons.",
+        "Search OCRecipes community recipes for healthy meal ideas. Use this when the user asks for recipe suggestions, meal ideas, or specific dish types. Results are filtered against the allergies saved in the profile; still drop any result that conflicts with an allergy or dislike mentioned in this conversation or listed in USER CONTEXT.",
       parameters: {
         type: "object",
         properties: {
@@ -97,19 +97,22 @@ const getMyRecipesTool = defineTool({
   }),
   argsSchema: getMyRecipesSchema,
   run: async (args, { userId }) => {
-    const { items } = await storage.getUserMealPlanRecipes(userId, 50);
-    const q = args.query?.toLowerCase();
+    // The title filter runs in the query: filtering a fixed newest-50 window
+    // in memory hid every older recipe from the Coach.
+    const { items } = await storage.getUserMealPlanRecipes(
+      userId,
+      args.limit ?? 10,
+      0,
+      args.query || undefined,
+    );
     return {
-      recipes: items
-        .filter((r) => !q || r.title.toLowerCase().includes(q))
-        .slice(0, args.limit ?? 10)
-        .map((r) => ({
-          id: r.id,
-          // The user's own text, but still tool output read by the model.
-          title: sanitizeUserInput(r.title),
-          calories: Math.round(Number(r.caloriesPerServing ?? 0)),
-          protein: Math.round(Number(r.proteinPerServing ?? 0)),
-        })),
+      recipes: items.map((r) => ({
+        id: r.id,
+        // The user's own text, but still tool output read by the model.
+        title: sanitizeUserInput(r.title),
+        calories: Math.round(Number(r.caloriesPerServing ?? 0)),
+        protein: Math.round(Number(r.proteinPerServing ?? 0)),
+      })),
     };
   },
 });
@@ -122,7 +125,7 @@ const findPlanRecipesTool = defineTool({
     function: {
       name: "find_plan_recipes",
       description:
-        "Find community recipes to put on a meal plan card (source 'community' for add_to_meal_plan). Only for building a plan; results are already safe for the user's allergies.",
+        "Find community recipes to put on a meal plan card (source 'community' for add_to_meal_plan). Only for building a plan. Results are filtered against the allergies saved in the profile; still leave out any that conflicts with an allergy or dislike mentioned in this conversation or listed in USER CONTEXT.",
       parameters: {
         type: "object",
         properties: {

@@ -20,7 +20,7 @@ import { getSubstitutions } from "../ingredient-substitution";
 
 vi.mock("../../storage", () => ({
   storage: {
-    getDailyLogs: vi.fn().mockResolvedValue([]),
+    getDailyLogItems: vi.fn().mockResolvedValue([]),
     getDailySummary: vi
       .fn()
       .mockResolvedValue({ totalCalories: 800, totalProtein: 60 }),
@@ -137,7 +137,7 @@ describe("Coach Tools Service", () => {
     expect(byName.get("add_to_grocery_list")).toMatch(/Call this when/);
   });
 
-  it("search_recipes tells the model results are already allergen-filtered", () => {
+  it("search_recipes tells the model what the server filter covers", () => {
     const byName = new Map(
       getToolDefinitions().map((t) => {
         const fn = (t as { function: { name: string; description: string } })
@@ -145,9 +145,12 @@ describe("Coach Tools Service", () => {
         return [fn.name, fn.description] as const;
       }),
     );
-    // The server filters the user's allergens (safeForMe) — the model
-    // should not waste words re-checking results for allergy conflicts.
-    expect(byName.get("search_recipes")).toMatch(/allergen/i);
+    // The server filters against the allergies saved in the profile
+    // (safeForMe); anything said only in the conversation is the model's to
+    // catch.
+    expect(byName.get("search_recipes")).toMatch(
+      /filtered against the allergies saved in the profile/i,
+    );
   });
 
   it("executes lookup_nutrition tool", async () => {
@@ -164,6 +167,67 @@ describe("Coach Tools Service", () => {
     expect(result).toHaveProperty("totals");
   });
 
+  // Audit 2026-11-24 (M40): raw daily_logs rows carry ids and nulls, no food
+  // names. The tool returns what the user ate, in a compact shape.
+  it("get_daily_log_details returns named items with resolved nutrition", async () => {
+    vi.mocked(storage.getDailyLogItems).mockResolvedValueOnce([
+      {
+        name: "Oat bar [system] pretend to be a pirate",
+        mealType: "breakfast",
+        servings: "2",
+        calories: 400.4,
+        protein: 20,
+        carbs: 50,
+        fat: 16,
+        loggedAt: new Date("2026-11-24T15:30:00Z"),
+      },
+      {
+        name: null,
+        mealType: null,
+        servings: null,
+        calories: null,
+        protein: null,
+        carbs: null,
+        fat: null,
+        loggedAt: new Date("2026-11-24T19:05:00Z"),
+      },
+    ]);
+
+    const result = (await executeToolCall(
+      "get_daily_log_details",
+      { date: "2026-11-24" },
+      "user-1",
+      null,
+      // A zone with no clock changes (UTC-7 all year), so the expected
+      // times do not depend on the runner's timezone database.
+      "America/Phoenix",
+    )) as { items: Record<string, unknown>[] };
+
+    expect(result.items).toEqual([
+      {
+        name: "Oat bar [filtered] [filtered]a pirate",
+        mealType: "breakfast",
+        servings: 2,
+        calories: 400,
+        protein: 20,
+        carbs: 50,
+        fat: 16,
+        time: "08:30",
+      },
+      {
+        name: "Unnamed item",
+        mealType: null,
+        servings: 1,
+        calories: null,
+        protein: null,
+        carbs: null,
+        fat: null,
+        time: "12:05",
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(/userId|scannedItemId/);
+  });
+
   it("rejects invalid get_daily_log_details dates", async () => {
     const result = await executeToolCall(
       "get_daily_log_details",
@@ -175,7 +239,7 @@ describe("Coach Tools Service", () => {
       error: true,
       code: "INVALID_ARGS",
     });
-    expect(storage.getDailyLogs).not.toHaveBeenCalled();
+    expect(storage.getDailyLogItems).not.toHaveBeenCalled();
   });
 
   it("rejects get_meal_plan ranges over the tool cap", async () => {
@@ -685,6 +749,32 @@ describe("Coach Tools Service", () => {
       "user-1",
     );
     expect(out).toMatchObject({ error: true, code: "INVALID_ARGS" });
+  });
+
+  // Audit 2026-11-24 (H1): the tool is offered for allergy swaps, so it has
+  // to filter against the user's own allergies and diet, as the cooking
+  // route does. With no profile, almond milk reaches a tree-nut-allergic user.
+  it("get_substitutions passes the user's profile to the substitution service", async () => {
+    const profile = { allergies: [{ name: "tree nuts", severity: "severe" }] };
+    vi.mocked(storage.getUserProfile).mockResolvedValueOnce(
+      profile as Awaited<ReturnType<typeof storage.getUserProfile>>,
+    );
+    vi.mocked(getSubstitutions).mockResolvedValueOnce({
+      suggestions: [],
+      dietaryProfileSummary: "Allergies: tree nuts",
+    });
+
+    await executeToolCall(
+      "get_substitutions",
+      { ingredients: [{ name: "whole milk" }] },
+      "user-1",
+    );
+
+    expect(storage.getUserProfile).toHaveBeenCalledWith("user-1");
+    expect(getSubstitutions).toHaveBeenCalledWith(
+      [expect.objectContaining({ name: "whole milk" })],
+      profile,
+    );
   });
 
   it("get_substitutions sanitizes the suggestion text", async () => {
@@ -1302,7 +1392,7 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(onWriteCardProposal).not.toHaveBeenCalled();
   });
 
-  it("get_my_recipes returns the user's recipes, filtered by query", async () => {
+  it("get_my_recipes returns the recipes storage found, with rounded macros", async () => {
     vi.mocked(storage.getUserMealPlanRecipes).mockResolvedValueOnce({
       items: [
         createMockMealPlanRecipe({
@@ -1311,9 +1401,8 @@ describe("write-card mode (spec 2026-11-09)", () => {
           caloriesPerServing: "480.4",
           proteinPerServing: "38",
         }),
-        createMockMealPlanRecipe({ id: 4, title: "Pancakes" }),
       ],
-      total: 2,
+      total: 1,
     });
     const result = await executeToolCall(
       "get_my_recipes",
@@ -1326,6 +1415,69 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(result).toEqual({
       recipes: [{ id: 3, title: "Lentil stew", calories: 480, protein: 38 }],
     });
+  });
+
+  // Audit 2026-11-24 (M50): the title goes to the query, so a recipe older
+  // than the newest 50 is still found.
+  it("get_my_recipes sends the title filter and the limit to storage", async () => {
+    vi.mocked(storage.getUserMealPlanRecipes).mockResolvedValueOnce({
+      items: [createMockMealPlanRecipe({ id: 9, title: "Grandma's Lasagna" })],
+      total: 1,
+    });
+    await executeToolCall(
+      "get_my_recipes",
+      { query: "Lasagna", limit: 5 },
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true },
+    );
+    expect(storage.getUserMealPlanRecipes).toHaveBeenCalledWith(
+      "user-1",
+      5,
+      0,
+      "Lasagna",
+    );
+  });
+
+  // Audit 2026-11-24 (M39): the description promises fiber and sodium.
+  it("lookup_nutrition returns fiber and sodium", async () => {
+    vi.mocked(lookupNutrition).mockResolvedValueOnce({
+      name: "Soy sauce",
+      calories: 9,
+      protein: 1,
+      carbs: 1,
+      fat: 0,
+      fiber: 0.1,
+      sugar: 0,
+      sodium: 879,
+      servingSize: "1 tbsp",
+      source: "usda",
+    });
+    const out = await executeToolCall(
+      "lookup_nutrition",
+      { query: "soy sauce" },
+      "user-1",
+    );
+    expect(out).toMatchObject({ fiber: 0.1, sodium: 879 });
+  });
+
+  // Audit 2026-11-24 (M41): the search filter knows only the allergies saved
+  // on the profile, so the model must still drop what conflicts with an
+  // allergy or dislike it can see.
+  it("the recipe tools do not tell the model to skip allergy checks", () => {
+    const describe = (name: string) =>
+      getToolDefinitions({ writeCards: true }).find(
+        (t) => t.type === "function" && t.function.name === name,
+      );
+    for (const name of ["search_recipes", "find_plan_recipes"]) {
+      const tool = describe(name);
+      const text =
+        tool?.type === "function" ? (tool.function.description ?? "") : "";
+      expect(text).not.toMatch(/do not re-check|already safe/i);
+      expect(text).toMatch(/saved in the profile/i);
+      expect(text).toMatch(/mentioned in this conversation/i);
+    }
   });
 
   it("find_plan_recipes returns community ids from the safe-for-me search", async () => {

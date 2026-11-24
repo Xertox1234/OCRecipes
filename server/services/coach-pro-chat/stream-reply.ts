@@ -15,6 +15,7 @@ import {
 } from "../../lib/ai-safety";
 import {
   buildGoalsPayload,
+  buildWriteCardPayload,
   describeGoals,
   pantryRowLine,
   planGroceryCard,
@@ -136,16 +137,72 @@ async function* streamProReply(
               throw err;
             }
           }
-          if (p.kind === "plan" && p.args.withGroceryList) {
-            // One card for the whole job (A1): it plans the meals and adds
-            // their shopping. An app that cannot draw that gets the plan
-            // card alone, and the model is told so.
-            reply.writeCardProposal = { ...p, shopping: planShopCard };
-            reply.writeCardPrepared = null;
-            return {
-              kind: "plan",
-              groceryList: planShopCard ? "on_card" : "not_on_card",
-            };
+          if (p.kind === "plan" || p.kind === "food") {
+            // Worked out now (audit 2026-11-24, M11), so the tool result says
+            // which meals the card shows, or that there is no card: a recipe
+            // id the model invented, or one unsafe for the user's allergies,
+            // is dropped by the builder.
+            //
+            // A plan the user wanted a grocery list for is one card for the
+            // whole job (A1): it plans the meals and adds their shopping. An
+            // app that cannot draw that gets the plan card alone, and the
+            // model is told so.
+            const proposal: WriteCardProposal =
+              p.kind === "plan" && p.args.withGroceryList
+                ? { ...p, shopping: planShopCard }
+                : p;
+            const groceryList =
+              p.kind === "plan" && p.args.withGroceryList
+                ? ({
+                    groceryList: planShopCard ? "on_card" : "not_on_card",
+                  } as const)
+                : {};
+            try {
+              const payload = await buildWriteCardPayload(proposal, {
+                userId,
+                tz: turn.tz,
+                now: new Date(),
+              });
+              reply.writeCardProposal = proposal;
+              reply.writeCardPrepared = payload;
+              if (p.kind === "food") return { kind: "food", shown: true };
+              const rows = "rows" in payload ? payload.rows : [];
+              return {
+                kind: "plan",
+                shown: true,
+                meals: rows.flatMap((row) =>
+                  "plannedDate" in row
+                    ? [
+                        `${row.plannedDate} ${row.mealType}: ${row.recipe.title}`,
+                      ]
+                    : [],
+                ),
+                dropped: p.args.rows.length - rows.length,
+                ...groceryList,
+              };
+            } catch (err) {
+              if (err instanceof WriteCardEditError) {
+                // No card for this request; an earlier proposal stays. The
+                // builder refused on purpose, so this is a warning.
+                log.warn(
+                  { err: toError(err), kind: p.kind },
+                  "coach write card not built",
+                );
+                return p.kind === "food"
+                  ? { kind: "food", shown: false }
+                  : { kind: "plan", shown: false, dropped: p.args.rows.length };
+              }
+              // A read failed: build it at the end of the turn, as before.
+              log.warn(
+                { err: toError(err), kind: p.kind },
+                "coach write card not planned",
+              );
+              reply.writeCardProposal = proposal;
+              reply.writeCardPrepared = null;
+              return p.kind === "plan" && p.args.withGroceryList
+                ? { kind: "plan", ...groceryList }
+                : undefined;
+            }
           }
           if (
             p.kind === "grocery" &&

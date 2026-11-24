@@ -180,6 +180,7 @@ export const storage = {
   toggleFavouriteScannedItem: nutrition.toggleFavouriteScannedItem,
   getFrequentItems: nutrition.getFrequentItems,
   getDailyLogs: nutrition.getDailyLogs,
+  getDailyLogItems: nutrition.getDailyLogItems,
   getDailyLogsInRange: nutrition.getDailyLogsInRange,
   getMostEatenFoods: nutrition.getMostEatenFoods,
   createDailyLog: nutrition.createDailyLog,

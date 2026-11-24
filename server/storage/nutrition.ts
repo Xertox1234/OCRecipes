@@ -297,6 +297,61 @@ export async function getDailyLogs(
   return rows.map((row) => row.dailyLog);
 }
 
+/** One logged food as the Coach reads it: a name and the row's resolved nutrition. */
+export interface DailyLogItem {
+  /** The scanned item's product name, else the recipe's title; null when neither is linked. */
+  name: string | null;
+  mealType: string | null;
+  servings: string | null;
+  /** Totals for the servings logged, resolved as `getDailySummary` does. */
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  loggedAt: Date;
+}
+
+/**
+ * The day's logs with a food name and resolved nutrition per row, oldest
+ * first. `getDailyLogs` returns the bare rows (ids, and null nutrition for
+ * every scan log), which tell a reader nothing about what was eaten. Same
+ * day bounds and discarded-item rule as `getDailySummary`, so the items add
+ * up to its totals.
+ */
+export async function getDailyLogItems(
+  userId: string,
+  date: Date,
+  tz: string,
+): Promise<DailyLogItem[]> {
+  const { startOfDay, endOfDay } = getDayBounds(date, tz);
+
+  return db
+    .select({
+      name: sql<
+        string | null
+      >`COALESCE(${scannedItems.productName}, ${mealPlanRecipes.title})`,
+      mealType: dailyLogs.mealType,
+      servings: dailyLogs.servings,
+      calories: logNutrientSql("calories"),
+      protein: logNutrientSql("protein"),
+      carbs: logNutrientSql("carbs"),
+      fat: logNutrientSql("fat"),
+      loggedAt: dailyLogs.loggedAt,
+    })
+    .from(dailyLogs)
+    .leftJoin(scannedItems, eq(dailyLogs.scannedItemId, scannedItems.id))
+    .leftJoin(mealPlanRecipes, eq(dailyLogs.recipeId, mealPlanRecipes.id))
+    .where(
+      and(
+        eq(dailyLogs.userId, userId),
+        gte(dailyLogs.loggedAt, startOfDay),
+        lt(dailyLogs.loggedAt, endOfDay),
+        sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`,
+      ),
+    )
+    .orderBy(dailyLogs.loggedAt);
+}
+
 /**
  * Fetch all daily logs for a user within a date range (inclusive start,
  * exclusive end). Used by the Coach Pro context builder to derive meal patterns

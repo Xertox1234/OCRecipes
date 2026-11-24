@@ -12,7 +12,8 @@ import {
   savedItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, inArray, ilike } from "drizzle-orm";
+import { escapeLike } from "./helpers";
 import {
   addToIndex,
   removeFromIndex,
@@ -85,14 +86,23 @@ export async function getMealPlanRecipesByIds(
     );
 }
 
+/**
+ * The user's saved recipes, newest first. `titleQuery` filters by title in
+ * the query, before the limit, so an older recipe is found however many
+ * newer ones there are; `total` counts the filtered set.
+ */
 export async function getUserMealPlanRecipes(
   userId: string,
   limit = 50,
   offset = 0,
+  titleQuery?: string,
 ): Promise<{ items: MealPlanRecipe[]; total: number }> {
   const live = and(
     eq(mealPlanRecipes.userId, userId),
     isNull(mealPlanRecipes.deletedAt),
+    titleQuery
+      ? ilike(mealPlanRecipes.title, `%${escapeLike(titleQuery)}%`)
+      : undefined,
   );
   const [items, countResult] = await Promise.all([
     db

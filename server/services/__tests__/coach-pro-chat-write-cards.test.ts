@@ -317,7 +317,8 @@ describe("handleCoachChat with write cards", () => {
       ),
     );
     await collect(handleCoachChat(makeParams({ writeCards: true })));
-    expect(buildWriteCardPayload).not.toHaveBeenCalled();
+    // The food card was worked out during its tool call, then replaced.
+    expect(buildWriteCardPayload).toHaveBeenCalledTimes(1);
     expect(storage.createWriteCard).toHaveBeenCalledTimes(1);
     expect(storage.createWriteCard).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "grocery", payload: groceryPayload }),
@@ -395,6 +396,26 @@ describe("handleCoachChat with write cards", () => {
         },
       ],
     };
+    const planPayload = {
+      rows: [
+        {
+          plannedDate: "2026-11-09",
+          mealType: "dinner",
+          recipe: { source: "community", id: 1, title: "Lentil stew" },
+          alternatives: [],
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof buildWriteCardPayload>>;
+    const shownPlan = {
+      kind: "plan",
+      shown: true,
+      meals: ["2026-11-09 dinner: Lentil stew"],
+      dropped: 0,
+    };
+    beforeEach(() => {
+      vi.mocked(buildWriteCardPayload).mockResolvedValue(planPayload);
+    });
+
     /** Fires a plan proposal, then a grocery one; records both outcomes. */
     const planThenGrocery = (outcomes: unknown[], withGroceryList?: boolean) =>
       async function* (
@@ -422,7 +443,7 @@ describe("handleCoachChat with write cards", () => {
         handleCoachChat(makeParams({ writeCards: true, planShopCard: true })),
       );
       expect(outcomes).toEqual([
-        { kind: "plan", groceryList: "on_card" },
+        { ...shownPlan, groceryList: "on_card" },
         { kind: "grocery_on_plan_card" },
       ]);
       expect(planGroceryCard).not.toHaveBeenCalled();
@@ -439,10 +460,14 @@ describe("handleCoachChat with write cards", () => {
         planThenGrocery(outcomes, true),
       );
       await collect(handleCoachChat(makeParams({ writeCards: true })));
-      expect(outcomes[0]).toEqual({ kind: "plan", groceryList: "not_on_card" });
-      // As before: the later grocery card replaces the plan card.
+      expect(outcomes[0]).toEqual({ ...shownPlan, groceryList: "not_on_card" });
+      // As before: the later grocery card replaces the plan card, which was
+      // worked out during its own tool call.
       expect(outcomes[1]).toMatchObject({ kind: "grocery", shown: true });
-      expect(buildWriteCardPayload).not.toHaveBeenCalled();
+      expect(buildWriteCardPayload).toHaveBeenCalledTimes(1);
+      expect(storage.createWriteCard).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "grocery" }),
+      );
     });
 
     it("a plan the user did not ask a list for is unchanged", async () => {
@@ -453,7 +478,8 @@ describe("handleCoachChat with write cards", () => {
       await collect(
         handleCoachChat(makeParams({ writeCards: true, planShopCard: true })),
       );
-      expect(outcomes[0]).toBeUndefined();
+      // No grocery-list note: the user did not ask for one.
+      expect(outcomes[0]).toEqual(shownPlan);
       expect(outcomes[1]).toMatchObject({ kind: "grocery", shown: true });
     });
   });
@@ -763,6 +789,133 @@ describe("handleCoachChat with write cards", () => {
     expect(buildWriteCardPayload).toHaveBeenCalledTimes(1);
   });
 
+  // Audit 2026-11-24 (M11): the plan and food cards are worked out during
+  // the tool call, like the grocery, pantry and goals cards, so the tool
+  // result says what the card really shows, or that there is none.
+  describe("plan and food cards are worked out during the tool call", () => {
+    const twoDinners = {
+      rows: [
+        {
+          plannedDate: "2026-11-25",
+          mealType: "dinner" as const,
+          recipe: { source: "community" as const, id: 1 },
+          alternatives: [],
+        },
+        {
+          plannedDate: "2026-11-26",
+          mealType: "dinner" as const,
+          recipe: { source: "community" as const, id: 999 },
+          alternatives: [],
+        },
+      ],
+    };
+    const onePlannedRow = {
+      rows: [
+        {
+          plannedDate: "2026-11-25",
+          mealType: "dinner",
+          recipe: { source: "community", id: 1, title: "Lentil stew" },
+          alternatives: [],
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof buildWriteCardPayload>>;
+
+    /** Fires one proposal and records what the tool call is told. */
+    const proposeOnce = (p: WriteCardProposal, seen: unknown[]) =>
+      async function* (
+        ...args: Parameters<typeof generateCoachProResponse>
+      ): AsyncGenerator<CoachProChunk> {
+        seen.push(await args[7]?.onWriteCardProposal?.(p));
+        const chunk: CoachProChunk = { type: "content", content: "Here." };
+        yield chunk;
+      };
+
+    it("the plan tool hears which meals the card shows and how many were left off", async () => {
+      vi.mocked(buildWriteCardPayload).mockResolvedValue(onePlannedRow);
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "plan", args: twoDinners, pool: [] }, seen),
+      );
+      await collect(handleCoachChat(makeParams({ writeCards: true })));
+
+      expect(seen).toEqual([
+        {
+          kind: "plan",
+          shown: true,
+          meals: ["2026-11-25 dinner: Lentil stew"],
+          dropped: 1,
+        },
+      ]);
+      // Built once, during the tool call, and that payload is the card.
+      expect(buildWriteCardPayload).toHaveBeenCalledTimes(1);
+      expect(storage.createWriteCard).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "plan", payload: onePlannedRow }),
+      );
+    });
+
+    it("a plan with no recipe that can be used shows no card, and the tool is told", async () => {
+      vi.mocked(buildWriteCardPayload).mockRejectedValue(
+        new WriteCardEditError("None of those recipes could be found."),
+      );
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "plan", args: twoDinners, pool: [] }, seen),
+      );
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true })),
+      );
+
+      expect(seen).toEqual([{ kind: "plan", shown: false, dropped: 2 }]);
+      expect(storage.createWriteCard).not.toHaveBeenCalled();
+      expect(blocksEvent(events)).toBeUndefined();
+    });
+
+    it("the food tool is told when no card could be made", async () => {
+      vi.mocked(buildWriteCardPayload).mockRejectedValue(
+        new WriteCardEditError("Nothing to log."),
+      );
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, seen),
+      );
+      await collect(handleCoachChat(makeParams({ writeCards: true })));
+
+      expect(seen).toEqual([{ kind: "food", shown: false }]);
+      expect(storage.createWriteCard).not.toHaveBeenCalled();
+    });
+
+    it("the food card is built once, during the tool call", async () => {
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, seen),
+      );
+      await collect(handleCoachChat(makeParams({ writeCards: true })));
+
+      expect(seen).toEqual([{ kind: "food", shown: true }]);
+      expect(buildWriteCardPayload).toHaveBeenCalledTimes(1);
+      expect(storage.createWriteCard).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "food", payload: foodPayload }),
+      );
+    });
+
+    it("a read that fails during the tool call falls back to building the card at the end", async () => {
+      vi.mocked(buildWriteCardPayload)
+        .mockRejectedValueOnce(new Error("db down"))
+        .mockResolvedValueOnce(foodPayload);
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, seen),
+      );
+      await collect(handleCoachChat(makeParams({ writeCards: true })));
+
+      expect(seen).toEqual([undefined]);
+      expect(buildWriteCardPayload).toHaveBeenCalledTimes(2);
+      expect(storage.createWriteCard).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "food", payload: foodPayload }),
+      );
+    });
+  });
+
   it("names the card it replaced", async () => {
     vi.mocked(generateCoachProResponse).mockImplementation(
       proposing({ kind: "food", args: foodArgs }),
@@ -893,7 +1046,8 @@ describe("handleCoachChat with write cards", () => {
     vi.mocked(generateCoachProResponse).mockImplementation(
       proposing({ kind: "food", args: foodArgs }),
     );
-    vi.mocked(buildWriteCardPayload).mockRejectedValueOnce(
+    // Fails during the tool call and again at the end of the turn.
+    vi.mocked(buildWriteCardPayload).mockRejectedValue(
       new Error("lookup down"),
     );
     const events = await collect(

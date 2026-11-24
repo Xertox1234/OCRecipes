@@ -6,7 +6,7 @@ import { storage } from "../../storage";
 import { lookupNutrition } from "../nutrition-lookup";
 import { getSubstitutions } from "../ingredient-substitution";
 import { logFoodCardArgsSchema } from "../write-cards/tool-args";
-import { CARD_SHOWN_MESSAGE } from "../write-cards/results";
+import { foodCardResult } from "../write-cards/results";
 import {
   defineTool,
   isoDateSchema,
@@ -45,7 +45,7 @@ const lookupNutritionTool = defineTool({
     function: {
       name: "lookup_nutrition",
       description:
-        "Look up nutritional information (calories, protein, carbs, fat, fiber, sodium) for any food item or ingredient. Use this when the user asks about the nutrition of a specific food.",
+        "Look up nutritional information (calories, and grams of protein, carbs, fat and fiber, and mg of sodium) for any food item or ingredient. Use this when the user asks about the nutrition of a specific food.",
       parameters: {
         type: "object",
         properties: {
@@ -68,13 +68,17 @@ const lookupNutritionTool = defineTool({
     // Trim to fields the model needs — full result has micronutrients and source
     // metadata that inflate the token budget unnecessarily.
     // The name and serving size come from an outside nutrition source.
-    const { name, calories, protein, carbs, fat, servingSize } = result;
+    const { name, calories, protein, carbs, fat, fiber, sodium, servingSize } =
+      result;
     return {
       name: sanitizeUserInput(name),
       calories,
       protein,
       carbs,
       fat,
+      // Promised by the description; sodium is in mg, the rest in g.
+      fiber,
+      sodium,
       servingSize: sanitizeUserInput(servingSize),
     };
   },
@@ -87,7 +91,7 @@ const getDailyLogDetailsTool = defineTool({
     function: {
       name: "get_daily_log_details",
       description:
-        "Retrieve the user's food log and nutrition totals for today (or a specific date). Use this to check what the user has eaten and how their macros look.",
+        "List the foods the user logged on a day (name, meal, servings, calories and macros, local time) with that day's totals. Use it to see WHAT they ate, or for a day other than today. Today's totals are already in USER CONTEXT, so do not call it only to read them.",
       parameters: {
         type: "object",
         properties: {
@@ -114,13 +118,32 @@ const getDailyLogDetailsTool = defineTool({
     const date = civilDateToInstant(dateStr, tz);
 
     const [logs, totals] = await Promise.all([
-      storage.getDailyLogs(userId, date, tz),
+      storage.getDailyLogItems(userId, date, tz),
       storage.getDailySummary(userId, date, tz),
     ]);
+    const localTime = new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const rounded = (value: number | string | null) =>
+      value === null ? null : Math.round(Number(value));
 
     return {
       date: dateStr,
-      items: logs,
+      // What was eaten, not the stored rows: those carry ids and no names.
+      // A product name comes from a barcode database or a label scan.
+      items: logs.map((log) => ({
+        name: log.name ? sanitizeUserInput(log.name) : "Unnamed item",
+        mealType: log.mealType,
+        servings: log.servings === null ? 1 : Number(log.servings),
+        calories: rounded(log.calories),
+        protein: rounded(log.protein),
+        carbs: rounded(log.carbs),
+        fat: rounded(log.fat),
+        time: localTime.format(log.loggedAt),
+      })),
       totals,
     };
   },
@@ -236,8 +259,9 @@ const logFoodItemTool = defineTool({
   run: async (args, { opts }) => {
     if (opts.writeCards) {
       const card = args as z.infer<typeof logFoodCardArgsSchema>;
-      await opts.onWriteCardProposal?.({ kind: "food", args: card });
-      return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+      return foodCardResult(
+        await opts.onWriteCardProposal?.({ kind: "food", args: card }),
+      );
     }
     const data = args as z.infer<typeof logFoodItemSchema>;
     // Nothing in the client reads this proposal, so the message must not
@@ -300,7 +324,7 @@ const getSubstitutionsTool = defineTool({
     },
   }),
   argsSchema: getSubstitutionsSchema,
-  run: async (args) => {
+  run: async (args, { userId }) => {
     const rawIngredients = args.ingredients ?? [];
 
     const ingredients = rawIngredients.map((item, index) => ({
@@ -314,8 +338,12 @@ const getSubstitutionsTool = defineTool({
       userEdited: false,
     }));
 
-    // The suggestion text is written by a second model from the names above.
-    const result = await getSubstitutions(ingredients, null);
+    // The user's own allergies and diet filter the suggestions, as on the
+    // cooking route: without the profile nothing removes almond milk for a
+    // tree-nut allergy. The suggestion text is written by a second model
+    // from the names above.
+    const profile = await storage.getUserProfile(userId);
+    const result = await getSubstitutions(ingredients, profile);
     return {
       suggestions: result.suggestions.map((suggestion) => ({
         ...suggestion,
