@@ -85,6 +85,17 @@ deny() {
   exit 0
 }
 
+# lib_loads <file>: rc 0 only when sourcing <file> RUNS TO ITS END. Every lib is sourced into
+# this shell, so one that calls `exit` would end the hook right there with no decision, and a
+# PreToolUse hook that says nothing is an allow. So each lib is tried in a subshell first: the
+# marker prints only if the source came back. A lib that fails this is treated at its call site
+# exactly like one that is missing. (Whether it DEFINES what is needed is still checked after
+# the real source; this only answers "is it safe to source here".) Cost: one fork per lib, and
+# only fastpath-filter.sh is reached on an ordinary Bash call.
+lib_loads() {
+  [ "$( { . "$1"; } >/dev/null 2>&1; printf loaded)" = loaded ]
+}
+
 # An exempt merge says so (harness N8, 2026-11-01): a silent exit here was read as "merged with
 # no review" (the #1535 residual). Context only — no permissionDecision, so permission handling
 # is exactly what a silent exit 0 gave. systemMessage reaches the owner, additionalContext the agent.
@@ -121,7 +132,8 @@ case "$TOOL" in
     # SUBSTRING test (`case "$line" in *"$expect"*)`) against `'*gh*pr*merge*'`, so the
     # original needle staying present — merely joined by a second one — leaves that pin
     # passing unchanged (measured by running the suite after this change).
-    if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
+    if lib_loads "$HERE/lib/fastpath-filter.sh" \
+       && . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
       cmd_fastpath_has "$CMD" '*gh*pr*merge*' '*gh*api*merge*' || exit 0
     fi
     # Detection and ref resolution go through the SHARED library. Do not re-derive
@@ -157,7 +169,7 @@ case "$TOOL" in
     # the same conjunction sends a missing constant to the `else` deny instead of to an
     # unguarded abort. They are tested with -n rather than declare -F because they are
     # assignments, not functions.
-    if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+    if lib_loads "$HERE/lib/cmd-detect.sh" && . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
        && declare -F cmd_gh_pr_write_subcommand >/dev/null \
        && declare -F cmd_gh_pr_has_merge >/dev/null \
        && declare -F cmd_words_deep >/dev/null \
@@ -648,7 +660,8 @@ command -v gh >/dev/null 2>&1 \
 # carry the same fallback.
 pr_rest() { return 2; }
 # shellcheck source=/dev/null
-. "$ROOT/.claude/hooks/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null \
+lib_loads "$ROOT/.claude/hooks/lib/gh-pr-rest.sh" \
+  && . "$ROOT/.claude/hooks/lib/gh-pr-rest.sh" 2>/dev/null && declare -F gh_pr_rest_json >/dev/null \
   && pr_rest() { gh_pr_rest_json "$PR" 2>/dev/null; }
 VIEW=$(gh pr view "$PR" --json headRefName,headRefOid,baseRefName 2>/dev/null) \
   || VIEW=$(pr_rest) \
@@ -771,6 +784,8 @@ bash "$GUARD" --paths-only "$PR" >/dev/null 2>&1 || GUARD_RC=$?
 # ── STAGE 3 — review record ───────────────────────────────────────────────────
 [ -f "$HERE/lib/review-stamp-path.sh" ] \
   || deny "Blocked: merge-review-guard could not locate lib/review-stamp-path.sh, so it cannot find where reviews are recorded. Fail-closed. $BYPASS"
+lib_loads "$HERE/lib/review-stamp-path.sh" \
+  || deny "Blocked: merge-review-guard could not load lib/review-stamp-path.sh (sourcing it does not run to its end), so it cannot find where reviews are recorded. Fail-closed. $BYPASS"
 . "$HERE/lib/review-stamp-path.sh" 2>/dev/null
 declare -F review_stamp_dir >/dev/null \
   || deny "Blocked: review_stamp_dir unavailable, so merge-review-guard cannot find where reviews are recorded. Fail-closed. $BYPASS"

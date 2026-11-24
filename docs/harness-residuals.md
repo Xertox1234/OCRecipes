@@ -613,11 +613,19 @@ inline REST retry from #1987. Both now retry through the helper, which also retu
 `headRefName`, `baseRefName`, `body` and `changedFiles` (the count is null for a branch ref, since
 GitHub's PR list omits it; both callers ask by number). No verdict changes: a helper that cannot
 be sourced is the same deny as both routes failing (row G8 in `test-merge-review-guard.sh`).
-Open (found by that review, older than the change): the hook sources its `lib/` files at top
-level, so a lib file that is present but calls `exit 0` would end the hook with no decision, which
-is an allow. All four sourcing sites share this (`fastpath-filter.sh`, `cmd-detect.sh`,
-`review-stamp-path.sh`, `gh-pr-rest.sh`). Reaching it needs a change to a reviewed file under
-`.claude/hooks/lib/`. The fix would be to probe each lib in a subshell first.
+FIXED 2026-11-24 (found by that review, older than the change): the hook sourced its `lib/` files
+at top level, so a lib file that is present but calls `exit 0` ended the hook with no decision,
+which is an allow. All four sourcing sites shared this (`fastpath-filter.sh`, `cmd-detect.sh`,
+`review-stamp-path.sh`, `gh-pr-rest.sh`). `merge-review-guard.sh` now tries each lib in a
+subshell first (`lib_loads`): one that does not run to its end is treated like a missing one,
+which each site already turned into a deny (or, for the fast-path filter, into "no filter, read
+the command"). Rows H1-H5 in `test-merge-review-guard.sh`; four of them were silent allows
+before. Cost: about 1 ms per Bash call (one fork).
+Open, same shape, not fixed here: (1) a lib FUNCTION that calls `exit` when it is called, not
+when the file is sourced, still ends the hook; (2) the other blocking hooks that source `lib/`
+files at top level (`git-safety.sh`, `guard-outward-cli.sh`, `pr-preflight-guard.sh`,
+`branch-preflight.sh`, `core-bare-guard.sh`) have no such probe. Both need a change to a reviewed
+file under `.claude/hooks/lib/` to reach.
 
 Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable folder (chmod 000)"
 row asserted a deny that cannot happen for root, and cloud sessions run as root, so
