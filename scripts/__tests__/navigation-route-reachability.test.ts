@@ -139,10 +139,12 @@ describe("navigation route reachability", () => {
     // switch cases are the AI's screen names, not route names — they used to
     // open root-modal copies whose list/cookbook taps were dropped.
     const file = "client/components/coach/CoachChat.tsx";
-    // Denominator: all 12 distinct switch targets, incl. root routes
-    // (NutritionDetail, EditDietaryProfile — the add_allergy card) that
+    // Denominator: all 13 distinct targets (the 12 switch targets plus the
+    // live barcode scanner), incl. root routes (NutritionDetail,
+    // EditDietaryProfile — the add_allergy card; CoachBarcodeScan) that
     // resolve only through the ancestor walk.
-    expect(new Set(navigationTargets(file)).size).toBe(12);
+    expect(new Set(navigationTargets(file)).size).toBe(13);
+    expect(navigationTargets(file)).toContain("CoachBarcodeScan");
     expect(navigationTargets(file)).toContain("NutritionDetail");
     expect(navigationTargets(file)).toContain("EditDietaryProfile");
     expect(launcherProblems(file, "ChatStackNavigator")).toEqual([]);
