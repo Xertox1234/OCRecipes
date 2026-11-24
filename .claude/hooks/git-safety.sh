@@ -119,7 +119,8 @@ trap 'no_decision; DECIDED=1; exit 0' TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT
 # one counts as missing, like one that exits: `printf() { :; }`, `ls() { exit 0; }` and a
 # `read` wrapper that forgot `builtin` (endless recursion, the shell segfaults and no trap
 # runs) each gave a silent allow under a contract, measured. Uses only `builtin`s and no
-# word splitting, so the lib it judges cannot break it by those means.
+# word splitting. One name defeats it: a lib that defines a function called `builtin` (the
+# check itself runs through `builtin`), listed as open in docs/harness-residuals.md.
 _GS_NO_SHADOW=(. : '[' break builtin cd command compgen continue declare echo eval exec exit
   export false kill local printf pwd read readonly return set shift shopt source test trap true
   type typeset unset wait cat ls grep jq awk sed tr sort dirname git gh)
@@ -651,7 +652,10 @@ case "$CMD" in "SKIP_WORKTREE_CONTRACT=1 "*) INLINE_BYPASS=1 ;; esac
 # the dot command at a command position (`. ./x.sh` runs a script that may cd, in this shell). Used
 # to decide whether the command's working folder is knowable from its text.
 _gs_has_cd_word() {
-  local t=${1//[\"\'\\]/}
+  # tr over a here-string: no pipeline into grep -q (see _gs_grep), and linear. A bash
+  # `${1//[...]/}` here was quadratic in the number of quotes (1 MB of them: 15 s, past the
+  # hook's timeout) and cannot be interrupted by a signal.
+  local t; t=$(tr -d "\"'\\\\" <<<"$1")
   _gs_grep "$t" -qE '(^|[^A-Za-z0-9_.-])(cd|pushd|popd|eval|source|exec|builtin|command)([^A-Za-z0-9_.-]|$)|\$|`|(^|[;&|(])[[:space:]]*\.[[:space:]]'
 }
 # Leading cd (2026-10-24): exactly ONE `cd <absolute folder> &&` at the very start, and no
