@@ -12,7 +12,15 @@ import { eq, desc, and, gte, lt, sql, inArray, ilike } from "drizzle-orm";
 import { escapeLike } from "./helpers";
 import { quotaDayBounds } from "./quota-day";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { countRecipeGenerationsToday, lockUser } from "./chat-quota";
+import {
+  countCoachClaimsToday,
+  countMessageClaimsToday,
+  countRecipeGenerationsToday,
+  lockUser,
+  recordMessageClaim,
+  REMIX_REFINEMENTS_PER_GENERATION,
+  type MessageClaimKind,
+} from "./chat-quota";
 
 type ChatMessageRole = "user" | "assistant" | "system";
 
@@ -376,6 +384,9 @@ export async function createChatMessageWithLimitCheck(
 
     const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
 
+    // The claim this message records once it is inserted.
+    let claimKind: MessageClaimKind;
+
     // For remix conversations, only the first user message counts against the
     // shared recipe generation quota. Subsequent messages are free refinements.
     if (conversationType === "remix") {
@@ -400,7 +411,16 @@ export async function createChatMessageWithLimitCheck(
           return null;
         }
       }
-      // If hasExistingMessage, skip quota check — refinements are free
+      // Refinements are free, up to a daily bound: each one is a full
+      // generation with a picture (audit 2026-11-24, M48).
+      if (
+        hasExistingMessage &&
+        (await countMessageClaimsToday(tx, userId, "remix_refinement")) >=
+          dailyLimit * REMIX_REFINEMENTS_PER_GENERATION
+      ) {
+        return null;
+      }
+      claimKind = hasExistingMessage ? "remix_refinement" : "remix_generation";
     } else if (conversationType === "recipe") {
       // Recipe messages share one quota with finder Generates and remix
       // conversations (chat-quota.ts).
@@ -409,6 +429,7 @@ export async function createChatMessageWithLimitCheck(
       if (totalGenerations >= dailyLimit) {
         return null;
       }
+      claimKind = "recipe_message";
     } else {
       // Coach type — per-message counting
       const conditions = [
@@ -435,10 +456,18 @@ export async function createChatMessageWithLimitCheck(
         )
         .where(and(...conditions));
 
-      const currentCount = Number(countResult[0]?.count ?? 0);
+      // Never below today's claims: deleting a message or its conversation
+      // does not hand the slot back (audit 2026-11-24, H4).
+      const currentCount = Math.max(
+        Number(countResult[0]?.count ?? 0),
+        await countCoachClaimsToday(tx, userId, {
+          includeTaps: !opts?.excludeFinderTaps,
+        }),
+      );
       if (currentCount >= dailyLimit) {
         return null;
       }
+      claimKind = "coach_message";
     }
 
     const [message] = await tx
@@ -450,6 +479,8 @@ export async function createChatMessageWithLimitCheck(
         metadata: null,
       })
       .returning();
+
+    await recordMessageClaim(tx, userId, message.id, claimKind);
 
     // Update conversation timestamp atomically
     await tx

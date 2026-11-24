@@ -10,6 +10,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getChatMessageByTurnKey: vi.fn(),
     deleteChatMessage: vi.fn(),
+    refundUndeliveredMessage: vi.fn(),
     createChatMessage: vi.fn(),
   },
 }));
@@ -92,7 +93,7 @@ describe("runTurn (coach path)", () => {
       'data: {"done":true}\n\n',
     ]);
     expect(res.end).toHaveBeenCalled();
-    expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+    expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
   });
 
   it("a step event is written as { step }", async () => {
@@ -132,7 +133,7 @@ describe("runTurn (coach path)", () => {
 
     await runTurn(makeInput(res));
 
-    expect(storage.deleteChatMessage).toHaveBeenCalledWith(501, "u1");
+    expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(501, "u1");
     expect(storage.createChatMessage).not.toHaveBeenCalled();
   });
 
@@ -147,7 +148,7 @@ describe("runTurn (coach path)", () => {
 
     await runTurn(makeInput(res));
 
-    expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+    expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
     expect(storage.createChatMessage).toHaveBeenCalledWith(
       7,
       "u1",

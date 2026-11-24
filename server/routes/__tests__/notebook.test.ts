@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
 import { register } from "../notebook";
+import { MAX_NOTEBOOK_ENTRIES } from "@shared/schemas/coach-notebook";
 import { createMockCoachNotebookEntry } from "../../__tests__/factories";
 
 vi.mock("../../middleware/auth");
@@ -10,6 +11,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getNotebookEntries: vi.fn(),
     createNotebookEntry: vi.fn(),
+    getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
     updateNotebookEntry: vi.fn(),
     deleteNotebookEntry: vi.fn(),
   },
@@ -40,6 +42,35 @@ describe("GET /api/coach/notebook", () => {
 });
 
 describe("POST /api/coach/notebook", () => {
+  // Audit 2026-11-24 (M45): the route had only a rate limit, so one account
+  // could add tens of thousands of rows that every later Coach turn loads.
+  it("refuses a new entry once the account holds the maximum", async () => {
+    vi.mocked(storage.getNotebookEntryTotal).mockResolvedValue(
+      MAX_NOTEBOOK_ENTRIES,
+    );
+    const res = await request(app)
+      .post("/api/coach/notebook")
+      .send({ type: "goal", content: "One more" })
+      .set("Authorization", "Bearer valid-token");
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("LIMIT_REACHED");
+    expect(storage.createNotebookEntry).not.toHaveBeenCalled();
+  });
+
+  it("allows an entry just under the maximum", async () => {
+    vi.mocked(storage.getNotebookEntryTotal).mockResolvedValue(
+      MAX_NOTEBOOK_ENTRIES - 1,
+    );
+    vi.mocked(storage.createNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry({ type: "goal", content: "One more" }),
+    );
+    const res = await request(app)
+      .post("/api/coach/notebook")
+      .send({ type: "goal", content: "One more" })
+      .set("Authorization", "Bearer valid-token");
+    expect(res.status).toBe(201);
+  });
+
   it("creates a user-authored entry", async () => {
     const entry = createMockCoachNotebookEntry({
       type: "goal",

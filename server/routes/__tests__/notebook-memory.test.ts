@@ -17,6 +17,7 @@ vi.mock("../../storage", () => ({
     rejectNotebookEntries: vi.fn(),
     clearNotebook: vi.fn(),
     createNotebookEntry: vi.fn(),
+    getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
   },
 }));
 
