@@ -103,7 +103,7 @@ Then re-rank.
       in the background, and the Coach offering cook mode itself (its prompt
       does not describe the link yet).
 - [x] **V2. Hands-free turn-taking.** Listen, transcribe, reply, speak, with no
-      tapping. Value: high. Size: M. Needs V1. PR #PRNUM. A headset button in
+      tapping. Value: high. Size: M. Needs V1. PR #2037. A headset button in
       the chat starts a loop: the Coach listens, sends what it heard, reads
       the reply aloud, then listens again. It stops on a tap, on typing, when
       nothing is heard, on an error, or when the app leaves the screen. The
