@@ -857,28 +857,29 @@ Still open, found by that review, on `main` too:
 - run time grows roughly with the square of the command size (`cmd_words_deep`): 300 KB takes
   3.3 s, 1.17 MB takes 56 s, past the hook timeout. What the harness does with a timed-out
   hook was not measured. A size cap that denies before any parsing would close it.
-  The known pattern is
-  `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
-  Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
-  `CONTRACT_DONE`, redefines a function the hook defines before the libs are sourced (`deny`,
-  `registry_active`, `no_decision`, `_gs_grep`, `_gs_no_shadow`), shadows a name that is not in
-  `_GS_NO_SHADOW`, or closes fd 9; SIGKILL, the fault signals (SEGV, BUS, FPE, ILL, TRAP: the
-  deny is printed but the rc stays 132-139), the
-  real-time signals, and PWR/STKFLT (left out because macOS bash has no such names); a signal
-  between `deny()` marking the decision and printing it; a lib that defines a function
-  called `builtin` defeats the shadow check, which runs through `builtin` (measured:
-  `builtin() { "$@"; }; printf() { :; }` allows); a lib that ASSIGNS a variable the hook reads
-  (`REG_DIR=""`, `SKIP_WORKTREE_CONTRACT=1`, `CMD=ls`, `PATH=/nonexistent`, `CWD=/tmp`: each
-  allows, on `main` too) or redefines another lib's function (`emit_write_targets() { :; }` in
-  `own-agent-worktree.sh`); the 15 s hook timeout (a one-line 400 KB command takes about 7 s in
-  `split_segments` and `git_c_target`, both quadratic; past the timeout a SIGTERM gets the trap's
-  deny, a SIGKILL gets nothing); the stop signals (STOP, TTIN, TTOU), which hang the hook until
-  that timeout; the three exits before the trap when `jq` is on PATH
-  but cannot read the envelope (lines 46-48); a shell that ends before the inline
-  `SKIP_WORKTREE_CONTRACT=1` prefix is read is denied even with that prefix (the safe direction);
-  an advisory lost to a signal or to a `jq` that cannot print. Not tested on bash 3.2 (macOS).
-  All of these need a change to a reviewed file under `.claude/hooks/lib/` or `scripts/lib/` to
-  reach.
+
+The known pattern is
+`docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
+Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
+`CONTRACT_DONE`, redefines a function the hook defines before the libs are sourced (`deny`,
+`registry_active`, `no_decision`, `_gs_grep`, `_gs_no_shadow`), shadows a name that is not in
+`_GS_NO_SHADOW`, or closes fd 9; SIGKILL, the fault signals (SEGV, BUS, FPE, ILL, TRAP: the
+deny is printed but the rc stays 132-139), the
+real-time signals, and PWR/STKFLT (left out because macOS bash has no such names); a signal
+between `deny()` marking the decision and printing it; a lib that defines a function
+called `builtin` defeats the shadow check, which runs through `builtin` (measured:
+`builtin() { "$@"; }; printf() { :; }` allows); a lib that ASSIGNS a variable the hook reads
+(`REG_DIR=""`, `SKIP_WORKTREE_CONTRACT=1`, `CMD=ls`, `PATH=/nonexistent`, `CWD=/tmp`: each
+allows, on `main` too) or redefines another lib's function (`emit_write_targets() { :; }` in
+`own-agent-worktree.sh`); the 15 s hook timeout (a one-line 400 KB command takes about 7 s in
+`split_segments` and `git_c_target`, both quadratic; past the timeout a SIGTERM gets the trap's
+deny, a SIGKILL gets nothing); the stop signals (STOP, TTIN, TTOU), which hang the hook until
+that timeout; the three exits before the trap when `jq` is on PATH
+but cannot read the envelope (lines 46-48); a shell that ends before the inline
+`SKIP_WORKTREE_CONTRACT=1` prefix is read is denied even with that prefix (the safe direction);
+an advisory lost to a signal or to a `jq` that cannot print. Not tested on bash 3.2 (macOS).
+All of these need a change to a reviewed file under `.claude/hooks/lib/` or `scripts/lib/` to
+reach.
 
 Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable folder (chmod 000)"
 row asserted a deny that cannot happen for root, and cloud sessions run as root, so
