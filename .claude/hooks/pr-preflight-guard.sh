@@ -14,10 +14,111 @@ set -uo pipefail
 INPUT=$(cat)
 TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 
+# From here to the end, the hook's shell must not end without a decision (2026-11-25). A
+# PreToolUse hook that ends silently is an ALLOW, so anything that ended this shell early let
+# a PR be created with no pass-stamp, each measured: a lib under .claude/hooks/lib/ or
+# scripts/lib/ that exits when sourced (all four were sourced in this shell with no probe), a
+# lib function that exits when called here (cmd_fastpath_has, cmd_is_gh_pr_create,
+# preflight_stamp_has), a lib that shadows jq, declare or git, a signal, a deny whose jq could
+# not print. DECIDED is set only by _pp_deny and _pp_allow. Any other end runs no_decision,
+# which denies when this call is a PR-create as far as text can tell (the MCP tool, or a Bash
+# command that holds gh, pr, create in that order once quotes are removed: the test the
+# lib-less path below already uses) and stays silent otherwise, so a broken hook does not
+# block ordinary commands. The trap is not inherited by `$(...)`. fd 9 is the hook's real
+# stdout: the shell can end inside a command whose stdout is redirected, and the trap would
+# inherit that redirect. Not covered: a lib that replaces the trap, sets DECIDED, assigns a
+# variable the hook reads, redefines a _pp_ function, defines `builtin`, or closes fd 9;
+# SIGKILL and the stop and real-time signals; the two exits above this line
+# (docs/harness-residuals.md).
+exec 9>&1
+DECIDED=""
+CMD=""
+_PP_SIGS='TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO'
+_pp_ignore_signals() {
+  # shellcheck disable=SC2086
+  trap '' $_PP_SIGS
+  trap '' PWR 2>/dev/null || :
+  trap '' STKFLT 2>/dev/null || :
+}
+# Named with the hook's prefix so a lib that defines `deny` or `allow` cannot replace them.
+_pp_allow() { DECIDED=1; exit 0; }
+# _pp_deny builds its JSON inside `$(...)` first; the reason is cut at 8000 characters (one
+# argv entry over 128 KB is E2BIG). When jq cannot render it, a static deny is printed: the
+# verdict is already known here, so it is never handed back to the trap's text test.
+_pp_deny() {
+  local j r="$1"
+  [ "${#r}" -gt 8000 ] && r="${r:0:8000} [... reason cut at 8000 characters]"
+  j=$(jq -n --arg r "$r" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }' 2>/dev/null) || j=""
+  _pp_ignore_signals
+  DECIDED=1
+  case "$j" in
+    *'"permissionDecision": "deny"'*) builtin printf '%s\n' "$j" >&9 ;;
+    *) builtin printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"pr-preflight-guard: this PR creation is blocked, and the hook could not render its reason (jq failed). The checks are: a fresh preflight pass-stamp for the PR head (run: npm run preflight:fast), a verdict-diff stamp when the PR changes a registered guard or keyword file (run: bash scripts/harness/verdict-diff.sh), and no overlap with files changed on origin/main since the branch forked. Emergency bypass: SKIP_PR_PREFLIGHT=1 in the environment Claude Code was launched from."}}' >&9 ;;
+  esac
+  exit 0
+}
+# The text test for "this call creates a PR", used by the trap.
+_pp_looks_like_create() {
+  [ "$TOOL" = "mcp__github__create_pull_request" ] && return 0
+  [ "$TOOL" = "Bash" ] || return 1
+  # The raw envelope stands in when the command was never read (a signal that killed the jq
+  # reading it left CMD empty, and an empty command read as "not a PR-create").
+  local t=${CMD:-$INPUT}
+  # In the raw envelope a newline is the two characters backslash-n; drop that pair first, or
+  # the backslash strip below would leave an `n` inside a word split by a line continuation.
+  [ -n "$CMD" ] || t=${t//\\n/}
+  t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//$'\n'/}; t=${t//\$/}
+  case "$t" in *gh*pr*create*) return 0 ;; esac
+  return 1
+}
+no_decision() {
+  [ -n "$DECIDED" ] && return 0
+  _pp_ignore_signals
+  DECIDED=1
+  if _pp_looks_like_create; then
+    builtin printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"pr-preflight-guard: the hook ended before it reached a decision (a helper under .claude/hooks/lib/ or scripts/lib/ ended the hook, or the hook was interrupted) on a call that looks like a PR creation, so it cannot say the PR head has a preflight pass-stamp. Fail-closed. Run npm run preflight:fast and try again. Emergency bypass: SKIP_PR_PREFLIGHT=1 in the environment Claude Code was launched from."}}' >&9
+  fi
+  exit 0
+}
+trap no_decision EXIT
+# A trapped signal would otherwise RETURN to the interrupted command; end the shell instead.
+# PWR and STKFLT do not exist in macOS bash, so each is set on its own line that may fail.
+# shellcheck disable=SC2086
+trap 'no_decision; exit 0' $_PP_SIGS
+trap 'no_decision; exit 0' PWR 2>/dev/null || :
+trap 'no_decision; exit 0' STKFLT 2>/dev/null || :
+
+# lib_loads <file>: source it in a subshell first. A lib that exits, fails under this file's
+# `set -u`, changes the shell options (errexit left on) or the working directory (the hook's
+# git calls read the cwd: a lib that ran `cd /` made "not a git repository" an allow), or
+# leaves a function named like a builtin or a command this hook calls counts as missing. TWIN of git-safety.sh's lib_loads
+# and _gs_no_shadow. The check runs through `builtin`, so a lib that defines a function called
+# `builtin` defeats it (docs/harness-residuals.md).
+_PP_NO_SHADOW=(. : '[' break builtin cd command compgen continue declare echo eval exec exit
+  export false kill local printf pwd read readonly return set shift shopt source test trap true
+  type typeset unset wait cat ls grep jq awk sed tr sort dirname head wc tail git comm)
+_pp_no_shadow() {
+  for _pp_f in "${_PP_NO_SHADOW[@]}"; do
+    builtin declare -F -- "$_pp_f" >/dev/null 2>&1 && builtin return 1
+  done
+  builtin return 0
+}
+lib_loads() {
+  [ "$(_o="$-:$SHELLOPTS:$PWD"; { . "$1"; } >/dev/null 2>&1; _pp_no_shadow && [ "$-:$SHELLOPTS:$PWD" = "$_o" ] && printf loaded)" = loaded ]
+}
+
 # Gate BOTH PR-creation paths through the same coverage stamp:
 case "$TOOL" in
   Bash)
-    CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
+    # A command that cannot be read is decided by the trap's text test over the raw envelope,
+    # not allowed outright.
+    CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || { CMD=""; no_decision; }
     # Fork-free: a $(cd ...) subshell here would be the ENTIRE added cost of reaching the
     # shared fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this
     # HERE now runs on every Bash tool call, not just ones that already matched the old
@@ -43,10 +144,19 @@ case "$TOOL" in
     # If the helper is unsourceable, do NOT exit here — fall through to the primary/fallback
     # split below, which already has its own tested fail-toward-deny handling; losing the
     # cheap pre-filter only costs performance in that (broken-install) case, never a decision.
-    if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
-      cmd_fastpath_has "$CMD" '*gh*pr*create*' || exit 0
-    fi
-    if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_words >/dev/null; then
+    # Sourced and called INSIDE one `$(...)` (2026-11-25), never in the hook's own shell:
+    # sourced there, a lib that exits took the hook with it, and so did a cmd_fastpath_has
+    # that exits. The answer is the function's rc as text; only a clean "1" (no needle) takes
+    # the fast way out. Empty means the lib exited, left a shell option changed or a shadowing
+    # function (the lib_loads test, inlined to keep this at ONE fork per Bash call), or the
+    # function did not return: then the checks below run, as with no filter at all.
+    _PP_FP_RC=$(_o="$-:$SHELLOPTS:$PWD"; { . "$HERE/lib/fastpath-filter.sh"; } >/dev/null 2>&1
+      _pp_no_shadow && [ "$-:$SHELLOPTS:$PWD" = "$_o" ] && declare -F cmd_fastpath_has >/dev/null || exit 0
+      cmd_fastpath_has "$CMD" '*gh*pr*create*' >/dev/null 2>&1; printf '%s' "$?")
+    [ "$_PP_FP_RC" = 1 ] && _pp_allow
+    # Probed before it is sourced, and the real source discards stdout too (a lib that prints
+    # when sourced put its text ahead of the deny JSON).
+    if lib_loads "$HERE/lib/cmd-detect.sh" && . "$HERE/lib/cmd-detect.sh" >/dev/null 2>&1 && declare -F cmd_words >/dev/null; then
       words=$(printf '%s' "$CMD" | cmd_words)
       # An empty rendering from a NON-empty command means the awk backend is missing or broken
       # (`declare -F cmd_words` proves the function is DEFINED, not that it WORKS — with awk off
@@ -56,7 +166,7 @@ case "$TOOL" in
       # PATH made `gh pr create --fill` ALLOW outright — no stamp demanded (review, 2026-08-16;
       # mirrors guard-outward-cli.sh's own blank-rendering detector).
       if [ -n "${words//[[:space:]]/}" ]; then
-        case "$words" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+        case "$words" in *gh*pr*create*) : ;; *) _pp_allow ;; esac
       elif [ -n "${CMD//[[:space:]]/}" ]; then
         WORDS_BROKEN=1
         # Same 5-character strip as the stage-1/2 fast path above (quotes,
@@ -68,7 +178,7 @@ case "$TOOL" in
         # reopening the exact bypass this hook exists to close on a
         # broken-awk host (review round 4, 2026-08-17).
         _FB=${CMD//\'/}; _FB=${_FB//\"/}; _FB=${_FB//\\/}; _FB=${_FB//$'\n'/}; _FB=${_FB//\$/}
-        case "$_FB" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+        case "$_FB" in *gh*pr*create*) : ;; *) _pp_allow ;; esac
       fi
     else
       # Lib unsourceable (broken install): cmd_is_gh_pr_create cannot run either, so this hook
@@ -79,7 +189,7 @@ case "$TOOL" in
       # strip as the WORDS_BROKEN branch above (review round 4, 2026-08-17) — this fallback had
       # the identical narrower gap.
       _FB=${CMD//\'/}; _FB=${_FB//\"/}; _FB=${_FB//\\/}; _FB=${_FB//$'\n'/}; _FB=${_FB//\$/}
-      case "$_FB" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+      case "$_FB" in *gh*pr*create*) : ;; *) _pp_allow ;; esac
     fi
     # Precise detection via the shared, quote-AWARE scanner (.claude/hooks/lib/cmd-detect.sh) — the
     # single source of the strip + command-position matcher across all three PR/commit hooks, so
@@ -93,22 +203,37 @@ case "$TOOL" in
     # Skipped when the renderer is broken (WORDS_BROKEN): cmd_is_gh_pr_create reads the same
     # empty rendering, so it would return "no match" for a REAL `gh pr create` and exit 0,
     # silently skipping the stamp gate. Falling through to that gate is the fail-closed direction.
-    if [ "${WORDS_BROKEN:-0}" != 1 ] \
-       && { declare -F cmd_is_gh_pr_create >/dev/null \
-            || . "$HERE/lib/cmd-detect.sh" 2>/dev/null; } \
-       && declare -F cmd_is_gh_pr_create >/dev/null; then
-      cmd_is_gh_pr_create "$CMD" || exit 0
+    # Called inside `$(...)` (2026-11-25): called directly, a cmd_is_gh_pr_create that EXITS
+    # ended the hook with no decision. The answer is its rc as text, and only a clean "1" ("not
+    # a PR-create") leaves. Empty or anything else means it could not tell, and the stamp
+    # check below runs: the text tests above already said this may be a PR-create. (The lib
+    # is not sourced a second time here; the probed source above either defined the function
+    # or it is not there.)
+    if [ "${WORDS_BROKEN:-0}" != 1 ] && declare -F cmd_is_gh_pr_create >/dev/null; then
+      # The "1" is believed only after the matcher has said YES to a known PR-create in the
+      # same subshell (security review, 2026-11-25, on main too): cmd_is_gh_pr_create renders
+      # the command through cmd_words_deep, and when THAT helper is broken (exits, returns
+      # non-zero, is missing) the rendering is empty and the matcher answers a clean 1 for
+      # everything, a real PR-create included. A matcher that cannot say yes cannot say no.
+      # The known PR-create is shaped like a real call (a second line, a global flag, flags
+      # after the verb), because a PARTLY broken matcher passed the bare three words and then
+      # missed real commands: one that reads only the first line, one whose suffix anchor
+      # rejects anything after `create`, one that fails on longer input (each measured). This
+      # checks the shapes in this one string, not every shape (docs/harness-residuals.md).
+      _PP_IS_CREATE=$(cmd_is_gh_pr_create $'true\ngh -R o/r pr create --fill --title x' >/dev/null 2>&1 || exit 0
+        cmd_is_gh_pr_create "$CMD" >/dev/null 2>&1; printf '%s' "$?")
+      [ "$_PP_IS_CREATE" = 1 ] && _pp_allow
     fi
     ;;
   mcp__github__create_pull_request)
     : # the tool call IS the PR-create (default /todo + "prefer MCP" path) — no arg parsing needed.
     ;;
   *)
-    exit 0   # any other tool — not a PR-create, allow.
+    _pp_allow   # any other tool — not a PR-create, allow.
     ;;
 esac
 
-git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+git rev-parse --git-dir >/dev/null 2>&1 || _pp_allow
 HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
 
 # Check the PR's OWN branch, not whatever the cwd has checked out (2026-10-13). Work happens in
@@ -160,9 +285,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STAMPED=0
 if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
   # shellcheck source=scripts/lib/preflight-stamp-path.sh
-  . "$ROOT/scripts/lib/preflight-stamp-path.sh"
+  # Probed before it is sourced (2026-11-25). A lib that cannot be loaded leaves STAMPED=0,
+  # and the check below denies: a stamp that cannot be read is no stamp.
+  if lib_loads "$ROOT/scripts/lib/preflight-stamp-path.sh"; then
+  . "$ROOT/scripts/lib/preflight-stamp-path.sh" >/dev/null 2>&1
   STAMP=$(cat "$(preflight_stamp_path)" 2>/dev/null || echo "")
-  if [ -n "$HEAD" ] && preflight_stamp_has "$HEAD"; then STAMPED=1; fi
+  # preflight_stamp_has runs inside `$(...)` and answers by rc as text: a function that EXITS
+  # (even with 0) gives an empty answer, which is not "has".
+  if [ -n "$HEAD" ]; then
+    _PP_HAS=$(preflight_stamp_has "$HEAD" >/dev/null 2>&1; printf '%s' "$?")
+    [ "$_PP_HAS" = 0 ] && STAMPED=1
+  fi
+  fi
 fi
 
 # Read by the agent, which acts on it: a prefix on the command never reaches this hook (it
@@ -183,14 +317,7 @@ if [ -z "$HEAD" ] || [ "$STAMPED" -ne 1 ]; then
   fi
   REASON="Blocked: no fresh preflight pass-stamp for HEAD ${HEAD:0:7} (found: ${FOUND}). Push the branch first — the pre-push fast gate stamps a verified HEAD — or run \`npm run preflight\` for full local parity.${HOOKS_NOTE} Coverage is enforced by CI's required checks, not here. ${BYPASS_HINT}"
 
-  jq -n --arg r "$REASON" '{
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "deny",
-      "permissionDecisionReason": $r
-    }
-  }'
-  exit 0
+  _pp_deny "$REASON"
 fi
 
 # --- Verdict-diff stamp for guard and keyword changes (harness diagnosis N7, 2026-11-01) --------
@@ -220,7 +347,9 @@ if [ -z "${SKIP_VERDICT_DIFF:-}" ]; then
       VD_DIR=""
       if [ -f "$ROOT/scripts/lib/verdict-diff-stamp-path.sh" ]; then
         # shellcheck source=scripts/lib/verdict-diff-stamp-path.sh
-        . "$ROOT/scripts/lib/verdict-diff-stamp-path.sh"
+        # Probed first; unloadable leaves VD_DIR empty, and the check below denies.
+        lib_loads "$ROOT/scripts/lib/verdict-diff-stamp-path.sh" \
+          && . "$ROOT/scripts/lib/verdict-diff-stamp-path.sh" >/dev/null 2>&1
         VD_DIR=$(verdict_diff_stamp_dir 2>/dev/null || echo "")
       fi
       if [ -z "$VD_DIR" ] || [ ! -f "$VD_DIR/$HEAD" ]; then
@@ -230,14 +359,7 @@ if [ -z "${SKIP_VERDICT_DIFF:-}" ]; then
   fi
   if [ -n "$VD_REASON" ]; then
     REASON="Blocked: ${VD_REASON}. Run \`bash scripts/harness/verdict-diff.sh\` in the PR's tree: it compares the base and head versions over a generated set and stamps HEAD. Paste its CHANGED/GAPS lists into the PR body under '## Verdict changes', saying for each whether it is intended, then retry. Emergency bypass: SKIP_VERDICT_DIFF=1 in the environment Claude Code was launched from (a prefix on the command does not reach this hook)."
-    jq -n --arg r "$REASON" '{
-      "hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": $r
-      }
-    }'
-    exit 0
+    _pp_deny "$REASON"
   fi
 fi
 
@@ -266,7 +388,7 @@ if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then
   # allow, a dead network could turn this hygiene-only check into an unintended block —
   # unverified either way (review, 2026-08-28); accepted for now, worth revisiting if seen.
   git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
-    origin "refs/heads/${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null
+    origin "refs/heads/${BASE}:refs/remotes/origin/${BASE}" >/dev/null 2>&1 9>&-
   if git rev-parse -q --verify "origin/${BASE}" >/dev/null 2>&1; then
     MISSED=$(git diff --name-only "${HEAD}...origin/${BASE}" 2>/dev/null || echo "")
     if [ -n "$MISSED" ]; then
@@ -275,17 +397,10 @@ if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then
       if [ -n "$OVERLAP" ]; then
         FIRST=$(printf '%s\n' "$OVERLAP" | head -1)
         REASON="Blocked: '${FIRST}' changed on origin/${BASE} since this branch forked, and this PR also changes it — the same work may already be merged there. Check \`git log origin/${BASE} -- '${FIRST}'\` before opening. Reconcile with \`git fetch origin ${BASE} && git merge --ff-only origin/${BASE}\`, then retry. ${BYPASS_HINT} SKIP_PR_DRIFT_CHECK=1 skips just this check, the same way."
-        jq -n --arg r "$REASON" '{
-          "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": $r
-          }
-        }'
-        exit 0
+        _pp_deny "$REASON"
       fi
     fi
   fi
 fi
 
-exit 0   # stamp fresh, no overlapping base drift (or fetch/lookup unavailable) — allow.
+_pp_allow   # stamp fresh, no overlapping base drift (or fetch/lookup unavailable) — allow.
