@@ -71,8 +71,6 @@ describe("CommitmentCard", () => {
     ).toBeNull();
   });
 
-  // Accept flips the card locally and the POST failure is non-fatal, so the
-  // tap itself is the success moment.
   // Coach chat audit 2026-11-24: a card drawn before the health consent was
   // withdrawn must not offer a check-in that nothing will save.
   describe("while Coach's notes are off", () => {
@@ -99,6 +97,8 @@ describe("CommitmentCard", () => {
     });
   });
 
+  // Accept flips the card locally and the POST failure is non-fatal, so the
+  // tap itself is the success moment.
   describe("accept pop", () => {
     beforeEach(() => {
       mockTriggerPop.mockClear();
