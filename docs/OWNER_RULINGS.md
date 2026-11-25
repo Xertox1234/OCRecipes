@@ -67,8 +67,12 @@ user data.
   Owner: "I don't think it is appropriate to keep info like that in the notes, if the user is
   diabetic it should be known from onboarding, as for the meds I would say do not keep." Enforced
   in code for the notes Coach extracts and the ones a user types
-  (`server/lib/health-note-screen.ts`). The onboarding conditions stay on the profile; they are not
-  passed to Coach today, and that was not changed.
+  (`server/lib/health-note-screen.ts`). The onboarding conditions stay on the profile.
+- **Coach is told the profile's health conditions** (2026-11-25). Owner: "Coach needs access to
+  on-boarding info to function properly." The conditions go into Coach's context beside the goal,
+  weight and activity level (`buildAboutUser` in `server/services/coach-context-builder.ts`), which
+  sends them to the AI companies that run Coach. The privacy pages already name health conditions
+  for AI coaching. The GLP-1 profile fields are still not read.
 - **Privacy page date, not the consent version** (2026-11-24). The notes wording change moved the
   pages' effective date to November 24, 2026. `HEALTH_CONSENT_VERSION` stays at `2026-11-10`:
   nobody is asked to agree again (owner: "Date only").
