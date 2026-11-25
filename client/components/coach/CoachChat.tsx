@@ -98,6 +98,7 @@ import { apiRequest } from "@/lib/query-client";
 import { chatMessagesKey } from "@/lib/query-keys";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { chatRequestErrorCopy } from "@/lib/chat-error-copy";
+import { pollUntilTurnSettled } from "@/lib/sse-xhr";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   ChatStackParamList,
@@ -686,6 +687,39 @@ export default function CoachChat({
   const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // After a photo send the server never answered: the poll that looks for
+  // the saved turn, and where the thread stood, so the card's late arrival
+  // can clear the "may not have gone through" line and be announced.
+  const photoPollCancelRef = useRef<(() => void) | null>(null);
+  const unconfirmedPhotoRef = useRef<{
+    convId: number;
+    lastAssistantId: number | null;
+  } | null>(null);
+  const stopPhotoFollowUp = useCallback(() => {
+    photoPollCancelRef.current?.();
+    photoPollCancelRef.current = null;
+    unconfirmedPhotoRef.current = null;
+  }, []);
+  // Ends with the component, and with the thread it belongs to.
+  useEffect(() => stopPhotoFollowUp, [conversationId, stopPhotoFollowUp]);
+  useEffect(() => {
+    const pending = unconfirmedPhotoRef.current;
+    if (!pending || pending.convId !== conversationId) return;
+    if (
+      lastAssistantMessageId === null ||
+      lastAssistantMessageId === pending.lastAssistantId
+    ) {
+      return;
+    }
+    // The card arrived after all.
+    stopPhotoFollowUp();
+    // The line was true until this message arrived.
+    setStreamingError(null);
+    const reply = messages?.[messages.length - 1];
+    AccessibilityInfo.announceForAccessibility(
+      getStreamFinishAnnouncement(reply?.content ?? "", "", Platform.OS),
+    );
+  }, [lastAssistantMessageId, conversationId, messages, stopPhotoFollowUp]);
   const cancelPhotoAnnouncement = useCallback(() => {
     if (photoAnnounceTimerRef.current) {
       clearTimeout(photoAnnounceTimerRef.current);
@@ -705,6 +739,7 @@ export default function CoachChat({
     onStart: (kind) => {
       const isBarcode = kind === "barcode";
       setSendingBarcode(isBarcode);
+      stopPhotoFollowUp();
       sentTurnRef.current = null;
       turnEpochRef.current += 1;
       followLatest();
@@ -755,6 +790,20 @@ export default function CoachChat({
       if (turnEpochRef.current === epoch) setOptimisticMessage(null);
       // A failure is announced by the error line or the limit banner.
       if (failure) {
+        // The server never answered, so it may still be analysing the photo
+        // (the send has no reply until that is done). Keep looking for the
+        // saved turn, so the card appears instead of the user resending.
+        if (failure.maybeSaved) {
+          stopPhotoFollowUp();
+          unconfirmedPhotoRef.current = {
+            convId,
+            lastAssistantId: lastAssistantIdRef.current,
+          };
+          photoPollCancelRef.current = pollUntilTurnSettled(
+            queryClient,
+            chatMessagesKey(convId),
+          );
+        }
         // The server saves the brief and clears its reminders before the
         // daily-limit check, so a failed first send may still have used it.
         if (sentBrief) {
@@ -819,6 +868,8 @@ export default function CoachChat({
       if (typeof text !== "string") {
         haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       }
+      // A new turn ends the wait on an unanswered photo send.
+      stopPhotoFollowUp();
       sentTurnRef.current = {
         text: content,
         lastSavedId: lastSavedIdRef.current,
@@ -888,6 +939,7 @@ export default function CoachChat({
       // handleQuickReply, renderItem) stays stable across keystrokes.
       turnBlocked,
       setStartingTurn,
+      stopPhotoFollowUp,
       conversationId,
       onCreateConversation,
       warmUpHook,
@@ -1128,6 +1180,7 @@ export default function CoachChat({
       }
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      stopPhotoFollowUp();
       sentTurnRef.current = null;
       turnEpochRef.current += 1;
       // Sending brings the user back to the conversation's end, even if
@@ -1149,6 +1202,7 @@ export default function CoachChat({
     },
     [
       turnBlocked,
+      stopPhotoFollowUp,
       conversationId,
       planUnknown,
       recheckPlan,

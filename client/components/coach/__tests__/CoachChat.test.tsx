@@ -54,7 +54,11 @@ const photoHook = vi.hoisted(() => ({
     openScanner?: () => void;
     onSettled: (
       conversationId: number,
-      failure: { atDailyLimit: boolean; message: string | null } | null,
+      failure: {
+        atDailyLimit: boolean;
+        message: string | null;
+        maybeSaved: boolean;
+      } | null,
       sentBrief: boolean,
     ) => void | Promise<void>;
   },
@@ -973,7 +977,11 @@ describe("CoachChat — photo announcement", () => {
     await act(async () => {
       await photoHook.args!.onSettled(
         1,
-        { atDailyLimit: false, message: "Couldn't send that photo." },
+        {
+          atDailyLimit: false,
+          message: "Couldn't send that photo.",
+          maybeSaved: false,
+        },
         false,
       );
     });
@@ -1005,7 +1013,7 @@ describe("CoachChat — a failed photo send that carried the opening brief", () 
     await act(async () => {
       await photoHook.args!.onSettled(
         1,
-        { atDailyLimit: true, message: null },
+        { atDailyLimit: true, message: null, maybeSaved: false },
         true,
       );
     });
@@ -1025,7 +1033,11 @@ describe("CoachChat — a failed photo send that carried the opening brief", () 
     await act(async () => {
       await photoHook.args!.onSettled(
         1,
-        { atDailyLimit: false, message: "Couldn't send that photo." },
+        {
+          atDailyLimit: false,
+          message: "Couldn't send that photo.",
+          maybeSaved: false,
+        },
         false,
       );
     });
@@ -1033,6 +1045,115 @@ describe("CoachChat — a failed photo send that carried the opening brief", () 
       queryKey: ["/api/coach/brief"],
     });
     invalidate.mockRestore();
+  });
+});
+
+// Coach chat audit 2026-11-24 (L29): an upload the server never answered
+// may still be on its way to a saved turn.
+describe("CoachChat — a photo send with no answer from the server", () => {
+  it("keeps looking for the saved turn", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const refetch = vi
+      .spyOn(QueryClient.prototype, "refetchQueries")
+      .mockResolvedValue(undefined);
+    renderCoachChat({ isCoachPro: true });
+    await act(async () => {
+      await photoHook.args!.onSettled(
+        1,
+        {
+          atDailyLimit: false,
+          message: "That photo may not have gone through.",
+          maybeSaved: true,
+        },
+        false,
+      );
+    });
+    expect(refetch).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+      exact: true,
+    });
+    refetch.mockRestore();
+  });
+
+  it("clears the line and announces the card when it arrives after all", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const refetch = vi
+      .spyOn(QueryClient.prototype, "refetchQueries")
+      .mockResolvedValue(undefined);
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    messagesState.data = [];
+    const view = renderCoachChat({ isCoachPro: true });
+    await act(async () => {
+      await photoHook.args!.onSettled(
+        1,
+        {
+          atDailyLimit: false,
+          message: "That photo may not have gone through.",
+          maybeSaved: true,
+        },
+        false,
+      );
+    });
+    expect(
+      screen.getByText("That photo may not have gone through."),
+    ).toBeDefined();
+
+    const row = (id: number, role: string, content: string) => ({
+      id,
+      conversationId: 1,
+      role,
+      content,
+      metadata: null,
+      createdAt: new Date().toISOString(),
+    });
+    messagesState.data = [
+      row(10, "user", "Sent a photo"),
+      row(11, "assistant", "I found 2 foods."),
+    ];
+    announce.mockClear();
+    act(() =>
+      view.rerender(
+        <CoachChat
+          conversationId={1}
+          onCreateConversation={vi.fn().mockResolvedValue(1)}
+          isCoachPro
+          warmUpHook={warmUpHook}
+        />,
+      ),
+    );
+    expect(
+      screen.queryByText("That photo may not have gone through."),
+    ).toBeNull();
+    expect(announce).toHaveBeenCalled();
+    announce.mockRestore();
+    refetch.mockRestore();
+    messagesState.data = [];
+  });
+
+  it("does not poll after a failure the server reported", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const refetch = vi
+      .spyOn(QueryClient.prototype, "refetchQueries")
+      .mockResolvedValue(undefined);
+    renderCoachChat({ isCoachPro: true });
+    await act(async () => {
+      await photoHook.args!.onSettled(
+        1,
+        {
+          atDailyLimit: false,
+          message: "Too many photos at once.",
+          maybeSaved: false,
+        },
+        false,
+      );
+    });
+    // The ordinary re-read goes through invalidateQueries; the poll is the
+    // only caller that asks for this exact key.
+    expect(refetch).not.toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+      exact: true,
+    });
+    refetch.mockRestore();
   });
 });
 
