@@ -46,12 +46,20 @@ export function register(app: Express): void {
         }
         // Only an active commitment: accepting must not bring back one the
         // user removed or one that was archived.
-        await storage.updateNotebookEntryStatus(
+        const accepted = await storage.updateNotebookEntryStatus(
           notebookEntryId,
           req.userId,
           "completed",
           "active",
         );
+        if (!accepted) {
+          return sendError(
+            res,
+            409,
+            "This commitment is no longer active",
+            ErrorCode.CONFLICT,
+          );
+        }
         res.json({ ok: true });
       } catch (error) {
         handleRouteError(res, error, "accept commitment");

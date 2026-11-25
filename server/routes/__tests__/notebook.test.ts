@@ -15,6 +15,7 @@ vi.mock("../_rate-limiters", () => ({
 vi.mock("../../storage", () => ({
   storage: {
     getNotebookEntries: vi.fn(),
+    getNotebookEntryById: vi.fn(),
     createNotebookEntry: vi.fn(),
     getNotebookEntryTotal: vi.fn().mockResolvedValue(0),
     updateNotebookEntry: vi.fn(),
@@ -369,12 +370,46 @@ describe("what a user may add or change by hand", () => {
   });
 
   it("applies the same rules to an edit", async () => {
+    vi.mocked(storage.getNotebookEntryById).mockResolvedValue(
+      createMockCoachNotebookEntry({ type: "goal", content: "Eat well" }),
+    );
+    // Changing a note into one of Coach's own types.
     expect((await patch({ type: "insight" })).status).toBe(400);
     expect((await patch({ content: "Allergic to shellfish" })).status).toBe(
       400,
     );
     expect((await patch({ content: "Fast for 3 days" })).status).toBe(400);
     expect(storage.updateNotebookEntry).not.toHaveBeenCalled();
+  });
+
+  // The shipped app sends the note's own type with every save. An edit that
+  // leaves the type as it is must keep working for Coach's own notes too.
+  it("lets a Coach-written note be edited when its type is sent unchanged", async () => {
+    vi.mocked(storage.getNotebookEntryById).mockResolvedValue(
+      createMockCoachNotebookEntry({ type: "insight", content: "Old text" }),
+    );
+    vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry({ type: "insight" }),
+    );
+    const res = await patch({ type: "insight", content: "New text" });
+    expect(res.status).toBe(200);
+  });
+
+  it("checks the stored text when only the type changes", async () => {
+    vi.mocked(storage.getNotebookEntryById).mockResolvedValue(
+      createMockCoachNotebookEntry({
+        type: "insight",
+        content: "User is allergic to peanuts",
+      }),
+    );
+    const res = await patch({ type: "preference" });
+    expect(res.status).toBe(400);
+    expect(storage.updateNotebookEntry).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a type change on a note that is not the user's", async () => {
+    vi.mocked(storage.getNotebookEntryById).mockResolvedValue(undefined);
+    expect((await patch({ type: "goal" })).status).toBe(404);
   });
 
   it("still lets any note be put away, whatever its type", async () => {

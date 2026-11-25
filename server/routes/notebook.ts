@@ -17,6 +17,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import {
   MAX_NOTEBOOK_ENTRIES,
   notebookEntryTypes,
+  USER_NOTE_TYPES,
   notebookEntryStatusValues,
 } from "@shared/schemas/coach-notebook";
 import { toSecondPerson } from "@shared/lib/notebook-text";
@@ -26,15 +27,6 @@ import { refusedWhileCoachNotesPaused } from "./_health-consent";
 const idsSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(20),
 });
-
-/**
- * The note types a user may add or switch to by hand: the ones "What Coach
- * knows" shows. The other five are Coach's own (insight, summary, strategy…):
- * a hand-added one could not be seen again on that page, and a hand-written
- * coaching_strategy went into the prompt as background (audit 2026-11-24,
- * L86/M8).
- */
-const USER_NOTE_TYPES = ["goal", "preference", "commitment"] as const;
 
 /**
  * Why a hand-written note cannot be saved, or null. The same two filters the
@@ -64,7 +56,10 @@ const createEntrySchema = z.object({
 
 const updateEntrySchema = z.object({
   content: z.string().min(1).max(500).optional(),
-  type: z.enum(USER_NOTE_TYPES).optional(),
+  // The full list: the app sends the note's own type with every save, also
+  // for a note Coach wrote. Only a change of type is held to USER_NOTE_TYPES
+  // (in the handler, against the stored row).
+  type: z.enum(notebookEntryTypes).optional(),
   followUpDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -330,9 +325,6 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         const { content, type, followUpDate, status } = parsed.data;
-        const refusal = content !== undefined ? refusedNoteText(content) : null;
-        if (refusal)
-          return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         // While the notes are paused a kept note can be put away (archived,
         // completed, rejected) but not rewritten or brought back: an edit
         // also confirms the note, and it would be used once the consent is
@@ -349,6 +341,29 @@ export function register(app: Express): void {
           (await refusedWhileCoachNotesPaused(req.userId, res))
         )
           return;
+        // A change of type: only into a type the user may hold, and the
+        // text that will carry the new type is checked (the stored text when
+        // this request brings none).
+        let textToCheck = content;
+        if (type !== undefined) {
+          const stored = await storage.getNotebookEntryById(id, req.userId);
+          if (!stored)
+            return sendError(res, 404, "Entry not found", ErrorCode.NOT_FOUND);
+          if (stored.type !== type) {
+            if (!(USER_NOTE_TYPES as readonly string[]).includes(type))
+              return sendError(
+                res,
+                400,
+                "A note can only be changed to a goal, a preference or a commitment.",
+                ErrorCode.VALIDATION_ERROR,
+              );
+            textToCheck = content ?? stored.content;
+          }
+        }
+        const refusal =
+          textToCheck !== undefined ? refusedNoteText(textToCheck) : null;
+        if (refusal)
+          return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         const updated = await storage.updateNotebookEntry(id, req.userId, {
           ...(content !== undefined && { content }),
           ...(type !== undefined && { type }),
