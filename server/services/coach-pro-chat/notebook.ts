@@ -45,6 +45,12 @@ export async function extractAndStoreNotebook(a: {
   tz: string;
   /** The reply carries a write card built this turn. */
   wroteCard: boolean;
+  /**
+   * A turn the safety router refused or the safety screen replaced: the mood
+   * nudge is still taken (a distressed message should soften Coach's tone on
+   * later turns), but no note is saved from what the user asked for.
+   */
+  moodOnly?: boolean;
 }): Promise<void> {
   const {
     messageHistory,
@@ -59,9 +65,13 @@ export async function extractAndStoreNotebook(a: {
   // Without the health-data consent Coach saves no notes (owner ruling
   // 2026-11-24). Checked first: the extraction below is a paid model call.
   if (await storage.areCoachNotesPaused(userId)) return;
+  // The history normally ends with this turn's question already (the route
+  // saves it before the stream); adding it again weighted it twice.
+  const last = messageHistory[messageHistory.length - 1];
+  const endsWithQuestion = last?.role === "user" && last.content === content;
   const allMessages = [
     ...messageHistory,
-    { role: "user" as const, content },
+    ...(endsWithQuestion ? [] : [{ role: "user" as const, content }]),
     { role: "assistant" as const, content: textContent },
   ];
   const entries = await extractNotebookEntries(
@@ -79,6 +89,8 @@ export async function extractAndStoreNotebook(a: {
     // more correct of the two available anchors.
     { now: today, tz, wroteCard },
   );
+  // The mood nudge was applied inside the extraction above.
+  if (a.moodOnly) return;
   // The account ceiling bounds what the Coach writes on its own too: only as
   // many as there is room for.
   const room =

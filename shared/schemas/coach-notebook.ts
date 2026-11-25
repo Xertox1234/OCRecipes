@@ -51,8 +51,22 @@ export const notebookEntrySchema = z.object({
 const MOOD_DELTAS = [-1, -0.5, 0, 0.5, 1] as const;
 type MoodDelta = (typeof MOOD_DELTAS)[number];
 
+/** The most entries one extraction may add. */
+const MAX_EXTRACTED_ENTRIES = 10;
+
 export const extractionResultSchema = z.object({
-  entries: z.array(notebookEntrySchema).max(10),
+  // Entry by entry: one malformed entry (an unknown type, a loose date, an
+  // empty label) is dropped on its own. A strict array failed the whole
+  // parse, losing that turn's valid entries and its mood update (coach chat
+  // audit 2026-11-24, M27). More than ten keeps the first ten.
+  entries: z.array(z.unknown()).transform((raw) =>
+    raw
+      .flatMap((entry) => {
+        const parsed = notebookEntrySchema.safeParse(entry);
+        return parsed.success ? [parsed.data] : [];
+      })
+      .slice(0, MAX_EXTRACTED_ENTRIES),
+  ),
   /** Nudge to the user's mood score from this turn's tone (spec 2026-11-08). */
   // Lenient on purpose: a stray value (null, 0.25, "0") becomes 0 rather
   // than failing the parse and discarding this turn's entries with it.
