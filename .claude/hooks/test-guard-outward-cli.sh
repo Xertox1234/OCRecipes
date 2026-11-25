@@ -6891,6 +6891,24 @@ nd_silent && nd_ok "$n" || nd_bad "$n"
 nd_big "$ND_OUTWARD" 100000
 n="ND5b control: a 100 KB outward command still gets the precise reason, not the size one"
 nd_only_deny && ! nd_reason_has 'characters long' && nd_ok "$n" || nd_bad "$n"
+# ND5c. A command dense in substitutions, well under the size cap (2026-11-25). The deep
+#      renderings in lib/cmd-detect.sh started one awk per `$(...)`/backtick body, about
+#      2.6 ms each, so 2000 lines of two substitutions (79 KB) took 10.7 s against the 10 s
+#      hook timeout, and these 4000 lines (160 KB) took about 21 s.
+nd_subs() {  # $1=first line  $2=lines of substitutions ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ printf '%s\n' "$1"; awk -v n="$2" 'BEGIN { for (i = 0; i < n; i++) printf "echo \"$(date +%%s) $(hostname)\" row %d\n", i }'; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_subs "$ND_OUTWARD" 4000
+n="ND5c an outward command followed by 8000 substitutions: the precise deny in under 5 s"
+nd_only_deny && nd_reason_has 'eas update' && ! nd_reason_has 'characters long' && [ "$ND_SECS" -lt 5 ] \
+  && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_subs 'npm test' 4000
+n="ND5c control: the same substitutions after a command that is not outward: allowed in under 5 s"
+nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -7053,7 +7071,9 @@ DDROWS
 # (all RED before the guard change) and 6 allow controls.
 # 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
 # allowed before) and 10 allow controls.
-EXPECTED_TOTAL=1419
+# 1419 -> 1421 (2026-11-25, substitution-dense commands outran the 10 s hook timeout): +2 =
+# ND5c, a deny row and an allow control, both RED before the batched deep renderings.
+EXPECTED_TOTAL=1421
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
