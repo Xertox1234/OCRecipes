@@ -1,4 +1,4 @@
-import { buildCoachBrief } from "../coach-brief";
+import { buildCoachBrief, hasShowableReminder } from "../coach-brief";
 
 import { storage } from "../../storage";
 import { TIER_FEATURES } from "@shared/types/premium";
@@ -242,4 +242,60 @@ it("passes the short form through", async () => {
   const brief = await buildCoachBrief("u1", FREE, "UTC", "short", NOW);
   expect(brief.stats).toEqual([]);
   expect(brief.pointer).toBeNull();
+});
+
+it("keeps a commitment whose push was delivered (the job completed it)", async () => {
+  mockStorage.getNotebookEntriesByIds.mockResolvedValue([
+    { ...confirmedCommitment, status: "completed" },
+  ]);
+  mockStorage.getTodaysPendingReminders.mockResolvedValue([
+    { type: "commitment", notebookEntryId: 3, content: "walk after lunch" },
+  ]);
+  const brief = await buildCoachBrief("u1", PRO, "UTC", "full", NOW);
+  expect(brief.reminder?.type).toBe("commitment");
+});
+
+describe("hasShowableReminder — the Coach tab dot (L90, L110)", () => {
+  const commitment = {
+    type: "commitment" as const,
+    notebookEntryId: 3,
+    content: "walk after lunch",
+  };
+
+  it("is false with no reminder today, without reading the day's log", async () => {
+    expect(await hasShowableReminder("u1", PRO, "UTC", NOW)).toBe(false);
+    expect(mockStorage.getTodaysPendingReminders).toHaveBeenCalledWith(
+      "u1",
+      "UTC",
+      NOW,
+    );
+    expect(mockStorage.getDailySummary).not.toHaveBeenCalled();
+  });
+
+  it("is true for a commitment the brief names", async () => {
+    mockStorage.getNotebookEntriesByIds.mockResolvedValue([
+      confirmedCommitment,
+    ]);
+    mockStorage.getTodaysPendingReminders.mockResolvedValue([commitment]);
+    expect(await hasShowableReminder("u1", PRO, "UTC", NOW)).toBe(true);
+  });
+
+  it("is false for one it may not name, and for a free user", async () => {
+    mockStorage.getTodaysPendingReminders.mockResolvedValue([commitment]);
+    mockStorage.getNotebookEntriesByIds.mockResolvedValue([
+      { ...confirmedCommitment, confirmedAt: null },
+    ]);
+    expect(await hasShowableReminder("u1", PRO, "UTC", NOW)).toBe(false);
+    mockStorage.getNotebookEntriesByIds.mockResolvedValue([
+      confirmedCommitment,
+    ]);
+    expect(await hasShowableReminder("u1", FREE, "UTC", NOW)).toBe(false);
+  });
+
+  it("is false for a missed meal once something is logged", async () => {
+    mockStorage.getTodaysPendingReminders.mockResolvedValue([
+      { type: "meal-log", lastLoggedAt: null },
+    ]);
+    expect(await hasShowableReminder("u1", FREE, "UTC", NOW)).toBe(false);
+  });
 });

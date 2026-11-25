@@ -38,14 +38,10 @@ export const notebookEntrySchema = z.object({
   content: z.string().min(1).max(500),
   /** Short second-person label for a commitment ("pumpkin seeds on your salad"). */
   label: z.string().min(2).max(60).nullable().optional(),
-  // Anchored ISO date (`YYYY-MM-DD`). Loose AI values like "next week" or
-  // "2026-04-17T10:00" are rejected at the Zod layer so they never reach
-  // `new Date(...)` in the write path.
-  followUpDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be ISO date format (YYYY-MM-DD)")
-    .nullable()
-    .optional(),
+  // A real calendar day, `YYYY-MM-DD`. Loose AI values ("next week",
+  // "2026-04-17T10:00") and impossible days ("2026-02-31") are rejected here
+  // so they never reach the write path.
+  followUpDate: z.iso.date().nullable().optional(),
 });
 
 const MOOD_DELTAS = [-1, -0.5, 0, 0.5, 1] as const;

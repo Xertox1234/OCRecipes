@@ -12,6 +12,7 @@ import {
 } from "@shared/schema";
 import { and, asc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db";
+import { deleteCommitmentReminders } from "./reminders";
 import { applyMoodDelta } from "@shared/lib/mood";
 
 /** The only notebook types the coach may say out loud, or show in the popup. */
@@ -48,17 +49,25 @@ export async function rejectNotebookEntries(
   userId: string,
   ids: number[],
 ): Promise<number> {
-  const rows = await db
-    .update(coachNotebook)
-    .set({ status: "rejected", updatedAt: new Date() })
-    .where(
-      and(
-        eq(coachNotebook.userId, userId),
-        inArray(coachNotebook.id, [...new Set(ids)]),
-      ),
-    )
-    .returning({ id: coachNotebook.id });
-  return rows.length;
+  const unique = [...new Set(ids)];
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(coachNotebook)
+      .set({ status: "rejected", updatedAt: new Date() })
+      .where(
+        and(
+          eq(coachNotebook.userId, userId),
+          inArray(coachNotebook.id, unique),
+        ),
+      )
+      .returning({ id: coachNotebook.id });
+    await deleteCommitmentReminders(
+      tx,
+      userId,
+      rows.map((r) => r.id),
+    );
+    return rows.length;
+  });
 }
 
 export async function markNotebookEntriesShown(

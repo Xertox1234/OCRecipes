@@ -3,7 +3,7 @@ import type { CoachContextItem, ReminderType } from "@shared/types/reminders";
 import { coachContextItemSchema } from "@shared/schemas/reminders";
 import { db } from "../db";
 import { logger } from "../lib/logger";
-import { and, desc, eq, isNull, gte, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 
 export async function createPendingReminder(data: {
@@ -38,18 +38,30 @@ export async function hasPendingReminderToday(
   return !!existing;
 }
 
-export async function hasPendingReminders(userId: string): Promise<boolean> {
-  const [existing] = await db
-    .select({ id: pendingReminders.id })
-    .from(pendingReminders)
+/**
+ * Delete the reminder copies of these notes: a commitment's row holds its text,
+ * so it must not outlive a note the user put away (coach chat audit
+ * 2026-11-24, M26). It also makes an unread row beside a "completed" note mean
+ * one thing: the reminder job completed it, not the user.
+ */
+export async function deleteCommitmentReminders(
+  exec: Pick<typeof db, "delete">,
+  userId: string,
+  entryIds: number[],
+): Promise<void> {
+  if (entryIds.length === 0) return;
+  await exec
+    .delete(pendingReminders)
     .where(
       and(
         eq(pendingReminders.userId, userId),
-        isNull(pendingReminders.acknowledgedAt),
+        eq(pendingReminders.type, "commitment"),
+        inArray(
+          sql`${pendingReminders.context}->>'notebookEntryId'`,
+          entryIds.map(String),
+        ),
       ),
-    )
-    .limit(1);
-  return !!existing;
+    );
 }
 
 export async function acknowledgeReminders(

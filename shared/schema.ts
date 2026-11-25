@@ -2723,7 +2723,7 @@ export type InsertPushToken = typeof pushTokens.$inferInsert;
  * Notification governance ledger — one row per discretionary notification sent.
  * Powers the daily global cap and the winback cooldown (Phase 1+). Kept SEPARATE
  * from pending_reminders because that table is the coach in-app inbox and its read
- * path (hasPendingReminders/acknowledgeReminders) is type-agnostic — a ledger row
+ * path (acknowledgeReminders) is type-agnostic — a ledger row
  * there would light the Coach badge. See the notification strategy spec, §4.
  */
 export const notificationSends = pgTable(

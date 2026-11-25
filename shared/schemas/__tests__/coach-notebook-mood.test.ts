@@ -70,3 +70,16 @@ describe("extractionResultSchema entries", () => {
     expect(extractionResultSchema.safeParse({}).success).toBe(false);
   });
 });
+
+// Coach chat audit 2026-11-24 (L20): these passed the old digit pattern, then
+// rolled to another month or threw and lost the whole batch.
+it.each(["2026-02-31", "2027-12-00", "2027-13-01"])(
+  "drops only the entry whose date %s is not a calendar day",
+  (followUpDate) => {
+    const r = extractionResultSchema.parse({
+      entries: [{ type: "commitment", content: "Walk", followUpDate }, entry],
+      moodDelta: 0,
+    });
+    expect(r.entries).toEqual([entry]);
+  },
+);

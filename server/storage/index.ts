@@ -144,6 +144,7 @@ export const storage = {
   deleteUser: users.deleteUser,
   getUserIdPage: users.getUserIdPage,
   getUserTimezones: users.getUserTimezones,
+  getReminderMutes: users.getReminderMutes,
   getUserProfile: users.getUserProfile,
   createUserProfile: users.createUserProfile,
   updateUserProfile: users.updateUserProfile,
@@ -481,7 +482,6 @@ export const storage = {
   // Pending reminders
   createPendingReminder: remindersStorage.createPendingReminder,
   hasPendingReminderToday: remindersStorage.hasPendingReminderToday,
-  hasPendingReminders: remindersStorage.hasPendingReminders,
   acknowledgeReminders: remindersStorage.acknowledgeReminders,
   acknowledgeReminderType: remindersStorage.acknowledgeReminderType,
   hasReminderSince: remindersStorage.hasReminderSince,

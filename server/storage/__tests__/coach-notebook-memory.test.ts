@@ -32,6 +32,8 @@ const {
   createNotebookEntries,
   archiveOldEntries,
   updateNotebookEntry,
+  updateNotebookEntryStatus,
+  deleteNotebookEntry,
   getNotebookEntries,
 } = await import("../coach-notebook");
 const {
@@ -44,7 +46,9 @@ const {
   updateMoodScore,
 } = await import("../coach-notebook-memory");
 
-const { withdrawHealthConsent } = await import("../user-profiles");
+const { withdrawHealthConsent, getReminderMutes } = await import(
+  "../user-profiles"
+);
 
 let tx: NodePgDatabase<typeof schema>;
 let user: schema.User;
@@ -273,6 +277,119 @@ describe("visible memory storage", () => {
       expect((await getNotebookEntries(user.id)).map((r) => r.id)).toEqual([
         ok.id,
       ]);
+    });
+  });
+
+  describe("a reminder copy goes when its note does (M26)", () => {
+    async function withReminder(owner = user.id) {
+      const row = await insert(
+        { type: "commitment", content: "Eat more greens" },
+        owner,
+      );
+      await tx.insert(pendingReminders).values({
+        userId: owner,
+        type: "commitment",
+        context: { notebookEntryId: row.id, content: row.content },
+        scheduledFor: new Date(),
+      });
+      return row;
+    }
+    const left = (owner = user.id) =>
+      tx
+        .select({ id: pendingReminders.id })
+        .from(pendingReminders)
+        .where(eq(pendingReminders.userId, owner));
+
+    it("on Remove, leaving another user's alone", async () => {
+      const mine = await withReminder();
+      const theirs = await withReminder(other.id);
+      await rejectNotebookEntries(user.id, [mine.id, theirs.id]);
+      expect(await left()).toHaveLength(0);
+      expect(await left(other.id)).toHaveLength(1);
+    });
+
+    it.each(["archived", "completed", "rejected"])(
+      "when the user sets it %s",
+      async (status) => {
+        const row = await withReminder();
+        await updateNotebookEntry(row.id, user.id, { status });
+        expect(await left()).toHaveLength(0);
+      },
+    );
+
+    it("on delete, and never by another user", async () => {
+      const row = await withReminder();
+      await deleteNotebookEntry(row.id, other.id);
+      await updateNotebookEntry(row.id, other.id, { status: "archived" });
+      expect(await left()).toHaveLength(1);
+      await deleteNotebookEntry(row.id, user.id);
+      expect(await left()).toHaveLength(0);
+    });
+
+    it("but not when the reminder job completes it, or the note stays active", async () => {
+      const row = await withReminder();
+      await updateNotebookEntry(row.id, user.id, { content: "Eat greens" });
+      await updateNotebookEntryStatus(row.id, user.id, "completed", "active");
+      expect(await left()).toHaveLength(1);
+    });
+  });
+
+  it("getReminderMutes reads many users' mutes, and only the ones asked for", async () => {
+    await tx
+      .insert(userProfiles)
+      .values({ userId: user.id, reminderMutes: { commitment: true } })
+      .onConflictDoUpdate({
+        target: userProfiles.userId,
+        set: { reminderMutes: { commitment: true } },
+      });
+    expect((await getReminderMutes([user.id])).get(user.id)).toEqual({
+      commitment: true,
+    });
+    expect((await getReminderMutes([other.id])).has(user.id)).toBe(false);
+    expect((await getReminderMutes([])).size).toBe(0);
+  });
+
+  describe("a repeated commitment takes the new date (L67)", () => {
+    const date = new Date("2030-01-04T00:00:00Z");
+    const again = (followUpDate: Date | null, label: string | null = null) =>
+      createNotebookEntries([
+        {
+          userId: user.id,
+          type: "commitment",
+          content: "Eat more greens",
+          status: "active",
+          followUpDate,
+          label,
+          dedupeKey: `k${Math.random()}`,
+        },
+      ]);
+    const read = async (id: number) =>
+      (
+        await tx.select().from(coachNotebook).where(eq(coachNotebook.id, id))
+      )[0];
+
+    it("sets the date, and the label only when there was none", async () => {
+      const row = await insert({
+        type: "commitment",
+        content: "Eat more greens",
+      });
+      expect(await again(date, "more greens")).toHaveLength(0);
+      expect(await read(row.id)).toMatchObject({
+        followUpDate: date,
+        label: "more greens",
+      });
+      await again(date, "other words");
+      expect((await read(row.id)).label).toBe("more greens");
+    });
+
+    it("keeps the old date when the repeat has none", async () => {
+      const row = await insert({
+        type: "commitment",
+        content: "Eat more greens",
+        followUpDate: date,
+      });
+      await again(null);
+      expect((await read(row.id)).followUpDate).toEqual(date);
     });
   });
 

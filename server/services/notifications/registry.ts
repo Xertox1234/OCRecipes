@@ -31,7 +31,7 @@ export const NOTIFICATION_REGISTRY = {
     countsAgainstCap: true,
   },
   // Coach weekly report: push only. Never in-app — a pending_reminders row
-  // would light the Coach dot (hasPendingReminders ignores the type); the
+  // would be handed to Coach as a reminder it has no wording for; the
   // report's own popup is its in-app path.
   "weekly-report": {
     lane: "governed",
@@ -39,8 +39,8 @@ export const NOTIFICATION_REGISTRY = {
     countsAgainstCap: false,
   },
   // Proactive Coach: "use it before it goes". Push only (the conversation it
-  // links to is its in-app path; a pending_reminders row would light the
-  // Coach dot). The producer claims the day's slot before it sends.
+  // links to is its in-app path; a pending_reminders row would be
+  // handed to Coach as a reminder). The producer claims the day's slot before it sends.
   "pantry-expiring": {
     lane: "governed",
     channels: ["push"],

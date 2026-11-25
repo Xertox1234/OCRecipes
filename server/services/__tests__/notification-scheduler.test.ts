@@ -32,6 +32,8 @@ vi.mock("../../storage", () => ({
     getUserIdPage: vi.fn(),
     getUserTimezones: vi.fn(),
     getUserProfile: vi.fn(),
+    getReminderMutes: vi.fn(),
+    getNotebookEntriesByIds: vi.fn(),
     getDailyLogs: vi.fn(),
     getDailySummary: vi.fn(),
     claimSchedulerRun: vi.fn(),
@@ -80,6 +82,25 @@ beforeEach(() => {
   // which makes the scheduler's tzMap.get(...) throw. Tests that assert on a
   // specific timezone override this per-test.
   vi.mocked(storage.getUserTimezones).mockResolvedValue(new Map());
+  // Mutes come from each test's profile fixture.
+  vi.mocked(storage.getReminderMutes).mockImplementation(
+    async (ids) =>
+      new Map(
+        await Promise.all(
+          ids.map(
+            async (id) =>
+              [
+                id,
+                (await storage.getUserProfile(id))?.reminderMutes ?? null,
+              ] as const,
+          ),
+        ),
+      ),
+  );
+  // Default: every due note is still there and active when it is re-read.
+  vi.mocked(storage.getNotebookEntriesByIds).mockImplementation(async (ids) =>
+    ids.map((id) => createMockCoachNotebookEntry({ id, status: "active" })),
+  );
   // Default notify to pushDelivered: true. Tests that check "not delivered"
   // override this per-test.
   vi.mocked(notify).mockResolvedValue({ pushDelivered: true });
@@ -182,21 +203,122 @@ describe("sendDueCommitmentReminders", () => {
       {
         ...raw,
         id: 4,
+        userId: "43",
         label: "pumpkin seeds on your salad",
         confirmedAt: new Date("2026-11-01T00:00:00Z"),
       },
     ]);
-    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
 
     await sendDueCommitmentReminders();
 
-    const bodies = vi
-      .mocked(notify)
-      .mock.calls.map((c) => (c[2] as { body?: string }).body);
-    expect(bodies).toEqual([
-      "Coach has a quick check-in for you.",
-      "How's pumpkin seeds on your salad going?",
+    const bodies = Object.fromEntries(
+      vi
+        .mocked(notify)
+        .mock.calls.map((c) => [c[0], (c[2] as { body?: string }).body]),
+    );
+    expect(bodies).toEqual({
+      "42": "Coach has a quick check-in for you.",
+      "43": "How's pumpkin seeds on your salad going?",
+    });
+  });
+
+  describe("one push per user (L105)", () => {
+    const unnamed = createMockCoachNotebookEntry({
+      id: 3,
+      userId: "42",
+      type: "commitment",
+    });
+    const named = {
+      ...unnamed,
+      id: 4,
+      label: "pumpkin seeds on your salad",
+      confirmedAt: new Date("2026-11-01T00:00:00Z"),
+    };
+
+    it("sends one push for several due commitments, led by one it may name, and completes them all", async () => {
+      vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([
+        unnamed,
+        named,
+      ]);
+
+      await sendDueCommitmentReminders();
+
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith(
+        "42",
+        "commitment",
+        expect.objectContaining({
+          body: "How's pumpkin seeds on your salad going? You have 1 more check-in.",
+          data: { entryId: 4, url: "ocrecipes://notebook-entry/4" },
+          context: expect.objectContaining({ notebookEntryId: 4 }),
+        }),
+      );
+      const done = vi
+        .mocked(storage.updateNotebookEntryStatus)
+        .mock.calls.map((c) => c[0])
+        .sort();
+      expect(done).toEqual([3, 4]);
+    });
+
+    it("does not push again for the same user's entries on a later page", async () => {
+      const page = Array.from({ length: 500 }, (_, i) => ({
+        ...unnamed,
+        id: i + 1,
+        followUpDate: new Date(2026, 0, 1),
+      }));
+      vi.mocked(storage.getDueCommitmentsAllUsers)
+        .mockResolvedValueOnce(page)
+        .mockResolvedValueOnce([{ ...unnamed, id: 900 }]);
+
+      await sendDueCommitmentReminders();
+
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(storage.updateNotebookEntryStatus).toHaveBeenCalledWith(
+        900,
+        "42",
+        "completed",
+        "active",
+      );
+    });
+
+    it("sends nothing for a note removed after the batch was read", async () => {
+      vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([named]);
+      vi.mocked(storage.getNotebookEntriesByIds).mockResolvedValue([
+        { ...named, status: "rejected" },
+      ]);
+
+      await sendDueCommitmentReminders();
+
+      expect(notify).not.toHaveBeenCalled();
+    });
+  });
+
+  it("with a local hour, reminds only users whose own clock is at it (M12)", async () => {
+    const base = createMockCoachNotebookEntry({ type: "commitment" });
+    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([
+      { ...base, id: 1, userId: "la" },
+      { ...base, id: 2, userId: "utc" },
     ]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(
+      new Map([
+        ["la", "America/Los_Angeles"],
+        ["utc", null],
+      ]),
+    );
+
+    // 09:00 UTC is 01:00 in Los Angeles; 17:00 UTC is 09:00 there.
+    await sendDueCommitmentReminders({
+      now: new Date("2026-11-25T09:00:00Z"),
+      localHour: 9,
+    });
+    expect(vi.mocked(notify).mock.calls.map((c) => c[0])).toEqual(["utc"]);
+
+    vi.mocked(notify).mockClear();
+    await sendDueCommitmentReminders({
+      now: new Date("2026-11-25T17:00:00Z"),
+      localHour: 9,
+    });
+    expect(vi.mocked(notify).mock.calls.map((c) => c[0])).toEqual(["la"]);
   });
 
   it("does NOT mark entry completed when push delivery fails", async () => {
@@ -316,14 +438,9 @@ describe("sendDueCommitmentReminders", () => {
 });
 
 describe("startNotificationScheduler", () => {
-  it("schedules the 09:00 UTC commitment job and the hourly local-time job", () => {
+  it("schedules the hourly local-time job", () => {
     startNotificationScheduler();
 
-    expect(cron.schedule).toHaveBeenCalledWith(
-      "0 9 * * *",
-      expect.any(Function),
-      expect.anything(),
-    );
     expect(cron.schedule).toHaveBeenCalledWith(
       "0 * * * *",
       expect.any(Function),
@@ -335,7 +452,7 @@ describe("startNotificationScheduler", () => {
     startNotificationScheduler();
 
     const calls = vi.mocked(cron.schedule).mock.calls;
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     for (const call of calls) {
       const tolerance = call[2]?.missedExecutionTolerance;
       expect(tolerance).toBeGreaterThanOrEqual(60_000);
@@ -351,7 +468,7 @@ describe("startNotificationScheduler", () => {
 
     const results = vi.mocked(cron.schedule).mock.results;
     const names = vi.mocked(cron.schedule).mock.calls.map((c) => c[2]?.name);
-    expect(names).toEqual(["commitment-reminders", "local-hour-reminders"]);
+    expect(names).toEqual(["local-hour-reminders"]);
     results.forEach((result, i) => {
       const on = vi.mocked(
         (result.value as ReturnType<typeof cron.schedule>).on,
@@ -415,11 +532,11 @@ describe("startNotificationScheduler", () => {
     }
   });
 
-  it("is idempotent — calling twice creates only two jobs total", () => {
+  it("is idempotent — calling twice creates only one job", () => {
     startNotificationScheduler();
     startNotificationScheduler();
 
-    expect(cron.schedule).toHaveBeenCalledTimes(2);
+    expect(cron.schedule).toHaveBeenCalledTimes(1);
   });
 
   it("idempotency guard also covers the hourly local-time job", () => {
@@ -427,8 +544,8 @@ describe("startNotificationScheduler", () => {
     startNotificationScheduler();
     startNotificationScheduler();
 
-    // Regardless of how many times start is called, still only two cron jobs
-    expect(cron.schedule).toHaveBeenCalledTimes(2);
+    // Regardless of how many times start is called, still one cron job
+    expect(cron.schedule).toHaveBeenCalledTimes(1);
     expect(cron.schedule).toHaveBeenCalledWith(
       "0 * * * *",
       expect.any(Function),
@@ -441,7 +558,7 @@ describe("startNotificationScheduler", () => {
     stopNotificationScheduler();
     startNotificationScheduler();
 
-    expect(cron.schedule).toHaveBeenCalledTimes(4);
+    expect(cron.schedule).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -926,23 +1043,12 @@ describe("multi-instance run claim", () => {
     );
   });
 
-  it("commitment job sends when it wins the claim, under its own job name", async () => {
+  it("local-hour job sends due commitments too", async () => {
+    vi.mocked(storage.getUserIdPage).mockResolvedValue([]);
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([]);
-    await handlerFor("0 9 * * *")();
+    await handlerFor("0 * * * *")();
 
-    expect(storage.claimSchedulerRun).toHaveBeenCalledWith(
-      "commitment-reminders",
-      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}$/),
-    );
     expect(storage.getDueCommitmentsAllUsers).toHaveBeenCalled();
-  });
-
-  it("commitment job does nothing when another instance holds the claim", async () => {
-    vi.mocked(storage.claimSchedulerRun).mockResolvedValue(false);
-    await handlerFor("0 9 * * *")();
-
-    expect(storage.getDueCommitmentsAllUsers).not.toHaveBeenCalled();
-    expect(notify).not.toHaveBeenCalled();
   });
 
   it("local-hour job does nothing when another instance holds the claim", async () => {
@@ -954,6 +1060,7 @@ describe("multi-instance run claim", () => {
       expect.any(String),
     );
     expect(storage.getUserIdPage).not.toHaveBeenCalled();
+    expect(storage.getDueCommitmentsAllUsers).not.toHaveBeenCalled();
   });
 
   it("local-hour job runs when it wins the claim", async () => {
@@ -967,7 +1074,7 @@ describe("multi-instance run claim", () => {
     vi.mocked(storage.claimSchedulerRun).mockRejectedValue(
       new Error("db down"),
     );
-    await expect(handlerFor("0 9 * * *")()).resolves.toBeUndefined();
+    await expect(handlerFor("0 * * * *")()).resolves.toBeUndefined();
 
     expect(storage.getDueCommitmentsAllUsers).not.toHaveBeenCalled();
   });
