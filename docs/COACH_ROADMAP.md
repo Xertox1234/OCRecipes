@@ -60,7 +60,7 @@ Then re-rank.
       already in the pantry in the same unit is topped up). It follows the
       pantry receipt scan's plan rules and counts toward the same monthly
       scans, and spends a receipt credit as well as the photo credit.
-      Part 2, PR #PRNUM: a restaurant menu photo becomes a list of the three
+      Part 2, PR #2049: a restaurant menu photo becomes a list of the three
       best-rated dishes, each with rough calories, protein and the reason.
       Dishes rated "avoid" and dishes whose menu text names one of the user's
       allergens are left out (the Coach says how many, naming none); if the
