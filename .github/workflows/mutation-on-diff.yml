@@ -7,6 +7,8 @@ name: Mutation-on-diff
 # non-excluded module and posts score + survivors to the job summary.
 # Registered targets are skipped here — their required gates cover them.
 # The job goes red only when the harness itself fails for a module.
+# There is no Postgres here: a module whose co-located test imports
+# test/db-test-utils is listed in the summary as "Needs a database, not run".
 #
 # Selection runs FIRST, before Node setup and `npm ci`: a PR with no eligible
 # module (a docs-only PR, say) writes its summary and skips the install, the
@@ -79,6 +81,7 @@ jobs:
         # label-override -> barcode-lookup -> storage) never loaded and Stryker
         # reported "No tests were executed". db.ts builds a lazy pool, so a set
         # URL is enough; a test that does query fails fast with ECONNREFUSED.
+        # Selection keeps tests that import test/db-test-utils out of the run.
         env:
           DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
         run: node scripts/ci/mutation-on-diff.mjs "$RUNNER_TEMP/changed-files.txt"

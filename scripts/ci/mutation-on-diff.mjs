@@ -18,6 +18,10 @@
  * spawns inherits the env, and one oversized variable makes exec fail with
  * E2BIG on Linux.
  *
+ * The job has no Postgres. A module whose co-located test imports
+ * test/db-test-utils is listed under "Needs a database, not run" and not run:
+ * its dry run would fail with ECONNREFUSED and read as a harness failure.
+ *
  * Exclusions come from stryker.targets.mjs (isHardExclusion /
  * isApprovedExclusion) and mutation:explore re-enforces them — there is no
  * second regex here.
@@ -68,12 +72,26 @@ function coLocatedTest(file) {
 }
 
 /**
+ * Whether a test file needs a real Postgres: it imports the transaction helper
+ * test/db-test-utils. Only a direct import counts; a test that reaches the
+ * helper through another module still runs and fails as a harness error.
+ *
+ * @param {string} source the test file's text
+ */
+export function testNeedsDatabase(source) {
+  return /(?:from|import\s*\(|require\s*\()\s*["'][^"'\n]*\/db-test-utils(?:\.[cm]?[jt]s)?["']/.test(
+    source,
+  );
+}
+
+/**
  * Sort a PR's changed files into what mutation-on-diff runs and why the rest
  * is not run. Registered targets are skipped first (their required gates
- * cover them), then Hard-Exclusions without a human approval.
+ * cover them), then Hard-Exclusions without a human approval. A module whose
+ * test needs a database is set aside before the cap, so it takes no slot.
  *
  * @param {string[]} changedFiles
- * @param {{ isHardExclusion: (p: string) => boolean, isApprovedExclusion: (p: string) => boolean, registeredMutatePaths: Set<string>, exists: (p: string) => boolean, max?: number }} deps
+ * @param {{ isHardExclusion: (p: string) => boolean, isApprovedExclusion: (p: string) => boolean, registeredMutatePaths: Set<string>, exists: (p: string) => boolean, needsDatabase?: (test: string) => boolean, max?: number }} deps
  */
 export function selectEligible(changedFiles, deps) {
   const max = deps.max ?? MAX_FILES;
@@ -83,6 +101,7 @@ export function selectEligible(changedFiles, deps) {
   /** @type {string[]} */ const skippedRegistered = [];
   /** @type {string[]} */ const excluded = [];
   /** @type {string[]} */ const overflow = [];
+  /** @type {string[]} */ const needsDatabase = [];
 
   for (const file of [...new Set(changedFiles)].sort()) {
     // A module the PR deleted has nothing to mutate.
@@ -100,13 +119,24 @@ export function selectEligible(changedFiles, deps) {
       untested.push(file);
       continue;
     }
+    if (deps.needsDatabase?.(test)) {
+      needsDatabase.push(file);
+      continue;
+    }
     if (eligible.length >= max) {
       overflow.push(file);
       continue;
     }
     eligible.push({ file, test });
   }
-  return { eligible, untested, skippedRegistered, excluded, overflow };
+  return {
+    eligible,
+    untested,
+    skippedRegistered,
+    excluded,
+    overflow,
+    needsDatabase,
+  };
 }
 
 /**
@@ -234,7 +264,7 @@ function inlineCode(text) {
 
 /**
  * @param {Row[]} rows
- * @param {{ untested: string[], skippedRegistered: string[], excluded: string[], overflow: string[] }} meta
+ * @param {{ untested: string[], skippedRegistered: string[], excluded: string[], overflow: string[], needsDatabase?: string[] }} meta
  */
 export function renderSummary(rows, meta) {
   const lines = ["### Mutation-on-diff (advisory)", ""];
@@ -293,8 +323,8 @@ export function renderSummary(rows, meta) {
       lines.push("", "</details>", "");
     }
   }
-  /** @param {string} label @param {string[]} items */
-  const note = (label, items) => {
+  /** @param {string} label @param {string[]} [items] */
+  const note = (label, items = []) => {
     if (items.length) lines.push(`- ${label}: ${items.join(", ")}`);
   };
   note("Untested changed modules (no co-located test)", meta.untested);
@@ -303,6 +333,10 @@ export function renderSummary(rows, meta) {
     meta.skippedRegistered,
   );
   note("Excluded (Hard-Exclusion, not human-approved)", meta.excluded);
+  note(
+    "Needs a database, not run (this job has no Postgres)",
+    meta.needsDatabase,
+  );
   note("Over the cap, not run", meta.overflow);
   return lines.join("\n") + "\n";
 }
@@ -382,6 +416,7 @@ function selectFromListFile(listFile) {
     isApprovedExclusion,
     registeredMutatePaths,
     exists: (p) => existsSync(p),
+    needsDatabase: (test) => testNeedsDatabase(readFileSync(test, "utf8")),
   });
 }
 
