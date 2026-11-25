@@ -1123,6 +1123,23 @@ describe("CoachChat — quick reply & commitment", () => {
 });
 
 // ── streamingFooter branches ─────────────────────────────────────────────────
+// Coach chat audit 2026-11-24 (M24): the host holds its thread controls
+// while a turn is on its way.
+describe("CoachChat — onTurnBusyChange", () => {
+  it("tells the host when a reply is streaming, and when nothing is", () => {
+    const onTurnBusyChange = vi.fn();
+    renderCoachChat({ conversationId: 7, onTurnBusyChange });
+    expect(onTurnBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("reports busy while a reply streams", () => {
+    state.isStreaming = true;
+    const onTurnBusyChange = vi.fn();
+    renderCoachChat({ conversationId: 7, onTurnBusyChange });
+    expect(onTurnBusyChange).toHaveBeenLastCalledWith(true);
+  });
+});
+
 describe("CoachChat — streamingFooter", () => {
   it("renders the streaming bubble while streaming", () => {
     state.isStreaming = true;

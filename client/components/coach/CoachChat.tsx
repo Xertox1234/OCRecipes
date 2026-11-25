@@ -132,6 +132,12 @@ interface CoachChatProps {
   onReminderHandled?: () => void;
   /** A reply finished streaming (the host looks for new notebook saves). */
   onReplyDone?: () => void;
+  /**
+   * A reply is streaming or a photo is uploading, or that just ended. The
+   * host holds its thread controls meanwhile: this component is mounted once
+   * for every thread, so a switch would show the live reply in another one.
+   */
+  onTurnBusyChange?: (busy: boolean) => void;
   /** The brief's "Not today": the host clears just that reminder type. */
   onDismissReminder?: (type: "meal-log") => void;
 }
@@ -161,6 +167,7 @@ export default function CoachChat({
   openingBrief,
   onReminderHandled,
   onReplyDone,
+  onTurnBusyChange,
   onDismissReminder,
 }: CoachChatProps) {
   const { theme } = useTheme();
@@ -758,6 +765,10 @@ export default function CoachChat({
 
   // The one busy rule for every way a turn can start (audit 2026-11-24,
   // M20/M22/M53). Read at call time: the two refs change without a render.
+  useEffect(() => {
+    onTurnBusyChange?.(isStreaming || isSendingPhoto);
+  }, [isStreaming, isSendingPhoto, onTurnBusyChange]);
+
   const turnBlocked = useCallback(
     () =>
       turnStartBlocked({

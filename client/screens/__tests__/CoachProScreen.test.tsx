@@ -161,7 +161,9 @@ vi.mock("@/components/coach/CoachChat", () => ({
     onReminderHandled,
     onReplyDone,
     onDismissReminder,
+    onTurnBusyChange,
   }: {
+    onTurnBusyChange?: (busy: boolean) => void;
     onReplyDone?: () => void;
     onDismissReminder?: (t: string) => void;
     openingBrief?: { form: string; onShown?: () => void } | null;
@@ -183,6 +185,8 @@ vi.mock("@/components/coach/CoachChat", () => ({
         mock-brief-shown
       </button>
       <button onClick={() => onReplyDone?.()}>mock-reply-done</button>
+      <button onClick={() => onTurnBusyChange?.(true)}>mock-busy</button>
+      <button onClick={() => onTurnBusyChange?.(false)}>mock-idle</button>
       <button onClick={() => onDismissReminder?.("meal-log")}>
         mock-dismiss
       </button>
@@ -315,6 +319,95 @@ describe("CoachProScreen — New thread", () => {
     );
 
     expect(screen.getByText("conversation:7")).toBeDefined();
+  });
+});
+
+// Coach chat audit 2026-11-24 (M24): the chat is one mounted component, so a
+// reply still streaming for thread A used to be drawn in thread B.
+describe("CoachProScreen — no thread switch while a reply is on its way", () => {
+  const first = { id: 7, title: "First thread", isPinned: false };
+  const second = { id: 8, title: "Second thread", isPinned: false };
+
+  it("keeps the open thread when another chip is tapped mid-reply, then lets it switch", () => {
+    conversationsState.data = [first, second];
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("conversation:7")).toBeDefined();
+
+    fireEvent.click(screen.getByText("mock-busy"));
+    const chip = screen.getByLabelText("Open coach conversation Second thread");
+    expect(chip.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(chip);
+    expect(screen.getByText("conversation:7")).toBeDefined();
+
+    fireEvent.click(screen.getByText("mock-idle"));
+    fireEvent.click(
+      screen.getByLabelText("Open coach conversation Second thread"),
+    );
+    expect(screen.getByText("conversation:8")).toBeDefined();
+  });
+
+  it("New does nothing mid-reply", () => {
+    conversationsState.data = [first];
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByText("mock-busy"));
+
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+
+    expect(screen.getByText("conversation:7")).toBeDefined();
+  });
+
+  it("a thread picked from See all mid-reply opens once the reply is done", () => {
+    conversationsState.data = [first, second];
+    const { rerender } = renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByText("mock-busy"));
+
+    routeState.params = { selectedConversationId: 8 };
+    rerender(<CoachProScreen />);
+    expect(screen.getByText("conversation:7")).toBeDefined();
+
+    fireEvent.click(screen.getByText("mock-idle"));
+    expect(screen.getByText("conversation:8")).toBeDefined();
+  });
+});
+
+// Coach chat audit 2026-11-24 (M25): deleting the open thread from See all
+// left this screen pointing at it, and the next send failed.
+describe("CoachProScreen — the open thread is deleted elsewhere", () => {
+  const first = { id: 7, title: "First thread", isPinned: false };
+  const second = { id: 8, title: "Second thread", isPinned: false };
+
+  it("moves to the next thread when the open one leaves the list", () => {
+    conversationsState.data = [first, second];
+    const { rerender } = renderComponent(<CoachProScreen />);
+    expect(screen.getByText("conversation:7")).toBeDefined();
+
+    conversationsState.data = [second];
+    rerender(<CoachProScreen />);
+
+    expect(screen.getByText("conversation:8")).toBeDefined();
+  });
+
+  it("opens an empty draft when the last thread is deleted", () => {
+    conversationsState.data = [first];
+    const { rerender } = renderComponent(<CoachProScreen />);
+
+    conversationsState.data = [];
+    rerender(<CoachProScreen />);
+
+    expect(screen.getByText("conversation:null")).toBeDefined();
+  });
+
+  it("keeps a conversation the list has not caught up with yet", async () => {
+    conversationsState.data = [first];
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("mock-create"));
+    });
+
+    // The new conversation is open although the list still lacks it.
+    expect(screen.queryByText("conversation:7")).toBeNull();
+    expect(screen.queryByText("conversation:null")).toBeNull();
   });
 });
 
