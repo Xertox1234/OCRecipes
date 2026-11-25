@@ -6017,7 +6017,7 @@ ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-
 #       undecided: a broken lib, a signal, a jq that cannot print. Command text alone
 #       cannot do that. test-guard-outward-cli.sh rows ND1-ND5 own it.
 #   - this command is ${#CMD} characters long
-#       the size cap at 300000 characters. Command text CAN reach it, but not through
+#       the size cap at 200000 characters. Command text CAN reach it, but not through
 #       this file: `envelope()` passes the command as ONE argv entry (`jq --arg`), and
 #       Linux refuses an argv entry over 128 KB (E2BIG), so no ROW can carry a command
 #       that large. test-guard-outward-cli.sh rows ND5b own it (payload on stdin).

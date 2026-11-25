@@ -379,11 +379,20 @@ _CMD_GIT_REDIRECT_ENV='(^|[[:space:]])(GIT_DIR|GIT_WORK_TREE)='
 # newlines (the whole input is slurped) so a multi-line quoted body cannot leak its
 # contents. The single-quote char is obtained via sprintf("%c",39) to avoid embedding a
 # literal ' inside this single-quoted awk program.
-cmd_bare() {
-  awk '
+cmd_bare() { _cmd_bare_awk 0; }
+_cmd_bare_awk() {  # $1 = per_body (see the note in the program)
+  awk -v per_body="$1" '
+    # ONE PROGRAM, TWO DRIVERS (2026-11-25). With per_body=0 the whole input is
+    # one command (the rendering this function has always produced). With
+    # per_body=1 every input line is one substitution body, rendered on its own
+    # exactly as `printf %s "$body" | <this function>` would (state starts over
+    # for each line, an empty line is skipped), each preceded by a newline: the
+    # *_deep loops used to start one awk per body, about 2.6 ms each, and a
+    # command of 4000 substitutions outran the 10 s hook timeout.
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\" }
-    { buf = buf $0 "\n" }
-    END {
+    { if (!per_body) buf = buf $0 "\n"; else if ($0 != "") { buf = $0 "\n"; render(); printf "\n%s", out } }
+    END { if (!per_body) { render(); printf "%s", out } }
+    function render() {
       # 0 = unquoted, 1 = single quotes, 2 = double quotes, 3 = ANSI-C $(quote)
       st = 0
       n = length(buf)
@@ -422,7 +431,6 @@ cmd_bare() {
           else                out = out " "
         }
       }
-      printf "%s", out
     }'
 }
 
@@ -464,8 +472,16 @@ cmd_bare() {
 # the `echo "gh pr create"` false match — the command-position anchor is. Blanking
 # is what keeps a SEPARATOR inside a span from opening a command position, which
 # is precisely the part cmd_words preserves.
-cmd_words() {
-  awk '
+cmd_words() { _cmd_words_awk 0; }
+_cmd_words_awk() {  # $1 = per_body (see the note in the program)
+  awk -v per_body="$1" '
+    # ONE PROGRAM, TWO DRIVERS (2026-11-25). With per_body=0 the whole input is
+    # one command (the rendering this function has always produced). With
+    # per_body=1 every input line is one substitution body, rendered on its own
+    # exactly as `printf %s "$body" | <this function>` would (state starts over
+    # for each line, an empty line is skipped), each preceded by a newline: the
+    # *_deep loops used to start one awk per body, about 2.6 ms each, and a
+    # command of 4000 substitutions outran the 10 s hook timeout.
     # Everything a quoted span must NOT be able to emit: whitespace (which would
     # split one argv word into two) and every character that can OPEN or CLOSE a
     # command position in either anchor — `; & | ( )` plus backtick, `{`, `}`, `!`
@@ -515,8 +531,9 @@ cmd_words() {
     # is a boundary in none of the classes in play, so a span collapses to one
     # contiguous word for every consumer, not just the whitespace-based ones.
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x" }
-    { buf = buf $0 "\n" }
-    END {
+    { if (!per_body) buf = buf $0 "\n"; else if ($0 != "") { buf = $0 "\n"; render(); printf "\n%s", out } }
+    END { if (!per_body) { render(); printf "%s", out } }
+    function render() {
       # 0 = unquoted, 1 = single quotes, 2 = double quotes, 3 = ANSI-C $(quote)
       st = 0
       n = length(buf)
@@ -578,7 +595,6 @@ cmd_words() {
           else                   out = out c
         }
       }
-      printf "%s", out
     }'
 }
 
@@ -981,13 +997,8 @@ cmd_extract_substitutions() {
 # check for — a bug or pathological input inside cmd_extract_substitutions can
 # only cost the ADDED matches, never corrupt or blank the base rendering.
 cmd_words_deep() {
-  local cmd="$1" body
-  printf '%s' "$cmd" | cmd_words
-  while IFS= read -r body; do
-    [ -n "$body" ] || continue
-    printf '\n'
-    printf '%s' "$body" | cmd_words
-  done < <(printf '%s' "$cmd" | cmd_extract_substitutions)
+  printf '%s' "$1" | cmd_words
+  printf '%s' "$1" | cmd_extract_substitutions | _cmd_words_awk 1
 }
 
 # cmd_words_vanished <cmd> -- a rendering in which every construct PROVABLY
@@ -1637,13 +1648,8 @@ cmd_words_vanished_blind() {
 # de-duplication to an already carefully-scoped scanner — see
 # test-pr-verify.sh's "bare + leading-space" tests.
 cmd_bare_deep() {
-  local cmd="$1" body
-  printf '%s' "$cmd" | cmd_bare
-  while IFS= read -r body; do
-    [ -n "$body" ] || continue
-    printf '\n'
-    printf '%s' "$body" | cmd_bare
-  done < <(printf '%s' "$cmd" | cmd_extract_substitutions)
+  printf '%s' "$1" | cmd_bare
+  printf '%s' "$1" | cmd_extract_substitutions | _cmd_bare_awk 1
 }
 
 # cmd_is_gh_pr_create <command>  → exit 0 if it invokes `gh pr create` in command position.

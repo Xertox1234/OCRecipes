@@ -2347,16 +2347,18 @@ if :; then
   fi
 fi
 # A command too large to read in time (2026-11-24). The quote-aware renderings below are
-# quadratic in the command's length: measured on a quiet machine, 200 KB takes 3.7 s, 400 KB
-# 13.7 s and 480 KB 19.9 s, against a 15 s hook timeout (.claude/settings.json). Past that the
-# hook is killed before it answers. Everything that reaches this line either holds one of the
-# fast path's needles or a span that could build one, so above 300000 characters this denies
-# rather than start an evaluation it cannot finish. Ordinary commands of any size left by the
-# fast path above. NOT bounded by this: a command dense in `$(...)` or backtick substitutions.
-# lib/cmd-detect.sh runs one awk per substitution body (about 6.5 ms each), so such a command
-# passes the timeout from about 60 KB (docs/harness-residuals.md).
-if [ "${#CMD}" -gt 300000 ]; then
-  deny "guard-outward-cli: this command is ${#CMD} characters long and names (or could build) an outward-facing CLI word; above 300000 characters the hook cannot finish reading it inside its timeout, so it fails closed instead of timing out. Write the large content to a file with a file tool and run a short command, or bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
+# quadratic in the command's length: measured on a quiet machine, 200 KB takes 3.3-3.7 s,
+# 294 KB 6.9 s, 400 KB 13.7 s and 480 KB 19.9 s, against a 10 s hook timeout
+# (.claude/settings.json). Past that the hook is killed before it answers. Everything that
+# reaches this line either holds one of the fast path's needles or a span that could build one,
+# so above 200000 characters this denies rather than start an evaluation it may not finish.
+# Ordinary commands of any size left by the fast path above. The cap was 300000 against a
+# timeout these lines said was 15 s; it has been 10 s since the hook was registered.
+# A command dense in `$(...)` or backtick substitutions costs about the same as plain text of
+# its size since 2026-11-25: lib/cmd-detect.sh's deep renderings read every substitution body
+# in one awk run instead of one awk each (2000 lines of two substitutions: 10.7 s -> 0.6 s).
+if [ "${#CMD}" -gt 200000 ]; then
+  deny "guard-outward-cli: this command is ${#CMD} characters long and names (or could build) an outward-facing CLI word; above 200000 characters the hook may not finish reading it inside its timeout, so it fails closed instead of timing out. Write the large content to a file with a file tool and run a short command, or bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # If the shared lib is unsourceable (broken install), jq IS available here
 # (the no-jq branch above already returned) and deny() is already defined —

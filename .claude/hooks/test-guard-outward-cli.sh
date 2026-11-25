@@ -6872,8 +6872,8 @@ ND_PAYLOAD=$(jsonc "$ND_OUTWARD")
 ND_OUT=$(PATH="$ND_JQ:$PATH" bash "$HOOK" 2>/dev/null <<<"$ND_PAYLOAD"); ND_RC=$?; ND_ERR=""
 n="ND5 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
 nd_only_deny && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
-# ND5b. A command too large to evaluate inside the 15 s hook timeout (same review): above
-#      300000 characters with an outward word it denies at once. Payloads go to the hook on
+# ND5b. A command too large to evaluate inside the 10 s hook timeout (same review): above
+#      200000 characters with an outward word it denies at once. Payloads go to the hook on
 #      stdin from jq -Rs (one --arg over 128 KB is E2BIG).
 nd_big() {  # $1=first line  $2=padding bytes ; sets ND_OUT ND_RC ND_SECS
   local t0 t1
@@ -6891,6 +6891,11 @@ nd_silent && nd_ok "$n" || nd_bad "$n"
 nd_big "$ND_OUTWARD" 100000
 n="ND5b control: a 100 KB outward command still gets the precise reason, not the size one"
 nd_only_deny && ! nd_reason_has 'characters long' && nd_ok "$n" || nd_bad "$n"
+# The cap is 200000 (2026-11-25; it was 300000, chosen against a 15 s timeout the hook never
+# had): a 250 KB outward command took about 5.5 s through the precise path, past half the 10 s.
+nd_big "$ND_OUTWARD" 250000
+n="ND5b a 250 KB outward command: too-large deny in under 5 s"
+nd_only_deny && nd_reason_has 'characters long' && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
 # ND5c. A command dense in substitutions, well under the size cap (2026-11-25). The deep
 #      renderings in lib/cmd-detect.sh started one awk per `$(...)`/backtick body, about
 #      2.6 ms each, so 2000 lines of two substitutions (79 KB) took 10.7 s against the 10 s
@@ -7073,7 +7078,8 @@ DDROWS
 # allowed before) and 10 allow controls.
 # 1419 -> 1421 (2026-11-25, substitution-dense commands outran the 10 s hook timeout): +2 =
 # ND5c, a deny row and an allow control, both RED before the batched deep renderings.
-EXPECTED_TOTAL=1421
+# 1421 -> 1422 (same change): +1 = ND5b at 250 KB, RED while the size cap was 300000.
+EXPECTED_TOTAL=1422
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

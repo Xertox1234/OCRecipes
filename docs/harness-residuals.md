@@ -755,21 +755,27 @@ count as `${n:-0}`, so the occurrence count is 0 and the family's block is skipp
 tails after an OTA update, a PR merge and a REST merge all denied on `main`; the conditions
 already read here-strings, and the nine `printf | grep -q` conditions left were converted),
 but the quote-aware renderings are quadratic: 200 KB takes 3.7 s, 400 KB 13.7 s, 480 KB
-19.9 s, against a 15 s hook timeout, so above about 450 KB the hook was killed before it
-answered. A command over 300000 characters that holds a fast-path needle now denies at once.
+19.9 s, against the hook's timeout, so above about 450 KB the hook was killed before it
+answered. A command over 200000 characters that holds a fast-path needle now denies at once
+(300000 until 2026-11-25, chosen against a 15 s timeout; `guard-outward-cli.sh` has had 10 s
+in `.claude/settings.json` since it was registered, and 294 KB took 6.9 s).
 Still open in `guard-outward-cli.sh`: the same list as for `git-safety.sh` below (a lib that
 replaces the trap, sets `DECIDED`, assigns a variable the hook reads such as `CMD` or `PATH`,
 redefines a function defined before the libs are sourced, defines `builtin`, or closes fd 9;
 SIGKILL, the fault signals, which print the deny but leave rc 132-139, the real-time and stop
 signals); the ambient `ALLOW_OUTWARD_CLI` exit, the no-`jq` arm and the read of stdin run
-before the trap; the size cap does NOT bound a command dense in `$(...)` or backtick
-substitutions: `lib/cmd-detect.sh` runs one awk per substitution body (about 6.5 ms each,
-loops at lines 986 and 1642), so an outward command followed by such lines takes 15.2 s at
-60 KB and 42 s at 150 KB, on `main` too. Past the timeout a SIGTERM gets the trap's deny for
-what the crude smell test recognises, and a SIGKILL gets nothing. A fix is a bound on the
-substitution count next to the size cap, or one awk run for all bodies; it needs a corpus
-row. A command of inert text between about 250 KB and 300000 characters can also pass the
-timeout on a busy machine; and the trap and the "unsourceable" fallback are only as wide as
+before the trap. FIXED 2026-11-25 (rows `ND5c` in `test-guard-outward-cli.sh`): a command
+dense in `$(...)` or backtick substitutions outran the timeout well under the size cap,
+because `cmd_words_deep` and `cmd_bare_deep` in `lib/cmd-detect.sh` started one awk per
+substitution body (about 2.6 ms each): an outward command followed by 2000 lines of two
+substitutions (79 KB) took 10.7 s, 4000 lines about 20 s. Each now renders every body in one
+awk run (`_cmd_words_awk 1`, `_cmd_bare_awk 1`), byte-identical to the per-body loop over 3000
+random commands: 0.6 s and 1.8 s, and 5.8 s just under the cap, the same as plain text of that
+size. The same functions serve `branch-preflight.sh` and `pr-preflight-guard.sh` (10 s each):
+2000 such lines after `git commit` took 8.9 s in the first and now 0.4 s, after `gh pr create`
+9.0 s in the second and now 0.3 s. Still open: the renderings stay quadratic, so a command just
+under 200000 characters takes about 3.5 s on a quiet machine and could still pass the timeout
+on a very busy one; and the trap and the "unsourceable" fallback are only as wide as
 `crude_smells_outward`, which misses families the precise matcher denies: `npx eas-cli
 update`, `yarn dlx`/`pnpm dlx`/`bunx eas-cli update`, `node node_modules/eas-cli/bin/run
 update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with a global
@@ -794,6 +800,7 @@ update`). Found by the security review of that change, allowed on `main` too, fi
 (`eas -- $V`). `npx`, `bunx` and `node` pass the `--` on to the binary (measured); what eas or
 railway do with a leading `--` was not measured, so those spellings are denied without
 knowing that they publish. Still open, on `main` too, all measured ALLOW:
+
 - npm's own flags after the package word with NO `--`: `npm exec eas-cli --yes update`,
   `-y`, `--silent`, `-s`, `--loglevel=error`, `npm exec railway --silent up`. npm consumes
   the flag (a local stub received only `x` from `npm exec <stub> --yes x`), so these are real
@@ -803,7 +810,7 @@ knowing that they publish. Still open, on `main` too, all measured ALLOW:
   hook's header lists "a global flag before the verb" as a known gap), and `npm -s publish`,
   `npm --registry=x publish`.
 - a flag whose value is a SEPARATE word in front of the `--`: `npm exec eas-cli --loglevel
-  error -- update`, `npm --prefix . -- publish` (npm consumed the flag, its value and the
+error -- update`, `npm --prefix . -- publish` (npm consumed the flag, its value and the
   `--` when measured with `node` as the target). The `=` spellings are denied.
 - a backslash inside the `--` (`npm exec eas-cli -\- update`: the shell delivers `--`), the
   same blindness as `eas up\date`.
@@ -812,42 +819,42 @@ knowing that they publish. Still open, on `main` too, all measured ALLOW:
   a bare `--` (`eas -- {update,}`, `railway -- {up,}`): the brace counters were not changed.
 - `npm exec gh pr -- merge 1 --squash` (`npm exec gh` resolves a registry package, not the
   real gh).
-`git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
-(`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
-finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
-The bypasses were inside the contract branch, measured before the change with a worktree
-contract active: a lib that shadows `read` with a function that exits (silent, rc 0); a lib
-that leaves errexit on (`check_repo_target` answers by return code, so "unresolvable" ended
-the shell with rc 2 and no deny); `deny()` when `jq` cannot print (a shadowed `jq`, or a
-140 KB registry entry in the reason: E2BIG); a signal (rc 129-143, no output). Now: the two
-existing probes reject a lib that changes the shell options or leaves a function named like a
-builtin or a command the hook calls (`printf`, `ls`, `grep`, `jq`, `read` and the rest of
-`_GS_NO_SHADOW`; a `read` wrapper that forgot `builtin` recursed until bash segfaulted, rc 139,
-and no trap runs then); `deny()` builds first and cuts the reason at 8000 characters; and an
-EXIT/signal trap (TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO)
-denies when the shell ends undecided before the contract branch has finished. The trap denies ONLY while a contract is in force (registry
-non-empty, no `SKIP_WORKTREE_CONTRACT`); with no contract the hook only advises, and it stays
-silent. Found by the security review of that change and fixed with it (rows ND8-ND11): a
-LARGE command skipped the whole write-shaped check, on `main` too. `printf "$CMD" | grep -q`
-under `pipefail` reads 141 as "no match" once the command outgrows the pipe buffer, because
-grep leaves at its first match and the printf dies of SIGPIPE. A 200 KB heredoc write into the
-main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines, was allowed
-every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
-(`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
-that outlives the hook cannot hold its stdout open.
-CHECKED 2026-11-25, the last three hooks under `pipefail`: `guard-worktree-isolation.sh` and
-`core-bare-guard.sh` have no `grep -q` at all (`guard-outward-cli.sh` and `branch-preflight.sh`
-were converted 2026-11-24; `pr-preflight-guard.sh` has only `grep -o` captures with `|| true`).
-`merge-review-guard.sh` had eight. Six read one `gh api` clause each: measured DENY 3 of 3 for
-seven 300 KB spellings of an api merge (one long line, quoted multi-line values, a heredoc,
-12000 continuation words), because a clause is a single line and grep reads a line to its end,
-so the printf is never cut off. Nothing failed open. The other two read the PR body's
-`## Platform check` section and failed CLOSED: a section over the pipe buffer that named the
-run near its top was denied as "does not name E2E run" (rows P11-P13, 300 KB). Those two now
-read here-strings. The six clause greps stay pipes: a here-string over 64 KB needs a temp
-file, and a failed one reads as "no match", which at `|| continue` is an allow (security
-review, measured with a temp dir holding one copy of the clause but not two).
-Still open, found by that review, on `main` too:
+  `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
+  (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
+  finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
+  The bypasses were inside the contract branch, measured before the change with a worktree
+  contract active: a lib that shadows `read` with a function that exits (silent, rc 0); a lib
+  that leaves errexit on (`check_repo_target` answers by return code, so "unresolvable" ended
+  the shell with rc 2 and no deny); `deny()` when `jq` cannot print (a shadowed `jq`, or a
+  140 KB registry entry in the reason: E2BIG); a signal (rc 129-143, no output). Now: the two
+  existing probes reject a lib that changes the shell options or leaves a function named like a
+  builtin or a command the hook calls (`printf`, `ls`, `grep`, `jq`, `read` and the rest of
+  `_GS_NO_SHADOW`; a `read` wrapper that forgot `builtin` recursed until bash segfaulted, rc 139,
+  and no trap runs then); `deny()` builds first and cuts the reason at 8000 characters; and an
+  EXIT/signal trap (TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO)
+  denies when the shell ends undecided before the contract branch has finished. The trap denies ONLY while a contract is in force (registry
+  non-empty, no `SKIP_WORKTREE_CONTRACT`); with no contract the hook only advises, and it stays
+  silent. Found by the security review of that change and fixed with it (rows ND8-ND11): a
+  LARGE command skipped the whole write-shaped check, on `main` too. `printf "$CMD" | grep -q`
+  under `pipefail` reads 141 as "no match" once the command outgrows the pipe buffer, because
+  grep leaves at its first match and the printf dies of SIGPIPE. A 200 KB heredoc write into the
+  main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines, was allowed
+  every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
+  (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
+  that outlives the hook cannot hold its stdout open.
+  CHECKED 2026-11-25, the last three hooks under `pipefail`: `guard-worktree-isolation.sh` and
+  `core-bare-guard.sh` have no `grep -q` at all (`guard-outward-cli.sh` and `branch-preflight.sh`
+  were converted 2026-11-24; `pr-preflight-guard.sh` has only `grep -o` captures with `|| true`).
+  `merge-review-guard.sh` had eight. Six read one `gh api` clause each: measured DENY 3 of 3 for
+  seven 300 KB spellings of an api merge (one long line, quoted multi-line values, a heredoc,
+  12000 continuation words), because a clause is a single line and grep reads a line to its end,
+  so the printf is never cut off. Nothing failed open. The other two read the PR body's
+  `## Platform check` section and failed CLOSED: a section over the pipe buffer that named the
+  run near its top was denied as "does not name E2E run" (rows P11-P13, 300 KB). Those two now
+  read here-strings. The six clause greps stay pipes: a here-string over 64 KB needs a temp
+  file, and a failed one reads as "no match", which at `|| continue` is an allow (security
+  review, measured with a temp dir holding one copy of the clause but not two).
+  Still open, found by that review, on `main` too:
 
 - a FULL temp dir allows any merge command over about 64 KB (measured ALLOW 3 of 3 with 0 KB
   free, a 37-byte command still denies): `done <<< "$MRG_API_CLAUSES"` fails so the clause loop
