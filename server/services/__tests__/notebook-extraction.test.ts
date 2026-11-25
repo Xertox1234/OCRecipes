@@ -405,6 +405,7 @@ describe("Notebook Extraction", () => {
       "User skips the next two meals when they overeat.",
       "After a binge, the user fasts the next day.",
       "User skips breakfast to make up for a big dinner.",
+      "Eats less the next day to make up for overeating.",
     ])(
       "drops a habit of skipping food to make up for eating: %s",
       async (content) => {
@@ -427,6 +428,12 @@ describe("Notebook Extraction", () => {
       "User usually skips breakfast.",
       "User likes oatmeal for breakfast.",
       "User tends to overeat at buffets.",
+      "Tends to overeat at dinner, wants smaller portions and not skip breakfast.",
+      "Goal: stop overeating, and not skip protein.",
+      "Skips breakfast on weekdays; wants meals that make up a balanced plate.",
+      "Wants to avoid binge snacking; plans to fast-track meal prep.",
+      "Misses dessert, will make up a batch of cookies.",
+      "Wants to stop binge eating at night.",
     ])("keeps an ordinary habit: %s", async (content) => {
       mockCreate.mockResolvedValue(
         mockCompletion(

@@ -185,8 +185,16 @@ const ALLERGY_RE = /\ballerg/i;
  * as a preference under either prompt; the shared unsafe-advice screen reads
  * advice, not habits, so it is caught here.
  */
-const COMPENSATION_RE =
-  /\b(?:skip\w*|miss\w*|fast\w*|not\s+eat\w*|stop\w*\s+eating)\b[^.!?]*\b(?:overeat\w*|over-?ate|overindulg\w*|binge\w*|mak\w+\s+up|compensat\w*|burn\w*\s+off)\b|\b(?:overeat\w*|over-?ate|overindulg\w*|binge\w*)\b[^.!?]*\b(?:skip\w*|fast\w*|not\s+eat\w*)\b/i;
+// A restriction ("skips", "fasts", "eats less"), unless negated ("not skip").
+const RESTRICTS =
+  "(?<!\\b(?:not|never|don't|doesn't|won't|without)\\s+(?:to\\s+)?)\\b(?:skip\\w*|fast(?:s|ed|ing)?(?![-\\w])|eat\\w*\\s+(?:less|nothing)|not\\s+eat\\w*|stop\\w*\\s+eating)";
+const OVERATE = "\\b(?:overeat\\w*|over-?ate|overindulg\\w*|binge\\w*)";
+const COMPENSATION_RE = new RegExp(
+  // Within one clause: a restriction, then what it makes up for; or the
+  // overeating first and the restriction after.
+  `${RESTRICTS}\\b[^.!?;]*(?:${OVERATE}|\\bma(?:ke|kes|king|de)\\s+up\\s+for\\b|\\bcompensat\\w*|\\bburn\\w*\\s+off\\b)|${OVERATE}\\b[^.!?;]*${RESTRICTS}`,
+  "i",
+);
 
 export async function extractNotebookEntries(
   messages: ConversationMessage[],
