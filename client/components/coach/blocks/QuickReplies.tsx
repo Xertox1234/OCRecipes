@@ -77,7 +77,6 @@ const QuickReplies = React.memo(function QuickReplies({
                 haptics.selection();
                 onSelect?.(option.message, blockKey);
               }}
-              hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
               accessibilityRole="button"
               accessibilityLabel={option.label}
             >
@@ -97,11 +96,15 @@ export default QuickReplies;
 const styles = StyleSheet.create({
   container: { marginTop: 8 },
   content: { gap: 8, paddingHorizontal: 2 },
+  // A real 44pt box: the horizontal ScrollView is exactly as tall as the
+  // chip row, so a vertical hitSlop had nowhere to reach.
   chip: {
     borderRadius: 16,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center",
   },
   chipText: { fontSize: 13 },
 });

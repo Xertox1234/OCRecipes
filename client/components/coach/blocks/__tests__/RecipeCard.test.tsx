@@ -25,6 +25,18 @@ describe("RecipeCard", () => {
     expect(screen.getByText("Lemon Chicken")).toBeTruthy();
   });
 
+  // Audit 2026-11-24 M3: several cards in one reply were a list of identical
+  // "View recipe" buttons.
+  it("names the recipe on its View and Cook buttons", () => {
+    renderComponent(<RecipeCard block={block} />);
+    expect(
+      screen.getByRole("button", { name: "View recipe: Lemon Chicken" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cook Lemon Chicken step by step" }),
+    ).toBeTruthy();
+  });
+
   it("fires a FeaturedRecipeDetail navigate action from the View button", () => {
     const onAction = vi.fn();
     renderComponent(<RecipeCard block={block} onAction={onAction} />);
@@ -39,7 +51,9 @@ describe("RecipeCard", () => {
   it("opens cook mode for the recipe from the Cook button", () => {
     const onAction = vi.fn();
     renderComponent(<RecipeCard block={block} onAction={onAction} />);
-    fireEvent.click(screen.getByRole("button", { name: /cook this recipe/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^cook lemon chicken/i }),
+    );
     expect(onAction).toHaveBeenCalledExactlyOnceWith({
       type: "navigate",
       screen: "CookMode",

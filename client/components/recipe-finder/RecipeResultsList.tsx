@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from "react";
-import { AccessibilityInfo, Pressable, StyleSheet, View } from "react-native";
+import React from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Button } from "@/components/Button";
@@ -8,6 +8,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
+import { useCardArrivalAnnouncement } from "./useCardArrivalAnnouncement";
 import type {
   FinderButton,
   FinderItem,
@@ -62,18 +63,13 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
   const { theme } = useTheme();
   const haptics = useHaptics();
   // No live region covers the list's arrival, so announce on both platforms,
-  // once per flow, and only for the live (latest) list.
-  const announcedFlowRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      !announceArrival ||
-      !isActive ||
-      announcedFlowRef.current === block.flow.flowId
-    )
-      return;
-    announcedFlowRef.current = block.flow.flowId;
-    AccessibilityInfo.announceForAccessibility(resultsAnnouncement(block));
-  }, [announceArrival, isActive, block]);
+  // once per flow, and only for the live (latest) list. The record outlives
+  // the row, so a remount (scrolled out and back, chat reopened) is silent.
+  useCardArrivalAnnouncement(
+    `results:${block.flow.flowId}`,
+    resultsAnnouncement(block),
+    { enabled: announceArrival, isActive },
+  );
 
   const header = resultsHeader(block.source);
   const notice = noticeText(block.notice, block.source);

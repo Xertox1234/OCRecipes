@@ -118,6 +118,7 @@ export function PlanWriteCard({ payload, edits, onEdit }: Props) {
                       variant="ghost"
                       onPress={() => setOpenRow(openRow === i ? null : i)}
                       accessibilityLabel={`Swap ${recipe.title}`}
+                      expanded={openRow === i}
                     >
                       Swap
                     </Button>
@@ -137,6 +138,7 @@ export function PlanWriteCard({ payload, edits, onEdit }: Props) {
                 entering={reducedMotion ? undefined : FadeIn}
                 style={styles.picker}
                 accessibilityRole="radiogroup"
+                accessibilityLabel={`Alternatives for ${recipe.title}`}
               >
                 {options.map((o, oi) => {
                   const altIndex = oi === 0 ? null : oi - 1;
@@ -177,7 +179,11 @@ export function PlanWriteCard({ payload, edits, onEdit }: Props) {
                 Amounts are added up when you save, and what your pantry already
                 has is left off.
               </ThemedText>
-              <View style={styles.picker} accessibilityRole="radiogroup">
+              <View
+                style={styles.picker}
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Shopping list"
+              >
                 {shopping.lists.map((l) => (
                   <Chip
                     key={l.id}

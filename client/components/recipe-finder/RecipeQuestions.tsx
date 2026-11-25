@@ -4,6 +4,7 @@ import { Chip } from "@/components/Chip";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
+import { useCardArrivalAnnouncement } from "./useCardArrivalAnnouncement";
 import type {
   FinderAnswer,
   RecipeQuestionsBlock,
@@ -13,15 +14,25 @@ export interface RecipeQuestionsProps {
   block: RecipeQuestionsBlock;
   /** Only the latest finder message's controls are live (spec §4). */
   isActive: boolean;
+  /** Off in RecipeChef's pending bubble; its saved row announces instead. */
+  announceArrival?: boolean;
   onSubmit: (answers: FinderAnswer[]) => void;
 }
 
 export const RecipeQuestions = React.memo(function RecipeQuestions({
   block,
   isActive,
+  announceArrival = true,
   onSubmit,
 }: RecipeQuestionsProps) {
   const { theme } = useTheme();
+  // Like the offer, adjust and results cards: say that a card with choices
+  // arrived, once per flow.
+  useCardArrivalAnnouncement(
+    `questions:${block.flow.flowId}`,
+    QUESTIONS_ANNOUNCEMENT,
+    { enabled: announceArrival, isActive },
+  );
   const [selected, setSelected] = useState<Record<number, string | undefined>>(
     {},
   );
@@ -50,7 +61,14 @@ export const RecipeQuestions = React.memo(function RecipeQuestions({
           accessibilityRole="radiogroup"
           accessibilityLabel={q.question}
         >
-          <ThemedText style={styles.questionText}>{q.question}</ThemedText>
+          {/* The group carries this name; hidden on Android only, where the
+              labelled group is already read (iOS drops the group's label). */}
+          <ThemedText
+            style={styles.questionText}
+            importantForAccessibility="no"
+          >
+            {q.question}
+          </ThemedText>
           <View style={styles.chips}>
             {q.options.map((option) => (
               <Chip
@@ -97,6 +115,9 @@ export const RecipeQuestions = React.memo(function RecipeQuestions({
     </View>
   );
 });
+
+const QUESTIONS_ANNOUNCEMENT =
+  "Recipe questions: pick answers, then Search with these";
 
 const styles = StyleSheet.create({
   container: {

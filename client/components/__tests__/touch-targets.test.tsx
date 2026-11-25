@@ -10,6 +10,7 @@
  * Pressable to capture its raw props, keyed by accessibilityLabel.
  */
 import React from "react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { ChatBubble } from "../ChatBubble";
 import { ParsedFoodPreview } from "../ParsedFoodPreview";
@@ -21,10 +22,16 @@ import { MealSlotSection } from "../meal-plan/MealSlotSection";
 import { CardStepper } from "../coach/blocks/write-cards/CardStepper";
 import { Chip } from "../Chip";
 import CoachChat from "../coach/CoachChat";
+import QuickReplies from "../coach/blocks/QuickReplies";
+import MealPlanCard from "../coach/blocks/MealPlanCard";
+import ActionCard from "../coach/blocks/ActionCard";
 import { Colors } from "@/constants/theme";
 
-const { captured } = vi.hoisted(() => ({
+const { captured, scheme } = vi.hoisted(() => ({
   captured: {} as Record<string, Record<string, unknown>>,
+  // The ActionCard fill checks render dark mode, where the text and fill
+  // status tones differ (they are the same colour in light mode).
+  scheme: { current: "light" as "light" | "dark" },
 }));
 
 // The Coach camera button's send path (picker, compression, upload); the
@@ -139,7 +146,11 @@ vi.mock("react-native", async (importOriginal) => {
     },
   );
   Capturing.displayName = "Pressable";
-  return { ...actual, Pressable: Capturing };
+  return {
+    ...actual,
+    Pressable: Capturing,
+    useColorScheme: () => scheme.current,
+  };
 });
 
 function flatten(style: unknown): Record<string, unknown> {
@@ -290,5 +301,98 @@ describe("remaining hitSlop={8} sites are a real 44pt box", () => {
       />,
     );
     expectRealBox("Retry loading conversation");
+  });
+});
+
+// Coach chat audit 2026-11-24, bundle E. Text buttons need the height only:
+// their width comes from the label.
+function expectTallBox(label: string) {
+  const props = captured[label];
+  expect(props, `no Pressable captured for "${label}"`).toBeDefined();
+  expect(props.hitSlop).toBeUndefined();
+  const style = flatten(props.style);
+  const h = (style.height ?? style.minHeight) as number;
+  expect(h).toBeGreaterThanOrEqual(44);
+}
+
+describe("Coach card buttons are at least 44pt tall", () => {
+  // M4: the chip was about 36pt and its vertical hitSlop was clipped by the
+  // horizontal ScrollView, which is exactly as tall as the chip row.
+  it("quick-reply chip", () => {
+    renderComponent(
+      <QuickReplies
+        block={{
+          type: "quick_replies",
+          options: [{ label: "Yes please", message: "Yes" }],
+        }}
+      />,
+    );
+    expectTallBox("Yes please");
+  });
+
+  // L4: the card's only commit action was about 37pt.
+  it("meal plan 'Add to meal plan' button", () => {
+    renderComponent(
+      <MealPlanCard
+        block={{
+          type: "meal_plan_card",
+          title: "3-Day High Protein",
+          days: [
+            {
+              label: "Monday",
+              meals: [],
+              totals: { calories: 1800, protein: 140 },
+            },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /expand meal plan/i }));
+    expectTallBox("Add to meal plan");
+  });
+});
+
+// L2: white text sat on theme.success / theme.error, the TEXT tones
+// (2.7:1 and 3.1:1 in dark mode). Fills under white use the solid tones.
+describe("ActionCard result fills (dark mode)", () => {
+  beforeEach(() => {
+    scheme.current = "dark";
+  });
+  afterEach(() => {
+    scheme.current = "light";
+  });
+
+  // Only the labels and the result state matter here.
+  const block = {
+    type: "action_card",
+    title: "Log it",
+    subtitle: "Adds the meal",
+    actionLabel: "Log",
+    action: { type: "log_food", description: "oats", calories: 300 },
+  } as unknown as React.ComponentProps<typeof ActionCard>["block"];
+
+  it("success uses successSolid", async () => {
+    renderComponent(
+      <ActionCard block={block} onPressAsync={() => Promise.resolve()} />,
+    );
+    fireEvent.click(screen.getByLabelText("Log"));
+    await waitFor(() => expect(captured["Done"]).toBeDefined());
+    expect(flatten(captured["Done"].style).backgroundColor).toBe(
+      Colors.dark.successSolid,
+    );
+  });
+
+  it("failure uses errorSolid", async () => {
+    renderComponent(
+      <ActionCard
+        block={block}
+        onPressAsync={() => Promise.reject(new Error("no"))}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Log"));
+    await waitFor(() => expect(captured["Failed"]).toBeDefined());
+    expect(flatten(captured["Failed"].style).backgroundColor).toBe(
+      Colors.dark.errorSolid,
+    );
   });
 });

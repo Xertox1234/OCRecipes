@@ -26,9 +26,9 @@ const MealPlanCard = React.memo(function MealPlanCard({
         onPress={() => setExpanded(!expanded)}
         style={({ pressed }) => [styles.header, pressed && { opacity: 0.7 }]}
         accessibilityRole="button"
-        accessibilityLabel={
-          expanded ? "Collapse meal plan" : "Expand meal plan"
-        }
+        // The label replaces the child text, so it carries the title: two
+        // plans in one reply must not be two identical buttons.
+        accessibilityLabel={`${expanded ? "Collapse" : "Expand"} meal plan: ${block.title}`}
         accessibilityState={{ expanded }}
       >
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
@@ -109,7 +109,9 @@ const styles = StyleSheet.create({
     margin: 12,
     borderRadius: 8,
     paddingVertical: 10,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
   addBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" }, // hardcoded
 });

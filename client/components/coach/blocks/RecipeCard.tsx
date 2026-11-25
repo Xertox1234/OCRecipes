@@ -51,7 +51,7 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
             })
           }
           accessibilityRole="button"
-          accessibilityLabel="View recipe"
+          accessibilityLabel={`View recipe: ${recipe.title}`}
           hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
         >
           <Text style={styles.primaryBtnText}>View</Text>
@@ -66,7 +66,7 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
             })
           }
           accessibilityRole="button"
-          accessibilityLabel="Cook this recipe step by step"
+          accessibilityLabel={`Cook ${recipe.title} step by step`}
           hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
         >
           <Text style={[styles.secondaryBtnText, { color: theme.text }]}>

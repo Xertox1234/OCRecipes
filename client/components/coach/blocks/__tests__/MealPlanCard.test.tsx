@@ -51,6 +51,22 @@ describe("MealPlanCard", () => {
     });
   });
 
+  // Audit 2026-11-24 M3: the header's label replaced its text, so two plans in
+  // one reply were two identical "Expand meal plan" buttons.
+  it("names the plan on the expand and collapse button", () => {
+    renderComponent(<MealPlanCard block={block} />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Expand meal plan: 3-Day High Protein",
+      }),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Collapse meal plan: 3-Day High Protein",
+      }),
+    ).toBeTruthy();
+  });
+
   it("collapses again when the header is pressed twice", () => {
     renderComponent(<MealPlanCard block={block} />);
     const header = screen.getByRole("button", { name: /expand meal plan/i });

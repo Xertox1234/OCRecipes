@@ -62,6 +62,48 @@ describe("InlineChart", () => {
     expect(screen.getByText("2 of 7 days on target")).toBeTruthy();
   });
 
+  // Audit 2026-11-24 M2: the chart's one accessible node said only the title
+  // and summary; the bars were never spoken, and hit/miss was colour only.
+  it("bar chart label speaks every bar and whether it was on target", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    expect(
+      screen.getByLabelText(
+        "Weekly Calories. Mon: 1800, on target. Tue: 2400, missed. 2 of 7 days on target",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a bar with no hit value is neither on target nor missed", () => {
+    renderComponent(
+      <InlineChart
+        block={{
+          type: "inline_chart",
+          chartType: "bar",
+          title: "Water",
+          data: [{ label: "Mon", value: 6 }],
+        }}
+      />,
+    );
+    expect(screen.getByLabelText("Water. Mon: 6")).toBeTruthy();
+    expect(screen.queryByText("✓")).toBeNull();
+    expect(screen.queryByText("✗")).toBeNull();
+  });
+
+  it("marks hit and missed bars with a symbol, not colour alone", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    expect(screen.getAllByText("✓")).toHaveLength(1);
+    expect(screen.getAllByText("✗")).toHaveLength(1);
+  });
+
+  // Audit L3: at large text sizes the labels wrapped and overflowed a fixed
+  // 80pt row into the summary.
+  it("the bar row grows with its labels instead of a fixed height", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    const row = screen.getByTestId("inline-chart-bars");
+    expect(row.style.height).toBe("");
+    expect(row.style.minHeight).toBe("80px");
+  });
+
   it("renders a progress chart, computing percent from value/target", () => {
     renderComponent(<InlineChart block={progressBlock} />);
     expect(

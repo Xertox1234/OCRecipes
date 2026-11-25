@@ -29,6 +29,8 @@ interface ButtonProps {
   variant?: ButtonVariant;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** For a button that opens and closes something (a picker, a section). */
+  expanded?: boolean;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -43,6 +45,7 @@ export function Button({
   variant = "primary",
   accessibilityLabel,
   accessibilityHint,
+  expanded,
 }: ButtonProps) {
   const { theme } = useTheme();
   const isDisabled = disabled || loading;
@@ -105,7 +108,7 @@ export function Button({
       accessibilityLabel={derivedLabel}
       accessibilityHint={accessibilityHint}
       accessibilityRole="button"
-      accessibilityState={{ disabled: isDisabled, busy: loading }}
+      accessibilityState={{ disabled: isDisabled, busy: loading, expanded }}
       style={[
         styles.button,
         {

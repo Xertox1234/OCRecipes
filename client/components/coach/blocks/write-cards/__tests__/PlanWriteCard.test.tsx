@@ -71,9 +71,23 @@ function Harness({ p = payload() }: { p?: PlanCardPayload }) {
 describe("PlanWriteCard", () => {
   it("Swap shows the alternatives and picking one replaces the row title", () => {
     renderComponent(<Harness />);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Swap Chicken shawarma bowl" }),
-    );
+    const swap = screen.getByRole("button", {
+      name: "Swap Chicken shawarma bowl",
+    });
+    // Audit L6: Swap reports whether its picker is open.
+    expect(swap.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(swap);
+    expect(
+      screen
+        .getByRole("button", { name: "Swap Chicken shawarma bowl" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    // Audit L6: the picker is a named group.
+    expect(
+      screen.getByRole("radiogroup", {
+        name: "Alternatives for Chicken shawarma bowl",
+      }),
+    ).toBeDefined();
     fireEvent.click(
       screen.getByRole("radio", { name: "Tofu stir-fry, 500 cal" }),
     );
@@ -165,6 +179,10 @@ describe("PlanWriteCard", () => {
       ).toBe("true");
       expect(
         screen.getByRole("radio", { name: "New list (Meal plan shopping)" }),
+      ).toBeDefined();
+      // Audit L6: the shopping list choice is a named group.
+      expect(
+        screen.getByRole("radiogroup", { name: "Shopping list" }),
       ).toBeDefined();
       expect(
         screen.getByRole("button", { name: "Plan 3 dinners + shopping" }),

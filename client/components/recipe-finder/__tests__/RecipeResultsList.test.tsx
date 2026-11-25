@@ -176,9 +176,15 @@ describe("RecipeResultsList", () => {
 
   it("announces 'Found N community recipes' once when active", () => {
     const spy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    // Its own flow: a flow is announced once per app session, and the tests
+    // above already showed `block` live.
+    const fresh = {
+      ...block,
+      flow: { ...block.flow, flowId: "00000000-0000-4000-8000-000000000177" },
+    };
     const { rerender } = renderComponent(
       <RecipeResultsList
-        block={block}
+        block={fresh}
         isActive
         onButton={vi.fn()}
         onOpenItem={vi.fn()}
@@ -186,7 +192,7 @@ describe("RecipeResultsList", () => {
     );
     rerender(
       <RecipeResultsList
-        block={block}
+        block={fresh}
         isActive
         onButton={vi.fn()}
         onOpenItem={vi.fn()}

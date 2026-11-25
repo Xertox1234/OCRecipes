@@ -17,25 +17,13 @@ const SuggestionList = React.memo(function SuggestionList({
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
     >
-      {block.items.map((item, i) => (
-        <Pressable
-          key={i}
-          style={({ pressed }) => [
-            styles.item,
-            i < block.items.length - 1 && {
-              borderBottomWidth: 1,
-              borderBottomColor: theme.border,
-            },
-            pressed && { opacity: 0.7 },
-          ]}
-          onPress={() =>
-            item.action && onAction?.(item.action as Record<string, unknown>)
-          }
-          disabled={!item.action}
-          accessibilityRole={item.action ? "button" : undefined}
-          accessibilityState={{ disabled: !item.action }}
-          accessibilityLabel={`${item.title}. ${item.subtitle}`}
-        >
+      {block.items.map((item, i) => {
+        const divider = i < block.items.length - 1 && {
+          borderBottomWidth: 1,
+          borderBottomColor: theme.border,
+        };
+        const label = `${item.title}. ${item.subtitle}`;
+        const text = (
           <View style={styles.itemContent}>
             <Text style={[styles.itemTitle, { color: theme.text }]}>
               {item.title}
@@ -44,13 +32,41 @@ const SuggestionList = React.memo(function SuggestionList({
               {item.subtitle}
             </Text>
           </View>
-          {item.action && (
+        );
+        const action = item.action;
+        // A row without an action is an information line, not an
+        // unavailable control: a disabled button read as "dimmed".
+        if (!action) {
+          return (
+            <View
+              key={i}
+              style={[styles.item, divider]}
+              accessible
+              accessibilityLabel={label}
+            >
+              {text}
+            </View>
+          );
+        }
+        return (
+          <Pressable
+            key={i}
+            style={({ pressed }) => [
+              styles.item,
+              divider,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => onAction?.(action as Record<string, unknown>)}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+          >
+            {text}
             <Text style={[styles.arrow, { color: theme.link }]}>
               {"\u2192"}
             </Text>
-          )}
-        </Pressable>
-      ))}
+          </Pressable>
+        );
+      })}
     </View>
   );
 });
