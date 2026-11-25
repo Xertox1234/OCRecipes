@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { ApiError } from "@/lib/api-error";
+import { UploadNoAnswerError } from "@/lib/upload-no-answer";
 import { coachPhotoFailure } from "../coach-photo-utils";
 
 describe("coachPhotoFailure", () => {
   it("treats the daily limit as the limit banner, not an error line", () => {
     expect(
       coachPhotoFailure(new ApiError("x", ErrorCode.DAILY_LIMIT_REACHED)),
-    ).toEqual({ atDailyLimit: true, message: null });
+    ).toEqual({ atDailyLimit: true, message: null, maybeSaved: false });
   });
 
   it.each([
@@ -24,11 +25,38 @@ describe("coachPhotoFailure", () => {
   it("stays silent when AI sharing is off (that prompt is raised elsewhere)", () => {
     expect(
       coachPhotoFailure(new ApiError("x", ErrorCode.AI_SHARING_REQUIRED)),
-    ).toEqual({ atDailyLimit: false, message: null });
+    ).toEqual({ atDailyLimit: false, message: null, maybeSaved: false });
   });
 
   it("never shows the raw error text", () => {
     const failure = coachPhotoFailure(new Error("Upload failed: 500 <html>"));
+    expect(failure.message).not.toContain("500");
+    expect(failure.message).not.toContain("html");
+  });
+
+  // Coach chat audit 2026-11-24 (L29): the upload has no reply until the
+  // analysis is done, so a dropped connection says nothing about whether
+  // the server got the photo. "Please try again" then invited a second turn.
+  it("does not tell the user to resend when the server never answered", () => {
+    const failure = coachPhotoFailure(new UploadNoAnswerError());
+    expect(failure.maybeSaved).toBe(true);
+    expect(failure.message).toMatch(/may not have gone through/i);
+    expect(failure.message).not.toMatch(/try again/i);
+  });
+
+  it("knows the outcome when the server answered", () => {
+    expect(
+      coachPhotoFailure(new ApiError("Upload failed: 500", undefined))
+        .maybeSaved,
+    ).toBe(false);
+    expect(
+      coachPhotoFailure(new ApiError("x", ErrorCode.RATE_LIMITED)).maybeSaved,
+    ).toBe(false);
+  });
+
+  it("a failure before anything was sent still asks for another try", () => {
+    const failure = coachPhotoFailure(new Error("Not authenticated"));
+    expect(failure.maybeSaved).toBe(false);
     expect(failure.message).toBe("Couldn't send that photo. Please try again.");
   });
 
@@ -55,7 +83,7 @@ describe("coachPhotoFailure", () => {
           new ApiError("x", ErrorCode.DAILY_LIMIT_REACHED),
           "barcode",
         ),
-      ).toEqual({ atDailyLimit: true, message: null });
+      ).toEqual({ atDailyLimit: true, message: null, maybeSaved: false });
     });
   });
 });

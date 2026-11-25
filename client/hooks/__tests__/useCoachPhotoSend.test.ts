@@ -108,7 +108,7 @@ describe("useCoachPhotoSend", () => {
     await choose(result, "Take Photo");
     expect(args.onSettled).toHaveBeenCalledWith(
       7,
-      { atDailyLimit: true, message: null },
+      { atDailyLimit: true, message: null, maybeSaved: false },
       false,
       null,
     );

@@ -105,6 +105,7 @@ import { apiRequest } from "@/lib/query-client";
 import { chatMessagesKey } from "@/lib/query-keys";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { chatRequestErrorCopy } from "@/lib/chat-error-copy";
+import { pollUntilTurnSettled } from "@/lib/sse-xhr";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   ChatStackParamList,
@@ -139,6 +140,14 @@ interface CoachChatProps {
   onReminderHandled?: () => void;
   /** A reply finished streaming (the host looks for new notebook saves). */
   onReplyDone?: () => void;
+  /**
+   * True while a turn is on its way: the first send is creating the
+   * conversation, a reply is streaming, a photo is uploading, or Regenerate
+   * is deleting the last exchange. The host holds its thread controls
+   * meanwhile: this component is mounted once for every thread, so a switch
+   * would show the live reply in another one.
+   */
+  onTurnBusyChange?: (busy: boolean) => void;
   /** The brief's "Not today": the host clears just that reminder type. */
   onDismissReminder?: (type: "meal-log") => void;
 }
@@ -168,6 +177,7 @@ export default function CoachChat({
   openingBrief,
   onReminderHandled,
   onReplyDone,
+  onTurnBusyChange,
   onDismissReminder,
 }: CoachChatProps) {
   const { theme } = useTheme();
@@ -751,11 +761,52 @@ export default function CoachChat({
   // True while a typed send is still creating its conversation: no rendered
   // state shows that yet, and a photo started then would create a second one.
   const startingTurnRef = useRef(false);
+  // The same fact as state, for the host: it holds its thread controls while
+  // the first send is still creating the conversation (and while Regenerate
+  // is deleting the last exchange), not only once the reply streams.
+  const [isStartingTurn, setIsStartingTurn] = useState(false);
+  const setStartingTurn = useCallback((starting: boolean) => {
+    startingTurnRef.current = starting;
+    setIsStartingTurn(starting);
+  }, []);
   // The pending "Looking at your photo" announcement, so a send that never
   // starts (the conversation could not be created) or an unmount cancels it.
   const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // After a photo send the server never answered: the poll that looks for
+  // the saved turn, and where the thread stood, so the card's late arrival
+  // can clear the "may not have gone through" line and be announced.
+  const photoPollCancelRef = useRef<(() => void) | null>(null);
+  const unconfirmedPhotoRef = useRef<{
+    convId: number;
+    lastAssistantId: number | null;
+  } | null>(null);
+  const stopPhotoFollowUp = useCallback(() => {
+    photoPollCancelRef.current?.();
+    photoPollCancelRef.current = null;
+    unconfirmedPhotoRef.current = null;
+  }, []);
+  // Ends with the component, and with the thread it belongs to.
+  useEffect(() => stopPhotoFollowUp, [conversationId, stopPhotoFollowUp]);
+  useEffect(() => {
+    const pending = unconfirmedPhotoRef.current;
+    if (!pending || pending.convId !== conversationId) return;
+    if (
+      lastAssistantMessageId === null ||
+      lastAssistantMessageId === pending.lastAssistantId
+    ) {
+      return;
+    }
+    // The card arrived after all.
+    stopPhotoFollowUp();
+    // The line was true until this message arrived.
+    setStreamingError(null);
+    const reply = messages?.[messages.length - 1];
+    AccessibilityInfo.announceForAccessibility(
+      getStreamFinishAnnouncement(reply?.content ?? "", "", Platform.OS),
+    );
+  }, [lastAssistantMessageId, conversationId, messages, stopPhotoFollowUp]);
   const cancelPhotoAnnouncement = useCallback(() => {
     if (photoAnnounceTimerRef.current) {
       clearTimeout(photoAnnounceTimerRef.current);
@@ -776,6 +827,7 @@ export default function CoachChat({
       stopHandsFree();
       const isBarcode = kind === "barcode";
       setSendingBarcode(isBarcode);
+      stopPhotoFollowUp();
       sentTurnRef.current = null;
       turnEpochRef.current += 1;
       followLatest();
@@ -825,7 +877,31 @@ export default function CoachChat({
         .catch(() => undefined);
       if (turnEpochRef.current === epoch) setOptimisticMessage(null);
       // A failure is announced by the error line or the limit banner.
-      if (failure) return;
+      if (failure) {
+        // The server never answered, so it may still be analysing the photo
+        // (the send has no reply until that is done). Keep looking for the
+        // saved turn, so the card appears instead of the user resending.
+        if (failure.maybeSaved) {
+          stopPhotoFollowUp();
+          unconfirmedPhotoRef.current = {
+            convId,
+            lastAssistantId: lastAssistantIdRef.current,
+          };
+          photoPollCancelRef.current = pollUntilTurnSettled(
+            queryClient,
+            chatMessagesKey(convId),
+          );
+        }
+        // The server saves the brief and clears its reminders before the
+        // daily-limit check, so a failed first send may still have used it.
+        if (sentBrief) {
+          void queryClient.invalidateQueries({
+            queryKey: PENDING_REMINDERS_KEY,
+          });
+          void queryClient.invalidateQueries({ queryKey: COACH_BRIEF_KEY });
+        }
+        return;
+      }
       // The photo path has no stream, so nothing else says the reply is here.
       // After the refetch, so the reply is on screen when it is spoken. As
       // for a typed turn: VoiceOver hears the reply, TalkBack a short cue.
@@ -843,6 +919,12 @@ export default function CoachChat({
       }
     },
   });
+
+  // What the host is told (audit 2026-11-24, M24). The camera or picker
+  // being open is not part of it: the thread bar is covered then.
+  useEffect(() => {
+    onTurnBusyChange?.(isStreaming || isSendingPhoto || isStartingTurn);
+  }, [isStreaming, isSendingPhoto, isStartingTurn, onTurnBusyChange]);
 
   // The one busy rule for every way a turn can start (audit 2026-11-24,
   // M20/M22/M53). Read at call time: the two refs change without a render.
@@ -884,6 +966,8 @@ export default function CoachChat({
       if (typeof text !== "string") {
         haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       }
+      // A new turn ends the wait on an unanswered photo send.
+      stopPhotoFollowUp();
       sentTurnRef.current = {
         text: content,
         lastSavedId: lastSavedIdRef.current,
@@ -905,11 +989,11 @@ export default function CoachChat({
       // Only the send that creates the conversation carries the brief form.
       const briefForm = !convId && openingBrief ? openingBrief.form : undefined;
       if (!convId) {
-        startingTurnRef.current = true;
+        setStartingTurn(true);
         try {
           convId = await onCreateConversation();
         } catch {
-          startingTurnRef.current = false;
+          setStartingTurn(false);
           // The input was already cleared and the optimistic bubble was
           // already shown above — a bare catch here left the user with no
           // feedback and their typed message gone. Restore what they typed
@@ -925,7 +1009,7 @@ export default function CoachChat({
         }
       }
 
-      startingTurnRef.current = false;
+      setStartingTurn(false);
       activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
       const live = latestLiveWriteCard(writeCardLists);
@@ -954,6 +1038,8 @@ export default function CoachChat({
       // transitively depends on it: handleRetry, handleBlockAction,
       // handleQuickReply, renderItem) stays stable across keystrokes.
       turnBlocked,
+      setStartingTurn,
+      stopPhotoFollowUp,
       conversationId,
       onCreateConversation,
       warmUpHook,
@@ -1005,13 +1091,13 @@ export default function CoachChat({
     // Nothing else may start a turn (a photo, a second tap) while the two
     // rows are being deleted: the resend below would then be refused with
     // the exchange already gone.
-    startingTurnRef.current = true;
+    setStartingTurn(true);
     try {
       // Delete assistant then user message (in order — each was "most recent" at time of delete)
       await deleteChatMessage(lastMsg.id);
       await deleteChatMessage(lastUserMsg.id);
     } catch {
-      startingTurnRef.current = false;
+      setStartingTurn(false);
       queryClient.setQueryData(msgQueryKey, snapshot);
       // The first delete may have gone through before the second failed, so
       // the snapshot can show a reply the server no longer has. Re-read.
@@ -1019,7 +1105,7 @@ export default function CoachChat({
       setStreamingError("Retry failed. Check your connection and try again.");
       return;
     }
-    startingTurnRef.current = false;
+    setStartingTurn(false);
     void handleSend(lastUserMsg.content);
   }, [
     messages,
@@ -1029,6 +1115,7 @@ export default function CoachChat({
     queryClient,
     handleSend,
     turnBlocked,
+    setStartingTurn,
   ]);
 
   // Auto-send suggestion chip messages
@@ -1196,6 +1283,7 @@ export default function CoachChat({
       }
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      stopPhotoFollowUp();
       sentTurnRef.current = null;
       turnEpochRef.current += 1;
       // Sending brings the user back to the conversation's end, even if
@@ -1219,6 +1307,7 @@ export default function CoachChat({
     [
       turnBlocked,
       stopHandsFree,
+      stopPhotoFollowUp,
       conversationId,
       planUnknown,
       recheckPlan,

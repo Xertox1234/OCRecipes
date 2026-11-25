@@ -1,4 +1,5 @@
 import { raiseIfAiSharingRequired } from "./ai-sharing-events";
+import { UploadNoAnswerError } from "@/lib/upload-no-answer";
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import { tokenStorage } from "./token-storage";
 import {
@@ -180,6 +181,11 @@ export async function uploadPhotoForAnalysis(
   }
 }
 
+export { UploadNoAnswerError };
+
+/** A gateway's answer, not the server's. */
+const GATEWAY_STATUSES = new Set([502, 503, 504]);
+
 /**
  * Send a meal photo into a Coach conversation (Coach roadmap S1). The server
  * stores the turn and the Coach's reply (a food log card); the caller then
@@ -216,7 +222,12 @@ export async function uploadPhotoToCoach(
           "X-Timezone": getDeviceTimezone(),
         },
       },
-    );
+    ).catch(() => {
+      throw new UploadNoAnswerError();
+    });
+    if (GATEWAY_STATUSES.has(uploadResult.status)) {
+      throw new UploadNoAnswerError();
+    }
     if (uploadResult.status < 200 || uploadResult.status >= 300) {
       throw await uploadError(uploadResult.status, uploadResult.body, token);
     }
