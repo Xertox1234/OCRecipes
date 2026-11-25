@@ -26,7 +26,7 @@ export function sendHealthConsentRequired(res: Response): void {
 
 /**
  * Refuses a request that would add to or confirm Coach's notes while they are
- * paused (after a health-consent withdrawal; `coachNotesPaused` in
+ * paused (no health-data consent on record; `coachNotesPaused` in
  * `shared/lib/health-consent.ts`). Returns true when it sent the refusal.
  */
 export async function refusedWhileCoachNotesPaused(
@@ -37,7 +37,7 @@ export async function refusedWhileCoachNotesPaused(
   sendError(
     res,
     403,
-    "Coach's notes are off since you withdrew the health-data consent. Agree to it again to add or change notes.",
+    "Coach's notes are off without the health-data consent. Agree to it to add or change notes.",
     ErrorCode.HEALTH_CONSENT_REQUIRED,
   );
   return true;

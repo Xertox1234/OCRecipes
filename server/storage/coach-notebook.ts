@@ -30,24 +30,22 @@ import { coachNotesPaused } from "@shared/lib/health-consent";
 
 /**
  * SQL form of `coachNotesPaused` (shared/lib/health-consent.ts): true for a
- * note whose owner withdrew the health-data consent and has not given it
- * again. The reads Coach and the reminder job use leave those notes out; the
- * reads behind the user's own "What Coach knows" screen do not.
+ * note whose owner has no health-data consent on record (withdrawn, never
+ * given, or no profile row). The reads Coach and the reminder job use leave
+ * those notes out; the reads behind the user's own "What Coach knows" screen
+ * do not. Written as EXISTS-with-consent so a missing profile row reads as
+ * paused, the same as the JS form.
  */
-const ownerNotPaused = sql`NOT EXISTS (
+const ownerNotPaused = sql`EXISTS (
   SELECT 1 FROM ${userProfiles}
   WHERE ${userProfiles.userId} = ${coachNotebook.userId}
-    AND ${userProfiles.healthDataConsentAt} IS NULL
-    AND ${userProfiles.healthDataConsentWithdrawnAt} IS NOT NULL
+    AND ${userProfiles.healthDataConsentAt} IS NOT NULL
 )`;
 
 /** Whether Coach must leave this user's notes alone (see `coachNotesPaused`). */
 export async function areCoachNotesPaused(userId: string): Promise<boolean> {
   const [profile] = await db
-    .select({
-      healthDataConsentAt: userProfiles.healthDataConsentAt,
-      healthDataConsentWithdrawnAt: userProfiles.healthDataConsentWithdrawnAt,
-    })
+    .select({ healthDataConsentAt: userProfiles.healthDataConsentAt })
     .from(userProfiles)
     .where(eq(userProfiles.userId, userId));
   return coachNotesPaused(profile);

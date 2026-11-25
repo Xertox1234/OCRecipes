@@ -64,6 +64,9 @@ vi.mock("../coach-blocks", () => ({
   parseBlocksFromContent: vi.fn(),
   BLOCKS_SYSTEM_PROMPT: "[BLOCKS_SYSTEM_PROMPT]",
   getBlocksSystemPrompt: vi.fn().mockReturnValue("[BLOCKS_SYSTEM_PROMPT]"),
+  // The real rule: a user without the health consent gets no commitment card.
+  dropCommitmentCards: (blocks: { type: string }[]) =>
+    blocks.filter((b) => b.type !== "commitment_card"),
 }));
 
 vi.mock("../recipe-chat", async () => {

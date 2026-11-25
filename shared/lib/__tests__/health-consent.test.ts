@@ -82,42 +82,60 @@ describe("hasHealthData", () => {
 
 describe("coachNotesPaused", () => {
   const at = new Date("2026-11-24T10:00:00Z");
+  /** A profile row as stored: the rule must ignore the withdrawal time. */
+  const row = (r: {
+    healthDataConsentAt: Date | null;
+    healthDataConsentWithdrawnAt: Date | null;
+  }) => r;
 
   it("is true once the consent was withdrawn and not given again", () => {
     expect(
-      coachNotesPaused({
-        healthDataConsentAt: null,
-        healthDataConsentWithdrawnAt: at,
-      }),
+      coachNotesPaused(
+        row({
+          healthDataConsentAt: null,
+          healthDataConsentWithdrawnAt: at,
+        }),
+      ),
     ).toBe(true);
   });
 
   it("is false while the consent is on record", () => {
     expect(
-      coachNotesPaused({
-        healthDataConsentAt: at,
-        healthDataConsentWithdrawnAt: null,
-      }),
+      coachNotesPaused(
+        row({
+          healthDataConsentAt: at,
+          healthDataConsentWithdrawnAt: null,
+        }),
+      ),
     ).toBe(false);
   });
 
   it("is false after a withdrawal followed by a new consent", () => {
     expect(
-      coachNotesPaused({
-        healthDataConsentAt: at,
-        healthDataConsentWithdrawnAt: at,
-      }),
+      coachNotesPaused(
+        row({
+          healthDataConsentAt: at,
+          healthDataConsentWithdrawnAt: at,
+        }),
+      ),
     ).toBe(false);
   });
 
-  it("is false for a user who never answered the consent question", () => {
+  // Owner ruling 2026-11-24 (second answer): no consent on record means no
+  // notes, whether the user withdrew it or never gave it.
+  it("is true for a user who never answered the consent question", () => {
     expect(
-      coachNotesPaused({
-        healthDataConsentAt: null,
-        healthDataConsentWithdrawnAt: null,
-      }),
-    ).toBe(false);
-    expect(coachNotesPaused(undefined)).toBe(false);
-    expect(coachNotesPaused(null)).toBe(false);
+      coachNotesPaused(
+        row({
+          healthDataConsentAt: null,
+          healthDataConsentWithdrawnAt: null,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is true for a user with no profile", () => {
+    expect(coachNotesPaused(undefined)).toBe(true);
+    expect(coachNotesPaused(null)).toBe(true);
   });
 });

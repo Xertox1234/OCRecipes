@@ -183,7 +183,7 @@ describe("assembleCoachContext — Coach's notes paused", () => {
     expect(buildSystemPrompt(ctx)).not.toContain("commitment_card");
   });
 
-  it("offers it to a user who consents, and to one who never answered", () => {
+  it("offers it to a user whose consent is on record", () => {
     const consenting = assemble({
       profile: createMockUserProfile({
         healthDataConsentAt: new Date("2026-11-21T00:00:00Z"),
@@ -192,8 +192,14 @@ describe("assembleCoachContext — Coach's notes paused", () => {
     });
     expect(consenting.notesPaused).toBe(false);
     expect(consenting.blocksPrompt).toContain("commitment_card");
-    const unanswered = assemble({ profile: undefined });
-    expect(unanswered.notesPaused).toBe(false);
-    expect(unanswered.blocksPrompt).toContain("commitment_card");
+  });
+
+  // Owner ruling 2026-11-24 (second answer): never answering pauses too.
+  it("offers no commitment card to a user who never answered", () => {
+    for (const profile of [undefined, createMockUserProfile()]) {
+      const ctx = assemble({ profile });
+      expect(ctx.notesPaused).toBe(true);
+      expect(ctx.blocksPrompt).not.toContain("commitment_card");
+    }
   });
 });

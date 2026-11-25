@@ -222,6 +222,8 @@ function makeParams(overrides: Partial<CoachChatParams> = {}): CoachChatParams {
 /** UserProfile fixture for handler tests. */
 function makeProfile(overrides: Partial<UserProfile> = {}): UserProfile {
   return createMockUserProfile({
+    // Health details are stored only with the consent on record.
+    healthDataConsentAt: new Date("2026-11-21T00:00:00Z"),
     dietType: "balanced",
     allergies: [{ name: "peanuts", severity: "mild" }],
     foodDislikes: ["olives"],

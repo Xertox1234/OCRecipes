@@ -51,7 +51,7 @@ export interface CoachContext {
   mealPatternSummary?: string;
   blocksPrompt?: string;
   /**
-   * Coach's notes are paused (health consent withdrawn, `coachNotesPaused`):
+   * Coach's notes are paused (no health consent on record, `coachNotesPaused`):
    * no commitment card is offered or kept, since nothing would save it.
    */
   notesPaused?: boolean;

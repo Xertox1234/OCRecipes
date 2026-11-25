@@ -476,7 +476,7 @@ export function assembleCoachContext(a: {
     );
   }
 
-  // After a health-consent withdrawal Coach's notes are paused: the turn is
+  // Without the health-data consent Coach's notes are paused: the turn is
   // given no notes and saves none, so it must not offer a commitment card.
   context.notesPaused = coachNotesPaused(profile);
 
