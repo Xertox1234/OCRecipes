@@ -655,7 +655,8 @@ export function useSendMessage(
         ownController = controller;
         abortRef.current = controller;
 
-        // Offline fails fast with the network copy; a resume with no bytes
+        // Offline fails with the network copy (after the short re-read in
+        // the catch below); a resume with no bytes
         // (data or server ping) for 20 s is a dead socket: abort quietly and
         // poll for whatever the server saved.
         const tripped: { reason: StreamHealthTrip | null } = { reason: null };
@@ -762,6 +763,18 @@ export function useSendMessage(
           void queryClient.invalidateQueries({
             queryKey: ["/api/chat/conversations"],
           });
+          // Cut before the first token: the server may still be writing the
+          // reply (recipe and remix generation finishes and saves after a
+          // disconnect), so one re-read can come too early. Keep looking, as
+          // the dead-socket path does, so the reply shows up when it lands.
+          if (
+            streamingContentRef.current.length === 0 &&
+            epoch === sendEpochRef.current
+          ) {
+            cancelPollRef.current = pollUntilTurnSettled(queryClient, [
+              `/api/chat/conversations/${effectiveId}/messages`,
+            ]);
+          }
         }
       } catch (e) {
         // Catch-all: network errors from xhr.onerror/ontimeout propagate

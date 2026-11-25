@@ -390,28 +390,41 @@ describe("useSendMessage", () => {
     ["a network error", () => xhrInstance.simulateNetworkError()],
     ["a timeout", () => xhrInstance.simulateTimeout()],
   ])(
-    "re-reads the messages after %s, before it reports the error",
+    "re-reads the messages after %s, and reports the error only once that is done",
     async (_l, fail) => {
       const { wrapper, queryClient } = createQueryWrapper();
       mockTokenStorage.get.mockResolvedValue("token");
-      const order: string[] = [];
+      let finishReread!: () => void;
+      const keys: string[] = [];
       const invalidate = vi
         .spyOn(queryClient, "invalidateQueries")
-        .mockImplementation(async (filters) => {
-          order.push(JSON.stringify(filters?.queryKey));
+        .mockImplementation((filters) => {
+          keys.push(JSON.stringify(filters?.queryKey));
+          return new Promise<void>((resolve) => (finishReread = resolve));
         });
 
       const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      let p!: Promise<void>;
       await act(async () => {
-        const p = result.current.sendMessage("test");
+        p = result.current.sendMessage("test");
         await Promise.resolve();
         await Promise.resolve();
         fail();
-        await p;
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
-      expect(order).toContain('["/api/chat/conversations/1/messages"]');
+      // The re-read is under way and the error has not been reported yet.
+      expect(keys).toContain('["/api/chat/conversations/1/messages"]');
+      expect(result.current.requestError).toBeNull();
+      expect(result.current.isStreaming).toBe(true);
+
+      await act(async () => {
+        finishReread();
+        await p;
+      });
       expect(result.current.requestError).not.toBeNull();
+      expect(result.current.isStreaming).toBe(false);
       invalidate.mockRestore();
     },
   );
@@ -470,6 +483,23 @@ describe("useSendMessage", () => {
       queryKey: ["/api/chat/conversations/1/messages"],
     });
     invalidate.mockRestore();
+  });
+
+  it("a server-sent error with no reply is reported once, not also as interrupted", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateChunks(['data: {"error":"x"}\n']);
+      await p;
+    });
+
+    expect(result.current.requestError).toBe(CHAT_GENERIC_ERROR);
+    expect(result.current.streamError).toBe(false);
   });
 
   it("sets requestError on application-level error from SSE stream", async () => {
