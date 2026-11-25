@@ -625,4 +625,130 @@ assert_contains "verdict: that deny names the bypass" 'SKIP_VERDICT_DIFF=1' "$OU
 rm -f "$STAMP_FILE"
 rm -rf "$VREPO" "$VSTAMPS"
 
+# --- The hook's shell must not end without a decision (2026-11-25) -------------------------
+# A PreToolUse hook that ends with no output is an ALLOW. Each tree is a COPY of the hook, its
+# lib/ and scripts/lib/ (the hook finds scripts/lib relative to itself) with one line appended
+# to one lib; the real libs are untouched. Run against THIS checkout with a throwaway stamp
+# file, as the tests at the top are. Conditions grep a here-string, never `... | grep -q`.
+export SKIP_PR_DRIFT_CHECK=1 SKIP_VERDICT_DIFF=1 PREFLIGHT_STAMP_FILE="$STAMP_FILE"
+ND_HEAD=$(git rev-parse HEAD 2>/dev/null || echo deadbeef)
+ND_SRC="$(cd "$(dirname "$HOOK")/../.." && pwd)"
+ND_TREES=""
+nd_tree() {  # $1=lib path relative to the repo root  $2=line appended ; prints the tree's root
+  local d; d=$(mktemp -d)
+  mkdir -p "$d/.claude/hooks" "$d/scripts"
+  cp "$HOOK" "$d/.claude/hooks/pr-preflight-guard.sh"
+  cp -R "$ND_SRC/.claude/hooks/lib" "$d/.claude/hooks/lib"
+  cp -R "$ND_SRC/scripts/lib" "$d/scripts/lib"
+  printf '\n%s\n' "$2" >> "$d/$1"
+  printf '%s' "$d"
+}
+nd_stamp() { rm -rf "$STAMP_FILE" "$STAMP_FILE.d"; [ "$1" = fresh ] && echo "$ND_HEAD" > "$STAMP_FILE"; return 0; }
+ND_BASH_CREATE='{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x --body y"}}'
+ND_MCP_CREATE='{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"x","body":"y"}}'
+ND_LS='{"tool_name":"Bash","tool_input":{"command":"ls -la"}}'
+nd_run() {  # $1=tree root  $2=payload ; sets ND_OUT ND_RC ND_ERR
+  local e; e=$(mktemp)
+  ND_OUT=$(printf '%s' "$2" | bash "$1/.claude/hooks/pr-preflight-guard.sh" 2>"$e"); ND_RC=$?
+  ND_ERR=$(cat "$e"); rm -f "$e"
+}
+nd_ok() { echo "ok: $1"; }
+nd_bad() { echo "FAIL: $1 — got rc=$ND_RC out=${ND_OUT:0:260} err=${ND_ERR:0:160}"; FAIL=1; }
+nd_only_deny() {  # exactly one JSON value, a deny, rc 0
+  [ "$ND_RC" = 0 ] && [ "$(jq -s 'length' <<<"$ND_OUT" 2>/dev/null)" = 1 ] \
+    && [ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$ND_OUT" 2>/dev/null)" = deny ]
+}
+nd_reason_has() { local r; r=$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$ND_OUT" 2>/dev/null); grep -qF -- "$1" <<<"$r"; }
+nd_silent() { [ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ]; }
+nd_check() { if "$2"; then nd_ok "$1"; else nd_bad "$1"; fi; }
+# With NO stamp both ways of creating a PR deny; an ordinary command is silent.
+nd_nostamp() {  # $1=label $2=tree
+  nd_stamp none
+  nd_run "$2" "$ND_BASH_CREATE"; nd_check "$1: gh pr create with no stamp denies, rc 0" nd_only_deny
+  nd_run "$2" "$ND_MCP_CREATE";  nd_check "$1: the MCP create with no stamp denies, rc 0" nd_only_deny
+  nd_run "$2" "$ND_LS";          nd_check "$1: an ordinary command is allowed, rc 0" nd_silent
+}
+# With a FRESH stamp: a healthy stamp lib allows; a broken one must still deny (fail closed).
+nd_fresh() {  # $1=label $2=tree $3=allow|deny
+  nd_stamp fresh
+  nd_run "$2" "$ND_BASH_CREATE"
+  if [ "$3" = allow ]; then nd_check "$1: gh pr create with a fresh stamp is allowed, rc 0" nd_silent
+  else nd_check "$1: gh pr create denies even with a fresh stamp (the stamp cannot be read)" nd_only_deny; fi
+  nd_stamp none
+}
+
+# ND0. Controls on the real hook, and nothing on stderr.
+ND_REAL="$ND_SRC"
+nd_nostamp "ND0 control (healthy libs)" "$ND_REAL"
+nd_fresh "ND0 control (healthy libs)" "$ND_REAL" allow
+nd_stamp none; nd_run "$ND_REAL" "$ND_BASH_CREATE"
+if nd_only_deny && [ -z "$ND_ERR" ]; then nd_ok "ND0 a deny writes nothing to stderr"; else nd_bad "ND0 a deny writes nothing to stderr"; fi
+nd_stamp fresh; nd_run "$ND_REAL" "$ND_BASH_CREATE"
+if nd_silent && [ -z "$ND_ERR" ]; then nd_ok "ND0 an allow writes nothing to stderr"; else nd_bad "ND0 an allow writes nothing to stderr"; fi
+nd_stamp none
+
+# ND1. The two libs under .claude/hooks/lib: exits when sourced, a function that exits when
+#      called, errexit left on, a shadowed builtin or command, text printed when sourced.
+while IFS= read -r spec; do
+  T=$(nd_tree ".claude/hooks/lib/${spec%%|*}" "${spec#*|}"); ND_TREES="$ND_TREES $T"
+  nd_nostamp "ND1 ${spec%%|*} + '${spec#*|}'" "$T"
+  nd_fresh "ND1 ${spec%%|*} + '${spec#*|}'" "$T" allow
+done <<'SPECS'
+fastpath-filter.sh|exit 0
+cmd-detect.sh|exit 0
+fastpath-filter.sh|cmd_fastpath_has() { exit 0; }
+fastpath-filter.sh|cmd_fastpath_has() { exit 1; }
+cmd-detect.sh|cmd_is_gh_pr_create() { exit 0; }
+cmd-detect.sh|cmd_is_gh_pr_create() { exit 1; }
+cmd-detect.sh|cmd_words() { exit 0; }
+fastpath-filter.sh|set -e
+cmd-detect.sh|set -e
+cmd-detect.sh|jq() { exit 0; }
+cmd-detect.sh|declare() { exit 0; }
+cmd-detect.sh|git() { exit 0; }
+cmd-detect.sh|printf() { :; }
+cmd-detect.sh|echo "cmd-detect loaded"
+SPECS
+
+# ND2. The stamp lib under scripts/lib (sourced with no probe): the no-stamp deny must still
+#      happen, and a stamp that cannot be read is no stamp, so a fresh one does not allow.
+while IFS= read -r spec; do
+  T=$(nd_tree "scripts/lib/${spec%%|*}" "${spec#*|}"); ND_TREES="$ND_TREES $T"
+  nd_nostamp "ND2 ${spec%%|*} + '${spec#*|}'" "$T"
+  nd_fresh "ND2 ${spec%%|*} + '${spec#*|}'" "$T" deny
+done <<'SPECS'
+preflight-stamp-path.sh|exit 0
+preflight-stamp-path.sh|preflight_stamp_has() { exit 0; }
+preflight-stamp-path.sh|preflight_stamp_has() { exit 1; }
+preflight-stamp-path.sh|set -e
+preflight-stamp-path.sh|git() { exit 0; }
+SPECS
+# A stamp lib that only PRINTS when sourced is harmless now (its text used to land ahead of
+# the deny JSON): the stamp is still read, so a fresh one allows.
+T=$(nd_tree scripts/lib/preflight-stamp-path.sh 'echo "stamp lib loaded"'); ND_TREES="$ND_TREES $T"
+nd_nostamp "ND2 preflight-stamp-path.sh prints when sourced" "$T"
+nd_fresh "ND2 preflight-stamp-path.sh prints when sourced" "$T" allow
+
+# ND3. A signal mid-run (a lib function sends it). One deny, rc 0: the trap's, or, where the
+#      runner starts the hook with that signal IGNORED (CI does for SIGPIPE), the ordinary one.
+for sig in TERM PIPE ALRM USR1 USR2 HUP XCPU PROF IO; do
+  T=$(nd_tree scripts/lib/preflight-stamp-path.sh "preflight_stamp_path() { kill -$sig \$\$; sleep 1; printf /nonexistent; }"); ND_TREES="$ND_TREES $T"
+  nd_stamp fresh
+  nd_run "$T" "$ND_BASH_CREATE"; nd_check "ND3 SIG$sig mid-run on gh pr create: one deny, rc 0" nd_only_deny
+  nd_run "$T" "$ND_MCP_CREATE";  nd_check "ND3 SIG$sig mid-run on the MCP create: one deny, rc 0" nd_only_deny
+done
+nd_stamp none
+# ND4. The deny cannot be rendered: a jq on PATH that reads the envelope but prints nothing
+#      for `jq -n`. A static deny is printed instead.
+ND_JQ=$(mktemp -d); ND_TREES="$ND_TREES $ND_JQ"
+printf '#!/usr/bin/env bash\n[ "$1" = -n ] && exit 0\nexec %q "$@"\n' "$(command -v jq)" > "$ND_JQ/jq"; chmod +x "$ND_JQ/jq"
+for ND_PAYLOAD in "$ND_BASH_CREATE" "$ND_MCP_CREATE"; do
+  ND_OUT=$(printf '%s' "$ND_PAYLOAD" | PATH="$ND_JQ:$PATH" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  if nd_only_deny && nd_reason_has 'could not render its reason'; then nd_ok "ND4 the deny cannot be rendered: a static deny, rc 0"
+  else nd_bad "ND4 the deny cannot be rendered: a static deny, rc 0"; fi
+done
+# shellcheck disable=SC2086
+rm -rf $ND_TREES
+rm -rf "$STAMP_FILE" "$STAMP_FILE.d"
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

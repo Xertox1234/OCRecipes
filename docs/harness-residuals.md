@@ -643,9 +643,33 @@ directly (none is called directly today); SIGKILL, which nothing can handle; and
 the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
 could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
 not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
-(2) one blocking hook still sources files at top level with no such probe:
-`pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
-`scripts/lib/verdict-diff-stamp-path.sh`.
+(2) CLOSED 2026-11-25 for the four hooks it named: `git-safety.sh`, `guard-outward-cli.sh`,
+`branch-preflight.sh` and `pr-preflight-guard.sh` each probe their libs and answer when their
+shell ends undecided. What each one still leaves open is listed under its name below.
+`pr-preflight-guard.sh` FIXED 2026-11-25 (rows ND0-ND4 in `test-pr-preflight-guard.sh`).
+Measured before the change, a PR was created with NO pass-stamp, by `gh pr create` and by the
+MCP tool, when: `lib/fastpath-filter.sh`, `lib/cmd-detect.sh` or
+`scripts/lib/preflight-stamp-path.sh` exits when sourced, or prints when sourced (its text
+landed ahead of the deny JSON); `cmd_fastpath_has`, `cmd_is_gh_pr_create` or
+`preflight_stamp_has` exits when called (all three ran in the hook's own shell, and a
+`preflight_stamp_has` that exits 0 read as "stamped"); a lib shadows `jq`, `declare` or `git`;
+a signal arrives mid-run; the deny's `jq` cannot print. Now: the fast-path lib is sourced and
+called inside one `$(...)`; the other three libs are probed before they are sourced and
+sourced with stdout discarded; the three functions answer by rc as text from inside `$(...)`
+(empty is "could not tell": a PR-create is assumed, a stamp is not); a stamp lib that cannot
+be loaded leaves no stamp, so the PR is denied even with a fresh one; the deny builds first
+and prints a static deny when `jq` fails; and an EXIT/signal trap denies when the shell ends
+undecided on the MCP create or on a Bash command that holds `gh`, `pr`, `create` in that
+order once quotes are removed. Cost: about 1 ms more per Bash call. Still open in
+`pr-preflight-guard.sh`: the same list as for `git-safety.sh` below (a lib that replaces the
+trap, sets `DECIDED`, assigns a variable the hook reads, redefines a `_pp_` function, defines
+`builtin`, or closes fd 9; SIGKILL and the stop and real-time signals); the two exits before
+the trap (`SKIP_PR_PREFLIGHT`, and `jq` unable to read the envelope: with `jq` missing from
+PATH the hook allows everything, on `main` too); a call made outside a git repository is
+allowed (as before); the verdict-diff registry and drift checks keep their own fail-open arms
+(no `origin/main`, a failed fetch); a PR-create spelled so that the text test misses it
+(`gh` reached through a variable or a wrapper) is not denied by the trap. Not tested on bash
+3.2 (macOS).
 `branch-preflight.sh` FIXED 2026-11-24 (rows ND0-ND5 in `test-branch-preflight.sh`). Measured
 before the change, a `git commit` on a detached HEAD was allowed in silence when:
 `lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced; `cmd_fastpath_has` or
@@ -766,10 +790,11 @@ main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines,
 every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
 (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
 that outlives the hook cannot hold its stdout open.
-NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `pr-preflight-guard.sh`,
-`merge-review-guard.sh`, `guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under
-`pipefail`; `guard-outward-cli.sh` and `branch-preflight.sh` were checked and converted
-2026-11-24). Whether any of
+NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `merge-review-guard.sh`,
+`guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under `pipefail`;
+`guard-outward-cli.sh` and `branch-preflight.sh` were checked and converted 2026-11-24;
+`pr-preflight-guard.sh` was read 2026-11-25 and has no `grep -q` condition fed by a pipe: its
+piped greps are `grep -o` captures with `|| true`). Whether any of
 them is a condition over a large text that fails open is unmeasured; the known pattern is
 `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
 Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
