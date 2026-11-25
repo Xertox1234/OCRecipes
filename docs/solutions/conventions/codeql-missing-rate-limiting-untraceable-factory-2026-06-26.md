@@ -79,10 +79,10 @@ app.get(
 The inline form is traced when it is the **first** middleware: PR #460 cleared
 alert #10 to `fixed` that way. **It does not clear when `requireAuth` comes
 before it.** CodeQL then flags `requireAuth` itself as the unlimited handler,
-even though a per-user inline `rateLimit({...})` follows (alerts #346
-`reminders.ts` and #347 `coach-commitments.ts`, 2026-11-25). A per-user limiter
-needs `req.userId`, so it has to come after auth. Those alerts are false
-positives: confirm that the inline limiter is there, then dismiss them as above
+even though a per-user inline `rateLimit({...})` follows. Alert #347 is the
+example: `POST /api/chat/commitments` in `coach-commitments.ts`, 2026-11-25. A
+per-user limiter needs `req.userId`, so it has to come after auth. Such alerts
+are false positives: confirm that the inline limiter is there, then dismiss them as above
 with the owner's OK, because the dismissal is made from the owner's GitHub
 account. The dominant codebase convention is still the factory + dismiss-FP.
 Reserve inline-first for the rare unauthenticated route where a clean CodeQL
