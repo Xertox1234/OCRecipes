@@ -51,6 +51,12 @@ const REMINDER_TYPES: ReminderToggleConfig[] = [
     label: "Daily check-in",
     description: "Morning briefing with your calorie progress",
   },
+  {
+    key: "pantry-expiring",
+    label: "Expiring food",
+    description:
+      "A notification when something in your pantry expires within a day, at most once a day",
+  },
 ];
 
 function useReminderMutes() {

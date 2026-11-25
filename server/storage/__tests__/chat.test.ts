@@ -34,6 +34,7 @@ const {
   deleteChatConversation,
   updateChatConversationTitle,
   createChatMessageWithLimitCheck,
+  createConversationWithAssistantMessage,
 } = await import("../chat");
 
 const { saveRecipeFromChat } = await import("../recipe-from-chat");
@@ -56,6 +57,29 @@ describe("chat storage", () => {
   });
 
   // ---- Conversations ----
+
+  describe("createConversationWithAssistantMessage", () => {
+    it("creates a Coach conversation that opens with the assistant's message", async () => {
+      const conversation = await createConversationWithAssistantMessage(
+        testUser.id,
+        "Expiring soon",
+        "Your spinach expires within a day.",
+        { kind: "proactive", trigger: "pantry-expiring" },
+      );
+
+      const saved = await getChatConversation(conversation.id, testUser.id);
+      expect(saved?.title).toBe("Expiring soon");
+      expect(saved?.type).toBe("coach");
+      const messages = await getChatMessages(conversation.id, 10, testUser.id);
+      expect(messages).toHaveLength(1);
+      expect(messages[0].role).toBe("assistant");
+      expect(messages[0].content).toBe("Your spinach expires within a day.");
+      expect(messages[0].metadata).toEqual({
+        kind: "proactive",
+        trigger: "pantry-expiring",
+      });
+    });
+  });
 
   describe("createChatConversation", () => {
     it("creates a conversation", async () => {

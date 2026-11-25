@@ -242,6 +242,7 @@ export const storage = {
   updatePantryItem: pantry.updatePantryItem,
   deletePantryItem: pantry.deletePantryItem,
   getExpiringPantryItems: pantry.getExpiringPantryItems,
+  getPantryItemsExpiringBetween: pantry.getPantryItemsExpiringBetween,
   getConfirmedMealPlanItemIds: mealPlans.getConfirmedMealPlanItemIds,
   getPlannedNutritionSummary: mealPlans.getPlannedNutritionSummary,
   getMealPlanIngredientsForDateRange:
@@ -257,6 +258,8 @@ export const storage = {
   getChatConversation: chat.getChatConversation,
   getChatConversations: chat.getChatConversations,
   createChatConversation: chat.createChatConversation,
+  createConversationWithAssistantMessage:
+    chat.createConversationWithAssistantMessage,
   getChatMessages: chat.getChatMessages,
   getChatMessageById: chat.getChatMessageById,
   createChatMessage: chat.createChatMessage,
@@ -452,6 +455,7 @@ export const storage = {
 
   // Notification governance ledger
   recordNotificationSend: notificationSendsStorage.recordNotificationSend,
+  claimNotificationSend: notificationSendsStorage.claimNotificationSend,
   getLastNotificationSend: notificationSendsStorage.getLastNotificationSend,
 
   // Coach weekly report

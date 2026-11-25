@@ -15,6 +15,25 @@ export async function recordNotificationSend(data: {
   await db.insert(notificationSends).values(data).onConflictDoNothing();
 }
 
+/**
+ * Take the day's one slot for a user+category BEFORE sending. True when this
+ * call took it; false when a send that UTC day already holds it (the same
+ * notification_sends_user_category_day_idx). The claim is kept even if the
+ * send then fails, so a broken push cannot be retried into a second one.
+ */
+export async function claimNotificationSend(data: {
+  userId: string;
+  category: string;
+  sentAt: Date;
+}): Promise<boolean> {
+  const rows = await db
+    .insert(notificationSends)
+    .values(data)
+    .onConflictDoNothing()
+    .returning({ id: notificationSends.id });
+  return rows.length > 0;
+}
+
 /** Latest sentAt for a user+category, or null if none (winback cooldown lookup). */
 export async function getLastNotificationSend(
   userId: string,

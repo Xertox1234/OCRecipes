@@ -10,6 +10,8 @@ export type ReminderMutes = {
   "meal-log"?: boolean;
   commitment?: boolean;
   "daily-checkin"?: boolean;
+  /** Proactive Coach: "use it before it goes" (a push, not an in-app reminder). */
+  "pantry-expiring"?: boolean;
 };
 
 /** Quiet-hours window in the user's local time, "HH:MM" 24h. */

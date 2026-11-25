@@ -106,6 +106,32 @@ export async function createChatConversation(
   return conversation;
 }
 
+/**
+ * A Coach conversation that opens with a message from the Coach, written by a
+ * scheduled job (nobody sent anything). One transaction, so a conversation
+ * never exists without its opening message.
+ */
+export async function createConversationWithAssistantMessage(
+  userId: string,
+  title: string,
+  content: string,
+  messageMetadata: Record<string, unknown>,
+): Promise<ChatConversation> {
+  return db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .insert(chatConversations)
+      .values({ userId, title, type: "coach", metadata: null })
+      .returning();
+    await tx.insert(chatMessages).values({
+      conversationId: conversation.id,
+      role: "assistant",
+      content,
+      metadata: messageMetadata,
+    });
+    return conversation;
+  });
+}
+
 export async function getChatMessages(
   conversationId: number,
   limit = 100,

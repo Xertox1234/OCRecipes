@@ -31,6 +31,7 @@ import {
   sendDueWeeklyReportPushes,
 } from "./weekly-report/generate";
 import { reportWeekFor } from "./weekly-report/week-window";
+import { nudgeAboutExpiringPantry } from "./proactive-coach/pantry-expiry";
 import type { ReminderMutes } from "@shared/types/reminders";
 
 /**
@@ -194,6 +195,8 @@ export interface LocalHourReminderOptions {
 /** Local hour each per-user reminder is delivered at. */
 export const DAILY_CHECKIN_LOCAL_HOUR = 9;
 export const MEAL_LOG_LOCAL_HOUR = 12;
+/** Mid-afternoon: early enough to plan tonight's dinner around what expires. */
+export const PANTRY_EXPIRY_LOCAL_HOUR = 16;
 
 /**
  * Iterate all user IDs in cursor-based pages (500 at a time) and invoke
@@ -355,6 +358,61 @@ export async function sendMealLogReminders(
     logger.error(
       { err },
       "notification-scheduler: failed to fetch user IDs for meal-log reminders",
+    );
+  }
+}
+
+/**
+ * Proactive Coach: for each user whose local hour is the target, who has a
+ * phone to push to and has not switched the nudge off, tell them what in
+ * their pantry expires within a day. The per-user rules (plan, daily cap, the
+ * conversation) are in proactive-coach/pantry-expiry.
+ */
+export async function sendPantryExpiryNudges(
+  opts: LocalHourReminderOptions = {},
+): Promise<void> {
+  const now = opts.now ?? new Date();
+  try {
+    await forEachUserPaged(async (pageUserIds) => {
+      let tzMap: Map<string, string | null>;
+      let userIds: string[];
+      try {
+        tzMap = await storage.getUserTimezones(pageUserIds);
+        const due = filterByLocalHour(pageUserIds, tzMap, now, opts.localHour);
+        if (due.length === 0) return;
+        const withPhone = new Set(
+          (await storage.getPushTokensForUsers(due)).map((t) => t.userId),
+        );
+        userIds = due.filter((id) => withPhone.has(id));
+      } catch (err) {
+        logger.error(
+          { err },
+          "notification-scheduler: failed to batch-fetch users for pantry-expiry page",
+        );
+        return;
+      }
+
+      await runBounded(userIds, async (userId) => {
+        try {
+          const profile = await storage.getUserProfile(userId);
+          if (isMuted(profile?.reminderMutes, "pantry-expiring")) return;
+          await nudgeAboutExpiringPantry(
+            userId,
+            now,
+            parseTimezone(tzMap.get(userId)),
+          );
+        } catch (err) {
+          logger.error(
+            { err, userId },
+            "notification-scheduler: failed pantry-expiry nudge for user",
+          );
+        }
+      });
+    });
+  } catch (err) {
+    logger.error(
+      { err },
+      "notification-scheduler: failed to fetch user IDs for pantry-expiry nudges",
     );
   }
 }
@@ -595,7 +653,8 @@ export function startNotificationScheduler(): void {
 
   // Hourly — per-user local-time reminders. Each run selects only the users
   // whose local hour is the target (daily check-in at 09:00 local, meal-log
-  // nudge at 12:00 local), so nobody gets "nothing logged today" at 4am.
+  // nudge at 12:00 local, pantry-expiry nudge at 16:00 local), so nobody gets
+  // "nothing logged today" at 4am.
   // Re-runs are idempotent via pending_reminders_user_type_day_idx.
   localHourTask = cron.schedule(
     "0 * * * *",
@@ -621,6 +680,16 @@ export function startNotificationScheduler(): void {
               reportError(err, "notification-scheduler: meal-log cron");
             },
           ),
+          sendPantryExpiryNudges({
+            now,
+            localHour: PANTRY_EXPIRY_LOCAL_HOUR,
+          }).catch((err) => {
+            logger.error(
+              { err: toError(err) },
+              "notification-scheduler: unhandled error in pantry-expiry cron",
+            );
+            reportError(err, "notification-scheduler: pantry-expiry cron");
+          }),
           runWeeklyReports(now).catch((err) => {
             logger.error(
               { err: toError(err) },
@@ -640,7 +709,7 @@ export function startNotificationScheduler(): void {
   logMissedExecutions(localHourTask, "local-hour-reminders");
 
   logger.info(
-    "notification-scheduler: started (09:00 UTC commitments; hourly local-time check-in 09:00 / meal-log 12:00 / weekly report Sun 18:00)",
+    "notification-scheduler: started (09:00 UTC commitments; hourly local-time check-in 09:00 / meal-log 12:00 / pantry expiry 16:00 / weekly report Sun 18:00)",
   );
 }
 
