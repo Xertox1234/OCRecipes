@@ -91,6 +91,17 @@ describe("stripCitationMarkers", () => {
     );
   });
 
+  // The safety screen reads the raw reply, where the span splits the number.
+  // Removing the span must not join the halves into text nobody screened.
+  it("leaves a space where a span sat between two characters", () => {
+    expect(stripCitationMarkers("eat 5\uE200cite\uE20100 calories")).toBe(
+      "eat 5 00 calories",
+    );
+    expect(stripCitationMarkers("eat 5\uE20200 calories")).toBe(
+      "eat 5 00 calories",
+    );
+  });
+
   it("leaves ordinary text, emoji and accents alone", () => {
     const s = "Café 🥑 — 20 g protein [1]";
     expect(stripCitationMarkers(s)).toBe(s);
@@ -131,6 +142,29 @@ describe("streamVisibleText", () => {
       `${CITE_REPLY} More text.`,
       "Use `olive oil` here. Done.",
     ]) {
+      const shown = shownAtEveryCut(raw);
+      for (let i = 1; i < shown.length; i++) {
+        expect(shown[i].startsWith(shown[i - 1])).toBe(true);
+      }
+    }
+  });
+
+  it("shows the prose after a finished fence, as the saved text does", () => {
+    const raw = 'Before.\n```coach_blocks\n[{"a":1}]\n```\nAfter.';
+    expect(streamVisibleText(raw)).toBe(extractBlockFences(raw).text);
+    const shown = shownAtEveryCut(raw);
+    for (let i = 1; i < shown.length; i++) {
+      expect(shown[i].startsWith(shown[i - 1])).toBe(true);
+    }
+    for (const s of shown) expect(s).not.toContain("`");
+  });
+
+  it("does not hide the rest of the reply behind a citation span that runs long", () => {
+    const long = `a \uE200${"x".repeat(250)}\uE201 tail text`;
+    expect(streamVisibleText(long)).toBe(stripCitationMarkers(long));
+    const open = `a \uE200${"x".repeat(250)} tail text`;
+    expect(streamVisibleText(open)).toBe(stripCitationMarkers(open));
+    for (const raw of [long, open]) {
       const shown = shownAtEveryCut(raw);
       for (let i = 1; i < shown.length; i++) {
         expect(shown[i].startsWith(shown[i - 1])).toBe(true);

@@ -1,4 +1,8 @@
-import { streamVisibleText, stripCitationMarkers } from "../coach-reply-text";
+import {
+  extractBlockFences,
+  streamVisibleText,
+  stripCitationMarkers,
+} from "../coach-reply-text";
 import {
   generateCoachResponse,
   generateCoachProResponse,
@@ -352,9 +356,12 @@ async function* streamFreeReply(
       sent = visible.length;
     }
   }
-  // Saved and cached without the model's citation markup (the stream above
-  // never sent it either). The safety message has none.
-  reply.fullResponse = stripCitationMarkers(reply.fullResponse);
+  // Saved and cached as it was shown: without the model's citation markup,
+  // and without a card fence the free tier never asked for. The safety
+  // message has neither.
+  reply.fullResponse = stripCitationMarkers(
+    extractBlockFences(reply.fullResponse).text,
+  ).trim();
   return reply;
 }
 

@@ -50,11 +50,12 @@ export interface ExtractedFences {
 }
 
 /**
- * Splits a reply into prose and the JSON arrays of its `coach_blocks` fences.
- * A fence whose array never closes is dropped from its opener to the end of
- * the reply: it is half-written JSON, never prose.
+ * The one fence scanner. `streaming` is for a reply still being written: it
+ * also holds back a tail that may yet turn out to be fence syntax (the start
+ * of an opener, or the whitespace before a closer), so the text it returns
+ * only ever grows as the reply grows.
  */
-export function extractBlockFences(content: string): ExtractedFences {
+function scanFences(content: string, streaming: boolean): ExtractedFences {
   const arrays: string[] = [];
   let text = "";
   let truncated = false;
@@ -62,7 +63,17 @@ export function extractBlockFences(content: string): ExtractedFences {
   while (pos < content.length) {
     const open = content.indexOf(FENCE_OPEN, pos);
     if (open === -1) {
-      text += content.slice(pos);
+      let tail = content.slice(pos);
+      if (streaming) {
+        const max = Math.min(FENCE_OPEN.length - 1, tail.length);
+        for (let n = max; n > 0; n--) {
+          if (FENCE_OPEN.startsWith(tail.slice(tail.length - n))) {
+            tail = tail.slice(0, tail.length - n);
+            break;
+          }
+        }
+      }
+      text += tail;
       break;
     }
     text += content.slice(pos, open);
@@ -75,49 +86,70 @@ export function extractBlockFences(content: string): ExtractedFences {
     }
     arrays.push(content.slice(start, end));
     const closer = CLOSER.exec(content.slice(end, end + 16));
+    // Only whitespace so far after the array: the closer may still be coming.
+    if (streaming && !closer && /^[ \t\r\n]*$/.test(content.slice(end))) break;
     pos = end + (closer ? closer[0].length : 0);
   }
   return { text, arrays, truncated };
 }
 
+/**
+ * Splits a reply into prose and the JSON arrays of its `coach_blocks` fences.
+ * A fence whose array never closes is dropped from its opener to the end of
+ * the reply: it is half-written JSON, never prose.
+ */
+export function extractBlockFences(content: string): ExtractedFences {
+  return scanFences(content, false);
+}
+
+/** The longest body a citation span is expected to have. */
+const CITATION_MAX = 200;
 /** A whole citation span: opener, a short body, closer. */
-const CITATION_SPAN = /[^]{0,200}/g;
+const CITATION_SPAN = new RegExp(
+  `\\uE200[^\\uE200\\uE201]{0,${CITATION_MAX}}\\uE201`,
+  "g",
+);
 /** The markup characters on their own (a span the model never closed). */
-const CITATION_CHARS = /[-]/g;
+const CITATION_CHARS = /[\uE200-\uE2FF]/g;
+
+/**
+ * What takes a removed marker's place: a space when it sat between two
+ * characters, nothing otherwise. The safety screen reads the raw reply, where
+ * the marker splits "5" from "00"; joining them would show text it never saw.
+ */
+function gap(match: string, offset: number, whole: string): string {
+  const left = whole[offset - 1];
+  const right = whole[offset + match.length];
+  return left && right && !/\s/.test(left) && !/\s/.test(right) ? " " : "";
+}
 
 /**
  * Removes the model's own citation markup. A closed span goes whole; an
- * unclosed opener loses only its marker characters, so it cannot swallow the
- * rest of the reply.
+ * unclosed opener (or a span longer than expected) loses only its marker
+ * characters, so it cannot swallow the rest of the reply.
  */
 export function stripCitationMarkers(text: string): string {
-  return text.replace(CITATION_SPAN, "").replace(CITATION_CHARS, "");
+  return text.replace(CITATION_SPAN, gap).replace(CITATION_CHARS, gap);
 }
 
 /**
  * The part of a reply-in-progress that is safe to show now. It only ever
- * grows as `raw` grows, so the caller can send `visible.slice(alreadySent)`.
+ * grows as `raw` grows, so the caller can send `visible.slice(alreadySent)`,
+ * and for a finished reply it equals the saved text before trimming.
  *
- * Held back: everything from a fence opener on (cards arrive in their own
- * event), a trailing run that could be the start of an opener, and
- * everything from a citation span that has not closed yet.
+ * Held back: a fence until its array has closed (cards arrive in their own
+ * event), a tail that may yet be fence syntax, and a citation span that has
+ * just opened (until it closes or runs past the expected length).
  */
 export function streamVisibleText(raw: string): string {
-  let text = raw;
-  const open = text.indexOf(FENCE_OPEN);
-  if (open !== -1) {
-    text = text.slice(0, open);
-  } else {
-    const max = Math.min(FENCE_OPEN.length - 1, text.length);
-    for (let n = max; n > 0; n--) {
-      if (FENCE_OPEN.startsWith(text.slice(text.length - n))) {
-        text = text.slice(0, text.length - n);
-        break;
-      }
-    }
-  }
-  text = text.replace(CITATION_SPAN, "");
-  const unclosed = text.indexOf("");
-  if (unclosed !== -1) text = text.slice(0, unclosed);
-  return text.replace(CITATION_CHARS, "");
+  const text = scanFences(raw, true).text.replace(CITATION_SPAN, gap);
+  const opener = text.indexOf("\uE200");
+  const justOpened =
+    opener !== -1 &&
+    text.indexOf("\uE201", opener) === -1 &&
+    text.length - opener - 1 <= CITATION_MAX;
+  return (justOpened ? text.slice(0, opener) : text).replace(
+    CITATION_CHARS,
+    gap,
+  );
 }

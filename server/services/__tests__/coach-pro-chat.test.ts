@@ -1200,6 +1200,18 @@ describe("handleCoachChat", () => {
       );
     });
 
+    it("free tier: a card fence the model wrote anyway is neither shown nor saved", async () => {
+      vi.mocked(generateCoachResponse).mockReturnValue(
+        fakeStream(['Eggs are fine.\n```coach_blocks\n[{"type":"x"}]\n```']),
+      );
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: false })));
+
+      expect(vi.mocked(storage.createChatMessage).mock.calls[0][3]).toBe(
+        "Eggs are fine.",
+      );
+    });
+
     it("yields content events from the generator stream", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
         fakeProStream(["Hello ", "world!"]),
@@ -1243,7 +1255,8 @@ describe("handleCoachChat", () => {
         .filter((e) => e.type === "content")
         .map((e) => (e as { content: string }).content)
         .join("");
-      expect(streamed).toBe("Try edamame.  It is quick.\n\n");
+      // The newline after the closer is prose again (trimmed when saved).
+      expect(streamed).toBe("Try edamame.  It is quick.\n\n\n");
       // The parser still gets the raw reply, fence included.
       expect(vi.mocked(parseBlocksFromContent).mock.calls[0][0]).toContain(
         "```coach_blocks",
