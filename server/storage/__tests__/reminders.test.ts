@@ -28,7 +28,6 @@ vi.mock("../../db", () => ({
 const {
   createPendingReminder,
   hasPendingReminderToday,
-  hasPendingReminders,
   acknowledgeReminders,
   getTodaysPendingReminders,
   acknowledgeReminderType,
@@ -119,24 +118,6 @@ describe("reminders storage", () => {
     });
   });
 
-  describe("hasPendingReminders", () => {
-    it("returns false when no reminders exist", async () => {
-      const result = await hasPendingReminders(testUser.id);
-      expect(result).toBe(false);
-    });
-
-    it("returns true when at least one unacked reminder exists", async () => {
-      await createPendingReminder({
-        userId: testUser.id,
-        type: "meal-log",
-        context: { lastLoggedAt: null },
-        scheduledFor: new Date(),
-      });
-      const result = await hasPendingReminders(testUser.id);
-      expect(result).toBe(true);
-    });
-  });
-
   describe("acknowledgeReminders", () => {
     it("returns empty array when no reminders exist", async () => {
       const result = await acknowledgeReminders(testUser.id);
@@ -162,9 +143,8 @@ describe("reminders storage", () => {
       const types = items.map((i) => i.type).sort();
       expect(types).toEqual(["daily-checkin", "meal-log"]);
 
-      // After acknowledgement, hasPendingReminders should be false.
-      const stillPending = await hasPendingReminders(testUser.id);
-      expect(stillPending).toBe(false);
+      // After acknowledgement, nothing is left to acknowledge.
+      expect(await acknowledgeReminders(testUser.id)).toEqual([]);
     });
 
     it("filters malformed-context rows out of the returned list but still acknowledges them", async () => {

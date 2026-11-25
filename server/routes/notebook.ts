@@ -51,11 +51,7 @@ function refusedNoteText(content: string): string | null {
 const createEntrySchema = z.object({
   type: z.enum(USER_NOTE_TYPES),
   content: z.string().min(1).max(500),
-  followUpDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional()
-    .nullable(),
+  followUpDate: z.iso.date().optional().nullable(),
 });
 
 const updateEntrySchema = z.object({
@@ -64,11 +60,7 @@ const updateEntrySchema = z.object({
   // for a note Coach wrote. Only a change of type is held to USER_NOTE_TYPES
   // (in the handler, against the stored row).
   type: z.enum(notebookEntryTypes).optional(),
-  followUpDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional(),
+  followUpDate: z.iso.date().nullable().optional(),
   status: z.enum(notebookEntryStatusValues).optional(),
 });
 

@@ -3,18 +3,20 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
+import { hasShowableReminder } from "../../services/coach-brief";
 import { register } from "../reminders";
 import type { CoachContextItem } from "@shared/types/reminders";
 
 vi.mock("../../storage", () => ({
   storage: {
-    hasPendingReminders: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     acknowledgeReminders: vi.fn(),
     acknowledgeReminderType: vi.fn(),
     saveReminderMutes: vi.fn(),
   },
 }));
 
+vi.mock("../../services/coach-brief", () => ({ hasShowableReminder: vi.fn() }));
 vi.mock("../../middleware/auth");
 
 function createApp() {
@@ -34,18 +36,26 @@ describe("Reminders Routes", () => {
 
   describe("GET /api/reminders/pending", () => {
     it("returns hasPending: true when storage returns true", async () => {
-      vi.mocked(storage.hasPendingReminders).mockResolvedValue(true);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(hasShowableReminder).mockResolvedValue(true);
 
       const res = await request(app)
         .get("/api/reminders/pending")
-        .set("Authorization", "Bearer token");
+        .set("Authorization", "Bearer token")
+        .set("X-Timezone", "America/New_York");
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ hasPending: true });
+      expect(hasShowableReminder).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ coachPro: true }),
+        "America/New_York",
+      );
     });
 
     it("returns hasPending: false when storage returns false", async () => {
-      vi.mocked(storage.hasPendingReminders).mockResolvedValue(false);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+      vi.mocked(hasShowableReminder).mockResolvedValue(false);
 
       const res = await request(app)
         .get("/api/reminders/pending")

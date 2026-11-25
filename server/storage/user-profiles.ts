@@ -7,7 +7,7 @@ import {
 } from "@shared/schema";
 import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { clearFamilyHealthData } from "./family-profiles";
 import { expireAllergyCards } from "./coach-write-cards";
 import {
@@ -400,4 +400,20 @@ export async function upsertProfileWithOnboarding(
 
     return result;
   });
+}
+
+/** Reminder mutes for many users in one query; no profile row, no entry. */
+export async function getReminderMutes( // idor-safe
+  userIds: string[],
+): Promise<Map<string, ReminderMutes | null>> {
+  // inArray(col, []) generates degenerate SQL — short-circuit empty input.
+  if (userIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      userId: userProfiles.userId,
+      reminderMutes: userProfiles.reminderMutes,
+    })
+    .from(userProfiles)
+    .where(inArray(userProfiles.userId, userIds));
+  return new Map(rows.map((r) => [r.userId, r.reminderMutes]));
 }

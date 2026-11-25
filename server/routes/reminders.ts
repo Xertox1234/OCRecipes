@@ -2,7 +2,12 @@ import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
-import { handleRouteError } from "./_helpers";
+import {
+  getPremiumFeatures,
+  handleRouteError,
+  parseTimezone,
+} from "./_helpers";
+import { hasShowableReminder } from "../services/coach-brief";
 import { reminderMutesSchema } from "./_schemas";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -20,7 +25,13 @@ export function register(app: Express): void {
     remindersPendingRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const hasPending = await storage.hasPendingReminders(req.userId);
+        // The same check the brief makes, so the dot never lights for a
+        // reminder the brief has nothing to say about (L90, L110).
+        const hasPending = await hasShowableReminder(
+          req.userId,
+          await getPremiumFeatures(req),
+          parseTimezone(req.headers["x-timezone"]),
+        );
         res.json({ hasPending });
       } catch (error) {
         handleRouteError(res, error, "check pending reminders");

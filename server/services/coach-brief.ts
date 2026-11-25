@@ -32,7 +32,9 @@ const LEAD_ORDER: ShowableReminder["type"][] = [
  * The one reminder the brief leads with, or null. Stale or impossible ones
  * are dropped: a missed-meal reminder once something is logged, and any
  * commitment that may not be spoken — not Coach Pro, or not a confirmed,
- * labelled, active notebook entry (the certainty rule, spec 2026-11-08).
+ * labelled notebook entry (the certainty rule, spec 2026-11-08). "completed"
+ * counts: the reminder job sets it once its push is delivered, and a note the
+ * user puts away loses its reminder row (deleteCommitmentReminders).
  */
 async function pickReminder(
   userId: string,
@@ -54,7 +56,12 @@ async function pickReminder(
   for (const item of items) {
     if (item.type === "commitment" && coachPro) {
       const entry = entries.get(item.notebookEntryId);
-      if (entry?.status !== "active" || !entry.confirmedAt || !entry.label) {
+      if (
+        !entry ||
+        (entry.status !== "active" && entry.status !== "completed") ||
+        !entry.confirmedAt ||
+        !entry.label
+      ) {
         continue;
       }
       showable.push({
@@ -77,6 +84,24 @@ async function pickReminder(
     if (found) return found;
   }
   return null;
+}
+
+/** Whether the brief would lead with a reminder now: lights the Coach tab dot. */
+export async function hasShowableReminder(
+  userId: string,
+  features: PremiumFeatures,
+  tz: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const items = await storage.getTodaysPendingReminders(userId, tz, now);
+  if (items.length === 0) return false;
+  // Only a missed-meal reminder depends on the day's log.
+  const consumed = items.some((i) => i.type === "meal-log")
+    ? ((await storage.getDailySummary(userId, now, tz))?.totalCalories ?? 0)
+    : 0;
+  return (
+    (await pickReminder(userId, items, consumed, features.coachPro)) !== null
+  );
 }
 
 export async function buildCoachBrief(

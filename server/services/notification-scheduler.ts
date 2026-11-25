@@ -1,21 +1,18 @@
 /**
- * Server-driven commitment reminder scheduler.
+ * Server-driven reminder scheduler.
  *
- * Runs a cron job at 09:00 UTC every day. For each active
- * commitment notebook entry whose followUpDate is today or in the past, sends
- * a push notification to all registered devices for that user.
+ * Every hour, commitment reminders go to the users whose own clock is at
+ * COMMITMENT_LOCAL_HOUR: one push per user, for their active commitment
+ * entries whose followUpDate is today or earlier.
  *
- * The job is idempotent: it will not send duplicate notifications because each
- * commitment entry has at most one followUpDate and the query only returns
- * entries where followUpDate <= now. After sending, the entry status is updated
- * to "completed" so it won't be picked up again on the next run.
+ * After a delivered push the entries are set to "completed", so they are not
+ * picked up again.
  *
  * Graceful degradation: if EXPO_ACCESS_TOKEN is not set, or the user has no
  * registered push tokens, the push fails (notify() returns pushDelivered:
- * false) and the entry is NOT marked "completed" — the in-app indicator and
- * local notification fallback (useNotebookNotifications) continue to serve the
- * reminder. Entries are only marked completed after at least one push is
- * confirmed delivered by Expo.
+ * false) and the entries are NOT completed — the in-app indicator and local
+ * notification fallback (useNotebookNotifications) continue to serve the
+ * reminder, and the next day's run tries again.
  *
  * Usage: call startNotificationScheduler() once at server startup.
  */
@@ -75,8 +72,13 @@ const DUE_COMMITMENT_PAGE_SIZE = 500;
  * oldest-first page could fill up with permanently-undeliverable rows and
  * starve every newer user's reminder. Exported for testing.
  */
-export async function sendDueCommitmentReminders(): Promise<void> {
+export async function sendDueCommitmentReminders(
+  opts: LocalHourReminderOptions = {},
+): Promise<void> {
   let after: { followUpDate: Date; id: number } | undefined;
+  // userId → whether this run's one push was delivered. A user's entries can
+  // sit on several pages.
+  const pushed = new Map<string, boolean>();
   while (true) {
     let entries;
     try {
@@ -93,7 +95,7 @@ export async function sendDueCommitmentReminders(): Promise<void> {
     }
     if (entries.length === 0) return;
 
-    await sendCommitmentReminderPage(entries);
+    await sendCommitmentReminderPage(entries, opts, pushed);
 
     const last = entries[entries.length - 1];
     if (entries.length < DUE_COMMITMENT_PAGE_SIZE || !last.followUpDate) {
@@ -103,84 +105,121 @@ export async function sendDueCommitmentReminders(): Promise<void> {
   }
 }
 
-async function sendCommitmentReminderPage(
-  entries: Awaited<ReturnType<typeof storage.getDueCommitmentsAllUsers>>,
-): Promise<void> {
-  logger.info(
-    { count: entries.length },
-    "notification-scheduler: sending commitment reminders",
-  );
+type DueCommitment = Awaited<
+  ReturnType<typeof storage.getDueCommitmentsAllUsers>
+>[number];
 
-  // Fetch each user's profile once (not once per entry) to avoid redundant DB
-  // round-trips when a user has multiple due commitments.
-  const uniqueUserIds = [...new Set(entries.map((e) => e.userId))];
-  let profileMap: Map<
-    string,
-    Awaited<ReturnType<typeof storage.getUserProfile>>
-  >;
+async function sendCommitmentReminderPage(
+  entries: DueCommitment[],
+  opts: LocalHourReminderOptions,
+  pushed: Map<string, boolean>,
+): Promise<void> {
+  const byUser = new Map<string, DueCommitment[]>();
+  for (const entry of entries) {
+    const own = byUser.get(entry.userId);
+    if (own) own.push(entry);
+    else byUser.set(entry.userId, [entry]);
+  }
+
+  let userIds: string[];
+  let mutes: Map<string, ReminderMutes | null>;
   try {
-    profileMap = new Map(
-      await Promise.all(
-        uniqueUserIds.map(
-          async (id) => [id, await storage.getUserProfile(id)] as const,
-        ),
-      ),
+    const all = [...byUser.keys()];
+    const tzMap = await storage.getUserTimezones(all);
+    userIds = filterByLocalHour(
+      all,
+      tzMap,
+      opts.now ?? new Date(),
+      opts.localHour,
     );
+    if (userIds.length === 0) return;
+    mutes = await storage.getReminderMutes(userIds);
   } catch (err) {
     logger.error(
       { err },
-      "notification-scheduler: failed to batch-fetch user profiles",
+      "notification-scheduler: failed to batch-fetch users for commitment page",
     );
     return;
   }
 
-  await runBounded(entries, async (entry) => {
+  logger.info(
+    { users: userIds.length },
+    "notification-scheduler: sending commitment reminders",
+  );
+
+  await runBounded(userIds, async (userId) => {
     try {
-      const profile = profileMap.get(entry.userId);
-      if (isMuted(profile?.reminderMutes, "commitment")) return;
+      if (isMuted(mutes.get(userId), "commitment")) return;
+      let due = byUser.get(userId) ?? [];
 
-      const { pushDelivered } = await notify(entry.userId, "commitment", {
-        title: "Coach reminder",
-        // Certainty rule (visible memory, 2026-11-08): name the commitment
-        // only when the user confirmed it and it has a label in their words.
-        body:
-          entry.confirmedAt && entry.label
-            ? `How's ${entry.label.slice(0, 80)} going?`
-            : "Coach has a quick check-in for you.",
-        // `url` is what client/navigation/linking.ts's getInitialURL/subscribe
-        // resolve a notification tap through. `entryId` stays alongside it —
-        // the same shape client/hooks/useNotebookNotifications.ts already
-        // sends — for back-compat with the entryId-only fallback there.
-        data: {
-          entryId: entry.id,
-          url: `ocrecipes://notebook-entry/${entry.id}`,
-        },
-        context: {
-          notebookEntryId: entry.id,
-          content: entry.content.slice(0, 200),
-        },
-      });
+      let delivered = pushed.get(userId);
+      if (delivered === undefined) {
+        // Re-read: the user may have removed a note, or paused Coach's notes,
+        // since the page was fetched.
+        const live = new Set(
+          (
+            await storage.getNotebookEntriesByIds(
+              due.map((e) => e.id),
+              userId,
+            )
+          )
+            .filter((e) => e.status === "active")
+            .map((e) => e.id),
+        );
+        due = due.filter((e) => live.has(e.id));
+        if (due.length === 0) return;
+        pushed.set(userId, false);
+        delivered = await pushCommitments(userId, due);
+        pushed.set(userId, delivered);
+      }
+      if (!delivered) return;
 
-      if (pushDelivered) {
-        // Mark entry completed only after confirmed delivery so the in-app
-        // indicator (and future local notification fallback) still triggers
-        // if push delivery was not attempted (no client or no token).
-        // Only while it is still active: the user may have removed it
-        // while the push was on its way.
+      // Only while still active: the user may have removed one while the
+      // push was on its way.
+      for (const entry of due) {
         await storage.updateNotebookEntryStatus(
           entry.id,
-          entry.userId,
+          userId,
           "completed",
           "active",
         );
       }
     } catch (err) {
       logger.error(
-        { err, entryId: entry.id },
-        "notification-scheduler: failed to process commitment entry",
+        { err, userId },
+        "notification-scheduler: failed to process commitments for user",
       );
     }
   });
+}
+
+/** One push for all of a user's due commitments, led by one it may name. */
+async function pushCommitments(
+  userId: string,
+  due: DueCommitment[],
+): Promise<boolean> {
+  // Certainty rule (visible memory, 2026-11-08): name the commitment only
+  // when the user confirmed it and it has a label in their words.
+  const named = due.find((e) => e.confirmedAt && e.label);
+  const lead = named ?? due[0];
+  const more = due.length - 1;
+  const body = named?.label
+    ? `How's ${named.label.slice(0, 80)} going?${more > 0 ? ` You have ${more} more ${more === 1 ? "check-in" : "check-ins"}.` : ""}`
+    : "Coach has a quick check-in for you.";
+  const { pushDelivered } = await notify(userId, "commitment", {
+    title: "Coach reminder",
+    body,
+    // `url` is what client/navigation/linking.ts's getInitialURL/subscribe
+    // resolve a notification tap through. `entryId` stays alongside it —
+    // the same shape client/hooks/useNotebookNotifications.ts already
+    // sends — for back-compat with the entryId-only fallback there.
+    data: { entryId: lead.id, url: `ocrecipes://notebook-entry/${lead.id}` },
+    context: {
+      notebookEntryId: lead.id,
+      content: lead.content.slice(0, 200),
+    },
+  });
+  return pushDelivered;
 }
 
 /**
@@ -196,6 +235,7 @@ export interface LocalHourReminderOptions {
 }
 
 /** Local hour each per-user reminder is delivered at. */
+export const COMMITMENT_LOCAL_HOUR = 9;
 export const DAILY_CHECKIN_LOCAL_HOUR = 9;
 export const MEAL_LOG_LOCAL_HOUR = 12;
 
@@ -242,38 +282,27 @@ export async function sendDailyCheckinReminders(
   const now = opts.now ?? new Date();
   try {
     await forEachUserPaged(async (pageUserIds) => {
-      // Batch-fetch profiles for the whole page to avoid N sequential queries.
-      let profileMap: Map<
-        string,
-        Awaited<ReturnType<typeof storage.getUserProfile>>
-      >;
+      let mutes: Map<string, ReminderMutes | null>;
       let tzMap: Map<string, string | null>;
       let userIds: string[];
       try {
-        // Timezones first so the profile batch only covers users who are
+        // Timezones first so the mutes query only covers users who are
         // actually due this hour.
         tzMap = await storage.getUserTimezones(pageUserIds);
         userIds = filterByLocalHour(pageUserIds, tzMap, now, opts.localHour);
         if (userIds.length === 0) return;
-        profileMap = new Map(
-          await Promise.all(
-            userIds.map(
-              async (id) => [id, await storage.getUserProfile(id)] as const,
-            ),
-          ),
-        );
+        mutes = await storage.getReminderMutes(userIds);
       } catch (err) {
         logger.error(
           { err },
-          "notification-scheduler: failed to batch-fetch profiles for daily-checkin page",
+          "notification-scheduler: failed to batch-fetch users for daily-checkin page",
         );
         return;
       }
 
       await runBounded(userIds, async (userId) => {
         try {
-          const profile = profileMap.get(userId);
-          if (isMuted(profile?.reminderMutes, "daily-checkin")) return;
+          if (isMuted(mutes.get(userId), "daily-checkin")) return;
 
           // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
           const tz = parseTimezone(tzMap.get(userId));
@@ -305,38 +334,27 @@ export async function sendMealLogReminders(
   const now = opts.now ?? new Date();
   try {
     await forEachUserPaged(async (pageUserIds) => {
-      // Batch-fetch profiles for the whole page to avoid N sequential queries.
-      let profileMap: Map<
-        string,
-        Awaited<ReturnType<typeof storage.getUserProfile>>
-      >;
+      let mutes: Map<string, ReminderMutes | null>;
       let tzMap: Map<string, string | null>;
       let userIds: string[];
       try {
-        // Timezones first so the profile batch only covers users who are
+        // Timezones first so the mutes query only covers users who are
         // actually due this hour.
         tzMap = await storage.getUserTimezones(pageUserIds);
         userIds = filterByLocalHour(pageUserIds, tzMap, now, opts.localHour);
         if (userIds.length === 0) return;
-        profileMap = new Map(
-          await Promise.all(
-            userIds.map(
-              async (id) => [id, await storage.getUserProfile(id)] as const,
-            ),
-          ),
-        );
+        mutes = await storage.getReminderMutes(userIds);
       } catch (err) {
         logger.error(
           { err },
-          "notification-scheduler: failed to batch-fetch profiles for meal-log page",
+          "notification-scheduler: failed to batch-fetch users for meal-log page",
         );
         return;
       }
 
       await runBounded(userIds, async (userId) => {
         try {
-          const profile = profileMap.get(userId);
-          if (isMuted(profile?.reminderMutes, "meal-log")) return;
+          if (isMuted(mutes.get(userId), "meal-log")) return;
 
           // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
           const tz = parseTimezone(tzMap.get(userId));
@@ -535,7 +553,7 @@ export async function runWeeklyReports(now: Date): Promise<void> {
 
 /**
  * Run slot for a cron tick: the nearest UTC hour boundary, e.g. "2026-11-01T09".
- * Both jobs fire on the hour. node-cron itself never fires early, only on time
+ * The job fires on the hour. node-cron itself never fires early, only on time
  * or late (up to MISSED_EXECUTION_TOLERANCE_MS), but instances' clocks differ:
  * one whose clock runs slightly behind reads 08:59:59.9 at its own tick.
  * Rounding gives both instances the SAME slot — truncating would split them
@@ -584,7 +602,6 @@ async function runIfClaimed(
   await job(now);
 }
 
-let scheduledTask: ReturnType<typeof cron.schedule> | null = null;
 let localHourTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
@@ -620,40 +637,18 @@ function logMissedExecutions(
 }
 
 /**
- * Start the daily cron jobs that send reminders.
- * Safe to call multiple times — only one set of job instances is created.
+ * Start the hourly cron job that sends reminders.
+ * Safe to call multiple times — only one job instance is created.
  */
 export function startNotificationScheduler(): void {
-  if (scheduledTask || localHourTask) return;
+  if (localHourTask) return;
 
   // Explicit UTC: without `timezone` node-cron matches in the host's local
   // TZ, so firing time would silently depend on the deploy box. `noOverlap`
   // skips a tick while the previous run is still in flight — the handlers
   // RETURN their promise so node-cron can see when a run finishes.
-  // 09:00 UTC daily — commitment pushes
-  scheduledTask = cron.schedule(
-    "0 9 * * *",
-    () =>
-      runIfClaimed("commitment-reminders", () =>
-        sendDueCommitmentReminders(),
-      ).catch((err) => {
-        logger.error(
-          { err: toError(err) },
-          "notification-scheduler: unhandled error in commitment cron",
-        );
-        reportError(err, "notification-scheduler: commitment cron");
-      }),
-    {
-      timezone: "UTC",
-      noOverlap: true,
-      name: "commitment-reminders",
-      missedExecutionTolerance: MISSED_EXECUTION_TOLERANCE_MS,
-    },
-  );
-  logMissedExecutions(scheduledTask, "commitment-reminders");
-
   // Hourly — per-user local-time reminders. Each run selects only the users
-  // whose local hour is the target (daily check-in at 09:00 local, meal-log
+  // whose local hour is the target (commitments and daily check-in at 09:00 local, meal-log
   // nudge at 12:00 local, pantry-expiry nudge at 16:00 local), so nobody gets
   // "nothing logged today" at 4am.
   // Re-runs are idempotent via pending_reminders_user_type_day_idx.
@@ -662,6 +657,16 @@ export function startNotificationScheduler(): void {
     () =>
       runIfClaimed("local-hour-reminders", (now) =>
         Promise.all([
+          sendDueCommitmentReminders({
+            now,
+            localHour: COMMITMENT_LOCAL_HOUR,
+          }).catch((err) => {
+            logger.error(
+              { err: toError(err) },
+              "notification-scheduler: unhandled error in commitment cron",
+            );
+            reportError(err, "notification-scheduler: commitment cron");
+          }),
           sendDailyCheckinReminders({
             now,
             localHour: DAILY_CHECKIN_LOCAL_HOUR,
@@ -710,16 +715,12 @@ export function startNotificationScheduler(): void {
   logMissedExecutions(localHourTask, "local-hour-reminders");
 
   logger.info(
-    "notification-scheduler: started (09:00 UTC commitments; hourly local-time check-in 09:00 / meal-log 12:00 / pantry expiry 16:00 / weekly report Sun 18:00)",
+    "notification-scheduler: started (hourly local-time commitments and check-in 09:00 / meal-log 12:00 / pantry expiry 16:00 / weekly report Sun 18:00)",
   );
 }
 
 /** Stop the scheduler (used in tests). */
 export function stopNotificationScheduler(): void {
-  if (scheduledTask) {
-    void scheduledTask.stop();
-    scheduledTask = null;
-  }
   if (localHourTask) {
     void localHourTask.stop();
     localHourTask = null;

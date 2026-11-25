@@ -406,6 +406,7 @@ export {
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,
+  getReminderMutes,
   setFamilyPlanningEnabled,
   upsertProfileWithOnboarding,
   withdrawHealthConsent,

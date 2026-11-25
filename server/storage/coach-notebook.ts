@@ -10,6 +10,7 @@ import type {
 } from "@shared/schemas/coach-notebook";
 import { db } from "../db";
 import { logger } from "../lib/logger";
+import { deleteCommitmentReminders } from "./reminders";
 import {
   eq,
   and,
@@ -235,6 +236,7 @@ async function refreshRepeats(
   // Rejected first: when a fact matches both, the rejection wins.
   const existing = [...rejected, ...active];
   const toRefresh: number[] = [];
+  const redated: { id: number; entry: InsertCoachNotebookEntry }[] = [];
   const fresh: InsertCoachNotebookEntry[] = [];
   for (const entry of entries) {
     const key = insightKey(entry.content);
@@ -245,13 +247,29 @@ async function refreshRepeats(
         sameTip(insightKey(row.content), key),
     );
     if (!match) fresh.push(entry);
-    else if (match.status === "active") toRefresh.push(match.id);
+    else if (match.status === "active") {
+      toRefresh.push(match.id);
+      if (entry.type === "commitment" && entry.followUpDate) {
+        redated.push({ id: match.id, entry });
+      }
+    }
   }
   if (toRefresh.length > 0) {
     await exec
       .update(coachNotebook)
       .set({ updatedAt: new Date() })
       .where(inArray(coachNotebook.id, [...new Set(toRefresh)]));
+  }
+  // The user committed again with a new check-in day: it replaces the old one
+  // (L67). A label already there may be the user's own words, so it stays.
+  for (const { id, entry } of redated) {
+    await exec
+      .update(coachNotebook)
+      .set({
+        followUpDate: entry.followUpDate,
+        label: sql`COALESCE(${coachNotebook.label}, ${entry.label ?? null})`,
+      })
+      .where(and(eq(coachNotebook.id, id), eq(coachNotebook.status, "active")));
   }
   return fresh;
 }
@@ -470,12 +488,17 @@ export async function updateNotebookEntry(
             : {}),
         }
       : {};
-  const [updated] = await db
-    .update(coachNotebook)
-    .set({ ...updates, ...confirmEdit, updatedAt: now })
-    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
-    .returning();
-  return updated || undefined;
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(coachNotebook)
+      .set({ ...updates, ...confirmEdit, updatedAt: now })
+      .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+      .returning();
+    if (updated && updates.status && updates.status !== "active") {
+      await deleteCommitmentReminders(tx, userId, [id]);
+    }
+    return updated || undefined;
+  });
 }
 
 async function isCommitment(id: number, userId: string): Promise<boolean> {
@@ -491,11 +514,14 @@ export async function deleteNotebookEntry(
   id: number,
   userId: string,
 ): Promise<boolean> {
-  const result = await db
-    .delete(coachNotebook)
-    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
-    .returning({ id: coachNotebook.id });
-  return result.length > 0;
+  return db.transaction(async (tx) => {
+    const result = await tx
+      .delete(coachNotebook)
+      .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+      .returning({ id: coachNotebook.id });
+    if (result.length > 0) await deleteCommitmentReminders(tx, userId, [id]);
+    return result.length > 0;
+  });
 }
 
 /**
