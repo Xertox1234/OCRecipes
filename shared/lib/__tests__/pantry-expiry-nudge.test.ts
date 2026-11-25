@@ -56,7 +56,7 @@ describe("renderPantryExpiryNudge", () => {
   });
 
   it("drops invisible and control characters and never cuts an emoji in half", () => {
-    const hidden = "mi​lk‮\u0007";
+    const hidden = "mi\u200blk\u202e\u0007";
     expect(renderPantryExpiryNudge([hidden])?.message).toBe(
       `Your milk expires within a day.${IT}`,
     );
