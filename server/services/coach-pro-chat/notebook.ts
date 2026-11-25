@@ -45,6 +45,12 @@ export async function extractAndStoreNotebook(a: {
   tz: string;
   /** The reply carries a write card built this turn. */
   wroteCard: boolean;
+  /**
+   * A turn the safety router refused or the safety screen replaced: the mood
+   * nudge is still taken (a distressed message should soften Coach's tone on
+   * later turns), but no note is saved from what the user asked for.
+   */
+  moodOnly?: boolean;
 }): Promise<void> {
   const {
     messageHistory,
@@ -83,6 +89,8 @@ export async function extractAndStoreNotebook(a: {
     // more correct of the two available anchors.
     { now: today, tz, wroteCard },
   );
+  // The mood nudge was applied inside the extraction above.
+  if (a.moodOnly) return;
   // The account ceiling bounds what the Coach writes on its own too: only as
   // many as there is room for.
   const room =

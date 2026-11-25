@@ -192,17 +192,11 @@ export async function* finalizeTurn(
     yield { type: "blocks", blocks };
   }
 
-  // Fire-and-forget notebook extraction + archival for Coach Pro. Not for a
-  // turn the safety router refused or the safety screen replaced: what the
-  // user asked for there ("my goal is 800 calories a day") must not be
-  // saved as a goal and handed back to Coach on later turns.
-  if (
-    isCoachPro &&
-    fullResponse &&
-    !isAborted() &&
-    intent !== "safety_refusal" &&
-    !reply.safetyOverridden
-  ) {
+  // Fire-and-forget notebook extraction + archival for Coach Pro. On a turn
+  // the safety router refused or the safety screen replaced, only the mood
+  // nudge is taken: what the user asked for there ("my goal is 800 calories
+  // a day") must not be saved as a goal and handed back to Coach later.
+  if (isCoachPro && fullResponse && !isAborted()) {
     fireAndForget(
       "coach-notebook-extraction",
       extractAndStoreNotebook({
@@ -214,6 +208,7 @@ export async function* finalizeTurn(
         today: turn.today,
         tz: turn.tz,
         wroteCard,
+        moodOnly: intent === "safety_refusal" || reply.safetyOverridden,
       }),
     );
   }

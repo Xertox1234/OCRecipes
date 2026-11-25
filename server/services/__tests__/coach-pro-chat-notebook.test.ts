@@ -114,3 +114,22 @@ describe("extractAndStoreNotebook — the turn's question", () => {
     ]);
   });
 });
+
+// Coach chat audit 2026-11-24 (M43): on a refused turn only the mood counts.
+describe("extractAndStoreNotebook — moodOnly", () => {
+  beforeEach(() => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
+    vi.mocked(storage.getNotebookEntryTotal).mockResolvedValue(0);
+  });
+
+  it("runs the extraction for its mood nudge and saves no entry", async () => {
+    await extractAndStoreNotebook({ ...turn, moodOnly: true });
+    expect(extractNotebookEntries).toHaveBeenCalledTimes(1);
+    expect(storage.createNotebookEntries).not.toHaveBeenCalled();
+  });
+
+  it("saves entries on an ordinary turn (control)", async () => {
+    await extractAndStoreNotebook(turn);
+    expect(storage.createNotebookEntries).toHaveBeenCalledTimes(1);
+  });
+});
