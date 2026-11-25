@@ -5,6 +5,10 @@ import {
   type MealPlanDay,
 } from "@shared/schemas/coach-blocks";
 import { isFinderBlockType } from "@shared/schemas/recipe-finder";
+import {
+  COACH_BARCODE_USER_TEXT,
+  COACH_PHOTO_USER_TEXT,
+} from "@shared/lib/coach-photo";
 import type { ChatMessage } from "@/hooks/useChat";
 import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe-utils";
 
@@ -233,6 +237,34 @@ export interface MessageViewContext {
   lastAssistantMessageId: number | null;
   /** Recipe ids saved this session, keyed by message id. */
   savedRecipeIds: ReadonlyMap<number, number>;
+  /** The text of the user's last message: a photo turn has no Regenerate. */
+  lastUserText?: string | null;
+}
+
+/**
+ * True when a new turn must not start. Every way a turn starts (typing, a
+ * quick reply, a form, voice, Regenerate, a finder button) asks this one
+ * question, so none of them can run into a turn that is already on its way.
+ */
+export function turnStartBlocked(state: {
+  isStreaming: boolean;
+  isSendingPhoto: boolean;
+  /** The camera or picker is open, before the upload starts. */
+  photoBusy: boolean;
+  /** The first send is still creating the conversation. */
+  startingTurn: boolean;
+}): boolean {
+  return (
+    state.isStreaming ||
+    state.isSendingPhoto ||
+    state.photoBusy ||
+    state.startingTurn
+  );
+}
+
+/** A photo or barcode turn: its stored text is a placeholder, not a question. */
+export function isPhotoTurnText(text: string | null | undefined): boolean {
+  return text === COACH_PHOTO_USER_TEXT || text === COACH_BARCODE_USER_TEXT;
 }
 
 export interface MessageView {
@@ -263,12 +295,15 @@ export function deriveMessageView(
     ? savedBlocks?.filter((b) => isFinderBlockType(b.type))
     : savedBlocks;
   // handleRetry re-sends the last user text without its finderAction, so a
-  // finder message's own buttons are the next step, not Regenerate.
+  // finder message's own buttons are the next step, not Regenerate. A photo
+  // turn's text is a placeholder: resending it would delete the food card
+  // and ask Coach about a photo that is no longer there.
   const isRetryTarget =
     !ctx.showLiveReply &&
     isAssistant &&
     !hasFinderBlock &&
     !isHeld &&
+    !isPhotoTurnText(ctx.lastUserText) &&
     msg.id === ctx.lastAssistantMessageId;
   const memoryRefBlock = savedBlocks?.find((b) => b.type === "memory_refs");
   const memoryRefIds =
