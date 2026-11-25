@@ -777,17 +777,20 @@ size. The same functions serve `branch-preflight.sh` and `pr-preflight-guard.sh`
 command of many short lines. Every awk that reads the whole command appends to its buffer once
 per line, so the cost grows with the square of the line count: 199000 newlines before a hidden
 OTA update took 13.6 s under the character cap. Above 20000 lines the hook now denies at once
-(just under both caps, 20000 lines of 9 characters took 5.3 s, 50000 lines 8.0 s). Still
-open: the renderings stay quadratic, so a command just under both caps takes about 5.5 s on a
-quiet machine and could still pass the timeout on a very busy one; reading each command in one
+(just under both caps, 19990 lines of 9 characters took 5.3 s; 50000 lines would have
+taken 8.0 s). Still open: the renderings stay quadratic, so a command just under both caps takes up to
+about 7 s on a quiet machine (the slowest shape measured is a heredoc of 19990 lines of
+`$a$a$a$a$`: 7.2 s, and 8.4 s with four busy loops on a 4-core machine) and could still pass
+the timeout on a very busy one; most of that is the character term, so a lower line cap would
+save at most about 2 s; reading each command in one
 awk record instead of a line at a time would remove the line term, but POSIX leaves a
 multi-character `RS` unspecified (not tried on BSD awk). `branch-preflight.sh` (10 s) takes 12.8 s on `main` for 5000
 newlines before a `git commit` and 52 s for 20000, about 2.5 ms a line, from its own per-line
 work, not the shared lib; it has no line cap. `pr-preflight-guard.sh` takes 5.1 s at 199000
 newlines. ALSO OPEN, found by the same review, on `main` too (measured ALLOW): a command built
 from a substitution's OUTPUT, `echo "$($(echo eas update --branch preview))"`. The inner
-`$(...)` prints `eas update ...` and the outer one runs it; the deep renderings see the inner
-body only as the arguments of `echo`; and the trap and the "unsourceable" fallback are only as wide as
+`$(...)` prints `eas update ...` and the outer one runs it; the deep renderings see the inner body only as the arguments of `echo`. Also still open: the
+trap and the "unsourceable" fallback are only as wide as
 `crude_smells_outward`, which misses families the precise matcher denies: `npx eas-cli
 update`, `yarn dlx`/`pnpm dlx`/`bunx eas-cli update`, `node node_modules/eas-cli/bin/run
 update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with a global

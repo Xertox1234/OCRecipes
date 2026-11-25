@@ -2365,7 +2365,9 @@ fi
 # cost also grows with the square of the line count: 50000 newlines before a hidden OTA update
 # took 0.9 s, 150000 took 7.6 s and 199000 took 13.6 s, under the character cap above. The two
 # costs add: just under 200000 characters, 2000 lines took 4.2 s, 20000 lines 5.3 s and 50000
-# lines 8.0 s. Above 20000 lines this denies too. A count that is empty or not a number denies.
+# lines 8.0 s; the slowest shape under both caps, a heredoc of `$`-words, 7.2 s (8.4 s on a
+# loaded machine). Above 20000 lines this denies too. A count that is empty or not a number
+# denies.
 _out_lines=$(printf '%s' "$CMD" | tr -dc '\n' | wc -c | tr -d '[:space:]')
 case "$_out_lines" in ''|*[!0-9]*) _out_lines=999999999 ;; esac
 if [ "$_out_lines" -gt 20000 ]; then
