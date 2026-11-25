@@ -2561,6 +2561,17 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 # only the npm/yarn half survives. Re-derive from the per-path pins before quoting either
 # number; the pin list is the authority, not this comment.
 _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
+# _OUT_DD -- optional `--` words (one or more) between a gated eas/railway binary and its verb (2026-11-25).
+# `npm exec <pkg> -- <args>` is npm's documented spelling: npm removes the `--` and runs
+# `<pkg> <args>` (measured with `npm exec node -- -e ...`), so `npm exec eas-cli -- update`
+# IS `eas update`, and it was ALLOWED because every verb check wanted the verb to be the word
+# right after the binary. Used at the 14 eas/railway verb checks, bare and launcher alike:
+# `npx`/`bunx` pass the `--` on to the binary (measured) and what eas or railway then do with
+# it was NOT measured, so those and the bare `eas -- update` deny as well. It widens only
+# what sits BEFORE a gated verb, so a command with no gated verb after the `--`
+# (`npm exec eas-cli -- whoami`, `npm exec tsc -- --noEmit`) is unaffected. Any OTHER flag in
+# that slot (`eas --json update`) is still not absorbed: docs/harness-residuals.md.
+_OUT_DD='('"$_OUT_SEP"'--)*'
 
 # `_OUT_FLAG_RUN` — MOVED HERE (2026-09-16, round-2 security review of
 # todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md)
@@ -3875,21 +3886,21 @@ $WORDS_VANISHED_BLIND"; }
 
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
-if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_DD}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas update/publish/submit' publishes an OTA update or app-store submission — the exact class of the 2026-08-16 accidental-OTA incident. Read-only forms (eas update:list, eas update:view, eas whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # eas update:* MUTATING colon subcommands — verified against `eas update
 # --help` (eas-cli 20.1.0); see the header's DOCUMENTED RESIDUALS entry for
 # the verified-read-only counterpart (update:list/view/insights, unaffected
 # by this pattern since the colon puts them outside this alternation).
-if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_DD}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' mutates what OTA update end users receive — the same incident class as bare 'eas update'. Read-only colon forms (eas update:list, eas update:view, eas update:insights) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # eas channel:*/branch:* MUTATING colon subcommands — a channel repoint or a
 # branch delete changes which update end users receive, an effect identical to
 # the already-denied `eas update:*` forms (review round 3 found all of these
 # ALLOWED). Read-only `:list`/`:view` forms stay allowed.
-if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_DD}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas channel:/branch: create/edit/delete/rename' repoints or deletes the channel/branch that decides which OTA update end users receive — the same effect class as 'eas update'. Read-only forms (eas channel:list, eas branch:view, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
@@ -3900,7 +3911,7 @@ fi
 # `--auto-submit-with-profile` is caught by the same pattern. Leading boundary
 # is `_OUT_FLAG_LEAD` (see its own definition) so a default-value expansion
 # (`${x:---auto-submit}`) cannot donate the flag's boundary.
-if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_DD}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
@@ -3910,17 +3921,17 @@ fi
 # live service's env injected — including the production DATABASE_URL (this
 # repo's own prod backfill/seed docs use exactly that shape), so it is at least
 # as outward as `railway up`.
-if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_DD}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' mutates a live Railway service ('railway run' executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL). Read-only forms (railway status, railway logs, railway whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # railway variable set/delete (production secrets/env vars) and
 # service/environment delete — a level deeper than the top-level verbs
 # above, and at least as dangerous (an overwritten secret or a deleted
 # service/environment is not recoverable by a redeploy the way up/down are).
-if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_DD}${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway variable/vars/var set/delete' mutates a live service's environment variables (may include production secrets). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_DD}${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway service/environment delete' deletes a live Railway service or environment. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
@@ -5527,26 +5538,26 @@ fi
 # over-denial has no reachable cost. Pinned as a deliberate choice, not a
 # residual: `gh pr merge --auto` reached via `npx`/`npm exec`/a path DENIES,
 # where the bare-position form ALLOWS.
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas update/publish/submit' reached through a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) or a path-qualified invocation (incl. the 'eas-cli' package spelling) — npm's own resolution for 'npm exec'/'npx' never consults PATH, so a PATH-only wrapper cannot stop this. Same OTA-publish incident class as the bare-command check above. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas channel:/branch: create/edit/delete/rename' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
   deny "guard-outward-cli: 'eas build --auto-submit' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached through a launcher or a path-qualified invocation (incl. the '@railway/cli' package spelling). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway variable/vars/var set/delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then

@@ -17,3 +17,5 @@ N	MAIN	gh pr view 12
 N	MAIN	gh pr list
 N	MAIN	npm run build
 N	MAIN	git push
+T	MAIN	npm exec eas-cli -- update --branch production
+N	MAIN	npm exec eas-cli -- whoami

@@ -776,14 +776,23 @@ update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with
 flag before the subcommand (`gh -R o/r pr merge 1 --squash`, `gh -R o/r api -X PUT x`,
 `gh -R o/r release create v1`), and `npx @railway/cli up`. With `cmd-detect.sh` broken, or
 a signal mid-run, those are allowed (measured). Not tested on bash 3.2 (macOS).
-SEPARATE, found by the same review, on `main`, NOT fixed here (2026-11-24): the PRECISE path
-of a healthy install allows an OTA update spelled `npm exec eas-cli -- update --branch
-preview` (also `npm exec eas -- update …` and `npm x eas-cli -- update …`): silent, rc 0.
-With a harmless local stub, npm 11.19.1 hands the stub `update --branch preview`, so the
-spelling is a real publish. Denied controls: `npm exec -- eas-cli update …`,
-`npm exec eas-cli update …`, `npm exec --package=eas-cli -- eas update …`. The launcher
-grammar (from line 2711) does not let the launcher-to-verb separator absorb a `--` after the
-package word, as the `explore` arm near line 2894 does.
+SEPARATE, found by the same review, on `main`: FIXED 2026-11-25 (rows `DD` in
+`test-guard-outward-cli.sh`). The PRECISE path of a healthy install allowed an OTA update
+spelled `npm exec eas-cli -- update --branch preview`: silent, rc 0. npm removes that `--`
+and runs `eas-cli update …` (measured again with `npm exec node -- -e …`), so the spelling is
+a real publish. Measured before the fix, the gap was wider than first recorded: a `--`
+between the binary and its verb was allowed for every eas and railway verb check, through
+every launcher (`npx`, `npm exec|x`, `pnpm dlx|exec`, `yarn`, `bunx`, `bun x`) and bare
+(`npm exec railway -- up`, `npm exec eas-cli -- submit`, `eas -- update`). Now the 14 eas and
+railway verb checks accept any number of `--` words between the binary and the verb
+(`_OUT_DD`). `npx` and `bunx` pass the `--` on to the binary (measured); what eas or railway
+do with a leading `--` was not measured, so those spellings are denied without knowing that
+they publish. Still open, on `main` too: any OTHER flag in that slot (`eas --json update`,
+`npx eas-cli --non-interactive update`, `railway --verbose up`: all allowed, and whether the
+real CLIs accept a flag there was not measured; the hook's header lists "a global flag
+before the verb" as a known gap), and `npm -- publish`, `npm -s publish`,
+`npm --registry=x publish` (allowed; `npm -- prefix` runs `prefix`, so the first is a real
+publish).
 `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
 (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
 finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
