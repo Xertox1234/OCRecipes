@@ -28,7 +28,10 @@ process.env.STRYKER_VITEST_INCLUDE = JSON.stringify([test]);
 export default {
   packageManager: "npm",
   testRunner: "vitest",
-  vitest: { configFile: "vitest.mutation.config.mts" },
+  // `forks`, like the normal suite (vitest.config.mts). The runner's default
+  // is `threads`, where a test's `process.env.TZ = ...` does not move the
+  // process clock, so a file that pins its timezone fails the dry run.
+  vitest: { configFile: "vitest.mutation.config.mts", pool: "forks" },
   coverageAnalysis: "perTest",
   // `.claude` + `docs` excluded so Stryker's sandbox copy skips the post-checkout
   // `docs/solutions` directory symlink (ENOTSUP) — see stryker.conf.mjs for the full note.
