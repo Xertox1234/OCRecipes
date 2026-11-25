@@ -105,6 +105,9 @@ vi.mock("../../services/coach-blocks", () => ({
     .mockImplementation((content: string) => ({ text: content, blocks: [] })),
   BLOCKS_SYSTEM_PROMPT: "test prompt",
   getBlocksSystemPrompt: vi.fn().mockReturnValue("test prompt"),
+  // The real rule: a user without the health consent gets no commitment card.
+  dropCommitmentCards: (blocks: { type: string }[]) =>
+    blocks.filter((b) => b.type !== "commitment_card"),
 }));
 
 vi.mock("../../services/notebook-extraction", () => ({

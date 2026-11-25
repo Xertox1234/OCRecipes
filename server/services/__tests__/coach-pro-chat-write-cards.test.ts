@@ -65,6 +65,9 @@ vi.mock("../coach-blocks", () => ({
   getBlocksSystemPrompt: vi.fn((_f: boolean, o?: { writeCards?: boolean }) =>
     o?.writeCards ? "[BLOCKS+WRITE]" : "[BLOCKS]",
   ),
+  // The real rule: a user without the health consent gets no commitment card.
+  dropCommitmentCards: (blocks: { type: string }[]) =>
+    blocks.filter((b) => b.type !== "commitment_card"),
 }));
 
 vi.mock("../write-cards", async (orig) => ({
