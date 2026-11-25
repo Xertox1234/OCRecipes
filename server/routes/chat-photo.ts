@@ -1,8 +1,9 @@
 /**
  * POST /api/chat/conversations/:id/photo — a photo sent into the Coach chat:
- * a meal (Coach roadmap S1), a nutrition label or a barcode (S2). The reply
- * is a stored assistant message carrying a food log card; nothing is logged
- * until the user taps the card. The photo is analyzed in memory and never
+ * a meal (Coach roadmap S1), a nutrition label or a barcode (S2), or a
+ * grocery receipt (S3). The reply is a stored assistant message carrying a
+ * food log card, or a pantry card for a receipt; nothing is written until the
+ * user saves the card. The photo is analyzed in memory and never
  * stored.
  */
 import type { Express, Request, Response } from "express";
@@ -40,8 +41,8 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const ANALYSIS_FAILED_TEXT =
   "I couldn't read that photo just now. Please try again in a moment.";
-// The photo was read (a meal, a label or a barcode) but its card could not
-// be stored.
+// The photo was read (a meal, a label, a barcode or a receipt) but its card
+// could not be stored.
 const CARD_FAILED_TEXT =
   "I read your photo but couldn't make the card just now. Please send it again.";
 const PHOTO_CAP_TEXT =
@@ -183,17 +184,29 @@ export function register(app: Express): void {
               tz,
               now: new Date(),
               userId: req.userId,
+              receipts: {
+                pantryTracking: features.pantryTracking,
+                receiptScanner: features.receiptScanner,
+                monthlyReceiptScans: features.monthlyReceiptScans,
+              },
             });
-            const { payload } = reply;
+            const cardCtx = { conversationId: id, userId: req.userId, tz };
+            const { payload, pantry } = reply;
             const card = payload
               ? await createWriteCardBlock(
                   photoCardProposal(payload),
-                  { conversationId: id, userId: req.userId, tz },
+                  cardCtx,
                   payload,
                 )
-              : null;
+              : pantry
+                ? await createWriteCardBlock(
+                    { kind: "pantry", args: pantry.args },
+                    cardCtx,
+                    pantry.payload,
+                  )
+                : null;
             if (card) blocks = [card];
-            text = payload && !card ? CARD_FAILED_TEXT : reply.text;
+            text = (payload || pantry) && !card ? CARD_FAILED_TEXT : reply.text;
           }
         } catch (err) {
           logger.error({ err: toError(err) }, "coach photo analysis failed");

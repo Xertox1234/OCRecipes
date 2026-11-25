@@ -12,6 +12,7 @@ import type { BarcodeLookupResult } from "../barcode-lookup";
 import { UpstreamUnavailableError } from "../usda-lookup";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
 import { batchNutritionLookup } from "../nutrition-lookup";
+import { receiptPhotoReply } from "../coach-receipt-photo";
 import type { NutritionData } from "../nutrition-lookup";
 import {
   buildPhotoFoodCard,
@@ -34,6 +35,7 @@ vi.mock("../barcode-scan-context", () => ({
   loadAllergyProfile: vi.fn(),
 }));
 vi.mock("../nutrition-lookup", () => ({ batchNutritionLookup: vi.fn() }));
+vi.mock("../coach-receipt-photo", () => ({ receiptPhotoReply: vi.fn() }));
 
 /** Per 100 g, as the lookup answers. */
 function per100g(over: Partial<NutritionData> = {}): NutritionData {
@@ -273,6 +275,11 @@ const ctx = {
   tz: "UTC",
   now: new Date("2026-11-24T12:30:00Z"),
   userId: "u1",
+  receipts: {
+    pantryTracking: true,
+    receiptScanner: true,
+    monthlyReceiptScans: 15,
+  },
 };
 
 function scanContext(
@@ -315,6 +322,34 @@ describe("buildPhotoReply", () => {
     expect(reply.text).toBe(photoReplyText(1, 0));
     expect(analyzeLabelPhoto).not.toHaveBeenCalled();
     expect(loadBarcodeScanContext).not.toHaveBeenCalled();
+  });
+
+  it("reads a grocery receipt into the pantry card", async () => {
+    vi.mocked(classifyPhoto).mockResolvedValue({
+      contentType: "grocery_receipt",
+      confidence: 0.9,
+      barcode: null,
+    });
+    const receiptReply = { payload: null, text: "receipt" };
+    vi.mocked(receiptPhotoReply).mockResolvedValue(receiptReply);
+    const reply = await buildPhotoReply("BASE64", ctx);
+    expect(reply).toBe(receiptReply);
+    expect(receiptPhotoReply).toHaveBeenCalledWith("BASE64", {
+      userId: "u1",
+      features: ctx.receipts,
+    });
+    expect(analyzePhoto).not.toHaveBeenCalled();
+  });
+
+  it("reads a receipt the classifier is unsure about as a meal", async () => {
+    vi.mocked(classifyPhoto).mockResolvedValue({
+      contentType: "grocery_receipt",
+      confidence: 0.5,
+      barcode: null,
+    });
+    await buildPhotoReply("BASE64", ctx);
+    expect(receiptPhotoReply).not.toHaveBeenCalled();
+    expect(analyzePhoto).toHaveBeenCalled();
   });
 
   it("falls back to the meal reading when the photo cannot be classified", async () => {
