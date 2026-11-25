@@ -47,8 +47,21 @@ export interface UseTTSReturn {
   stop: () => void;
 }
 
-export function useTTS(): UseTTSReturn {
+interface UseTTSOptions {
+  /**
+   * A reading ran to the end of its last sentence. Not called when it was
+   * stopped, replaced by another, or failed.
+   */
+  onFinished?: (messageId: number) => void;
+}
+
+export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
   const toast = useToast();
+  // Latest callback, read when a reading ends.
+  const onFinishedRef = useRef(options.onFinished);
+  useEffect(() => {
+    onFinishedRef.current = options.onFinished;
+  });
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(
     null,
@@ -86,9 +99,14 @@ export function useTTS(): UseTTSReturn {
     const speakNext = () => {
       const queue = sentenceQueueRef.current;
       if (!activeRef.current || queue.length === 0) {
+        // Still active with nothing left to read: it ran to its end.
+        const finishedId = activeRef.current
+          ? currentMessageIdRef.current
+          : null;
         setIsSpeaking(false);
         setSpeakingMessageId(null);
         activeRef.current = false;
+        if (finishedId !== null) onFinishedRef.current?.(finishedId);
         return;
       }
       const sentence = queue.shift()!;

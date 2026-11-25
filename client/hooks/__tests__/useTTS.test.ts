@@ -231,6 +231,69 @@ describe("useTTS", () => {
     expect(mockSpeak).not.toHaveBeenCalled();
   });
 
+  describe("onFinished", () => {
+    const optionsOf = (call: number) =>
+      mockSpeak.mock.calls[call][1] as {
+        onDone: () => void;
+        onStopped: () => void;
+        onError: () => void;
+      };
+
+    it("reports the message once its last sentence has been read", () => {
+      const onFinished = vi.fn();
+      const { result } = renderHook(() => useTTS({ onFinished }));
+      act(() => result.current.speak(7, "One. Two."));
+      act(() => optionsOf(0).onDone());
+      expect(onFinished).not.toHaveBeenCalled();
+      act(() => optionsOf(1).onDone());
+      expect(onFinished).toHaveBeenCalledExactlyOnceWith(7);
+      expect(result.current.isSpeaking).toBe(false);
+    });
+
+    it("does not report a reading that was stopped", () => {
+      const onFinished = vi.fn();
+      const { result } = renderHook(() => useTTS({ onFinished }));
+      act(() => result.current.speak(7, "One. Two."));
+      act(() => result.current.stop());
+      act(() => optionsOf(0).onStopped());
+      act(() => optionsOf(0).onDone());
+      expect(onFinished).not.toHaveBeenCalled();
+    });
+
+    it("does not report a reading that was replaced, only the one that ran to its end", () => {
+      const onFinished = vi.fn();
+      const { result } = renderHook(() => useTTS({ onFinished }));
+      act(() => result.current.speak(7, "Old."));
+      act(() => result.current.speak(8, "New."));
+      act(() => optionsOf(0).onDone());
+      expect(onFinished).not.toHaveBeenCalled();
+      act(() => optionsOf(1).onDone());
+      expect(onFinished).toHaveBeenCalledExactlyOnceWith(8);
+    });
+
+    it("does not report a reading that failed", () => {
+      const onFinished = vi.fn();
+      const { result } = renderHook(() => useTTS({ onFinished }));
+      act(() => result.current.speak(7, "One."));
+      act(() => optionsOf(0).onError());
+      expect(onFinished).not.toHaveBeenCalled();
+    });
+
+    it("uses the latest callback", () => {
+      const first = vi.fn();
+      const second = vi.fn();
+      const { result, rerender } = renderHook(
+        ({ onFinished }) => useTTS({ onFinished }),
+        { initialProps: { onFinished: first } },
+      );
+      act(() => result.current.speak(7, "One."));
+      rerender({ onFinished: second });
+      act(() => optionsOf(0).onDone());
+      expect(first).not.toHaveBeenCalled();
+      expect(second).toHaveBeenCalledExactlyOnceWith(7);
+    });
+  });
+
   it("surfaces a toast and resets state when speech errors", () => {
     const { result } = renderHook(() => useTTS());
 

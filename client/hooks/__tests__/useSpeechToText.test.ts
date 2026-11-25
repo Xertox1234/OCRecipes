@@ -161,6 +161,33 @@ describe("useSpeechToText", () => {
     expect(result.current.error).toBe("No speech detected. Please try again.");
   });
 
+  it.each([
+    ["no-speech", "no-speech"],
+    ["speech-timeout", "no-speech"],
+    ["not-allowed", "not-allowed"],
+    ["network", "failed"],
+  ])("names the kind of error for %s", (error, kind) => {
+    const { result } = renderHook(() => useSpeechToText());
+    expect(result.current.errorKind).toBeNull();
+    act(() => {
+      eventListeners["error"]?.({ error, message: "x" });
+    });
+    expect(result.current.errorKind).toBe(kind);
+  });
+
+  it("clears the kind of error when listening starts again", async () => {
+    mockRequestPermissionsAsync.mockResolvedValue({ granted: true });
+    const { result } = renderHook(() => useSpeechToText());
+    act(() => {
+      eventListeners["error"]?.({ error: "no-speech", message: "x" });
+    });
+    await act(async () => {
+      await result.current.startListening();
+    });
+    expect(result.current.errorKind).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
   it("updates volume on volumechange event", () => {
     const { result } = renderHook(() => useSpeechToText());
 
