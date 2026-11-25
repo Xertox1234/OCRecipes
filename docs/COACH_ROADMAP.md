@@ -102,8 +102,15 @@ Then re-rank.
       from the step's own wording. Left for later: an alarm while the app is
       in the background, and the Coach offering cook mode itself (its prompt
       does not describe the link yet).
-- [ ] **V2. Hands-free turn-taking.** Listen, transcribe, reply, speak, with no
-      tapping. Value: high. Size: M. Needs V1.
+- [x] **V2. Hands-free turn-taking.** Listen, transcribe, reply, speak, with no
+      tapping. Value: high. Size: M. Needs V1. PR #PRNUM. A headset button in
+      the chat starts a loop: the Coach listens, sends what it heard, reads
+      the reply aloud, then listens again. It stops on a tap, on typing, when
+      nothing is heard, on an error, or when the app leaves the screen. The
+      microphone is closed while the Coach speaks (the phone has no echo
+      cancelling here), so the user cannot talk over a reply; that is V3.
+      Off when a screen reader is on. Left for later: a wake word, and
+      answering a card (a form, a food log) by voice.
 - [ ] **V3. Realtime voice.** Interruptible spoken conversation. Value: high.
       Size: L. Needs V0.
 - [ ] **V4. Live camera while talking.** Point at a shelf and ask about it.
