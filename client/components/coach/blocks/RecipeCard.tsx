@@ -69,7 +69,7 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
           accessibilityLabel="Cook this recipe step by step"
           hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
         >
-          <Text style={[styles.secondaryBtnText, { color: theme.link }]}>
+          <Text style={[styles.secondaryBtnText, { color: theme.text }]}>
             Cook
           </Text>
         </PressableScale>
@@ -85,7 +85,12 @@ const styles = StyleSheet.create({
   info: { marginBottom: 8 },
   title: { fontSize: 14, fontWeight: "600" },
   meta: { fontSize: 12, marginTop: 2 },
-  actions: { flexDirection: "row", alignItems: "center", gap: 16 },
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 16,
+  },
   primaryBtn: {
     minHeight: 44,
     borderRadius: 8,

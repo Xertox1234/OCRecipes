@@ -82,14 +82,25 @@ export default function CookModeScreen() {
 
   // Read the card when it changes, or when read-aloud is turned on. With a
   // screen reader on, the reading is the screen reader's: two voices at once
-  // cannot be followed.
+  // cannot be followed. Its first announcement waits for the screen to open,
+  // because the focus move of a modal opening would swallow it.
+  const announcedRef = useRef(false);
   useEffect(() => {
     if (!spoken) return;
-    if (screenReaderEnabled) {
+    if (!screenReaderEnabled) {
+      if (readAloud) speechRef.current.speak(index, spoken);
+      return;
+    }
+    speechRef.current.stop();
+    if (announcedRef.current) {
       AccessibilityInfo.announceForAccessibility(spoken);
       return;
     }
-    if (readAloud) speechRef.current.speak(index, spoken);
+    const timer = setTimeout(() => {
+      announcedRef.current = true;
+      AccessibilityInfo.announceForAccessibility(spoken);
+    }, 500);
+    return () => clearTimeout(timer);
   }, [index, spoken, readAloud, screenReaderEnabled]);
 
   // A notice counter, so two timers ending together get distinct speech ids.
@@ -192,20 +203,26 @@ export default function CookModeScreen() {
         >
           {title}
         </Text>
-        <Pressable
-          onPress={toggleReadAloud}
-          style={styles.iconButton}
-          accessibilityRole="switch"
-          accessibilityLabel="Read steps aloud"
-          accessibilityState={{ checked: readAloud }}
-          hitSlop={8}
-        >
-          <Feather
-            name={readAloud ? "volume-2" : "volume-x"}
-            size={24}
-            color={readAloud ? theme.link : theme.textSecondary}
-          />
-        </Pressable>
+        {screenReaderEnabled ? (
+          // The screen reader does the reading, so there is nothing to
+          // switch. The spacer keeps the title centred.
+          <View style={styles.iconButton} />
+        ) : (
+          <Pressable
+            onPress={toggleReadAloud}
+            style={styles.iconButton}
+            accessibilityRole="switch"
+            accessibilityLabel="Read steps aloud"
+            accessibilityState={{ checked: readAloud }}
+            hitSlop={8}
+          >
+            <Feather
+              name={readAloud ? "volume-2" : "volume-x"}
+              size={24}
+              color={readAloud ? theme.link : theme.textSecondary}
+            />
+          </Pressable>
+        )}
       </View>
 
       {notice ? (
@@ -284,7 +301,7 @@ export default function CookModeScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Cancel ${timer.label} timer`}
                   >
-                    <Text style={[styles.timerAction, { color: theme.link }]}>
+                    <Text style={[styles.timerAction, { color: theme.text }]}>
                       Cancel
                     </Text>
                   </Pressable>
@@ -418,7 +435,6 @@ const styles = StyleSheet.create({
   },
   stepText: {
     ...Typography.h3,
-    lineHeight: 34,
   },
   detail: {
     ...Typography.body,

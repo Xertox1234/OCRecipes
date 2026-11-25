@@ -173,10 +173,46 @@ describe("CookModeScreen", () => {
   it("leaves the reading to the screen reader when one is on", () => {
     mocks.screenReader.on = true;
     renderComponent(<CookModeScreen />);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
     expect(mocks.speak).not.toHaveBeenCalled();
     press("Next step");
     expect(mocks.speak).not.toHaveBeenCalled();
     expect(announce).toHaveBeenCalledWith("Step 1 of 2. Rinse the rice.");
+    // The switch would do nothing, so it is not offered.
+    expect(screen.queryByLabelText("Read steps aloud")).toBeNull();
+  });
+
+  it("announces the first card only after the screen has opened", () => {
+    mocks.screenReader.on = true;
+    renderComponent(<CookModeScreen />);
+    // The modal opening moves the screen reader's focus and would swallow it.
+    expect(announce).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(announce).toHaveBeenCalledExactlyOnceWith(
+      "Get ready. You need: 1 cup rice. salt.",
+    );
+  });
+
+  it("drops the delayed first announcement when the screen closes first", () => {
+    mocks.screenReader.on = true;
+    const { unmount } = renderComponent(<CookModeScreen />);
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it("stops its own voice when a screen reader is turned on", () => {
+    const { rerender } = renderComponent(<CookModeScreen />);
+    mocks.stop.mockClear();
+    mocks.screenReader.on = true;
+    rerender(<CookModeScreen />);
+    expect(mocks.stop).toHaveBeenCalled();
   });
 
   it("offers a timer for each duration in the step and counts it down", () => {

@@ -107,6 +107,8 @@ interface Found {
   unit: Unit;
   /** Set for a range ("8–10 min"), which is never joined to a neighbour. */
   rangeLabel: string | null;
+  /** The unit was written short ("hr", "min"), so a dot after it is its own. */
+  abbreviated: boolean;
 }
 
 /** The timers a step's wording asks for, in the order they appear. */
@@ -122,6 +124,7 @@ export function stepTimers(text: string): StepTimer[] {
       end: match.index + match[0].length,
       seconds: Math.round(low * UNIT_SECONDS[unit]),
       unit,
+      abbreviated: !/^(hour|minute|second)/i.test(match[3]),
       rangeLabel:
         high !== null && high > low
           ? `${plainNumber(low)}–${plainNumber(high)} ${unit}`
@@ -129,7 +132,9 @@ export function stepTimers(text: string): StepTimer[] {
     });
   }
 
-  // "1 hour 30 minutes" and "1 hour and 15 minutes" are one timer.
+  // "1 hour 30 minutes", "1 hour and 15 minutes" and "1 hr. 15 min." are one
+  // timer. A full stop joins only after a short unit: after a whole word it
+  // ends the sentence ("Simmer for 1 hour. 10 minutes before serving…").
   const joined: Found[] = [];
   for (const next of found) {
     const prev = joined.at(-1);
@@ -139,13 +144,17 @@ export function stepTimers(text: string): StepTimer[] {
       !prev.rangeLabel &&
       !next.rangeLabel &&
       UNIT_SECONDS[next.unit] < UNIT_SECONDS[prev.unit] &&
-      /^\s*(?:,|and)?\s*$/i.test(between)
+      (prev.abbreviated
+        ? /^\.?\s*(?:,|and)?\s*$/i
+        : /^\s*(?:,|and)?\s*$/i
+      ).test(between)
     ) {
       joined[joined.length - 1] = {
         ...prev,
         end: next.end,
         seconds: prev.seconds + next.seconds,
         unit: next.unit,
+        abbreviated: next.abbreviated,
       };
     } else {
       joined.push(next);

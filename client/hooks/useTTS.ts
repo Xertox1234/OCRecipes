@@ -56,8 +56,14 @@ export function useTTS(): UseTTSReturn {
   const sentenceQueueRef = useRef<string[]>([]);
   const currentMessageIdRef = useRef<number | null>(null);
   const activeRef = useRef(false);
+  // Bumped by every speak() and stop(). An utterance's callbacks carry the
+  // number they started under and are ignored once it is stale: the system
+  // reports an interrupted utterance as stopped only after the next one has
+  // begun, and that late report must not end the new reading.
+  const generationRef = useRef(0);
 
   const stop = useCallback(() => {
+    generationRef.current += 1;
     activeRef.current = false;
     sentenceQueueRef.current = [];
     currentMessageIdRef.current = null;
@@ -75,6 +81,8 @@ export function useTTS(): UseTTSReturn {
   const speakNextSentence = useCallback(() => {
     // Recursion goes through a local function: a useCallback that names
     // itself is a use-before-declare to the React Compiler.
+    const generation = generationRef.current;
+    const isCurrent = () => generationRef.current === generation;
     const speakNext = () => {
       const queue = sentenceQueueRef.current;
       if (!activeRef.current || queue.length === 0) {
@@ -87,14 +95,16 @@ export function useTTS(): UseTTSReturn {
       Speech.speak(sentence, {
         language: "en-US",
         onDone: () => {
-          if (activeRef.current) speakNext();
+          if (isCurrent() && activeRef.current) speakNext();
         },
         onStopped: () => {
+          if (!isCurrent()) return;
           activeRef.current = false;
           setIsSpeaking(false);
           setSpeakingMessageId(null);
         },
         onError: () => {
+          if (!isCurrent()) return;
           activeRef.current = false;
           setIsSpeaking(false);
           setSpeakingMessageId(null);
@@ -122,6 +132,7 @@ export function useTTS(): UseTTSReturn {
       const sentences = splitSentences(cleaned);
       if (sentences.length === 0) return;
 
+      generationRef.current += 1;
       sentenceQueueRef.current = sentences;
       currentMessageIdRef.current = messageId;
       activeRef.current = true;
@@ -135,6 +146,7 @@ export function useTTS(): UseTTSReturn {
   // Stop speech when the component using this hook unmounts
   useEffect(() => {
     return () => {
+      generationRef.current += 1;
       activeRef.current = false;
       sentenceQueueRef.current = [];
       Speech.stop().catch(() => {});

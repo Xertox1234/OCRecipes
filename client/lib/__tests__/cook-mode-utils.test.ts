@@ -30,6 +30,18 @@ describe("stepTimers", () => {
     expect(labels("Cook 2 minutes 30 seconds")).toEqual(["2 min 30 sec"]);
   });
 
+  it("joins abbreviations written with full stops", () => {
+    expect(stepTimers("Bake 1 hr. 15 min. until set")).toEqual([
+      { seconds: 4500, label: "1 hr 15 min" },
+    ]);
+    // A full stop that ends a sentence still separates two timers.
+    expect(
+      stepTimers("Simmer for 1 hour. 10 minutes before serving, add peas.").map(
+        (t) => t.seconds,
+      ),
+    ).toEqual([3600, 600]);
+  });
+
   it("starts a range at its lower end and names both ends", () => {
     expect(stepTimers("Bake for 8-10 minutes")).toEqual([
       { seconds: 480, label: "8–10 min" },
