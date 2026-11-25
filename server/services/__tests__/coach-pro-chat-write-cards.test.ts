@@ -166,7 +166,10 @@ function proposing(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(storage.getUserProfile).mockResolvedValue(createMockUserProfile());
+  // With the health-data consent on record, so Coach's notes are in use.
+  vi.mocked(storage.getUserProfile).mockResolvedValue(
+    createMockUserProfile({ healthDataConsentAt: new Date("2026-11-21") }),
+  );
   vi.mocked(storage.getDailySummary).mockResolvedValue({
     totalCalories: 0,
     totalProtein: 0,

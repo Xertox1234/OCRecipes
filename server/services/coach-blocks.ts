@@ -139,7 +139,7 @@ const WRITE_CARDS_RULES = [
 const COMMITMENT_CARD_LINE =
   '- commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }';
 const NOTES_PAUSED_RULE =
-  "- The user has turned Coach's notes off, so you cannot save a commitment or check in later. Never say you noted, saved or will follow up on something; you can still encourage the plan in this reply";
+  "- Coach's notes are off for this user, so you cannot save a commitment or check in later. Never say you noted, saved or will follow up on something; you can still encourage the plan in this reply";
 
 /** Drops commitment cards: for a reply made while Coach's notes are paused. */
 export function dropCommitmentCards(blocks: CoachBlock[]): CoachBlock[] {
@@ -157,7 +157,7 @@ export function getBlocksSystemPrompt(
 ): string {
   const withCards = blocksPromptFor(finderEnabled, opts);
   if (!opts.notesPaused) return withCards;
-  // Coach's notes are paused (health consent withdrawn): a commitment card
+  // Coach's notes are paused (no health consent on record): a commitment card
   // offers a check-in that nothing would save. Not offered, and said so.
   return withCards
     .replace(`${COMMITMENT_CARD_LINE}\n`, "")

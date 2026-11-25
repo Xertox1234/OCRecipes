@@ -17,6 +17,9 @@
 /**
  * The privacy-policy version a consent is recorded against — the policy's
  * effective date. Bump it when the policy's health-data wording changes.
+ *
+ * Not bumped for the 2026-11-24 notes wording (pages now dated November 24):
+ * the owner chose the date only, so nobody is asked to agree again.
  */
 export const HEALTH_CONSENT_VERSION = "2026-11-10";
 
@@ -74,26 +77,18 @@ export function hasHealthData(input: Record<string, unknown>): boolean {
 }
 
 /**
- * Coach's saved notes are paused after a withdrawal (owner ruling 2026-11-24,
- * coach chat audit M52): from the moment the health-data consent is withdrawn
- * until it is given again, Coach neither reads the notes nor writes new ones,
- * and commitment reminders stop. The notes can hold health statements taken
- * from chat. The user can still see and delete them.
+ * Coach's saved notes are paused while no health-data consent is on record
+ * (owner rulings 2026-11-24, coach chat audit M52): Coach neither reads the
+ * notes nor writes new ones, and commitment reminders stop, until the consent
+ * is given. The notes can hold health statements taken from chat. The user
+ * can still see and delete them.
  *
- * A user who never answered the consent question is not paused: the ruling
- * covers withdrawal.
+ * This covers a user who withdrew the consent and one who never gave it
+ * ("Not now" at setup, or no profile yet): the owner's second answer that day
+ * was to pause both.
  */
 export function coachNotesPaused(
-  profile:
-    | {
-        healthDataConsentAt?: Date | string | null;
-        healthDataConsentWithdrawnAt?: Date | string | null;
-      }
-    | null
-    | undefined,
+  profile: { healthDataConsentAt?: Date | string | null } | null | undefined,
 ): boolean {
-  return (
-    profile?.healthDataConsentAt == null &&
-    profile?.healthDataConsentWithdrawnAt != null
-  );
+  return profile?.healthDataConsentAt == null;
 }

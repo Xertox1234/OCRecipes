@@ -110,14 +110,19 @@ describe("coachNotesPaused", () => {
     ).toBe(false);
   });
 
-  it("is false for a user who never answered the consent question", () => {
+  // Owner ruling 2026-11-24 (second answer): no consent on record means no
+  // notes, whether the user withdrew it or never gave it.
+  it("is true for a user who never answered the consent question", () => {
     expect(
       coachNotesPaused({
         healthDataConsentAt: null,
         healthDataConsentWithdrawnAt: null,
       }),
-    ).toBe(false);
-    expect(coachNotesPaused(undefined)).toBe(false);
-    expect(coachNotesPaused(null)).toBe(false);
+    ).toBe(true);
+  });
+
+  it("is true for a user with no profile", () => {
+    expect(coachNotesPaused(undefined)).toBe(true);
+    expect(coachNotesPaused(null)).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ import {
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 import { coachNotebook, userProfiles } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Mock the db import so the storage functions use our test transaction
 vi.mock("../../db", () => ({
@@ -52,10 +53,23 @@ const { civilDateToInstant } = await import("../../lib/civil-date");
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
 
+/**
+ * A user with the health-data consent on record. Coach's reads leave out the
+ * notes of anyone without it (`coachNotesPaused`), so a bare test user would
+ * get nothing back.
+ */
+async function createConsentedUser(): Promise<schema.User> {
+  const user = await createTestUser(tx);
+  await tx
+    .insert(userProfiles)
+    .values({ userId: user.id, healthDataConsentAt: new Date() });
+  return user;
+}
+
 describe("Coach Notebook Storage", () => {
   beforeEach(async () => {
     tx = await setupTestTransaction();
-    testUser = await createTestUser(tx);
+    testUser = await createConsentedUser();
   });
 
   afterEach(async () => {
@@ -298,7 +312,7 @@ describe("Coach Notebook Storage", () => {
   // --------------------------------------------------------------------------
   describe("getActiveNotebookEntries", () => {
     it("filters by userId and active status", async () => {
-      const otherUser = await createTestUser(tx);
+      const otherUser = await createConsentedUser();
 
       await createNotebookEntry({
         userId: testUser.id,
@@ -408,11 +422,13 @@ describe("Coach Notebook Storage", () => {
     }
 
     async function setConsent(state: "withdrawn" | "given-again" | "never") {
-      await tx.insert(userProfiles).values({
-        userId: testUser.id,
-        healthDataConsentAt: state === "given-again" ? new Date() : null,
-        healthDataConsentWithdrawnAt: state === "never" ? null : past,
-      });
+      await tx
+        .update(userProfiles)
+        .set({
+          healthDataConsentAt: state === "given-again" ? new Date() : null,
+          healthDataConsentWithdrawnAt: state === "never" ? null : past,
+        })
+        .where(eq(userProfiles.userId, testUser.id));
     }
 
     it("returns no notes to Coach while withdrawn", async () => {
@@ -448,20 +464,27 @@ describe("Coach Notebook Storage", () => {
       expect(due.filter((e) => e.userId === testUser.id)).toHaveLength(1);
     });
 
-    it("does not pause a user who never answered the consent question", async () => {
+    // Owner ruling 2026-11-24 (second answer): no consent on record pauses
+    // the notes, whether it was withdrawn or never given.
+    it("pauses a user who never answered the consent question", async () => {
       await seedNotes();
       await setConsent("never");
 
-      expect(await areCoachNotesPaused(testUser.id)).toBe(false);
-      expect(await getActiveNotebookEntries(testUser.id)).toHaveLength(2);
-      expect(await getCommitmentsWithDueFollowUp(testUser.id)).toHaveLength(1);
+      expect(await areCoachNotesPaused(testUser.id)).toBe(true);
+      expect(await getActiveNotebookEntries(testUser.id)).toEqual([]);
+      expect(await getCommitmentsWithDueFollowUp(testUser.id)).toEqual([]);
+      const due = await getDueCommitmentsAllUsers();
+      expect(due.filter((e) => e.userId === testUser.id)).toEqual([]);
     });
 
-    it("does not pause a user with no profile row", async () => {
+    it("pauses a user with no profile row", async () => {
       await seedNotes();
+      await tx.delete(userProfiles).where(eq(userProfiles.userId, testUser.id));
 
-      expect(await areCoachNotesPaused(testUser.id)).toBe(false);
-      expect(await getActiveNotebookEntries(testUser.id)).toHaveLength(2);
+      expect(await areCoachNotesPaused(testUser.id)).toBe(true);
+      expect(await getActiveNotebookEntries(testUser.id)).toEqual([]);
+      const due = await getDueCommitmentsAllUsers();
+      expect(due.filter((e) => e.userId === testUser.id)).toEqual([]);
     });
   });
 
@@ -497,7 +520,7 @@ describe("Coach Notebook Storage", () => {
     });
 
     it("returns undefined when userId does not match", async () => {
-      const otherUser = await createTestUser(tx);
+      const otherUser = await createConsentedUser();
       const entry = await createNotebookEntry({
         userId: testUser.id,
         type: "insight",
@@ -535,7 +558,7 @@ describe("Coach Notebook Storage", () => {
         content: "old",
         status: "archived",
       });
-      const other = await createTestUser(tx);
+      const other = await createConsentedUser();
       await createNotebookEntry({
         userId: other.id,
         type: "goal",
@@ -732,7 +755,7 @@ describe("Coach Notebook Storage", () => {
     });
 
     it("returns only active commitment entries, scoped across all users", async () => {
-      const otherUser = await createTestUser(tx);
+      const otherUser = await createConsentedUser();
       const pastDate = new Date();
       pastDate.setDate(pastDate.getDate() - 1);
 
@@ -896,7 +919,7 @@ describe("Coach Notebook Storage", () => {
 
   describe("getNotebookEntriesByIds", () => {
     it("returns only the requesting user's entries among the ids (IDOR)", async () => {
-      const otherUser = await createTestUser(tx);
+      const otherUser = await createConsentedUser();
       const mine = await createNotebookEntry({
         userId: testUser.id,
         type: "commitment",
@@ -945,7 +968,7 @@ describe("Coach Notebook Storage", () => {
     });
 
     it("returns undefined when the entry belongs to a different user (IDOR)", async () => {
-      const otherUser = await createTestUser(tx);
+      const otherUser = await createConsentedUser();
       const entry = await createNotebookEntry({
         userId: otherUser.id,
         type: "goal",
