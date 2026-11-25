@@ -359,9 +359,8 @@ async function mealPhotoReply(
 /**
  * The Coach's answer to a photo. The photo is classified first: a nutrition
  * label is read as a label, a barcode is looked up, a grocery receipt goes to
- * the pantry card, and anything else (or a
- * photo the classifier is unsure about, or could not classify) is read as a
- * meal, as before S2.
+ * the pantry card, and anything else (or a photo the classifier is unsure
+ * about, or could not classify) is read as a meal, as before S2.
  */
 export async function buildPhotoReply(
   imageBase64: string,

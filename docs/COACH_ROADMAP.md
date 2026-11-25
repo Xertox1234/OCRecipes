@@ -55,7 +55,7 @@ Then re-rank.
 - [ ] **S3. Receipt and menu photos.** A receipt becomes a pantry write card; a
       menu becomes a "what should I order" card. Value: medium. Size: M.
       Needs S1.
-      Part 1, PR #PRNUM: a grocery receipt photo sent to the chat becomes the
+      Part 1, PR #2048: a grocery receipt photo sent to the chat becomes the
       pantry card, one row per food with its amount and shelf life (a food
       already in the pantry in the same unit is topped up). It follows the
       pantry receipt scan's plan rules and counts toward the same monthly
