@@ -3,7 +3,7 @@ import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { usePreventRemove } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
-import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
+import { USER_NOTE_TYPES } from "@shared/schemas/coach-notebook";
 import { renderComponent } from "../../../test/utils/render-component";
 import NotebookEntryScreen from "../NotebookEntryScreen";
 
@@ -484,8 +484,8 @@ describe("NotebookEntryScreen — one selection tick per type pick", () => {
     setupEntries([]);
     renderComponent(<NotebookEntryScreen />);
     const pills = screen.getAllByRole("radio");
-    // Denominator: one pill per notebook entry type.
-    expect(pills).toHaveLength(notebookEntryTypes.length);
+    // Denominator: one pill per kind of note a user can add.
+    expect(pills).toHaveLength(USER_NOTE_TYPES.length);
 
     for (const [i, pill] of pills.entries()) {
       vi.mocked(Haptics.selectionAsync).mockClear();
@@ -629,5 +629,88 @@ describe("NotebookEntryScreen — voice ownership", () => {
     };
     rerender(<NotebookEntryScreen />);
     expect(input.value).toBe("felt good after lunch");
+  });
+});
+
+// Coach chat audit 2026-11-24 (M8): the picker offered all eight kinds, so a
+// user could add a note "What Coach knows" never shows again.
+describe("NotebookEntryScreen — the kinds of note a user can hold", () => {
+  it("a new note offers the three kinds and starts as a preference", async () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    mockCreateMutateAsync.mockResolvedValue(
+      makeEntry({ id: 7, type: "preference", content: "Likes oats" }),
+    );
+    renderComponent(<NotebookEntryScreen />);
+    expect(
+      screen.getAllByRole("radio").map((r) => r.getAttribute("aria-label")),
+    ).toEqual(["Goal", "Preference", "Commitment"]);
+
+    fireEvent.change(screen.getByDisplayValue(""), {
+      target: { value: "Likes oats" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    await vi.waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalled());
+    expect(mockCreateMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "preference" }),
+    );
+  });
+
+  it("a note Coach wrote as another kind keeps that kind shown and selected", async () => {
+    const entry = makeEntry({ id: 42, type: "insight", content: "Old text" });
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([entry]);
+    mockUpdateMutateAsync.mockResolvedValue({ ...entry, content: "New text" });
+    renderComponent(<NotebookEntryScreen />);
+    expect(
+      screen.getAllByRole("radio").map((r) => r.getAttribute("aria-label")),
+    ).toEqual(["Goal", "Preference", "Commitment", "Insight"]);
+
+    fireEvent.change(screen.getByDisplayValue("Old text"), {
+      target: { value: "New text" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    await vi.waitFor(() => expect(mockUpdateMutateAsync).toHaveBeenCalled());
+    // The note's own kind goes with the save unchanged; the server accepts
+    // an unchanged kind and only holds a change to the three.
+    expect(mockUpdateMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "insight", content: "New text" }),
+    );
+  });
+
+  it("sends the kind when the user changes it", async () => {
+    const entry = makeEntry({ id: 42, type: "insight", content: "Old text" });
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([entry]);
+    mockUpdateMutateAsync.mockResolvedValue({ ...entry, type: "goal" });
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.click(screen.getByRole("radio", { name: "Goal" }));
+    fireEvent.click(screen.getByText("Save"));
+    await vi.waitFor(() => expect(mockUpdateMutateAsync).toHaveBeenCalled());
+    expect(mockUpdateMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "goal" }),
+    );
+  });
+});
+
+// Coach chat audit 2026-11-24 (M15): opened from a reminder before the list
+// has loaded, the editor drew a blank form that counted as edited.
+describe("NotebookEntryScreen — while the note is still loading", () => {
+  it("shows a loading state, not an editable form", () => {
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([], { isLoading: true });
+    renderComponent(<NotebookEntryScreen />);
+
+    expect(screen.getByLabelText("Loading this note")).toBeDefined();
+    expect(screen.queryByText("Save")).toBeNull();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  });
+
+  it("a new note is never held behind the loading state", () => {
+    mockRouteParams.params = undefined;
+    setupEntries([], { isLoading: true });
+    renderComponent(<NotebookEntryScreen />);
+
+    expect(screen.getByText("Save")).toBeDefined();
   });
 });

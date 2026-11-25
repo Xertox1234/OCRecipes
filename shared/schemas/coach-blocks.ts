@@ -40,6 +40,9 @@ const NAVIGABLE_SCREENS = [
   "GroceryListsModal",
   "PantryModal",
   "CookbookListModal",
+  // Cook mode: a recipe's steps one card at a time. The recipe card's Cook
+  // button uses it; the Coach's prompt does not describe it yet.
+  "CookMode",
 ] as const;
 
 const navigateActionSchema = z.object({
@@ -88,6 +91,12 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
     recipeId: z.number(),
     recipeType: z.enum(["community", "mealPlan"]).optional().catch(undefined),
     type: z.enum(["community", "mealPlan"]).optional().catch(undefined),
+  }),
+  // RootStackParamList["CookMode"]: the recipe id is required (a cook screen
+  // with no recipe is a dead tap, so the block is dropped instead).
+  CookMode: z.object({
+    recipeId: z.number(),
+    recipeType: z.enum(["community", "mealPlan"]).optional().catch(undefined),
   }),
   // initialMessage/remixSourceRecipeId/remixSourceRecipeTitle: real,
   // tolerated fields on RootStackParamList["RecipeChat"] — widened here so

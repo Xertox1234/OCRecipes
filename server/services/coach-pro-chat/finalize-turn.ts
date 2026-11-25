@@ -1,3 +1,5 @@
+import type { CoachIntent } from "../coach-intent-classifier";
+import { EmptyCoachReplyError } from "./empty-reply";
 import { storage } from "../../storage";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { filterMemoryRefs } from "../memory-refs";
@@ -126,6 +128,7 @@ export async function* finalizeTurn(
   params: CoachChatParams,
   turn: TurnContext,
   reply: ReplyResult,
+  intent: CoachIntent,
 ): AsyncGenerator<CoachChatEvent> {
   const { conversationId, userId, content, turnKey, isCoachPro, isAborted } =
     params;
@@ -160,6 +163,12 @@ export async function* finalizeTurn(
     if (handled) return;
   }
 
+  // Nothing a user can see came back. A client that already left is settled
+  // by the route's disconnect path instead.
+  if (!isAborted() && !textContent.trim() && blocks.length === 0) {
+    throw new EmptyCoachReplyError();
+  }
+
   if (fullResponse && !isAborted()) {
     await persistCoachReply(
       conversationId,
@@ -190,7 +199,10 @@ export async function* finalizeTurn(
     yield { type: "blocks", blocks };
   }
 
-  // Fire-and-forget notebook extraction + archival for Coach Pro
+  // Fire-and-forget notebook extraction + archival for Coach Pro. On a turn
+  // the safety router refused or the safety screen replaced, only the mood
+  // nudge is taken: what the user asked for there ("my goal is 800 calories
+  // a day") must not be saved as a goal and handed back to Coach later.
   if (isCoachPro && fullResponse && !isAborted()) {
     fireAndForget(
       "coach-notebook-extraction",
@@ -203,6 +215,7 @@ export async function* finalizeTurn(
         today: turn.today,
         tz: turn.tz,
         wroteCard,
+        moodOnly: intent === "safety_refusal" || reply.safetyOverridden,
       }),
     );
   }

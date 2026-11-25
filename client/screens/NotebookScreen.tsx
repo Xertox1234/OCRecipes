@@ -124,14 +124,16 @@ export default function NotebookScreen() {
           {item.text}
         </ThemedText>
         <View style={styles.askRow}>
-          <ThemedText type="small" style={{ color: theme.link }}>
+          {/* textSecondary, not link: link on this card's background is
+              about 4.4:1, under the 4.5:1 that small text needs. */}
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
             Is this right?
           </ThemedText>
           <Pressable
             onPress={() => handleConfirm(item.id)}
             style={[styles.pill, { backgroundColor: theme.accentSolid }]}
             accessibilityRole="button"
-            accessibilityLabel="Yes, that's right"
+            accessibilityLabel={`Yes, that's right: ${item.text}`}
           >
             <ThemedText
               type="small"
@@ -142,26 +144,32 @@ export default function NotebookScreen() {
           </Pressable>
           <Pressable
             onPress={() => openEntry(item.id)}
-            style={[styles.pill, { borderColor: theme.link, borderWidth: 1 }]}
+            style={[
+              styles.pill,
+              { borderColor: theme.textSecondary, borderWidth: 1 },
+            ]}
             accessibilityRole="button"
-            accessibilityLabel="Edit"
+            accessibilityLabel={`Edit: ${item.text}`}
           >
             <ThemedText
               type="small"
-              style={[styles.pillText, { color: theme.link }]}
+              style={[styles.pillText, { color: theme.textSecondary }]}
             >
               Edit
             </ThemedText>
           </Pressable>
           <Pressable
             onPress={() => handleRemove(item.id)}
-            style={[styles.pill, { borderColor: theme.link, borderWidth: 1 }]}
+            style={[
+              styles.pill,
+              { borderColor: theme.textSecondary, borderWidth: 1 },
+            ]}
             accessibilityRole="button"
-            accessibilityLabel="Remove"
+            accessibilityLabel={`Remove: ${item.text}`}
           >
             <ThemedText
               type="small"
-              style={[styles.pillText, { color: theme.link }]}
+              style={[styles.pillText, { color: theme.textSecondary }]}
             >
               Remove
             </ThemedText>

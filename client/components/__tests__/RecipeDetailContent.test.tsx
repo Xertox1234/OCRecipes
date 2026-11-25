@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { RecipeDetailContent } from "../RecipeDetailContent";
 
 // The instructions section records what it was handed; every other heavy
 // child is a thin double so only RecipeDetailContent's own state is tested.
-const { instructionsProps } = vi.hoisted(() => ({
+const { instructionsProps, mockNavigate } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
   instructionsProps: {
     current: null as {
       expandable?: {
@@ -35,7 +36,7 @@ vi.mock("@/components/recipe-detail", () => ({
 
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
@@ -90,6 +91,49 @@ describe("RecipeDetailContent — expanded step", () => {
 
     rerender(ui(2));
     expect(screen.getByTestId("expanded-step").textContent).toBe("none");
+  });
+});
+
+describe("RecipeDetailContent — start cooking", () => {
+  const ui = (
+    recipeType: "community" | "mealPlan",
+    instructions: string[] | null,
+    recipeId = 5,
+  ) => (
+    <RecipeDetailContent
+      recipeId={recipeId}
+      recipeType={recipeType}
+      title="Soup"
+      instructions={instructions}
+    />
+  );
+
+  beforeEach(() => mockNavigate.mockClear());
+
+  it.each(["community", "mealPlan"] as const)(
+    "opens cook mode for a %s recipe",
+    (recipeType) => {
+      renderComponent(ui(recipeType, ["Chop", "Simmer"]));
+      fireEvent.click(screen.getByLabelText("Start cooking"));
+      expect(mockNavigate).toHaveBeenCalledExactlyOnceWith("CookMode", {
+        recipeId: 5,
+        recipeType,
+      });
+    },
+  );
+
+  it("offers no cook mode for a recipe with no steps", () => {
+    renderComponent(ui("community", []));
+    expect(screen.queryByLabelText("Start cooking")).toBeNull();
+    renderComponent(ui("community", null));
+    expect(screen.queryByLabelText("Start cooking")).toBeNull();
+    renderComponent(ui("community", ["  "]));
+    expect(screen.queryByLabelText("Start cooking")).toBeNull();
+  });
+
+  it("offers no cook mode for a recipe that is not saved yet", () => {
+    renderComponent(ui("community", ["Chop"], 0));
+    expect(screen.queryByLabelText("Start cooking")).toBeNull();
   });
 });
 

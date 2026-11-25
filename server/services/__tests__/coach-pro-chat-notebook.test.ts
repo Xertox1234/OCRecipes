@@ -70,3 +70,66 @@ describe("extractAndStoreNotebook after a health-consent withdrawal", () => {
     expect(storage.createNotebookEntries).toHaveBeenCalledTimes(1);
   });
 });
+
+// Coach chat audit 2026-11-24 (L49): the history already ends with this
+// turn's question, and it was appended a second time.
+describe("extractAndStoreNotebook — the turn's question", () => {
+  beforeEach(() => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
+    vi.mocked(storage.getNotebookEntryTotal).mockResolvedValue(0);
+  });
+
+  const sent = () =>
+    vi.mocked(extractNotebookEntries).mock.calls[0][0] as {
+      role: string;
+      content: string;
+    }[];
+
+  it("is sent once when the history already ends with it", async () => {
+    await extractAndStoreNotebook({
+      ...turn,
+      messageHistory: [
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+        { role: "user", content: turn.content },
+      ],
+    });
+    expect(sent().map((m) => m.content)).toEqual([
+      "Earlier question",
+      "Earlier answer",
+      turn.content,
+      turn.textContent,
+    ]);
+  });
+
+  it("is added when the history does not hold it", async () => {
+    await extractAndStoreNotebook({
+      ...turn,
+      messageHistory: [{ role: "assistant", content: "Earlier answer" }],
+    });
+    expect(sent().map((m) => m.content)).toEqual([
+      "Earlier answer",
+      turn.content,
+      turn.textContent,
+    ]);
+  });
+});
+
+// Coach chat audit 2026-11-24 (M43): on a refused turn only the mood counts.
+describe("extractAndStoreNotebook — moodOnly", () => {
+  beforeEach(() => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
+    vi.mocked(storage.getNotebookEntryTotal).mockResolvedValue(0);
+  });
+
+  it("runs the extraction for its mood nudge and saves no entry", async () => {
+    await extractAndStoreNotebook({ ...turn, moodOnly: true });
+    expect(extractNotebookEntries).toHaveBeenCalledTimes(1);
+    expect(storage.createNotebookEntries).not.toHaveBeenCalled();
+  });
+
+  it("saves entries on an ordinary turn (control)", async () => {
+    await extractAndStoreNotebook(turn);
+    expect(storage.createNotebookEntries).toHaveBeenCalledTimes(1);
+  });
+});

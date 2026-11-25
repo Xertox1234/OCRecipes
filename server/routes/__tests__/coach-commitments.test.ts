@@ -29,9 +29,29 @@ describe("Coach Commitments Routes", () => {
   });
 
   describe("POST /api/chat/commitments/:notebookEntryId/accept", () => {
+    // Coach chat audit 2026-11-24 (L109): the write applies only to an
+    // active commitment, and the answer must say when nothing was written.
+    it("answers 409 when the commitment is no longer active", async () => {
+      vi.mocked(storage.getNotebookEntryById).mockResolvedValue(
+        createMockCoachNotebookEntry({
+          type: "commitment",
+          status: "rejected",
+        }),
+      );
+      vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
+
+      const res = await request(createApp()).post(
+        "/api/chat/commitments/1/accept",
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.body.ok).toBeUndefined();
+    });
+
     it("returns 200 with { ok: true } for a valid commitment entry", async () => {
       const entry = createMockCoachNotebookEntry({ type: "commitment" });
       vi.mocked(storage.getNotebookEntryById).mockResolvedValue(entry);
+      vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(entry);
 
       const app = createApp();
       const res = await request(app).post("/api/chat/commitments/1/accept");
@@ -42,6 +62,7 @@ describe("Coach Commitments Routes", () => {
         1,
         "1",
         "completed",
+        "active",
       );
     });
 
