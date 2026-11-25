@@ -54,7 +54,11 @@ const photoHook = vi.hoisted(() => ({
     openScanner?: () => void;
     onSettled: (
       conversationId: number,
-      failure: { atDailyLimit: boolean; message: string | null } | null,
+      failure: {
+        atDailyLimit: boolean;
+        message: string | null;
+        maybeSaved: boolean;
+      } | null,
       sentBrief: boolean,
     ) => void | Promise<void>;
   },
