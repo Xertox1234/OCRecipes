@@ -57,6 +57,13 @@ export const CHAT_XHR_TIMEOUT_MS = SSE_TIMEOUT_MS + 30_000;
 // `: ping` comments keep a quiet-but-live reply from tripping this.
 export const CHAT_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
 
+/**
+ * How long a failed send waits for the messages to be re-read before it
+ * reports the error. The re-read pauses while the device is offline, so the
+ * wait has to end on its own.
+ */
+const REREAD_BEFORE_ERROR_MS = 3_000;
+
 /** The SSE event fields `sendMessage` reads (everything is optional). */
 interface ChatSseEvent {
   status?: unknown;
@@ -648,7 +655,8 @@ export function useSendMessage(
         ownController = controller;
         abortRef.current = controller;
 
-        // Offline fails fast with the network copy; a resume with no bytes
+        // Offline fails with the network copy (after the short re-read in
+        // the catch below); a resume with no bytes
         // (data or server ping) for 20 s is a dead socket: abort quietly and
         // poll for whatever the server saved.
         const tripped: { reason: StreamHealthTrip | null } = { reason: null };
@@ -737,7 +745,17 @@ export function useSendMessage(
             queryKey: ["/api/chat/conversations"],
             refetchType: "none",
           });
-        } else if (!receivedDone && streamingContentRef.current.length > 0) {
+        } else if (
+          !receivedDone &&
+          (streamingContentRef.current.length > 0 ||
+            // A clean 2xx close before the first token (a proxy or the
+            // server dropped it): no reply is coming, so it must not end
+            // silently. A server-sent error already said so.
+            (outcome.kind === "load" &&
+              outcome.status >= 200 &&
+              outcome.status < 300 &&
+              !sseErrorReceived))
+        ) {
           setStreamError(true);
           void queryClient.invalidateQueries({
             queryKey: chatMessagesKey(effectiveId),
@@ -745,6 +763,18 @@ export function useSendMessage(
           void queryClient.invalidateQueries({
             queryKey: ["/api/chat/conversations"],
           });
+          // Cut before the first token: the server may still be writing the
+          // reply (recipe and remix generation finishes and saves after a
+          // disconnect), so one re-read can come too early. Keep looking, as
+          // the dead-socket path does, so the reply shows up when it lands.
+          if (
+            streamingContentRef.current.length === 0 &&
+            epoch === sendEpochRef.current
+          ) {
+            cancelPollRef.current = pollUntilTurnSettled(queryClient, [
+              `/api/chat/conversations/${effectiveId}/messages`,
+            ]);
+          }
         }
       } catch (e) {
         // Catch-all: network errors from xhr.onerror/ontimeout propagate
@@ -752,6 +782,21 @@ export function useSendMessage(
         // failure (e.g. the token read rejected after this call was
         // aborted or superseded) must not report an error for whichever
         // request is current now.
+        if (epoch === sendEpochRef.current) {
+          // The server saves the question before it streams, so this failure
+          // may have landed after the save. Re-read first: the screen gives
+          // the draft back for a resend as soon as it sees the error, and a
+          // saved question would then be sent twice. Bounded, because the
+          // re-read pauses while the device is offline.
+          await Promise.race([
+            queryClient
+              .invalidateQueries({ queryKey: chatMessagesKey(effectiveId) })
+              .catch(() => undefined),
+            new Promise<void>((resolve) =>
+              setTimeout(resolve, REREAD_BEFORE_ERROR_MS),
+            ),
+          ]);
+        }
         if (epoch === sendEpochRef.current) {
           setRequestError(
             e instanceof Error && e.message
