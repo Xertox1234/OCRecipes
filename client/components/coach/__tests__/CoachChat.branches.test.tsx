@@ -1126,9 +1126,37 @@ describe("CoachChat — quick reply & commitment", () => {
 // Coach chat audit 2026-11-24 (M24): the host holds its thread controls
 // while a turn is on its way.
 describe("CoachChat — onTurnBusyChange", () => {
-  it("tells the host when a reply is streaming, and when nothing is", () => {
+  it("reports idle when nothing is on its way", () => {
     const onTurnBusyChange = vi.fn();
     renderCoachChat({ conversationId: 7, onTurnBusyChange });
+    expect(onTurnBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  // The first send: the reply has not started, but the turn has.
+  it("reports busy while the first send is still creating the conversation", async () => {
+    let finishCreate!: (id: number) => void;
+    const onCreateConversation = vi.fn(
+      () => new Promise<number>((resolve) => (finishCreate = resolve)),
+    );
+    const onTurnBusyChange = vi.fn();
+    renderCoachChat({
+      conversationId: null,
+      onCreateConversation,
+      onTurnBusyChange,
+    });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "first" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("send"));
+    });
+    expect(onTurnBusyChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => {
+      finishCreate(55);
+    });
+    // isStreaming is a test double here and stays false, so the turn reads
+    // idle again once the create is done.
     expect(onTurnBusyChange).toHaveBeenLastCalledWith(false);
   });
 

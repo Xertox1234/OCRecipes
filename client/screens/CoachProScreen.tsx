@@ -221,7 +221,9 @@ export default function CoachProScreen() {
 
   // The open thread was deleted elsewhere (See all): it was in the list and
   // now is not. Move off it, or the next send posts to a conversation that
-  // no longer exists. Same render-phase adjustment as above.
+  // no longer exists. Same render-phase adjustment as above. The list is the
+  // newest 50, so a thread pushed past that by 50 newer ones reads the same
+  // way; it is still reachable from See all.
   const openIsListed =
     conversationId !== null &&
     coachConversations.some((c) => c.id === conversationId);
@@ -332,6 +334,7 @@ export default function CoachProScreen() {
           accessibilityRole="button"
           accessibilityLabel="Start a new coach conversation"
           accessibilityState={{ disabled: turnBusy }}
+          accessibilityHint={turnBusy ? HELD_HINT : undefined}
         >
           <ThemedText
             type="caption"
@@ -394,6 +397,9 @@ export default function CoachProScreen() {
                   selected: isSelected,
                   disabled: turnBusy && !isSelected,
                 }}
+                accessibilityHint={
+                  turnBusy && !isSelected ? HELD_HINT : undefined
+                }
                 accessibilityLabel={`${conversation.isPinned ? "Pinned. " : ""}Open coach conversation ${conversation.title}`}
               >
                 {conversation.isPinned && (
@@ -479,6 +485,9 @@ export default function CoachProScreen() {
     </View>
   );
 }
+
+/** Spoken on a thread control that is held while a reply is on its way. */
+const HELD_HINT = "Unavailable while Coach is replying";
 
 /** 44pt buttons plus vertical padding — used until the bar is measured. */
 const THREAD_BAR_FALLBACK_HEIGHT = 44 + Spacing.sm * 2;

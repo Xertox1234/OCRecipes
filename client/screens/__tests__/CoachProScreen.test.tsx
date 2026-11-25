@@ -336,6 +336,12 @@ describe("CoachProScreen — no thread switch while a reply is on its way", () =
     fireEvent.click(screen.getByText("mock-busy"));
     const chip = screen.getByLabelText("Open coach conversation Second thread");
     expect(chip.getAttribute("aria-disabled")).toBe("true");
+    // The open thread's own chip stays usable.
+    expect(
+      screen
+        .getByLabelText("Open coach conversation First thread")
+        .getAttribute("aria-disabled"),
+    ).not.toBe("true");
     fireEvent.click(chip);
     expect(screen.getByText("conversation:7")).toBeDefined();
 
@@ -399,6 +405,7 @@ describe("CoachProScreen — the open thread is deleted elsewhere", () => {
 
   it("keeps a conversation the list has not caught up with yet", async () => {
     conversationsState.data = [first];
+    mockCreateConversation.mockResolvedValue({ id: 42 });
     renderComponent(<CoachProScreen />);
     fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
     await act(async () => {
@@ -406,8 +413,7 @@ describe("CoachProScreen — the open thread is deleted elsewhere", () => {
     });
 
     // The new conversation is open although the list still lacks it.
-    expect(screen.queryByText("conversation:7")).toBeNull();
-    expect(screen.queryByText("conversation:null")).toBeNull();
+    expect(screen.getByText("conversation:42")).toBeDefined();
   });
 });
 
