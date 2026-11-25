@@ -16,6 +16,7 @@ const LABELS = [
   "Meal logging nudges",
   "Commitment follow-ups",
   "Daily check-in",
+  "Expiring food",
 ] as const;
 
 function mockProfile(profile: unknown) {
@@ -57,6 +58,7 @@ describe("CoachRemindersScreen", () => {
       "Meal logging nudges": true,
       "Commitment follow-ups": true,
       "Daily check-in": true,
+      "Expiring food": true,
     });
   });
 
@@ -73,6 +75,13 @@ describe("CoachRemindersScreen", () => {
     expect(meal.textContent).not.toContain("Reminder at noon");
   });
 
+  it("shows the expiring-food nudge as off when the user muted it", async () => {
+    mockProfile({ reminderMutes: { "pantry-expiring": true } });
+    renderComponent(<CoachRemindersScreen />);
+
+    await waitFor(() => expect(switchStates()["Expiring food"]).toBe(false));
+  });
+
   it("shows a muted category as off", async () => {
     mockProfile({ reminderMutes: { commitment: true } });
     renderComponent(<CoachRemindersScreen />);
@@ -84,6 +93,7 @@ describe("CoachRemindersScreen", () => {
       "Meal logging nudges": true,
       "Commitment follow-ups": false,
       "Daily check-in": true,
+      "Expiring food": true,
     });
   });
 });

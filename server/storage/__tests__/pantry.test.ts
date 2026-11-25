@@ -34,6 +34,7 @@ const {
   updatePantryItem,
   deletePantryItem,
   getExpiringPantryItems,
+  getPantryItemsExpiringBetween,
   addGroceryItemToPantryAtomically,
 } = await import("../pantry");
 
@@ -289,6 +290,36 @@ describe("pantry storage", () => {
     it("returns false for non-existent item", async () => {
       const deleted = await deletePantryItem(999999, testUser.id);
       expect(deleted).toBe(false);
+    });
+  });
+
+  describe("getPantryItemsExpiringBetween", () => {
+    const from = new Date("2026-11-25T16:00:00Z");
+    const to = new Date("2026-11-26T16:00:00Z");
+
+    it("returns the user's items that expire in the window, soonest first", async () => {
+      const other = await createTestUser(tx);
+      await tx.insert(schema.pantryItems).values([
+        {
+          userId: testUser.id,
+          name: "Late",
+          expiresAt: new Date("2026-11-26T15:59:59Z"),
+        },
+        { userId: testUser.id, name: "At start", expiresAt: from },
+        { userId: testUser.id, name: "At end", expiresAt: to },
+        {
+          userId: testUser.id,
+          name: "Before",
+          expiresAt: new Date("2026-11-25T15:59:59Z"),
+        },
+        { userId: testUser.id, name: "No date" },
+        { userId: other.id, name: "Someone else's", expiresAt: from },
+      ]);
+
+      const rows = await getPantryItemsExpiringBetween(testUser.id, from, to);
+      // The start is included and the end is not, so back-to-back daily
+      // windows never name the same item twice.
+      expect(rows.map((r) => r.name)).toEqual(["At start", "Late"]);
     });
   });
 

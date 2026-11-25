@@ -83,9 +83,18 @@ Then re-rank.
       one Save plans the meals and adds the shopping and one Undo reverts
       both. A grocery call in the same turn is turned away in favour of that
       card. Only this one job is chained; other pairs still take two turns.
-- [ ] **A2. Proactive Coach.** The Coach starts a conversation by push
+- [x] **A2. Proactive Coach.** The Coach starts a conversation by push
       notification. One trigger first (expiring pantry items), with a strict
-      daily cap. Value: high. Size: L.
+      daily cap. Value: high. Size: L. PR #2045. At 16:00 the user's time,
+      a user with pantry tracking whose food expires within a day gets one
+      push ("Use it before it goes"); tapping it opens a new conversation
+      that starts with the Coach's message. The push only counts the items;
+      their names are in the conversation, not on the lock screen. The wording is fixed (no model
+      call). At most one a day, none on a day the Coach already pushed a
+      commitment follow-up, and each item is named once. A switch in Coach
+      reminders turns it off. Left for later: more triggers, and the
+      notification spec's quiet hours and one-nudge-a-day choice across all
+      categories (this trigger enforces its own cap).
 - [ ] **A3. Fill the coverage gaps.** Family profiles, reminders, and the
       weekly report as a block. Value: medium. Size: M each. Needs T1.
 

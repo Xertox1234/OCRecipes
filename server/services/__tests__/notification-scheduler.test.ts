@@ -3,6 +3,7 @@ import {
   sendDueCommitmentReminders,
   sendDailyCheckinReminders,
   sendMealLogReminders,
+  sendPantryExpiryNudges,
   startNotificationScheduler,
   stopNotificationScheduler,
   schedulerRunSlot,
@@ -12,6 +13,7 @@ import {
   generateWeeklyReportForUser,
   sendDueWeeklyReportPushes,
 } from "../weekly-report/generate";
+import { nudgeAboutExpiringPantry } from "../proactive-coach/pantry-expiry";
 import { storage } from "../../storage";
 import { logger } from "../../lib/logger";
 import {
@@ -33,7 +35,13 @@ vi.mock("../../storage", () => ({
     getDailyLogs: vi.fn(),
     getDailySummary: vi.fn(),
     claimSchedulerRun: vi.fn(),
+    getPushTokensForUsers: vi.fn(),
   },
+}));
+
+vi.mock("../proactive-coach/pantry-expiry", () => ({
+  nudgeAboutExpiringPantry: vi.fn(),
+  PANTRY_EXPIRY_LOCAL_HOUR: 16,
 }));
 
 vi.mock("../notifications/notify", () => ({
@@ -605,6 +613,116 @@ describe("sendDailyCheckinReminders", () => {
       "daily-checkin",
       expect.objectContaining({ context: { calories: 500 } }),
     );
+  });
+});
+
+describe("sendPantryExpiryNudges", () => {
+  const NOW = new Date("2026-11-25T16:00:00Z");
+  const token = (userId: string) =>
+    ({ userId }) as Awaited<
+      ReturnType<typeof storage.getPushTokensForUsers>
+    >[number];
+
+  beforeEach(() => {
+    vi.mocked(nudgeAboutExpiringPantry).mockResolvedValue("sent");
+    vi.mocked(storage.getUserProfile).mockImplementation(async (id) =>
+      createMockUserProfile({ userId: id, reminderMutes: {} }),
+    );
+  });
+
+  it("nudges only users whose local hour is the target and who have a phone to push to", async () => {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["utc-user", "tokyo-user", "no-phone"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(
+      new Map([
+        ["utc-user", "UTC"],
+        ["tokyo-user", "Asia/Tokyo"], // 01:00 there
+        ["no-phone", "UTC"],
+      ]),
+    );
+    vi.mocked(storage.getPushTokensForUsers).mockResolvedValue([
+      token("utc-user"),
+    ]);
+
+    await sendPantryExpiryNudges({ now: NOW, localHour: 16 });
+
+    // Tokens are looked up only for the users due this hour.
+    expect(storage.getPushTokensForUsers).toHaveBeenCalledWith([
+      "utc-user",
+      "no-phone",
+    ]);
+    expect(nudgeAboutExpiringPantry).toHaveBeenCalledTimes(1);
+    expect(nudgeAboutExpiringPantry).toHaveBeenCalledWith(
+      "utc-user",
+      NOW,
+      "UTC",
+    );
+  });
+
+  it("skips a user who switched the nudge off", async () => {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["muted", "on"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getPushTokensForUsers).mockResolvedValue([
+      token("muted"),
+      token("on"),
+    ]);
+    vi.mocked(storage.getUserProfile).mockImplementation(async (id) =>
+      createMockUserProfile({
+        userId: id,
+        reminderMutes: id === "muted" ? { "pantry-expiring": true } : {},
+      }),
+    );
+
+    await sendPantryExpiryNudges({ now: NOW, localHour: 16 });
+
+    expect(nudgeAboutExpiringPantry).toHaveBeenCalledTimes(1);
+    expect(nudgeAboutExpiringPantry).toHaveBeenCalledWith("on", NOW, "UTC");
+  });
+
+  it("runs in the hourly job, for users at 16:00 their time", async () => {
+    // Every job in the hourly run pages the users for itself.
+    vi.mocked(storage.getUserIdPage).mockResolvedValue(["utc-user"]);
+    vi.mocked(storage.getPushTokensForUsers).mockResolvedValue([
+      token("utc-user"),
+    ]);
+    vi.useFakeTimers({ now: NOW });
+    try {
+      startNotificationScheduler();
+      const call = vi
+        .mocked(cron.schedule)
+        .mock.calls.find((c) => c[0] === "0 * * * *");
+      await (call![1] as unknown as () => Promise<unknown>)();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(nudgeAboutExpiringPantry).toHaveBeenCalledWith(
+      "utc-user",
+      expect.any(Date),
+      "UTC",
+    );
+  });
+
+  it("carries on with the next user when one fails", async () => {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["a", "b"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getPushTokensForUsers).mockResolvedValue([
+      token("a"),
+      token("b"),
+    ]);
+    vi.mocked(nudgeAboutExpiringPantry)
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce("sent");
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    await expect(
+      sendPantryExpiryNudges({ now: NOW, localHour: 16 }),
+    ).resolves.toBeUndefined();
+
+    expect(nudgeAboutExpiringPantry).toHaveBeenCalledTimes(2);
+    expect(errorSpy).toHaveBeenCalled();
   });
 });
 

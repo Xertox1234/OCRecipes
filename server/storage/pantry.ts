@@ -5,7 +5,7 @@ import {
   groceryListItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, or, isNull, lte, gte, sql } from "drizzle-orm";
+import { eq, and, or, isNull, lt, lte, gte, sql } from "drizzle-orm";
 
 // ============================================================================
 // PANTRY ITEMS
@@ -249,4 +249,26 @@ export async function getExpiringPantryItems(
       ),
     )
     .orderBy(pantryItems.expiresAt);
+}
+
+/**
+ * The user's items that expire at or after `from` and before `to`, soonest
+ * first. The end is excluded so back-to-back windows share no item.
+ */
+export async function getPantryItemsExpiringBetween(
+  userId: string,
+  from: Date,
+  to: Date,
+): Promise<PantryItem[]> {
+  return db
+    .select()
+    .from(pantryItems)
+    .where(
+      and(
+        eq(pantryItems.userId, userId),
+        gte(pantryItems.expiresAt, from),
+        lt(pantryItems.expiresAt, to),
+      ),
+    )
+    .orderBy(pantryItems.expiresAt, pantryItems.id);
 }

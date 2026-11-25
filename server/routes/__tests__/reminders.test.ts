@@ -131,6 +131,23 @@ describe("Reminders Routes", () => {
       );
     });
 
+    it("accepts the expiring-food nudge as a category", async () => {
+      vi.mocked(storage.saveReminderMutes).mockResolvedValue({
+        "pantry-expiring": true,
+      });
+
+      const res = await request(app)
+        .patch("/api/reminders/mutes")
+        .set("Authorization", "Bearer token")
+        .send({ "pantry-expiring": true });
+
+      expect(res.status).toBe(200);
+      expect(storage.saveReminderMutes).toHaveBeenCalledWith(
+        expect.any(String),
+        { "pantry-expiring": true },
+      );
+    });
+
     it("returns 400 for unknown/invalid keys", async () => {
       const res = await request(app)
         .patch("/api/reminders/mutes")

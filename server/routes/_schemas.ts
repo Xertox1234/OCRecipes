@@ -331,6 +331,7 @@ export const reminderMutesSchema = z
     "meal-log": z.boolean().optional(),
     commitment: z.boolean().optional(),
     "daily-checkin": z.boolean().optional(),
+    "pantry-expiring": z.boolean().optional(),
   })
   .strict();
 

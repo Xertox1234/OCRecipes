@@ -25,11 +25,19 @@ describe("notification registry", () => {
     expect(def.countsAgainstCap).toBe(false);
   });
 
+  it("pantry-expiring is push only and counts against the daily cap", () => {
+    const def = getCategoryDef("pantry-expiring");
+    expect(def.lane).toBe("governed");
+    expect(def.channels).toEqual(["push"]);
+    expect(def.countsAgainstCap).toBe(true);
+  });
+
   it("registers exactly the known categories", () => {
     expect(Object.keys(NOTIFICATION_REGISTRY).sort()).toEqual([
       "commitment",
       "daily-checkin",
       "meal-log",
+      "pantry-expiring",
       "weekly-report",
     ]);
   });
