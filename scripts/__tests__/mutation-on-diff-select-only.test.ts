@@ -299,6 +299,23 @@ describe("mutation-on-diff.mjs on a tree with no node_modules", () => {
     );
   });
 
+  it("does not count a module whose test needs a database, and names it in the summary", () => {
+    const module = "server/services/write-cards/allergy.ts";
+    const test = "server/services/write-cards/__tests__/allergy.test.ts";
+    const tree = makeTree([module, test], [module]);
+    writeFileSync(
+      path.join(tree.root, test),
+      'import { setupTestTransaction } from "../../../../test/db-test-utils";\n',
+    );
+    const r = run(tree, ["--select-only", tree.list]);
+    expect(r.status).toBe(0);
+    expect(r.output).toBe("run=false\n");
+    expect(r.summary).toContain(
+      `- Needs a database, not run (this job has no Postgres): ${module}`,
+    );
+    expect(r.ranHarness).toBe(false);
+  });
+
   it("outside Actions, prints the decision and writes no files", () => {
     const tree = makeTree([], ["docs/notes.md"]);
     const r = run(tree, ["--select-only", tree.list], { actions: false });

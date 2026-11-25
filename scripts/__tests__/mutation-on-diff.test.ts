@@ -19,6 +19,7 @@ import {
   rowFromRun,
   scoreFromReport,
   selectEligible,
+  testNeedsDatabase,
 } from "../ci/mutation-on-diff.mjs";
 
 const registered = new Set(
@@ -27,8 +28,13 @@ const registered = new Set(
 // Modules exist unless listed as deleted; a test exists only if listed.
 const deps = (
   tests: string[],
-  { max, deleted = [] }: { max?: number; deleted?: string[] } = {},
+  {
+    max,
+    deleted = [],
+    dbTests = [],
+  }: { max?: number; deleted?: string[]; dbTests?: string[] } = {},
 ) => ({
+  needsDatabase: (test: string) => dbTests.includes(test),
   isHardExclusion,
   isApprovedExclusion,
   registeredMutatePaths: registered,
@@ -73,6 +79,7 @@ describe("selectEligible", () => {
       excluded: [],
       skippedRegistered: [],
       overflow: [],
+      needsDatabase: [],
     });
   });
 
@@ -101,6 +108,7 @@ describe("selectEligible", () => {
       excluded: [],
       skippedRegistered: [],
       overflow: [],
+      needsDatabase: [],
     });
   });
 
@@ -176,6 +184,88 @@ describe("selectEligible", () => {
     expect(MAX_FILES).toBe(6);
     expect(r.eligible.map((e) => e.file)).toEqual(files.slice(0, 6));
     expect(r.overflow).toEqual(["server/lib/g.ts", "server/lib/h.ts"]);
+  });
+
+  it("sets aside a module whose co-located test needs a database", () => {
+    const test = "server/services/write-cards/__tests__/allergy.test.ts";
+    const r = selectEligible(
+      ["server/lib/foo.ts", "server/services/write-cards/allergy.ts"],
+      deps(["server/lib/__tests__/foo.test.ts", test], { dbTests: [test] }),
+    );
+    expect(r.needsDatabase).toEqual(["server/services/write-cards/allergy.ts"]);
+    expect(r.eligible.map((e) => e.file)).toEqual(["server/lib/foo.ts"]);
+  });
+
+  it("does not spend the cap on a module that needs a database", () => {
+    const files = ["a", "b", "c"].map((n) => `server/lib/${n}.ts`);
+    const tests = files.map((f) =>
+      f.replace(/server\/lib\/(\w+)\.ts$/, "server/lib/__tests__/$1.test.ts"),
+    );
+    const r = selectEligible(
+      files,
+      deps(tests, { max: 2, dbTests: [tests[0]] }),
+    );
+    expect(r.needsDatabase).toEqual(["server/lib/a.ts"]);
+    expect(r.eligible.map((e) => e.file)).toEqual([
+      "server/lib/b.ts",
+      "server/lib/c.ts",
+    ]);
+    expect(r.overflow).toEqual([]);
+  });
+
+  it("runs every tested module when no database check is supplied", () => {
+    const { needsDatabase: _unused, ...rest } = deps([
+      "server/lib/__tests__/foo.test.ts",
+    ]);
+    const r = selectEligible(["server/lib/foo.ts"], rest);
+    expect(r.eligible.map((e) => e.file)).toEqual(["server/lib/foo.ts"]);
+    expect(r.needsDatabase).toEqual([]);
+  });
+});
+
+describe("testNeedsDatabase", () => {
+  it("spots an import of the database test helper, at any depth and quote style", () => {
+    expect(
+      testNeedsDatabase(
+        'import { setupTestTransaction } from "../../../../test/db-test-utils";',
+      ),
+    ).toBe(true);
+    expect(
+      testNeedsDatabase("import { x } from '../../../test/db-test-utils';"),
+    ).toBe(true);
+    expect(
+      testNeedsDatabase(
+        'const u = await import("../../test/db-test-utils.ts");',
+      ),
+    ).toBe(true);
+  });
+
+  it("says no for a test that only mocks or mentions the database", () => {
+    expect(
+      testNeedsDatabase(
+        'import { describe } from "vitest";\nvi.mock("../../db");\n// see test/db-test-utils for the real thing',
+      ),
+    ).toBe(false);
+    expect(testNeedsDatabase("")).toBe(false);
+  });
+
+  it("holds for the repo's own tests: allergy needs a database, goal-calculator does not", () => {
+    expect(
+      testNeedsDatabase(
+        readFileSync(
+          "server/services/write-cards/__tests__/allergy.test.ts",
+          "utf8",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      testNeedsDatabase(
+        readFileSync(
+          "server/services/__tests__/goal-calculator.test.ts",
+          "utf8",
+        ),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -428,8 +518,12 @@ describe("renderSummary", () => {
       skippedRegistered: ["server/lib/macro-gap-context.ts"],
       excluded: ["server/services/iap-receipt-validation.ts"],
       overflow: ["server/lib/h.ts"],
+      needsDatabase: ["server/services/write-cards/allergy.ts"],
     });
     expect(out).toContain("_No eligible changed modules in this PR._");
+    expect(out).toContain(
+      "- Needs a database, not run (this job has no Postgres): server/services/write-cards/allergy.ts",
+    );
     expect(out).toContain(
       "- Untested changed modules (no co-located test): server/lib/u.ts",
     );
