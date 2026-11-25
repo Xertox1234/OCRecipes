@@ -133,6 +133,19 @@ describe("Coach Commitments Routes", () => {
       });
     });
 
+    // The card's own schema bounds neither, so a refusal could never be fixed.
+    it("shortens a long title and takes a long date", async () => {
+      const res = await accept({
+        title: "w".repeat(200),
+        followUpDate: `2099-01-04T10:00${" ".repeat(60)}`,
+      });
+      expect(res.status).toBe(200);
+      expect(storage.acceptCommitment).toHaveBeenCalledWith("1", {
+        title: "w".repeat(120),
+        followUpDate: new Date("2099-01-04T05:00:00Z"),
+      });
+    });
+
     it.each([{}, { title: "", followUpDate: "2099-01-04" }])(
       "refuses a body with no title: %j",
       async (body) => {

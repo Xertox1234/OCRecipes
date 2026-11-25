@@ -28,8 +28,8 @@ vi.mock("@/hooks/useNotebook", async () => {
   const { useMutation } = await import("@tanstack/react-query");
   return {
     useNotebookEntries: () => ({ data: notes.data }),
-    useAcceptCommitment: () =>
-      useMutation({ mutationFn: (v: unknown) => mockAccept(v) }),
+    useAcceptCommitment: (options?: { onError?: () => void }) =>
+      useMutation({ mutationFn: (v: unknown) => mockAccept(v), ...options }),
   };
 });
 
@@ -142,6 +142,22 @@ describe("CommitmentCard", () => {
     await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
     expect(acceptButton()).toBeTruthy();
     expect(mockTriggerPop).not.toHaveBeenCalled();
+  });
+
+  // The streamed card is replaced by the saved row when the reply is stored.
+  it("says the save failed even when the card is gone by then", async () => {
+    let fail = () => {};
+    mockAccept.mockReturnValue(
+      new Promise<void>((_resolve, reject) => {
+        fail = () => reject(new Error("offline"));
+      }),
+    );
+    const { unmount } = renderComponent(<CommitmentCard block={baseBlock} />);
+    fireEvent.click(acceptButton()!);
+    await waitFor(() => expect(mockAccept).toHaveBeenCalled());
+    unmount();
+    fail();
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
   });
 
   it.each(["active", "completed"])(

@@ -28,7 +28,10 @@ const CommitmentCard = React.memo(function CommitmentCard({ block }: Props) {
   const { trigger: triggerCheckPop, animatedStyle: checkPopStyle } =
     useSuccessPop(1.4);
   const toast = useToast();
-  const accept = useAcceptCommitment();
+  const accept = useAcceptCommitment({
+    onError: () =>
+      toast.error("Couldn't save this commitment. Please try again."),
+  });
   // A commitment the user accepted earlier, matched the way the server does.
   const { data: notes } = useNotebookEntries();
   const key = insightKey(block.title);
@@ -63,8 +66,6 @@ const CommitmentCard = React.memo(function CommitmentCard({ block }: Props) {
           // via re-render; iOS needs the explicit announce call.
           AccessibilityInfo.announceForAccessibility("Commitment accepted");
         },
-        onError: () =>
-          toast.error("Couldn't save this commitment. Please try again."),
         onSettled: () => {
           sendingRef.current = false;
         },

@@ -17,9 +17,14 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { crudRateLimit, ipKeyGenerator } from "./_rate-limiters";
 
 const acceptSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  // Written by the model, so it is read leniently: see cardDate.
-  followUpDate: z.string().max(40),
+  // Both are written by the model and unbounded on the card, so they are read
+  // leniently: a refusal could never be fixed by trying again.
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((t) => t.slice(0, 120)),
+  followUpDate: z.string(),
 });
 
 /**
