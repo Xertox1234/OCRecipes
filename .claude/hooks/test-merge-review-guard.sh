@@ -85,6 +85,8 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
         ;;
       body)
         # the platform check reads the PR body with --jq '.body'; answer with the text itself
+        # FAKE_BODY_FILE: a body too large for one environment string (128 KB on Linux)
+        [ -n "${FAKE_BODY_FILE:-}" ] && { cat "$FAKE_BODY_FILE"; exit 0; }
         printf '%s\n' "${FAKE_BODY:-}"
         exit 0
         ;;
@@ -1453,6 +1455,23 @@ out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUNS_FAIL=1)
 denied "$out" && reason "$out" | grep -q 'could not read its E2E runs' \
   && ok "platform: unreadable run list denies" || bad "platform: unreadable run list denies" "$out"
 
+# P11/P12. ALLOW: a '## Platform check' section larger than the pipe buffer, with the run id
+#      (or the 'Already failing on main:' line) near its top. `printf … | grep -q` under
+#      pipefail read these as "not named": grep leaves at its first match, the printf dies of
+#      SIGPIPE and the pipeline reports 141. Both were DENIED before the here-string change.
+P_BIG="$ROOT/.big-body"   # dot-prefixed, like RC_FILE
+{ printf '## Platform check\nE2E run 777 green on both jobs.\nAlready failing on main: complete-onboarding (nightly 41288476343)\n'
+  awk 'BEGIN{for(i=0;i<4000;i++) print "simulator log line: POST /api/cooking/sessions/1/photos 200 (cook photo upload)"}'; } > "$P_BIG"
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY_FILE="$P_BIG")
+assert_allowed "platform: a 300 KB section naming the run near its top allows" "$out"
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 failure" FAKE_BODY_FILE="$P_BIG")
+assert_allowed "platform: a 300 KB section with the already-failing line near its top allows" "$out"
+# P13 (control): the same large section still denies when it names a different run
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="888 success" FAKE_BODY_FILE="$P_BIG")
+denied "$out" && reason "$out" | grep -q 'does not name E2E run 888' \
+  && ok "platform: a 300 KB section naming a different run still denies" \
+  || bad "platform: a 300 KB section naming a different run still denies" "$out"
+
 # P8. DENY: the full diff cannot be read (fail-closed, not 'not in scope').
 out=$(mcp_payload 938 | run FAKE_PR_DIFF_FAIL=1)
 denied "$out" && reason "$out" | grep -q 'diff for the real-platform check' \
@@ -2201,7 +2220,8 @@ rm -rf "$LG"
 # +8 = rows I1 (four), I2 (two), I3 and I4.
 # 261 -> 268 (2026-11-24, deny() cannot be the silent exit): +7 = rows I5 (two), I6, I7 (four).
 # 268 -> 269 (2026-11-24): +1 = row 1b, nothing on stderr for an ordinary command.
-EXPECTED_TOTAL=269
+# 269 -> 272 (2026-11-25, the Platform check greps read here-strings): +3 = rows P11-P13.
+EXPECTED_TOTAL=272
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

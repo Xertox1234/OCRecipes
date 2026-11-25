@@ -509,6 +509,12 @@ case "$TOOL" in
           # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`. A redirect
           # operator terminates a word without whitespace, so a hand-spelled closer skips a glued
           # `>`; #992 swept these. Do not re-spell one.
+          # THESE CLAUSE GREPS STAY PIPES ON PURPOSE (2026-11-25). The usual hazard, `printf
+          # "$BIG" | grep -q` reporting 141 for a match under `pipefail`, cannot happen here: a
+          # clause is ONE line and grep reads a line to its end, so the printf is never cut off
+          # (measured DENY for 300 KB clauses). A here-string would be worse: over 64 KB bash
+          # writes it to a temp file, a failed temp file reads as "no match", and `|| continue`
+          # would skip the clause, an ALLOW (measured with a nearly full temp dir).
           printf '%s' "$MRG_API_CLAUSE" | grep -qiE 'pulls.*merge' || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a
@@ -800,10 +806,13 @@ case "$P_RC" in
     P_SECTION=$(printf '%s\n' "$P_BODY" | awk '/^## /{on = ($0 ~ /^## Platform check[[:space:]]*$/); next} on')
     [ -n "$P_SECTION" ] \
       || deny "Blocked: PR #$PR needs a real-platform check ($P_WHY_ONE). E2E run $P_ID on head ${HEAD_SHA:0:7} finished ($P_CONC), but the PR body has no '## Platform check' section. Add one naming run $P_ID and the real simulator upload you did (which upload, and the server's 2xx line). $BYPASS"
-    printf '%s\n' "$P_SECTION" | grep -qw "$P_ID" \
+    # Here-strings, not pipes: the section is many lines, so a piped `grep -q` that matched
+    # near the top of a section over 64 KB reported 141 and denied (rows P11/P12). A failed
+    # here-string also lands on the deny.
+    grep -qw "$P_ID" <<< "$P_SECTION" \
       || deny "Blocked: PR #$PR's '## Platform check' section does not name E2E run $P_ID, the newest completed run on head ${HEAD_SHA:0:7} ($P_CONC). Record that run, not an earlier one. $BYPASS"
     if [ "$P_CONC" != "success" ]; then
-      printf '%s\n' "$P_SECTION" | grep -q '^Already failing on main:' \
+      grep -q '^Already failing on main:' <<< "$P_SECTION" \
         || deny "Blocked: E2E run $P_ID on head ${HEAD_SHA:0:7} is $P_CONC. PR #$PR may merge only if every failed flow also failed on main's latest nightly: list them in '## Platform check' on a line starting 'Already failing on main:' with that nightly's run id. Otherwise fix the failure, push, and run E2E again. $BYPASS"
     fi
     ;;

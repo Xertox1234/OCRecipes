@@ -835,12 +835,30 @@ main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines,
 every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
 (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
 that outlives the hook cannot hold its stdout open.
-NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `merge-review-guard.sh`,
-`guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under `pipefail`;
-`guard-outward-cli.sh` and `branch-preflight.sh` were checked and converted 2026-11-24;
-`pr-preflight-guard.sh` was read 2026-11-25 and has no `grep -q` condition fed by a pipe: its
-piped greps are `grep -o` captures with `|| true`). Whether any of
-them is a condition over a large text that fails open is unmeasured; the known pattern is
+CHECKED 2026-11-25, the last three hooks under `pipefail`: `guard-worktree-isolation.sh` and
+`core-bare-guard.sh` have no `grep -q` at all (`guard-outward-cli.sh` and `branch-preflight.sh`
+were converted 2026-11-24; `pr-preflight-guard.sh` has only `grep -o` captures with `|| true`).
+`merge-review-guard.sh` had eight. Six read one `gh api` clause each: measured DENY 3 of 3 for
+seven 300 KB spellings of an api merge (one long line, quoted multi-line values, a heredoc,
+12000 continuation words), because a clause is a single line and grep reads a line to its end,
+so the printf is never cut off. Nothing failed open. The other two read the PR body's
+`## Platform check` section and failed CLOSED: a section over the pipe buffer that named the
+run near its top was denied as "does not name E2E run" (rows P11-P13, 300 KB). Those two now
+read here-strings. The six clause greps stay pipes: a here-string over 64 KB needs a temp
+file, and a failed one reads as "no match", which at `|| continue` is an allow (security
+review, measured with a temp dir holding one copy of the clause but not two).
+Still open, found by that review, on `main` too:
+
+- a FULL temp dir allows any merge command over about 64 KB (measured ALLOW 3 of 3 with 0 KB
+  free, a 37-byte command still denies): `done <<< "$MRG_API_CLAUSES"` fails so the clause loop
+  never runs, and `cmd_gh_pr_has_merge`'s `grep -qE … <<< "$words"` in `lib/cmd-detect.sh`
+  fails with rc 1, read as "no merge here". Needs a three-way answer (match / no match / could
+  not run) in the lib and a deny when the loop ran zero times over a non-empty list.
+- run time grows roughly with the square of the command size (`cmd_words_deep`): 300 KB takes
+  3.3 s, 1.17 MB takes 56 s, past the hook timeout. What the harness does with a timed-out
+  hook was not measured. A size cap that denies before any parsing would close it.
+
+The known pattern is
 `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
 Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
 `CONTRACT_DONE`, redefines a function the hook defines before the libs are sourced (`deny`,
