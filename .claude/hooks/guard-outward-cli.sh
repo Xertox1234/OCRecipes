@@ -2567,7 +2567,8 @@ _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 # IS `eas update`, and it was ALLOWED because every verb check wanted the verb to be the word
 # right after the binary. Flag-shaped words in front of the `--` are absorbed with it
 # (`npm exec eas-cli --yes -- update`: npm takes `--yes` for itself, then removes the `--`),
-# but ONLY when a `--` follows them. Used wherever a gated verb follows a gated binary: the
+# but ONLY when a `--` follows them, and NOT a flag's separate value word
+# (`--loglevel error -- update` is still allowed: docs/harness-residuals.md). Used wherever a gated verb follows a gated binary: the
 # eas and railway verb checks (bare and launcher; in the two-word railway checks before EACH
 # word, because npm removes the first `--` wherever it sits), both `npm publish` checks
 # (`npm -- prefix` runs `prefix`), the two package-directory checks, and the first half of

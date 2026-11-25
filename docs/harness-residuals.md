@@ -802,6 +802,9 @@ knowing that they publish. Still open, on `main` too, all measured ALLOW:
   `railway --verbose up`; whether the real CLIs accept a flag there was not measured; the
   hook's header lists "a global flag before the verb" as a known gap), and `npm -s publish`,
   `npm --registry=x publish`.
+- a flag whose value is a SEPARATE word in front of the `--`: `npm exec eas-cli --loglevel
+  error -- update`, `npm --prefix . -- publish` (npm consumed the flag, its value and the
+  `--` when measured with `node` as the target). The `=` spellings are denied.
 - a backslash inside the `--` (`npm exec eas-cli -\- update`: the shell delivers `--`), the
   same blindness as `eas up\date`.
 - a brace or an expansion in place of the `--` or after it under a launcher
