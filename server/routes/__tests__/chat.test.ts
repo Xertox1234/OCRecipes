@@ -99,10 +99,16 @@ vi.mock("../../services/coach-prompt", () => ({
   getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test"),
 }));
 
-vi.mock("../../services/coach-blocks", () => ({
-  parseBlocksFromContent: vi
-    .fn()
-    .mockImplementation((content: string) => ({ text: content, blocks: [] })),
+vi.mock("../../services/coach-blocks", async () => ({
+  // The real parser: the aborted-turn path relies on it to drop a
+  // half-written block fence.
+  parseBlocksFromContent: vi.fn(
+    (
+      await vi.importActual<typeof import("../../services/coach-blocks")>(
+        "../../services/coach-blocks",
+      )
+    ).parseBlocksFromContent,
+  ),
   BLOCKS_SYSTEM_PROMPT: "test prompt",
   getBlocksSystemPrompt: vi.fn().mockReturnValue("test prompt"),
   // The real rule: a user without the health consent gets no commitment card.
@@ -838,6 +844,31 @@ describe("Chat Routes", () => {
       );
     });
 
+    // Coach chat audit 2026-11-24 (L47).
+    it("ends an empty model reply as an error and hands the message back", async () => {
+      mockStreamingSetup();
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        createMockChatMessage({ id: 42, role: "user" }),
+      );
+      vi.mocked(storage.refundUndeliveredMessage).mockResolvedValue(true);
+      async function* emptyStream() {}
+      vi.mocked(generateCoachProResponse).mockReturnValue(emptyStream());
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Hello" });
+
+      expect(res.text).toContain('"error":"Failed to generate response"');
+      expect(res.text).not.toContain('"done":true');
+      expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(42, "1");
+      expect(
+        vi
+          .mocked(storage.createChatMessage)
+          .mock.calls.filter((c) => c[2] === "assistant"),
+      ).toHaveLength(0);
+    });
+
     it("streams SSE response and saves assistant message", async () => {
       mockStreamingSetup();
 
@@ -1412,7 +1443,9 @@ describe("Chat Routes", () => {
         expect(assistantWrites()[0][3]).toBe("Try this:");
       });
 
-      it("refunds when the only thing streamed was an unterminated block fence", async () => {
+      // The fence is held back from the stream (cards go in their own
+      // event), so a turn that got no further delivered nothing.
+      it("refunds when the model had only started a block fence, and never streams it", async () => {
         setupDisconnect();
         vi.mocked(generateCoachProResponse).mockImplementation(
           async function* (_h, _c, _u, signal) {
@@ -1424,7 +1457,13 @@ describe("Chat Routes", () => {
           },
         );
 
-        await postAndDisconnect((body) => body.includes("coach_blocks"));
+        let sawFence = false;
+        await postAndDisconnect((body) => {
+          sawFence ||= body.includes("coach_blocks");
+          return true;
+        });
+
+        expect(sawFence).toBe(false);
 
         expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(
           USER_MSG_ID,

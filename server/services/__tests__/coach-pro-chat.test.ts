@@ -28,6 +28,7 @@ import {
 import type { CoachProChunk } from "../nutrition-coach";
 import type { CoachContext } from "../coach-prompt";
 import { parseBlocksFromContent } from "../coach-blocks";
+import { EmptyCoachReplyError } from "../coach-pro-chat/empty-reply";
 import { consumeWarmUp } from "../coach-warm-up";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import {
@@ -1180,6 +1181,25 @@ describe("handleCoachChat", () => {
   // ── SSE event yielding ────────────────────────────────────
 
   describe("SSE event yielding", () => {
+    it("free tier: streams and saves the reply without citation markup", async () => {
+      vi.mocked(generateCoachResponse).mockReturnValue(
+        fakeStream(["Eggs are fine. \uE200cite\uE202x\uE201", "Enjoy."]),
+      );
+
+      const events = await collectEvents(
+        handleCoachChat(makeParams({ isCoachPro: false })),
+      );
+
+      const streamed = events
+        .filter((e) => e.type === "content")
+        .map((e) => (e as { content: string }).content)
+        .join("");
+      expect(streamed).toBe("Eggs are fine. Enjoy.");
+      expect(vi.mocked(storage.createChatMessage).mock.calls[0][3]).toBe(
+        "Eggs are fine. Enjoy.",
+      );
+    });
+
     it("yields content events from the generator stream", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
         fakeProStream(["Hello ", "world!"]),
@@ -1197,6 +1217,37 @@ describe("handleCoachChat", () => {
         { type: "content", content: "Hello " },
         { type: "content", content: "world!" },
       ]);
+    });
+
+    // Coach chat audit 2026-11-24, bundle A: the plain Chat screen has no
+    // fence handling, and the marker drew as boxes on a live reply.
+    it("never streams the card fence or the model's citation markup", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeProStream([
+          "Try edamame. \uE200cite\uE202memory",
+          "_refs\uE201 It is quick.\n\n``",
+          '`coach_blocks\n[{"type":"quick_replies"',
+          ',"options":[]}]\n``>\n',
+        ]),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Try edamame.  It is quick.",
+        blocks: [],
+      });
+
+      const events = await collectEvents(
+        handleCoachChat(makeParams({ isCoachPro: true })),
+      );
+
+      const streamed = events
+        .filter((e) => e.type === "content")
+        .map((e) => (e as { content: string }).content)
+        .join("");
+      expect(streamed).toBe("Try edamame.  It is quick.\n\n");
+      // The parser still gets the raw reply, fence included.
+      expect(vi.mocked(parseBlocksFromContent).mock.calls[0][0]).toContain(
+        "```coach_blocks",
+      );
     });
 
     it("yields blocks event when Coach Pro response contains blocks", async () => {
@@ -1463,7 +1514,7 @@ describe("handleCoachChat", () => {
 
       const params = makeParams({ isCoachPro: true });
 
-      await collectEvents(handleCoachChat(params));
+      await collectEvents(handleCoachChat(params)).catch(() => undefined);
 
       const extractionCalls = vi
         .mocked(fireAndForget)
@@ -1765,12 +1816,42 @@ describe("handleCoachChat", () => {
       );
     });
 
-    it("does not persist message when response is empty", async () => {
+    // Coach chat audit 2026-11-24 (L47): an empty reply used to end as a
+    // normal "done" with nothing saved and nothing said.
+    it("fails the turn when the model returns no reply, and saves nothing", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeProStream([]));
 
-      const params = makeParams({ isCoachPro: true });
+      await expect(
+        collectEvents(handleCoachChat(makeParams({ isCoachPro: true }))),
+      ).rejects.toBeInstanceOf(EmptyCoachReplyError);
 
-      await collectEvents(handleCoachChat(params));
+      expect(storage.createChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("fails the turn when the reply holds nothing a user can see", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeProStream(['```coach_blocks\n[{"type":"meal_plan_card","ti']),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "",
+        blocks: [],
+      });
+
+      await expect(
+        collectEvents(handleCoachChat(makeParams({ isCoachPro: true }))),
+      ).rejects.toBeInstanceOf(EmptyCoachReplyError);
+
+      expect(storage.createChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("does not fail an empty turn the client already left", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeProStream([]));
+
+      await collectEvents(
+        handleCoachChat(
+          makeParams({ isCoachPro: true, isAborted: () => true }),
+        ),
+      );
 
       expect(storage.createChatMessage).not.toHaveBeenCalled();
     });
