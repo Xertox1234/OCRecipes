@@ -46,7 +46,9 @@ const {
   updateMoodScore,
 } = await import("../coach-notebook-memory");
 
-const { withdrawHealthConsent } = await import("../user-profiles");
+const { withdrawHealthConsent, getReminderMutes } = await import(
+  "../user-profiles"
+);
 
 let tx: NodePgDatabase<typeof schema>;
 let user: schema.User;
@@ -315,8 +317,11 @@ describe("visible memory storage", () => {
       },
     );
 
-    it("on delete", async () => {
+    it("on delete, and never by another user", async () => {
       const row = await withReminder();
+      await deleteNotebookEntry(row.id, other.id);
+      await updateNotebookEntry(row.id, other.id, { status: "archived" });
+      expect(await left()).toHaveLength(1);
       await deleteNotebookEntry(row.id, user.id);
       expect(await left()).toHaveLength(0);
     });
@@ -327,6 +332,21 @@ describe("visible memory storage", () => {
       await updateNotebookEntryStatus(row.id, user.id, "completed", "active");
       expect(await left()).toHaveLength(1);
     });
+  });
+
+  it("getReminderMutes reads many users' mutes, and only the ones asked for", async () => {
+    await tx
+      .insert(userProfiles)
+      .values({ userId: user.id, reminderMutes: { commitment: true } })
+      .onConflictDoUpdate({
+        target: userProfiles.userId,
+        set: { reminderMutes: { commitment: true } },
+      });
+    expect((await getReminderMutes([user.id])).get(user.id)).toEqual({
+      commitment: true,
+    });
+    expect((await getReminderMutes([other.id])).has(user.id)).toBe(false);
+    expect((await getReminderMutes([])).size).toBe(0);
   });
 
   describe("a repeated commitment takes the new date (L67)", () => {
