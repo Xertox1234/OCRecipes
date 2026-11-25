@@ -6021,12 +6021,19 @@ ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-
 #       this file: `envelope()` passes the command as ONE argv entry (`jq --arg`), and
 #       Linux refuses an argv entry over 128 KB (E2BIG), so no ROW can carry a command
 #       that large. test-guard-outward-cli.sh rows ND5b own it (payload on stdin).
+#   - this command is $_out_lines lines long                (2026-11-25)
+#       the line cap at 20000 lines. Unlike the size cap, a ROW could reach it
+#       (20001 newlines is 20 KB, inside `--arg`'s limit), but the corpus judges every
+#       row on four paths, and the table prints each row's command. A 20000-line row
+#       would swamp both, and the row would test only the cap.
+#       test-guard-outward-cli.sh rows ND5d own it.
 # Adding to this list is how you disable a coverage requirement, so it is a
 # deliberate, dated, reviewable edit like any other pin -- never the way to make
 # a red gate green.
 _pin_exempt_sites() { cat <<'PIN_EXEMPT_EOF'
 the hook ended before it reached a decision (a helper under .claude/hook
 this command is ${#CMD} characters long and names (or could build) an ou
+this command is $_out_lines lines long and names (or could build) an out
 jq unavailable - failing closed for a command that looks like an outward
 lib/cmd-detect.sh is unsourceable (broken install) - failing closed via
 the hook envelope's .tool_input.command could not be read (malformed JSO
@@ -6103,7 +6110,8 @@ PIN_EXEMPT_EOF
 # a non-numeric `gh api` count, was added and removed inside the same PR: it sat behind a
 # gate that reads a broken count as 0, so it could never fire.) No row's verdict moved on any
 # of the 4 paths.
-EXPECTED_EMIT_SITES=46
+# 46 -> 47 (2026-11-25, the line cap): +1 site, in _pin_exempt_sites above with its reason.
+EXPECTED_EMIT_SITES=47
 
 PIN_FAIL=0
 

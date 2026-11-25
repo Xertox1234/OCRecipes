@@ -6914,6 +6914,27 @@ nd_only_deny && nd_reason_has 'eas update' && ! nd_reason_has 'characters long' 
 nd_subs 'npm test' 4000
 n="ND5c control: the same substitutions after a command that is not outward: allowed in under 5 s"
 nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+# ND5d. A command of many short lines (security review, 2026-11-25, on `main` too). Every awk
+#      that reads the whole command appends to its buffer once per line, so the cost grows
+#      with the square of the line count: 199000 newlines before a hidden OTA update took
+#      13.6 s against the 10 s timeout, though the command is under the character cap.
+#      Above 20000 lines it denies at once.
+nd_lines() {  # $1=newlines  $2=last line ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ awk -v n="$1" 'BEGIN { for (i = 0; i < n; i++) printf "\n" }'; printf '%s' "$2"; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_lines 150000 "echo \"\$(e''as up''date --branch preview)\""
+n="ND5d 150000 newlines before a hidden OTA update: the too-many-lines deny in under 5 s"
+nd_only_deny && nd_reason_has 'lines long' && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_lines 150000 'ls -la'
+n="ND5d control: 150000 newlines before a command with no outward word are allowed, rc 0"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+nd_lines 19000 "echo \"\$(e''as up''date --branch preview)\""
+n="ND5d control: 19000 newlines (the cap is 20000) before a hidden OTA update still get the precise reason"
+nd_only_deny && ! nd_reason_has 'lines long' && nd_ok "$n" || nd_bad "$n"
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -7079,7 +7100,9 @@ DDROWS
 # 1419 -> 1421 (2026-11-25, substitution-dense commands outran the 10 s hook timeout): +2 =
 # ND5c, a deny row and an allow control, both RED before the batched deep renderings.
 # 1421 -> 1422 (same change): +1 = ND5b at 250 KB, RED while the size cap was 300000.
-EXPECTED_TOTAL=1422
+# 1422 -> 1425 (security review of that change): +3 = ND5d, a deny row RED before the line
+# cap and two controls.
+EXPECTED_TOTAL=1425
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -773,9 +773,21 @@ awk run (`_cmd_words_awk 1`, `_cmd_bare_awk 1`), byte-identical to the per-body 
 random commands: 0.6 s and 1.8 s, and 5.8 s just under the cap, the same as plain text of that
 size. The same functions serve `branch-preflight.sh` and `pr-preflight-guard.sh` (10 s each):
 2000 such lines after `git commit` took 8.9 s in the first and now 0.4 s, after `gh pr create`
-9.0 s in the second and now 0.3 s. Still open: the renderings stay quadratic, so a command just
-under 200000 characters takes about 3.5 s on a quiet machine and could still pass the timeout
-on a very busy one; and the trap and the "unsourceable" fallback are only as wide as
+9.0 s in the second and now 0.3 s. Found by the security review of that change and fixed with it (rows `ND5d`), on `main` too: a
+command of many short lines. Every awk that reads the whole command appends to its buffer once
+per line, so the cost grows with the square of the line count: 199000 newlines before a hidden
+OTA update took 13.6 s under the character cap. Above 20000 lines the hook now denies at once
+(just under both caps, 20000 lines of 9 characters took 5.3 s, 50000 lines 8.0 s). Still
+open: the renderings stay quadratic, so a command just under both caps takes about 5.5 s on a
+quiet machine and could still pass the timeout on a very busy one; reading each command in one
+awk record instead of a line at a time would remove the line term, but POSIX leaves a
+multi-character `RS` unspecified (not tried on BSD awk). `branch-preflight.sh` (10 s) takes 12.8 s on `main` for 5000
+newlines before a `git commit` and 52 s for 20000, about 2.5 ms a line, from its own per-line
+work, not the shared lib; it has no line cap. `pr-preflight-guard.sh` takes 5.1 s at 199000
+newlines. ALSO OPEN, found by the same review, on `main` too (measured ALLOW): a command built
+from a substitution's OUTPUT, `echo "$($(echo eas update --branch preview))"`. The inner
+`$(...)` prints `eas update ...` and the outer one runs it; the deep renderings see the inner
+body only as the arguments of `echo`; and the trap and the "unsourceable" fallback are only as wide as
 `crude_smells_outward`, which misses families the precise matcher denies: `npx eas-cli
 update`, `yarn dlx`/`pnpm dlx`/`bunx eas-cli update`, `node node_modules/eas-cli/bin/run
 update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with a global
