@@ -1,5 +1,6 @@
 import { ErrorCode } from "@shared/constants/error-codes";
 import { ApiError } from "@/lib/api-error";
+import { UploadNoAnswerError } from "@/lib/upload-no-answer";
 
 export interface CoachPhotoFailure {
   /** Show the chat's daily-limit banner instead of an error line. */
@@ -7,9 +8,9 @@ export interface CoachPhotoFailure {
   /** Static copy for the inline error; null when nothing should show. */
   message: string | null;
   /**
-   * The server never answered (a dropped or timed-out connection), so it may
-   * still have received the send and be working on it. The chat keeps
-   * checking for the result instead of asking for a resend.
+   * The photo upload got no answer from the server (`UploadNoAnswerError`),
+   * so the server may still have received it and be working on it. The chat
+   * keeps checking for the result instead of asking for a resend.
    */
   maybeSaved: boolean;
 }
@@ -17,22 +18,22 @@ export interface CoachPhotoFailure {
 /** What was sent: a photo, or a barcode read by the live scanner. */
 export type CoachSendKind = "photo" | "barcode";
 
+/** Shown when the photo upload got no answer; never asks for a resend. */
+const PHOTO_UNCONFIRMED =
+  "That photo may not have gone through. If it did, the result will appear here shortly.";
+
 const COPY = {
   photo: {
     rateLimited: "Too many photos at once. Please wait a moment and try again.",
     inFlight: "The Coach is still answering. Send the photo after the reply.",
     premium: "Sending photos to the Coach needs Coach Pro.",
     fallback: "Couldn't send that photo. Please try again.",
-    unconfirmed:
-      "That photo may not have gone through. If it did, the result will appear here shortly.",
   },
   barcode: {
     rateLimited: "Too many scans at once. Please wait a moment and try again.",
     inFlight: "The Coach is still answering. Scan again after the reply.",
     premium: "Scanning for the Coach needs Coach Pro.",
     fallback: "Couldn't send that barcode. Please try again.",
-    unconfirmed:
-      "That barcode may not have gone through. If it did, the result will appear here shortly.",
   },
 } as const;
 
@@ -78,10 +79,14 @@ export function coachPhotoFailure(
           maybeSaved: false,
         };
     }
-    // The server answered with something else: the send did fail.
-    return { atDailyLimit: false, message: copy.fallback, maybeSaved: false };
   }
-  // No answer at all. The send has no reply until the analysis is done, so
-  // this says nothing about whether the server received it.
-  return { atDailyLimit: false, message: copy.unconfirmed, maybeSaved: true };
+  if (err instanceof UploadNoAnswerError) {
+    return {
+      atDailyLimit: false,
+      message: PHOTO_UNCONFIRMED,
+      maybeSaved: true,
+    };
+  }
+  // The server answered with something else, or nothing was sent at all.
+  return { atDailyLimit: false, message: copy.fallback, maybeSaved: false };
 }

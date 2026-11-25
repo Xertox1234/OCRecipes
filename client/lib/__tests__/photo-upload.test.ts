@@ -1024,6 +1024,38 @@ describe("uploadPhotoToCoach", () => {
     },
   );
 
+  // Coach chat audit 2026-11-24 (L29): the route answers only after the
+  // analysis, so these two say nothing about whether the server got the photo.
+  it("reports a dropped upload as 'no answer', not as a failed send", async () => {
+    vi.mocked(uploadAsync).mockRejectedValue(new Error("Network error"));
+    await expect(
+      photoUpload.uploadPhotoToCoach("file:///p.jpg", 7),
+    ).rejects.toBeInstanceOf(photoUpload.UploadNoAnswerError);
+  });
+
+  it.each([502, 503, 504])(
+    "reports a gateway %s as 'no answer' (the server may still be working)",
+    async (status) => {
+      vi.mocked(uploadAsync).mockResolvedValue({
+        status,
+        body: "<html>Bad gateway</html>",
+        headers: {},
+        mimeType: "text/html",
+      });
+      await expect(
+        photoUpload.uploadPhotoToCoach("file:///p.jpg", 7),
+      ).rejects.toBeInstanceOf(photoUpload.UploadNoAnswerError);
+    },
+  );
+
+  it("a failure before anything is sent is not 'no answer'", async () => {
+    vi.mocked(compressImage).mockRejectedValue(new Error("cannot compress"));
+    await expect(
+      photoUpload.uploadPhotoToCoach("file:///p.jpg", 7),
+    ).rejects.not.toBeInstanceOf(photoUpload.UploadNoAnswerError);
+    expect(uploadAsync).not.toHaveBeenCalled();
+  });
+
   it("throws an ApiError carrying the server's code", async () => {
     vi.mocked(uploadAsync).mockResolvedValue({
       status: 429,

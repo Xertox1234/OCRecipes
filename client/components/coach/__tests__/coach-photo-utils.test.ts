@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { ApiError } from "@/lib/api-error";
+import { UploadNoAnswerError } from "@/lib/upload-no-answer";
 import { coachPhotoFailure } from "../coach-photo-utils";
 
 describe("coachPhotoFailure", () => {
@@ -36,8 +37,8 @@ describe("coachPhotoFailure", () => {
   // Coach chat audit 2026-11-24 (L29): the upload has no reply until the
   // analysis is done, so a dropped connection says nothing about whether
   // the server got the photo. "Please try again" then invited a second turn.
-  it("does not tell the user to resend when the outcome is unknown", () => {
-    const failure = coachPhotoFailure(new Error("Network request failed"));
+  it("does not tell the user to resend when the server never answered", () => {
+    const failure = coachPhotoFailure(new UploadNoAnswerError());
     expect(failure.maybeSaved).toBe(true);
     expect(failure.message).toMatch(/may not have gone through/i);
     expect(failure.message).not.toMatch(/try again/i);
@@ -51,6 +52,12 @@ describe("coachPhotoFailure", () => {
     expect(
       coachPhotoFailure(new ApiError("x", ErrorCode.RATE_LIMITED)).maybeSaved,
     ).toBe(false);
+  });
+
+  it("a failure before anything was sent still asks for another try", () => {
+    const failure = coachPhotoFailure(new Error("Not authenticated"));
+    expect(failure.maybeSaved).toBe(false);
+    expect(failure.message).toBe("Couldn't send that photo. Please try again.");
   });
 
   describe("for a scanned barcode", () => {

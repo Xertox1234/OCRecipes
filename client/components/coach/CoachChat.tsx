@@ -687,9 +687,39 @@ export default function CoachChat({
   const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  // Stops the look-for-the-saved-turn poll after an unanswered photo send.
+  // After a photo send the server never answered: the poll that looks for
+  // the saved turn, and where the thread stood, so the card's late arrival
+  // can clear the "may not have gone through" line and be announced.
   const photoPollCancelRef = useRef<(() => void) | null>(null);
-  useEffect(() => () => photoPollCancelRef.current?.(), []);
+  const unconfirmedPhotoRef = useRef<{
+    convId: number;
+    lastAssistantId: number | null;
+  } | null>(null);
+  const stopPhotoFollowUp = useCallback(() => {
+    photoPollCancelRef.current?.();
+    photoPollCancelRef.current = null;
+    unconfirmedPhotoRef.current = null;
+  }, []);
+  // Ends with the component, and with the thread it belongs to.
+  useEffect(() => stopPhotoFollowUp, [conversationId, stopPhotoFollowUp]);
+  useEffect(() => {
+    const pending = unconfirmedPhotoRef.current;
+    if (!pending || pending.convId !== conversationId) return;
+    if (
+      lastAssistantMessageId === null ||
+      lastAssistantMessageId === pending.lastAssistantId
+    ) {
+      return;
+    }
+    // The card arrived after all.
+    stopPhotoFollowUp();
+    // The line was true until this message arrived.
+    setStreamingError(null);
+    const reply = messages?.[messages.length - 1];
+    AccessibilityInfo.announceForAccessibility(
+      getStreamFinishAnnouncement(reply?.content ?? "", "", Platform.OS),
+    );
+  }, [lastAssistantMessageId, conversationId, messages, stopPhotoFollowUp]);
   const cancelPhotoAnnouncement = useCallback(() => {
     if (photoAnnounceTimerRef.current) {
       clearTimeout(photoAnnounceTimerRef.current);
@@ -709,8 +739,7 @@ export default function CoachChat({
     onStart: (kind) => {
       const isBarcode = kind === "barcode";
       setSendingBarcode(isBarcode);
-      photoPollCancelRef.current?.();
-      photoPollCancelRef.current = null;
+      stopPhotoFollowUp();
       sentTurnRef.current = null;
       turnEpochRef.current += 1;
       followLatest();
@@ -765,7 +794,11 @@ export default function CoachChat({
         // (the send has no reply until that is done). Keep looking for the
         // saved turn, so the card appears instead of the user resending.
         if (failure.maybeSaved) {
-          photoPollCancelRef.current?.();
+          stopPhotoFollowUp();
+          unconfirmedPhotoRef.current = {
+            convId,
+            lastAssistantId: lastAssistantIdRef.current,
+          };
           photoPollCancelRef.current = pollUntilTurnSettled(
             queryClient,
             chatMessagesKey(convId),
@@ -835,6 +868,8 @@ export default function CoachChat({
       if (typeof text !== "string") {
         haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       }
+      // A new turn ends the wait on an unanswered photo send.
+      stopPhotoFollowUp();
       sentTurnRef.current = {
         text: content,
         lastSavedId: lastSavedIdRef.current,
@@ -904,6 +939,7 @@ export default function CoachChat({
       // handleQuickReply, renderItem) stays stable across keystrokes.
       turnBlocked,
       setStartingTurn,
+      stopPhotoFollowUp,
       conversationId,
       onCreateConversation,
       warmUpHook,
@@ -1136,6 +1172,7 @@ export default function CoachChat({
       }
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      stopPhotoFollowUp();
       sentTurnRef.current = null;
       turnEpochRef.current += 1;
       // Sending brings the user back to the conversation's end, even if
@@ -1157,6 +1194,7 @@ export default function CoachChat({
     },
     [
       turnBlocked,
+      stopPhotoFollowUp,
       conversationId,
       planUnknown,
       recheckPlan,
