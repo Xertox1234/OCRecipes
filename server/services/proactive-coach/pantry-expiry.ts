@@ -6,8 +6,8 @@
  *
  * The scheduler calls this once a day per user, at PANTRY_EXPIRY_LOCAL_HOUR.
  * The window runs from that hour on the user's calendar day to the same hour
- * on the next, measured from local midnight, so one day's window ends exactly
- * where the next begins whenever the tick lands and whatever the clocks do:
+ * on the next, by the wall clock, so one day's window ends exactly where the
+ * next begins whenever the tick lands and whatever the clocks do:
  * each item is named once, on the day before it expires.
  *
  * What it does not do: catch up. A day that is skipped (a missed tick, a
@@ -22,6 +22,7 @@ import {
   addCivilDays,
   civilDateString,
   civilDateToInstant,
+  civilHourInTz,
 } from "../../lib/civil-date";
 import { logger, toError } from "../../lib/logger";
 import { notify } from "../notifications/notify";
@@ -46,11 +47,17 @@ export async function nudgeAboutExpiringPantry(
 ): Promise<PantryNudgeResult> {
   const today = civilDateString(now, tz);
   const startOfLocalDay = civilDateToInstant(today, tz);
-  const windowAt = (day: string) =>
-    new Date(
+  // The hour on the wall clock: local midnight plus that many hours is an
+  // hour out on a day the clocks change, so it is corrected by what the
+  // clock reads there.
+  const windowAt = (day: string) => {
+    const guess = new Date(
       civilDateToInstant(day, tz).getTime() +
         PANTRY_EXPIRY_LOCAL_HOUR * HOUR_MS,
     );
+    const off = PANTRY_EXPIRY_LOCAL_HOUR - civilHourInTz(guess, tz);
+    return new Date(guess.getTime() + off * HOUR_MS);
+  };
 
   // Pantry first: most users have nothing expiring, and need no plan lookup.
   const items = await storage.getPantryItemsExpiringBetween(

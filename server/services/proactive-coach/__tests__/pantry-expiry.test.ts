@@ -89,9 +89,7 @@ describe("nudgeAboutExpiringPantry", () => {
     );
   });
 
-  it("joins up day to day across a clock change, in the user's own timezone", async () => {
-    // Toronto leaves daylight time on 2026-11-01: 16:00 is 20:00Z the day
-    // before and 21:00Z on the day and after.
+  it("opens at 16:00 on the wall clock on the days the clocks change", async () => {
     const windowAt = async (iso: string) => {
       vi.mocked(storage.getPantryItemsExpiringBetween).mockClear();
       await nudgeAboutExpiringPantry("u1", new Date(iso), "America/Toronto");
@@ -99,11 +97,21 @@ describe("nudgeAboutExpiringPantry", () => {
         .calls[0];
       return [from.toISOString(), to.toISOString()];
     };
-    const saturday = await windowAt("2026-10-31T20:00:00Z");
-    const sunday = await windowAt("2026-11-01T21:00:00Z");
-    const monday = await windowAt("2026-11-02T21:00:00Z");
-    expect(sunday[0]).toBe(saturday[1]);
-    expect(monday[0]).toBe(sunday[1]);
+    // Clocks go back on 2026-11-01: 16:00 is 20:00Z before and 21:00Z after,
+    // so that window is 25 hours long.
+    expect(await windowAt("2026-10-31T20:00:00Z")).toEqual([
+      "2026-10-31T20:00:00.000Z",
+      "2026-11-01T21:00:00.000Z",
+    ]);
+    expect(await windowAt("2026-11-01T21:00:00Z")).toEqual([
+      "2026-11-01T21:00:00.000Z",
+      "2026-11-02T21:00:00.000Z",
+    ]);
+    // Clocks go forward on 2026-03-08: 21:00Z before, 20:00Z after (23 hours).
+    expect(await windowAt("2026-03-07T21:00:00Z")).toEqual([
+      "2026-03-07T21:00:00.000Z",
+      "2026-03-08T20:00:00.000Z",
+    ]);
   });
 
   it("does nothing when nothing is about to expire, and spends no daily slot", async () => {
