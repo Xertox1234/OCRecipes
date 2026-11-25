@@ -724,6 +724,16 @@ cmd-detect.sh|unset -f cmd_words_deep
 cmd-detect.sh|cmd_words_deep() { set -e; false; }
 cmd-detect.sh|cd /
 SPECS
+# ND1d. A PARTLY broken matcher (confirmation review, on main too): it still says yes to the
+#      bare three words, so a self-test on those alone passed, and then it missed a real call.
+ND_CREATE_FLAGS='{"tool_name":"Bash","tool_input":{"command":"gh pr create --fill"}}'
+ND_CREATE_LINE2='{"tool_name":"Bash","tool_input":{"command":"git push\ngh pr create --fill"}}'
+nd_stamp none
+T=$(nd_tree .claude/hooks/lib/cmd-detect.sh "_CMD_POS_SUFFIX='\$'"); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$ND_CREATE_FLAGS"; nd_check "ND1d a suffix anchor that rejects flags after create: gh pr create --fill denies" nd_only_deny
+T=$(nd_tree .claude/hooks/lib/cmd-detect.sh 'eval "_pp_real_$(declare -f cmd_words_deep)"; cmd_words_deep() { _pp_real_cmd_words_deep "$@" | head -1; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$ND_CREATE_LINE2"; nd_check "ND1d a renderer that keeps only the first line: a create on line 2 denies" nd_only_deny
+nd_run "$ND_REAL" "$ND_CREATE_LINE2"; nd_check "ND1d control: the healthy hook denies that two-line command" nd_only_deny
 # ND1c. Control: with healthy libs the self-test does not turn a quoted mention into a deny.
 nd_stamp none
 nd_run "$ND_REAL" '{"tool_name":"Bash","tool_input":{"command":"echo \"gh pr create\""}}'

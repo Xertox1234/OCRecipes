@@ -665,7 +665,9 @@ Found by the security review of that change, on `main` too, fixed with it (rows 
 PR-create matcher renders the command through `cmd_words_deep`, and with that helper broken
 it answered a clean "not a PR-create" for everything, so an unstamped `gh pr create` was
 allowed; its "no" is now believed only after it has said yes to a known PR-create in the same
-subshell. A lib that changes the working directory (`cd /`) made the hook's "not a git
+subshell. That known call is shaped like a real one (second line, a global flag, flags after
+the verb), which also catches three partly broken matchers that were measured; a matcher
+broken in a way that string does not exercise still answers a wrong "no". A lib that changes the working directory (`cd /`) made the hook's "not a git
 repository" exit an allow; the probes compare `$PWD` too. A command that cannot be read is
 decided by the trap's text test over the raw envelope, not allowed outright.
 Still open in `pr-preflight-guard.sh`: the same list as for `git-safety.sh` below (a lib that replaces the

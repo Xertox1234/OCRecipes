@@ -70,6 +70,9 @@ _pp_looks_like_create() {
   # The raw envelope stands in when the command was never read (a signal that killed the jq
   # reading it left CMD empty, and an empty command read as "not a PR-create").
   local t=${CMD:-$INPUT}
+  # In the raw envelope a newline is the two characters backslash-n; drop that pair first, or
+  # the backslash strip below would leave an `n` inside a word split by a line continuation.
+  [ -n "$CMD" ] || t=${t//\\n/}
   t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//$'\n'/}; t=${t//\$/}
   case "$t" in *gh*pr*create*) return 0 ;; esac
   return 1
@@ -212,7 +215,12 @@ case "$TOOL" in
       # the command through cmd_words_deep, and when THAT helper is broken (exits, returns
       # non-zero, is missing) the rendering is empty and the matcher answers a clean 1 for
       # everything, a real PR-create included. A matcher that cannot say yes cannot say no.
-      _PP_IS_CREATE=$(cmd_is_gh_pr_create 'gh pr create' >/dev/null 2>&1 || exit 0
+      # The known PR-create is shaped like a real call (a second line, a global flag, flags
+      # after the verb), because a PARTLY broken matcher passed the bare three words and then
+      # missed real commands: one that reads only the first line, one whose suffix anchor
+      # rejects anything after `create`, one that fails on longer input (each measured). This
+      # checks the shapes in this one string, not every shape (docs/harness-residuals.md).
+      _PP_IS_CREATE=$(cmd_is_gh_pr_create $'true\ngh -R o/r pr create --fill --title x' >/dev/null 2>&1 || exit 0
         cmd_is_gh_pr_create "$CMD" >/dev/null 2>&1; printf '%s' "$?")
       [ "$_PP_IS_CREATE" = 1 ] && _pp_allow
     fi
