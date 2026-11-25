@@ -510,6 +510,22 @@ describe("CoachOverlayContent — the reply and the question are not lost", () =
     await waitFor(() => expect(reactProps(input).value).toBe("protein_today"));
   });
 
+  // The re-read lands in the query cache before React draws it, so the
+  // check must read the cache: the rendered list is still the old one here.
+  it("gives nothing back when the saved question is only in the cache yet", async () => {
+    await renderOverlay();
+    const getData = vi
+      .spyOn(QueryClient.prototype, "getQueryData")
+      .mockReturnValue([savedMessage(1, "user", "protein_today")]);
+    await act(async () => {
+      stream.setStreaming(false);
+      stream.opts.onError?.("Response interrupted");
+    });
+    const input = await screen.findByLabelText("Type a follow-up question");
+    expect(reactProps(input).value).toBe("");
+    getData.mockRestore();
+  });
+
   it("gives nothing back when the server saved the question", async () => {
     const view = await renderOverlay();
     messagesHolder.messages = [savedMessage(1, "user", "protein_today")];

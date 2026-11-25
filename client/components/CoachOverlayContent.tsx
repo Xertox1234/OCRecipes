@@ -20,7 +20,11 @@ import { ChatBubble } from "@/components/ChatBubble";
 import ReportReplyButton from "@/components/coach/ReportReplyButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
+import {
+  useCreateConversation,
+  useChatMessages,
+  type ChatMessage,
+} from "@/hooks/useChat";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { useShowsCoachPro } from "@/hooks/useShowsCoachPro";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
@@ -204,7 +208,15 @@ export function CoachOverlayContent({
       void reread.then(() => {
         if (!sent || sentTurnRef.current !== sent) return;
         const floor = sent.lastSavedId ?? Number.NEGATIVE_INFINITY;
-        const saved = (messagesRef.current ?? []).some(
+        // The cache, not the rendered list: the re-read has landed there,
+        // but React may not have drawn it yet when this runs.
+        const fresh =
+          (conversationId !== null
+            ? queryClient.getQueryData<ChatMessage[]>(
+                chatMessagesKey(conversationId),
+              )
+            : undefined) ?? messagesRef.current;
+        const saved = (fresh ?? []).some(
           (m) => m.role === "user" && m.id > floor,
         );
         if (!saved) {
