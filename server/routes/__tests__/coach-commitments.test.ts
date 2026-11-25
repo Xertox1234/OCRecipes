@@ -42,6 +42,7 @@ describe("Coach Commitments Routes", () => {
         1,
         "1",
         "completed",
+        "active",
       );
     });
 

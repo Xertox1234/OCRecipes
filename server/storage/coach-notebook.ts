@@ -63,12 +63,24 @@ export async function getActiveNotebookEntries(
   if (types && types.length > 0) {
     conditions.push(inArray(coachNotebook.type, types));
   }
-  return db
-    .select()
-    .from(coachNotebook)
-    .where(and(...conditions))
-    .orderBy(desc(coachNotebook.updatedAt))
-    .limit(100);
+  return (
+    db
+      .select()
+      .from(coachNotebook)
+      .where(and(...conditions))
+      // What the user confirmed (goals, preferences, commitments) first, then
+      // the rest by recency. By recency alone, the newer background notes the
+      // Coach writes on most turns pushed an old confirmed preference past the
+      // cut, and the prompt's own priority sort only runs on what this returns
+      // (coach chat audit 2026-11-24, M51).
+      .orderBy(
+        sql`CASE WHEN ${coachNotebook.confirmedAt} IS NOT NULL
+        AND ${inArray(coachNotebook.type, ["goal", "preference", "commitment"])}
+        THEN 0 ELSE 1 END`,
+        desc(coachNotebook.updatedAt),
+      )
+      .limit(100)
+  );
 }
 
 export async function createNotebookEntry(
@@ -236,11 +248,23 @@ export async function updateNotebookEntryStatus(
   id: number,
   userId: string,
   status: NotebookEntryStatus,
+  /**
+   * Write only when the row still has this status. A caller that read the row
+   * earlier (the reminder job, the Accept route) passes what it saw, so it
+   * cannot overwrite a note the user removed in between.
+   */
+  onlyFrom?: NotebookEntryStatus,
 ): Promise<CoachNotebookEntry | undefined> {
   const [updated] = await db
     .update(coachNotebook)
     .set({ status, updatedAt: new Date() })
-    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+    .where(
+      and(
+        eq(coachNotebook.id, id),
+        eq(coachNotebook.userId, userId),
+        onlyFrom ? eq(coachNotebook.status, onlyFrom) : undefined,
+      ),
+    )
     .returning();
   return updated;
 }

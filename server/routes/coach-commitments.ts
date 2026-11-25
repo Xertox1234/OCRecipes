@@ -44,10 +44,13 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+        // Only an active commitment: accepting must not bring back one the
+        // user removed or one that was archived.
         await storage.updateNotebookEntryStatus(
           notebookEntryId,
           req.userId,
           "completed",
+          "active",
         );
         res.json({ ok: true });
       } catch (error) {

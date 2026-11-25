@@ -11,6 +11,7 @@ import {
 } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
+import { containsUnsafeCoachAdvice } from "../lib/ai-safety";
 import { civilDateToInstant } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -26,8 +27,33 @@ const idsSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(20),
 });
 
+/**
+ * The note types a user may add or switch to by hand: the ones "What Coach
+ * knows" shows. The other five are Coach's own (insight, summary, strategy…):
+ * a hand-added one could not be seen again on that page, and a hand-written
+ * coaching_strategy went into the prompt as background (audit 2026-11-24,
+ * L86/M8).
+ */
+const USER_NOTE_TYPES = ["goal", "preference", "commitment"] as const;
+
+/**
+ * Why a hand-written note cannot be saved, or null. The same two filters the
+ * Coach's own extraction applies before it saves (notebook-extraction.ts):
+ * the manual routes used to store any text and mark it confirmed, and
+ * confirmed notes are stated back by Coach.
+ */
+function refusedNoteText(content: string): string | null {
+  if (/\ballerg/i.test(content)) {
+    return "Allergies belong in your dietary profile, where recipes are checked against them. Add it under Profile.";
+  }
+  if (containsUnsafeCoachAdvice(content)) {
+    return "That can't be saved as a note. Coach's notes can't hold medical or extreme-diet instructions.";
+  }
+  return null;
+}
+
 const createEntrySchema = z.object({
-  type: z.enum(notebookEntryTypes),
+  type: z.enum(USER_NOTE_TYPES),
   content: z.string().min(1).max(500),
   followUpDate: z
     .string()
@@ -38,7 +64,7 @@ const createEntrySchema = z.object({
 
 const updateEntrySchema = z.object({
   content: z.string().min(1).max(500).optional(),
-  type: z.enum(notebookEntryTypes).optional(),
+  type: z.enum(USER_NOTE_TYPES).optional(),
   followUpDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -170,7 +196,13 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
+        // The screens ask for no page. The default used to be the newest 50,
+        // so an older note was missing from "What Coach knows" although
+        // Coach still used it. The account's own ceiling bounds the list.
+        const limit = parseQueryInt(req.query.limit, {
+          default: MAX_NOTEBOOK_ENTRIES,
+          max: MAX_NOTEBOOK_ENTRIES,
+        });
         const page = parseQueryInt(req.query.page, {
           default: 1,
           min: 1,
@@ -227,6 +259,9 @@ export function register(app: Express): void {
           );
         if (await refusedWhileCoachNotesPaused(req.userId, res)) return;
         const { type, content, followUpDate } = parsed.data;
+        const refusal = refusedNoteText(content);
+        if (refusal)
+          return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         // A ceiling on what one account can add: the rate limit alone let
         // it reach tens of thousands of rows, which every Coach turn and
         // the daily reminder job then read.
@@ -295,6 +330,9 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         const { content, type, followUpDate, status } = parsed.data;
+        const refusal = content !== undefined ? refusedNoteText(content) : null;
+        if (refusal)
+          return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         // While the notes are paused a kept note can be put away (archived,
         // completed, rejected) but not rewritten or brought back: an edit
         // also confirms the note, and it would be used once the consent is
