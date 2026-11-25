@@ -185,7 +185,9 @@ describe("CookModeScreen", () => {
     press("Next step");
     press("Start 12 min timer");
     expect(screen.getByText("12:00")).toBeDefined();
-    act(() => vi.advanceTimersByTime(61_000));
+    act(() => {
+      vi.advanceTimersByTime(61_000);
+    });
     expect(screen.getByText("10:59")).toBeDefined();
     expect(screen.getByLabelText("Start 5 min timer")).toBeDefined();
   });
@@ -207,7 +209,9 @@ describe("CookModeScreen", () => {
     press("Start 12 min timer");
     press("Previous step");
     expect(screen.getByText("Step 1 of 2")).toBeDefined();
-    act(() => vi.advanceTimersByTime(60_000));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
     expect(screen.getByText("Step 2 · 11:00")).toBeDefined();
   });
 
@@ -217,7 +221,9 @@ describe("CookModeScreen", () => {
     press("Next step");
     press("Start 5 min timer");
     mocks.speak.mockClear();
-    act(() => vi.advanceTimersByTime(301_000));
+    act(() => {
+      vi.advanceTimersByTime(301_000);
+    });
     expect(screen.getByText("Timer done: 5 min (step 2)")).toBeDefined();
     expect(mocks.notification).toHaveBeenCalledOnce();
     expect(mocks.speak).toHaveBeenCalledExactlyOnceWith(
@@ -235,7 +241,9 @@ describe("CookModeScreen", () => {
     press("Next step");
     press("Next step");
     press("Start 5 min timer");
-    act(() => vi.advanceTimersByTime(301_000));
+    act(() => {
+      vi.advanceTimersByTime(301_000);
+    });
     expect(mocks.speak).toHaveBeenLastCalledWith(
       expect.any(Number),
       "Timer done. 5 min, step 2.",

@@ -16,7 +16,10 @@ describe("useCookTimers", () => {
     const hook = renderHook(() => useCookTimers(onDone));
     return { ...hook, onDone };
   };
-  const tick = (ms: number) => act(() => vi.advanceTimersByTime(ms));
+  const tick = (ms: number) =>
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
 
   it("starts with none running", () => {
     const { result } = setup();
