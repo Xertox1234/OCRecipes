@@ -519,6 +519,41 @@ describe("CoachChat — handleSend", () => {
     });
   });
 
+  // Coach chat audit 2026-11-24 (M20): a second tap while the first send was
+  // still creating the conversation used to create a second one.
+  it("refuses a second send while the first is still creating the conversation", async () => {
+    let finishCreate!: (id: number) => void;
+    const onCreateConversation = vi.fn(
+      () => new Promise<number>((resolve) => (finishCreate = resolve)),
+    );
+    renderCoachChat({ conversationId: null, onCreateConversation });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "first" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("send"));
+    });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "second" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("send"));
+    });
+    expect(onCreateConversation).toHaveBeenCalledTimes(1);
+    // The refused text stays in the input.
+    expect(screen.getByTestId("input-text").textContent).toBe("second");
+
+    await act(async () => {
+      finishCreate(55);
+    });
+    expect(state.startStream).toHaveBeenCalledTimes(1);
+    expect(state.startStream).toHaveBeenCalledWith(
+      55,
+      "first",
+      expect.anything(),
+    );
+  });
+
   it("aborts the send when conversation creation fails, restores the typed text, and shows a visible error", async () => {
     const onCreateConversation = vi.fn().mockRejectedValue(new Error("boom"));
     renderCoachChat({ conversationId: null, onCreateConversation });
@@ -777,6 +812,22 @@ describe("CoachChat — handleRetry", () => {
     );
   });
 
+  // Coach chat audit 2026-11-24 (M21): the stored text of a photo turn is a
+  // placeholder, so Regenerate would delete the food card and resend nothing.
+  it.each(["Sent a photo", "Scanned a barcode"])(
+    "offers no Regenerate under a turn whose text is %s",
+    (content) => {
+      state.messages = [
+        makeMessage({ id: 1, role: "user", content }),
+        makeMessage({ id: 2, role: "assistant", content: "a food card" }),
+      ];
+      renderCoachChat({ conversationId: 7 });
+      expect(
+        screen.queryByRole("button", { name: /regenerate response/i }),
+      ).toBeNull();
+    },
+  );
+
   it("surfaces an error and restores snapshot if delete fails", async () => {
     assistantThenUser();
     state.deleteMutate = vi.fn().mockRejectedValue(new Error("net"));
@@ -952,6 +1003,25 @@ describe("CoachChat — quick reply & commitment", () => {
       "a quick reply",
       expect.anything(),
     );
+  });
+
+  // Coach chat audit 2026-11-24 (M22): a chip tapped while a reply streams
+  // used to be marked used although nothing was sent.
+  it("a quick reply tapped while a reply is streaming sends nothing", () => {
+    state.isStreaming = true;
+    state.messages = [
+      makeMessage({
+        id: 12,
+        role: "assistant",
+        content: "qr",
+        metadata: {
+          blocks: [{ type: "quick_replies", options: [] }],
+        } as unknown as ChatMessage["metadata"],
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.click(screen.getByTestId("block-quick-reply"));
+    expect(state.startStream).not.toHaveBeenCalled();
   });
 
   it("commitment accept with a notebookEntryId posts to the API", async () => {

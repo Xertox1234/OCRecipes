@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import type { Response } from "express";
 import { storage } from "../storage";
+import { EmptyCoachReplyError } from "./coach-pro-chat/empty-reply";
 import type { AuthenticatedRequest } from "../middleware/auth";
 import { parseTimezone } from "../lib/civil-date";
 import { SseSink, openSse } from "../lib/sse";
@@ -178,6 +179,26 @@ export async function runTurn(input: TurnInput): Promise<void> {
         { err: toError(error) },
         "chat stream ended by client disconnect",
       );
+    } else if (error instanceof EmptyCoachReplyError) {
+      // Nothing was delivered, so the message and its daily-limit claim go
+      // back (paid finder claims on the row stay, as in the disconnect
+      // refund). warn, not error: the provider answered, with nothing.
+      logger.warn(
+        { conversationId: input.conversationId },
+        "coach reply was empty",
+      );
+      // Before the error goes out: the app re-reads the chat when it gets it.
+      try {
+        await storage.refundUndeliveredMessage(
+          ctx.userMessage.id,
+          input.req.userId,
+        );
+      } catch (err) {
+        logger.error(
+          { err: toError(err) },
+          "failed to refund an empty coach reply",
+        );
+      }
     } else {
       logger.error({ err: toError(error) }, "chat streaming error");
     }
@@ -530,11 +551,9 @@ async function settleAbortedCoachTurn(ctx: TurnContext): Promise<void> {
     const parsedPartial = features.coachPro
       ? parseBlocksFromContent(streamedContent)
       : { text: streamedContent.trim(), blocks: [] };
-    // An unterminated fence is half-written block JSON — the client
-    // hid it while streaming, so it was never "delivered".
-    const strippedText = parsedPartial.text
-      .replace(/```coach_blocks[\s\S]*$/, "")
-      .trim();
+    // The stream sends prose only (no fence), and the parser drops a
+    // half-written fence itself.
+    const strippedText = parsedPartial.text;
     // Free-tier deltas stream BEFORE the service's end-of-response
     // safety check, so a partial cut mid-stream was never vetted.
     const partialText = containsUnsafeCoachAdvice(strippedText)
