@@ -96,7 +96,7 @@ Then re-rank.
       may not), which React Native native module it needs, and what a minute
       costs. Value: de-risks the goal. Size: S.
 - [x] **V1. Cook mode.** Step cards with timers, read aloud with `expo-speech`.
-      Value: high. Size: M. PR #PRNUM. A full-screen cook view opened from the
+      Value: high. Size: M. PR #2030. A full-screen cook view opened from the
       Coach's recipe card ("Cook") and from the recipe page ("Start Cooking"):
       the ingredients, then one step per card, read aloud, with timers read
       from the step's own wording. Left for later: an alarm while the app is
