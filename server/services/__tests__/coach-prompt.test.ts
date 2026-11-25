@@ -11,7 +11,7 @@ describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
   it("matches the pinned value (last intended edit: no referral on ordinary food answers, 2026-11-25)", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("0b4b993c21150339");
+    expect(getSystemPromptTemplateVersion()).toBe("164bff05955d699f");
   });
 });
 
@@ -132,6 +132,10 @@ describe("coach prompt: profile health conditions", () => {
       // ordinary food answer just because the profile lists a condition.
       expect(prompt).toContain(
         "A condition listed there is not the user mentioning it",
+      );
+      // ...but what the user says in the chat keeps its referral.
+      expect(prompt).toContain(
+        "If the user has mentioned a condition, symptom, medication, pregnancy or distress anywhere in this conversation, the referral rules above apply unchanged",
       );
     }
   });
