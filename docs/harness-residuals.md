@@ -660,16 +660,31 @@ sourced with stdout discarded; the three functions answer by rc as text from ins
 be loaded leaves no stamp, so the PR is denied even with a fresh one; the deny builds first
 and prints a static deny when `jq` fails; and an EXIT/signal trap denies when the shell ends
 undecided on the MCP create or on a Bash command that holds `gh`, `pr`, `create` in that
-order once quotes are removed. Cost: about 1 ms more per Bash call. Still open in
-`pr-preflight-guard.sh`: the same list as for `git-safety.sh` below (a lib that replaces the
+order once quotes are removed. Cost: about 1 ms more per Bash call.
+Found by the security review of that change, on `main` too, fixed with it (rows ND1b): the
+PR-create matcher renders the command through `cmd_words_deep`, and with that helper broken
+it answered a clean "not a PR-create" for everything, so an unstamped `gh pr create` was
+allowed; its "no" is now believed only after it has said yes to a known PR-create in the same
+subshell. A lib that changes the working directory (`cd /`) made the hook's "not a git
+repository" exit an allow; the probes compare `$PWD` too. A command that cannot be read is
+decided by the trap's text test over the raw envelope, not allowed outright.
+Still open in `pr-preflight-guard.sh`: the same list as for `git-safety.sh` below (a lib that replaces the
 trap, sets `DECIDED`, assigns a variable the hook reads, redefines a `_pp_` function, defines
 `builtin`, or closes fd 9; SIGKILL and the stop and real-time signals); the two exits before
 the trap (`SKIP_PR_PREFLIGHT`, and `jq` unable to read the envelope: with `jq` missing from
 PATH the hook allows everything, on `main` too); a call made outside a git repository is
 allowed (as before); the verdict-diff registry and drift checks keep their own fail-open arms
 (no `origin/main`, a failed fetch); a PR-create spelled so that the text test misses it
-(`gh` reached through a variable or a wrapper) is not denied by the trap. Not tested on bash
-3.2 (macOS).
+(`gh` reached through a variable or a wrapper) is not denied by the trap; a signal during the
+`tool_name` read, before the trap is installed; and a command that keeps the matcher past the
+10 s hook timeout (measured, on `main` too: 45 KB with two `$(...)` per line 11.8 s, a 1 MB
+body 33.5 s; a SIGTERM to the hook alone is answered only when the matcher returns). Also on
+`main`, outside this change: the head pick falls back to the cwd HEAD for a quoted
+`--head "other"`, a glued `-Hother`, an unresolvable name or two `--head` flags, so a stamp
+for the cwd branch then allows a PR for another head; and on a healthy install the matcher
+does not see `gh` reached through a path or a wrapper (`/usr/bin/gh pr create`,
+`sudo`/`time`/`xargs gh pr create`, `bash -c "gh pr create"`, `eval`), nor a flag between `pr`
+and `create`, nor a create after `if ...; then`. Not tested on bash 3.2 (macOS).
 `branch-preflight.sh` FIXED 2026-11-24 (rows ND0-ND5 in `test-branch-preflight.sh`). Measured
 before the change, a `git commit` on a detached HEAD was allowed in silence when:
 `lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced; `cmd_fastpath_has` or

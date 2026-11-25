@@ -710,6 +710,24 @@ cmd-detect.sh|printf() { :; }
 cmd-detect.sh|echo "cmd-detect loaded"
 SPECS
 
+# ND1b. Security review of this change (on main too): the PR-create matcher renders the
+#      command through cmd_words_deep. With THAT helper broken the matcher answered a clean
+#      "not a PR-create" for everything, and an unstamped `gh pr create` was allowed.
+while IFS= read -r spec; do
+  T=$(nd_tree ".claude/hooks/lib/${spec%%|*}" "${spec#*|}"); ND_TREES="$ND_TREES $T"
+  nd_nostamp "ND1b ${spec%%|*} + '${spec#*|}'" "$T"
+  nd_fresh "ND1b ${spec%%|*} + '${spec#*|}'" "$T" allow
+done <<'SPECS'
+cmd-detect.sh|cmd_words_deep() { exit 0; }
+cmd-detect.sh|cmd_words_deep() { return 1; }
+cmd-detect.sh|unset -f cmd_words_deep
+cmd-detect.sh|cmd_words_deep() { set -e; false; }
+cmd-detect.sh|cd /
+SPECS
+# ND1c. Control: with healthy libs the self-test does not turn a quoted mention into a deny.
+nd_stamp none
+nd_run "$ND_REAL" '{"tool_name":"Bash","tool_input":{"command":"echo \"gh pr create\""}}'
+nd_check "ND1c control: a quoted mention of gh pr create is still allowed with no stamp" nd_silent
 # ND2. The stamp lib under scripts/lib (sourced with no probe): the no-stamp deny must still
 #      happen, and a stamp that cannot be read is no stamp, so a fresh one does not allow.
 while IFS= read -r spec; do

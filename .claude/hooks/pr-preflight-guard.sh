@@ -67,7 +67,9 @@ _pp_deny() {
 _pp_looks_like_create() {
   [ "$TOOL" = "mcp__github__create_pull_request" ] && return 0
   [ "$TOOL" = "Bash" ] || return 1
-  local t=$CMD
+  # The raw envelope stands in when the command was never read (a signal that killed the jq
+  # reading it left CMD empty, and an empty command read as "not a PR-create").
+  local t=${CMD:-$INPUT}
   t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//$'\n'/}; t=${t//\$/}
   case "$t" in *gh*pr*create*) return 0 ;; esac
   return 1
@@ -90,8 +92,9 @@ trap 'no_decision; exit 0' PWR 2>/dev/null || :
 trap 'no_decision; exit 0' STKFLT 2>/dev/null || :
 
 # lib_loads <file>: source it in a subshell first. A lib that exits, fails under this file's
-# `set -u`, changes the shell options (errexit left on), or leaves a function named like a
-# builtin or a command this hook calls counts as missing. TWIN of git-safety.sh's lib_loads
+# `set -u`, changes the shell options (errexit left on) or the working directory (the hook's
+# git calls read the cwd: a lib that ran `cd /` made "not a git repository" an allow), or
+# leaves a function named like a builtin or a command this hook calls counts as missing. TWIN of git-safety.sh's lib_loads
 # and _gs_no_shadow. The check runs through `builtin`, so a lib that defines a function called
 # `builtin` defeats it (docs/harness-residuals.md).
 _PP_NO_SHADOW=(. : '[' break builtin cd command compgen continue declare echo eval exec exit
@@ -104,13 +107,15 @@ _pp_no_shadow() {
   builtin return 0
 }
 lib_loads() {
-  [ "$(_o="$-:$SHELLOPTS"; { . "$1"; } >/dev/null 2>&1; _pp_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && printf loaded)" = loaded ]
+  [ "$(_o="$-:$SHELLOPTS:$PWD"; { . "$1"; } >/dev/null 2>&1; _pp_no_shadow && [ "$-:$SHELLOPTS:$PWD" = "$_o" ] && printf loaded)" = loaded ]
 }
 
 # Gate BOTH PR-creation paths through the same coverage stamp:
 case "$TOOL" in
   Bash)
-    CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || _pp_allow
+    # A command that cannot be read is decided by the trap's text test over the raw envelope,
+    # not allowed outright.
+    CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || { CMD=""; no_decision; }
     # Fork-free: a $(cd ...) subshell here would be the ENTIRE added cost of reaching the
     # shared fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this
     # HERE now runs on every Bash tool call, not just ones that already matched the old
@@ -142,8 +147,8 @@ case "$TOOL" in
     # the fast way out. Empty means the lib exited, left a shell option changed or a shadowing
     # function (the lib_loads test, inlined to keep this at ONE fork per Bash call), or the
     # function did not return: then the checks below run, as with no filter at all.
-    _PP_FP_RC=$(_o="$-:$SHELLOPTS"; { . "$HERE/lib/fastpath-filter.sh"; } >/dev/null 2>&1
-      _pp_no_shadow && [ "$-:$SHELLOPTS" = "$_o" ] && declare -F cmd_fastpath_has >/dev/null || exit 0
+    _PP_FP_RC=$(_o="$-:$SHELLOPTS:$PWD"; { . "$HERE/lib/fastpath-filter.sh"; } >/dev/null 2>&1
+      _pp_no_shadow && [ "$-:$SHELLOPTS:$PWD" = "$_o" ] && declare -F cmd_fastpath_has >/dev/null || exit 0
       cmd_fastpath_has "$CMD" '*gh*pr*create*' >/dev/null 2>&1; printf '%s' "$?")
     [ "$_PP_FP_RC" = 1 ] && _pp_allow
     # Probed before it is sourced, and the real source discards stdout too (a lib that prints
@@ -202,7 +207,13 @@ case "$TOOL" in
     # is not sourced a second time here; the probed source above either defined the function
     # or it is not there.)
     if [ "${WORDS_BROKEN:-0}" != 1 ] && declare -F cmd_is_gh_pr_create >/dev/null; then
-      _PP_IS_CREATE=$(cmd_is_gh_pr_create "$CMD" >/dev/null 2>&1; printf '%s' "$?")
+      # The "1" is believed only after the matcher has said YES to a known PR-create in the
+      # same subshell (security review, 2026-11-25, on main too): cmd_is_gh_pr_create renders
+      # the command through cmd_words_deep, and when THAT helper is broken (exits, returns
+      # non-zero, is missing) the rendering is empty and the matcher answers a clean 1 for
+      # everything, a real PR-create included. A matcher that cannot say yes cannot say no.
+      _PP_IS_CREATE=$(cmd_is_gh_pr_create 'gh pr create' >/dev/null 2>&1 || exit 0
+        cmd_is_gh_pr_create "$CMD" >/dev/null 2>&1; printf '%s' "$?")
       [ "$_PP_IS_CREATE" = 1 ] && _pp_allow
     fi
     ;;
@@ -369,7 +380,7 @@ if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then
   # allow, a dead network could turn this hygiene-only check into an unintended block —
   # unverified either way (review, 2026-08-28); accepted for now, worth revisiting if seen.
   git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
-    origin "refs/heads/${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null 9>&-
+    origin "refs/heads/${BASE}:refs/remotes/origin/${BASE}" >/dev/null 2>&1 9>&-
   if git rev-parse -q --verify "origin/${BASE}" >/dev/null 2>&1; then
     MISSED=$(git diff --name-only "${HEAD}...origin/${BASE}" 2>/dev/null || echo "")
     if [ -n "$MISSED" ]; then
