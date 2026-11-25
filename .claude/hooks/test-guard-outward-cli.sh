@@ -6875,11 +6875,18 @@ nd_only_deny && nd_reason_has 'ended before it reached a decision' && nd_ok "$n"
 # ND5b. A command too large to evaluate inside the 10 s hook timeout (same review): above
 #      200000 characters with an outward word it denies at once. Payloads go to the hook on
 #      stdin from jq -Rs (one --arg over 128 KB is E2BIG).
+# The timed rows run the hook in a UTF-8 locale when the machine has one, as CI's runner and a
+# macOS session do: bash's pattern substitution is far slower there (2026-11-25: ND5d took 8 s
+# in CI and 0.4 s under the C locale here, from cmd_fastpath_has). C where there is none.
+ND_LOCALE=C
+for _l in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
+  if locale -a 2>/dev/null | grep -qixF -- "$_l"; then ND_LOCALE=$_l; break; fi
+done
 nd_big() {  # $1=first line  $2=padding bytes ; sets ND_OUT ND_RC ND_SECS
   local t0 t1
   t0=$(date +%s)
   ND_OUT=$({ printf '%s\n' "$1"; head -c "$2" /dev/zero | tr '\0' 'b' | fold -w 78 | sed 's/^/# /'; } \
-    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
   t1=$(date +%s); ND_SECS=$((t1 - t0))
 }
 nd_big "$ND_OUTWARD" 600000
@@ -6904,7 +6911,7 @@ nd_subs() {  # $1=first line  $2=lines of substitutions ; sets ND_OUT ND_RC ND_S
   local t0 t1
   t0=$(date +%s)
   ND_OUT=$({ printf '%s\n' "$1"; awk -v n="$2" 'BEGIN { for (i = 0; i < n; i++) printf "echo \"$(date +%%s) $(hostname)\" row %d\n", i }'; } \
-    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
   t1=$(date +%s); ND_SECS=$((t1 - t0))
 }
 nd_subs "$ND_OUTWARD" 4000
@@ -6923,7 +6930,7 @@ nd_lines() {  # $1=newlines  $2=last line ; sets ND_OUT ND_RC ND_SECS
   local t0 t1
   t0=$(date +%s)
   ND_OUT=$({ awk -v n="$1" 'BEGIN { for (i = 0; i < n; i++) printf "\n" }'; printf '%s' "$2"; } \
-    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
   t1=$(date +%s); ND_SECS=$((t1 - t0))
 }
 nd_lines 150000 "echo \"\$(e''as up''date --branch preview)\""

@@ -962,6 +962,29 @@ fp_probe() {
   fi
 }
 
+# BYTES, NOT CHARACTERS (2026-11-25): cmd_fastpath_has matches under `local LC_ALL=C`, which is
+# what keeps it fast in a UTF-8 locale. Multibyte text around a needle must not change answers,
+# a needle split by quotes next to multibyte text must still rejoin, and the caller's locale
+# must come back. Run under a UTF-8 locale where the machine has one.
+_FP_UTF8=""
+for _l in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
+  if locale -a 2>/dev/null | grep -qixF -- "$_l"; then _FP_UTF8=$_l; break; fi
+done
+_fp_utf8_probe() {  # same as fp_probe, under the UTF-8 locale when there is one
+  if [ -n "$_FP_UTF8" ]; then LC_ALL="$_FP_UTF8" fp_probe "$@"; else fp_probe "$@"; fi
+}
+_fp_utf8_probe "fast path (UTF-8 locale): needle after multibyte text"     'echo "café — 🍳" && eas update'   yes '*eas*'
+_fp_utf8_probe "fast path (UTF-8 locale): quote-split needle by multibyte"  'echo é; e"a"s update ü'        yes '*eas*'
+_fp_utf8_probe "fast path (UTF-8 locale): multibyte text, no needle"        'echo "café — 🍳 crème brûlée"'  no  '*eas*' '*gh*'
+_fp_utf8_probe "fast path (UTF-8 locale): ordered needles across multibyte" 'gh é pr ü create'              yes '*gh*pr*create*'
+shopt -s nocasematch
+_fp_utf8_probe "fast path (UTF-8 locale): nocasematch still applies"        'echo é; EAS update'             yes '*eas*'
+shopt -u nocasematch
+_fp_loc_before=${LC_ALL-unset}
+cmd_fastpath_has 'echo é eas' '*eas*' >/dev/null
+if [ "${LC_ALL-unset}" = "$_fp_loc_before" ]; then echo "PASS: cmd_fastpath_has leaves the caller's LC_ALL as it was"; PASS=$((PASS+1))
+else echo "FAIL: cmd_fastpath_has changed the caller's LC_ALL to '${LC_ALL-unset}'"; FAIL=$((FAIL+1)); fi
+
 fp_probe "branch-preflight: quoted commit bypasses raw glob"   'git com"mit" -m x'     yes '*commit*' '*checkout*' '*switch*'
 fp_probe "branch-preflight: quoted checkout bypasses raw glob" 'git check"out" -b x'   yes '*commit*' '*checkout*' '*switch*'
 fp_probe "branch-preflight: quoted switch bypasses raw glob"   'git swit"ch" main'     yes '*commit*' '*checkout*' '*switch*'
@@ -2239,7 +2262,9 @@ else echo "FAIL: the differential cases hold only $_deep_bodies substitution bod
 # cmd_fastpath_has caller; the non-vacuity control moved 8 -> 9 with it.
 # 660 -> 681 (2026-11-25): +21 = the deep renderings' differential rows, 10 commands x
 # cmd_words/cmd_bare against the old per-body loop, and their non-vacuity row.
-EXPECTED_TOTAL=681
+# 681 -> 687 (same day): +6 = cmd_fastpath_has under a UTF-8 locale now that it matches bytes
+# (five answers and the caller's LC_ALL restored).
+EXPECTED_TOTAL=687
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -784,7 +784,13 @@ about 7 s on a quiet machine (the slowest shape measured is a heredoc of 19990 l
 the timeout on a very busy one; most of that is the character term, so a lower line cap would
 save at most about 2 s; reading each command in one
 awk record instead of a line at a time would remove the line term, but POSIX leaves a
-multi-character `RS` unspecified (not tried on BSD awk). `branch-preflight.sh` (10 s) takes 12.8 s on `main` for 5000
+multi-character `RS` unspecified (not tried on BSD awk). LOCALE: the timings above were taken
+under the C locale with mawk. CI's runner (and a macOS session) uses a UTF-8 locale, where
+`cmd_fastpath_has` in `lib/fastpath-filter.sh`, which every gated hook calls first, took 6.7 s
+on 150000 newlines (bash's `${var//pat/}` slows sharply with many matches in a multibyte
+locale); row `ND5d` took 8 s in CI. Fixed with the same change: the function matches under
+`local LC_ALL=C` (0.31 s), and the timed `ND5` rows now run the hook in a UTF-8 locale. Under
+gawk in a UTF-8 locale, 190 KB of plain text took 0.7 s, against 3.3-3.7 s with mawk. `branch-preflight.sh` (10 s) takes 12.8 s on `main` for 5000
 newlines before a `git commit` and 52 s for 20000, about 2.5 ms a line, from its own per-line
 work, not the shared lib; it has no line cap. `pr-preflight-guard.sh` takes 5.1 s at 199000
 newlines. ALSO OPEN, found by the same review, on `main` too (measured ALLOW): a command built

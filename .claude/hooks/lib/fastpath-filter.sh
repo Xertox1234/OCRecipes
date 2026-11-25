@@ -51,6 +51,14 @@
 #   function must not toggle nocasematch itself — doing so would leak the setting into the
 #   caller once this function returns.
 cmd_fastpath_has() {
+  # BYTES, NOT CHARACTERS (2026-11-25). In a multibyte locale (C.UTF-8 on CI's runner,
+  # en_US.UTF-8 in a macOS session) bash's `${var//pat/}` slows down sharply as the number of
+  # matches grows: on 150000 newlines this function took 6.7 s under C.UTF-8 and 0.27 s under C,
+  # and guard-outward-cli.sh calls it before its size and line caps, against a 10 s timeout.
+  # Every pattern a caller passes is ASCII (`*eas*`, `*gh*pr*merge*`), the five characters
+  # stripped below are ASCII, and no byte of a multibyte UTF-8 character equals an ASCII byte,
+  # so byte-wise matching gives the same answer. `local` restores the caller's locale on return.
+  local LC_ALL=C
   local _fph_cmd="$1"; shift
   local _fph_pat
   for _fph_pat in "$@"; do
