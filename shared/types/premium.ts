@@ -109,6 +109,12 @@ export const AI_DAILY_CAPS = {
   photoAnalysis: 100,
   /** Receipt scans, claimed before the AI call (the monthly cap counts saved scans). */
   receiptScan: 20,
+  /**
+   * Barcodes scanned live from the Coach chat. No model is called; this
+   * bounds the stored rows and the product lookups one account can cause,
+   * since the Coach Pro daily message limit is effectively unlimited.
+   */
+  coachBarcodeScan: 200,
 } as const;
 
 export type AiCallKind = keyof typeof AI_DAILY_CAPS;

@@ -22,6 +22,7 @@ import {
 } from "./barcode-scan-context";
 import { buildScanResponseFlags } from "./scan-flags";
 import type { BarcodeLookupResult } from "./barcode-lookup";
+import { UpstreamUnavailableError } from "./usda-lookup";
 import type { ProfileOutcome } from "./scan-flags";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
 import { logger, toError } from "../lib/logger";
@@ -35,7 +36,10 @@ import {
 } from "./write-cards/tool-args";
 import type { FoodCardPayload } from "@shared/schemas/coach-write-cards";
 
-export { COACH_PHOTO_USER_TEXT } from "@shared/lib/coach-photo";
+export {
+  COACH_PHOTO_USER_TEXT,
+  COACH_BARCODE_USER_TEXT,
+} from "@shared/lib/coach-photo";
 
 const MAX_CARD_ITEMS = 8;
 const MAX_LOOKUP_FOODS = 12;
@@ -181,6 +185,8 @@ const BARCODE_UNKNOWN_SERVING_TEXT =
   " I don't know this product's serving size, so check the amount on the card.";
 const BARCODE_GAPS_TEXT =
   " Some numbers are missing for this product, so some show as 0.";
+export const BARCODE_LOOKUP_DOWN_TEXT =
+  "I couldn't look that product up just now. Please try again in a moment.";
 /** What the barcode lookup calls a product it has no name for. */
 const LOOKUP_PLACEHOLDER_NAME = "Unknown Product";
 // Fixed wording that names no allergen: the product's allergen data comes
@@ -373,4 +379,28 @@ export async function buildPhotoReply(
     return barcodePhotoReply(result, profileOutcome, ctx);
   }
   return mealPhotoReply(imageBase64, ctx);
+}
+
+/**
+ * The Coach's answer to a barcode the app's camera read: the same lookup,
+ * card and allergy check as a barcode in a photo, with no model in the way.
+ * A lookup outage is answered in words; any other failure rejects.
+ */
+export async function scannedBarcodeReply(
+  code: string,
+  ctx: { tz: string; now: Date; userId: string },
+): Promise<PhotoReply> {
+  try {
+    const { result, profileOutcome } = await loadBarcodeScanContext(
+      code,
+      ctx.userId,
+    );
+    return barcodePhotoReply(result, profileOutcome, ctx);
+  } catch (err) {
+    // Every source errored: an outage, not an unknown product.
+    if (err instanceof UpstreamUnavailableError) {
+      return { payload: null, text: BARCODE_LOOKUP_DOWN_TEXT };
+    }
+    throw err;
+  }
 }

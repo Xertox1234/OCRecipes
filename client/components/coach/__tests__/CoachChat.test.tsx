@@ -47,9 +47,11 @@ const {
 // modules load Expo's native runtime.
 // The args CoachChat last passed to the photo hook, so a test can drive its
 // callbacks (onStart, onSettled) the way the real hook would.
+const mockNavigate = vi.hoisted(() => vi.fn());
 const photoHook = vi.hoisted(() => ({
   args: null as null | {
-    onStart: () => void;
+    onStart: (kind?: "photo" | "barcode") => void;
+    openScanner?: () => void;
     onSettled: (
       conversationId: number,
       failure: { atDailyLimit: boolean; message: string | null } | null,
@@ -147,7 +149,7 @@ vi.mock("@/hooks/usePlanCheck", () => {
 });
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
 // Thin stub to satisfy render; "Make this mine" is not under test here.
@@ -932,12 +934,12 @@ describe("CoachChat — 'Coach responded' announcement", () => {
 describe("CoachChat — camera button", () => {
   it("is in the message box for Coach Pro", () => {
     renderCoachChat({ isCoachPro: true });
-    expect(screen.getByLabelText("Send a photo of your meal")).toBeDefined();
+    expect(screen.getByLabelText("Log with the camera")).toBeDefined();
   });
 
   it("is absent on the free tier", () => {
     renderCoachChat();
-    expect(screen.queryByLabelText("Send a photo of your meal")).toBeNull();
+    expect(screen.queryByLabelText("Log with the camera")).toBeNull();
   });
 });
 
@@ -979,5 +981,31 @@ describe("CoachChat — photo announcement", () => {
       vi.advanceTimersByTime(600);
     });
     expect(announceSpy).not.toHaveBeenCalledWith(LINE);
+  });
+
+  it("announces a lookup, not a photo, for a scanned barcode", () => {
+    renderCoachChat({ isCoachPro: true });
+    act(() => photoHook.args!.onStart("barcode"));
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(announceSpy).toHaveBeenCalledWith("Looking up that barcode");
+    expect(announceSpy).not.toHaveBeenCalledWith(LINE);
+  });
+});
+
+describe("CoachChat — live barcode scanner", () => {
+  it("opens the scanner screen for the photo hook", () => {
+    renderCoachChat({ isCoachPro: true });
+    mockNavigate.mockClear();
+    act(() => photoHook.args!.openScanner?.());
+    expect(mockNavigate).toHaveBeenCalledExactlyOnceWith("CoachBarcodeScan");
+  });
+
+  it("shows the scan as the user's turn while it is on its way", () => {
+    renderCoachChat({ isCoachPro: true });
+    act(() => photoHook.args!.onStart("barcode"));
+    expect(screen.getByText("Scanned a barcode")).toBeDefined();
+    expect(screen.queryByText("Sent a photo")).toBeNull();
   });
 });
