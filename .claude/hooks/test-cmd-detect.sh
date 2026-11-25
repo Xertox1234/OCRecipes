@@ -2152,6 +2152,49 @@ ghref 'gh pr merge 42 -R other/org'     - "ref BEFORE -R <v>: REFUSED"
 ghref 'gh pr merge 42 --repo=other/org' - "ref BEFORE --repo=v: REFUSED"
 ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 
+echo "--- cmd_words_deep / cmd_bare_deep: one awk run renders the same as one awk per body ---"
+# 2026-11-25: the deep renderings used to pipe every substitution body through its own
+# cmd_words/cmd_bare awk (about 2.6 ms each), and a command of 4000 substitutions outran
+# guard-outward-cli.sh's 10 s timeout. They now render all bodies in one run (per_body=1).
+# The reference below is the old loop, spelled out, so either driver drifting shows here.
+_ref_deep() {  # $1 = cmd_words|cmd_bare  $2 = command
+  local body
+  printf '%s' "$2" | "$1"
+  while IFS= read -r body; do
+    [ -n "$body" ] || continue
+    printf '\n'
+    printf '%s' "$body" | "$1"
+  done < <(printf '%s' "$2" | cmd_extract_substitutions)
+}
+_DEEP_NL=$'\n'; _DEEP_CR=$'\r'
+_deep_cases=(
+  'echo "$(eas update --branch preview)" `gh pr merge 1 --auto`'
+  'echo "$(printf "it'"'"'s)" $(eas update)'
+  "echo \$(printf 'open) \$(eas update)"
+  'echo $(printf "open) $(gh api -X PUT x)'
+  "echo \$(echo \$'a\\'b') \$(eas update)"
+  'echo $(a \) $(eas update)'
+  'echo $() $( ) $(eas update)'
+  "echo \$(a \$(b \$(eas update)))"
+  "echo \$(a${_DEEP_CR}) \$(gh pr create${_DEEP_CR})"
+  "echo \"\$(echo x${_DEEP_NL}eas update)\" \$(y)"
+)
+for _c in "${_deep_cases[@]}"; do
+  for _fn in cmd_words cmd_bare; do
+    _want=$(_ref_deep "$_fn" "$_c" | od -An -c)
+    _got=$("${_fn}_deep" "$_c" | od -An -c)
+    if [ "$_want" = "$_got" ]; then echo "PASS: ${_fn}_deep matches the per-body loop: $(printf '%q' "$_c")"; PASS=$((PASS+1))
+    else echo "FAIL: ${_fn}_deep differs from the per-body loop: $(printf '%q' "$_c")"; FAIL=$((FAIL+1)); fi
+  done
+done
+# Non-vacuity: the cases must hold substitution bodies, or the rows above compare one rendering.
+_deep_bodies=0
+for _c in "${_deep_cases[@]}"; do
+  _deep_bodies=$((_deep_bodies + $(printf '%s' "$_c" | cmd_extract_substitutions | grep -c .)))
+done
+if [ "$_deep_bodies" -ge 15 ]; then echo "PASS: the differential cases hold $_deep_bodies substitution bodies"; PASS=$((PASS+1))
+else echo "FAIL: the differential cases hold only $_deep_bodies substitution bodies (want >= 15)"; FAIL=$((FAIL+1)); fi
+
 # ---------- assertion-total pin (2026-09-07) ---------------------------------
 # ADDED BECAUSE THIS FILE SHIPPED A SILENTLY-SKIPPED ASSERTION AND REPORTED GREEN.
 # A `vanb` row was written three lines ABOVE the `vanb` definition; under
@@ -2194,7 +2237,9 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # everything large would keep them all green.
 # 659 -> 660: +1 for the nudge-dependency-add.sh assert_wired row (2026-10-17) — the ninth
 # cmd_fastpath_has caller; the non-vacuity control moved 8 -> 9 with it.
-EXPECTED_TOTAL=660
+# 660 -> 681 (2026-11-25): +21 = the deep renderings' differential rows, 10 commands x
+# cmd_words/cmd_bare against the old per-body loop, and their non-vacuity row.
+EXPECTED_TOTAL=681
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

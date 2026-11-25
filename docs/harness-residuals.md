@@ -809,9 +809,10 @@ knowing that they publish. Still open, on `main` too, all measured ALLOW:
   `railway --verbose up`; whether the real CLIs accept a flag there was not measured; the
   hook's header lists "a global flag before the verb" as a known gap), and `npm -s publish`,
   `npm --registry=x publish`.
-- a flag whose value is a SEPARATE word in front of the `--`: `npm exec eas-cli --loglevel
-error -- update`, `npm --prefix . -- publish` (npm consumed the flag, its value and the
-  `--` when measured with `node` as the target). The `=` spellings are denied.
+- a flag whose value is a SEPARATE word in front of the `--`:
+  `npm exec eas-cli --loglevel error -- update`, `npm --prefix . -- publish` (npm consumed
+  the flag, its value and the `--` when measured with `node` as the target). The `=`
+  spellings are denied.
 - a backslash inside the `--` (`npm exec eas-cli -\- update`: the shell delivers `--`), the
   same blindness as `eas up\date`.
 - a brace or an expansion in place of the `--` or after it under a launcher
@@ -819,42 +820,43 @@ error -- update`, `npm --prefix . -- publish` (npm consumed the flag, its value 
   a bare `--` (`eas -- {update,}`, `railway -- {up,}`): the brace counters were not changed.
 - `npm exec gh pr -- merge 1 --squash` (`npm exec gh` resolves a registry package, not the
   real gh).
-  `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
-  (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
-  finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
-  The bypasses were inside the contract branch, measured before the change with a worktree
-  contract active: a lib that shadows `read` with a function that exits (silent, rc 0); a lib
-  that leaves errexit on (`check_repo_target` answers by return code, so "unresolvable" ended
-  the shell with rc 2 and no deny); `deny()` when `jq` cannot print (a shadowed `jq`, or a
-  140 KB registry entry in the reason: E2BIG); a signal (rc 129-143, no output). Now: the two
-  existing probes reject a lib that changes the shell options or leaves a function named like a
-  builtin or a command the hook calls (`printf`, `ls`, `grep`, `jq`, `read` and the rest of
-  `_GS_NO_SHADOW`; a `read` wrapper that forgot `builtin` recursed until bash segfaulted, rc 139,
-  and no trap runs then); `deny()` builds first and cuts the reason at 8000 characters; and an
-  EXIT/signal trap (TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO)
-  denies when the shell ends undecided before the contract branch has finished. The trap denies ONLY while a contract is in force (registry
-  non-empty, no `SKIP_WORKTREE_CONTRACT`); with no contract the hook only advises, and it stays
-  silent. Found by the security review of that change and fixed with it (rows ND8-ND11): a
-  LARGE command skipped the whole write-shaped check, on `main` too. `printf "$CMD" | grep -q`
-  under `pipefail` reads 141 as "no match" once the command outgrows the pipe buffer, because
-  grep leaves at its first match and the printf dies of SIGPIPE. A 200 KB heredoc write into the
-  main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines, was allowed
-  every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
-  (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
-  that outlives the hook cannot hold its stdout open.
-  CHECKED 2026-11-25, the last three hooks under `pipefail`: `guard-worktree-isolation.sh` and
-  `core-bare-guard.sh` have no `grep -q` at all (`guard-outward-cli.sh` and `branch-preflight.sh`
-  were converted 2026-11-24; `pr-preflight-guard.sh` has only `grep -o` captures with `|| true`).
-  `merge-review-guard.sh` had eight. Six read one `gh api` clause each: measured DENY 3 of 3 for
-  seven 300 KB spellings of an api merge (one long line, quoted multi-line values, a heredoc,
-  12000 continuation words), because a clause is a single line and grep reads a line to its end,
-  so the printf is never cut off. Nothing failed open. The other two read the PR body's
-  `## Platform check` section and failed CLOSED: a section over the pipe buffer that named the
-  run near its top was denied as "does not name E2E run" (rows P11-P13, 300 KB). Those two now
-  read here-strings. The six clause greps stay pipes: a here-string over 64 KB needs a temp
-  file, and a failed one reads as "no match", which at `|| continue` is an allow (security
-  review, measured with a temp dir holding one copy of the clause but not two).
-  Still open, found by that review, on `main` too:
+
+`git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
+(`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
+finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.
+The bypasses were inside the contract branch, measured before the change with a worktree
+contract active: a lib that shadows `read` with a function that exits (silent, rc 0); a lib
+that leaves errexit on (`check_repo_target` answers by return code, so "unresolvable" ended
+the shell with rc 2 and no deny); `deny()` when `jq` cannot print (a shadowed `jq`, or a
+140 KB registry entry in the reason: E2BIG); a signal (rc 129-143, no output). Now: the two
+existing probes reject a lib that changes the shell options or leaves a function named like a
+builtin or a command the hook calls (`printf`, `ls`, `grep`, `jq`, `read` and the rest of
+`_GS_NO_SHADOW`; a `read` wrapper that forgot `builtin` recursed until bash segfaulted, rc 139,
+and no trap runs then); `deny()` builds first and cuts the reason at 8000 characters; and an
+EXIT/signal trap (TERM INT HUP PIPE ALRM USR1 USR2 QUIT ABRT XCPU XFSZ VTALRM PROF SYS IO)
+denies when the shell ends undecided before the contract branch has finished. The trap denies ONLY while a contract is in force (registry
+non-empty, no `SKIP_WORKTREE_CONTRACT`); with no contract the hook only advises, and it stays
+silent. Found by the security review of that change and fixed with it (rows ND8-ND11): a
+LARGE command skipped the whole write-shaped check, on `main` too. `printf "$CMD" | grep -q`
+under `pipefail` reads 141 as "no match" once the command outgrows the pipe buffer, because
+grep leaves at its first match and the printf dies of SIGPIPE. A 200 KB heredoc write into the
+main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines, was allowed
+every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
+(`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
+that outlives the hook cannot hold its stdout open.
+CHECKED 2026-11-25, the last three hooks under `pipefail`: `guard-worktree-isolation.sh` and
+`core-bare-guard.sh` have no `grep -q` at all (`guard-outward-cli.sh` and `branch-preflight.sh`
+were converted 2026-11-24; `pr-preflight-guard.sh` has only `grep -o` captures with `|| true`).
+`merge-review-guard.sh` had eight. Six read one `gh api` clause each: measured DENY 3 of 3 for
+seven 300 KB spellings of an api merge (one long line, quoted multi-line values, a heredoc,
+12000 continuation words), because a clause is a single line and grep reads a line to its end,
+so the printf is never cut off. Nothing failed open. The other two read the PR body's
+`## Platform check` section and failed CLOSED: a section over the pipe buffer that named the
+run near its top was denied as "does not name E2E run" (rows P11-P13, 300 KB). Those two now
+read here-strings. The six clause greps stay pipes: a here-string over 64 KB needs a temp
+file, and a failed one reads as "no match", which at `|| continue` is an allow (security
+review, measured with a temp dir holding one copy of the clause but not two).
+Still open, found by that review, on `main` too:
 
 - a FULL temp dir allows any merge command over about 64 KB (measured ALLOW 3 of 3 with 0 KB
   free, a 37-byte command still denies): `done <<< "$MRG_API_CLAUSES"` fails so the clause loop
