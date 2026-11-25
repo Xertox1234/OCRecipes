@@ -45,7 +45,7 @@ import {
   formatFollowUpDate,
 } from "@/components/coach/notebook-date-utils";
 import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
-import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
+import { USER_NOTE_TYPES } from "@shared/schemas/coach-notebook";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NotebookEntryNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
@@ -111,7 +111,15 @@ export default function NotebookEntryScreen() {
     (e) => e.id === entryId,
   );
 
-  const [type, setType] = useState(entry?.type ?? "insight");
+  // A new note is one of the three kinds a user can hold; "insight" was the
+  // old default and is one of Coach's own (audit 2026-11-24, M8).
+  const [type, setType] = useState(entry?.type ?? "preference");
+  // The three, plus this note's own kind when Coach wrote it as another: it
+  // stays shown and selected, and the user can move it to one of the three.
+  const typeOptions: readonly string[] =
+    entry && !(USER_NOTE_TYPES as readonly string[]).includes(entry.type)
+      ? [...USER_NOTE_TYPES, entry.type]
+      : USER_NOTE_TYPES;
   // Save stays pressable with an empty note; pressing it names the field
   // (form-fields spec §5.1).
   const contentField = useFieldValidation(
@@ -453,7 +461,7 @@ export default function NotebookEntryScreen() {
           </ThemedText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View role="radiogroup" style={styles.typeRow}>
-              {notebookEntryTypes.map((t) => (
+              {typeOptions.map((t) => (
                 <SelectableTile
                   key={t}
                   shape="chip"

@@ -161,10 +161,13 @@ async function sendCommitmentReminderPage(
         // Mark entry completed only after confirmed delivery so the in-app
         // indicator (and future local notification fallback) still triggers
         // if push delivery was not attempted (no client or no token).
+        // Only while it is still active: the user may have removed it
+        // while the push was on its way.
         await storage.updateNotebookEntryStatus(
           entry.id,
           entry.userId,
           "completed",
+          "active",
         );
       }
     } catch (err) {

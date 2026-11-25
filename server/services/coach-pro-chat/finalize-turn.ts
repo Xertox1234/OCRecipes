@@ -1,4 +1,5 @@
 import type { CoachIntent } from "../coach-intent-classifier";
+import { EmptyCoachReplyError } from "./empty-reply";
 import { storage } from "../../storage";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { filterMemoryRefs } from "../memory-refs";
@@ -160,6 +161,12 @@ export async function* finalizeTurn(
       maybeAutoTitle,
     });
     if (handled) return;
+  }
+
+  // Nothing a user can see came back. A client that already left is settled
+  // by the route's disconnect path instead.
+  if (!isAborted() && !textContent.trim() && blocks.length === 0) {
+    throw new EmptyCoachReplyError();
   }
 
   if (fullResponse && !isAborted()) {

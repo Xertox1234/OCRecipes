@@ -130,6 +130,7 @@ describe("sendDueCommitmentReminders", () => {
       9999,
       "fresh-user",
       "completed",
+      "active",
     );
   });
 
@@ -157,6 +158,7 @@ describe("sendDueCommitmentReminders", () => {
       1,
       "42",
       "completed",
+      "active",
     );
   });
 
@@ -235,6 +237,7 @@ describe("sendDueCommitmentReminders", () => {
       11,
       "2",
       "completed",
+      "active",
     );
   });
 

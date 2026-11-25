@@ -364,6 +364,50 @@ describe("Coach Notebook Storage", () => {
       expect(result).toHaveLength(100);
     });
 
+    // Coach chat audit 2026-11-24 (M51): the cut at 100 was by recency
+    // alone, so newer background notes pushed an old confirmed preference
+    // out of what Coach reads.
+    it("keeps old confirmed goals and preferences ahead of newer background notes", async () => {
+      const old = new Date(Date.now() - 90 * 86_400_000);
+      await tx.insert(coachNotebook).values([
+        {
+          userId: testUser.id,
+          type: "preference",
+          content: "Vegetarian",
+          status: "active",
+          confirmedAt: old,
+          createdAt: old,
+          updatedAt: old,
+        },
+        {
+          userId: testUser.id,
+          type: "goal",
+          content: "120 g protein",
+          status: "active",
+          confirmedAt: old,
+          createdAt: old,
+          updatedAt: old,
+        },
+      ]);
+      for (let batch = 0; batch < 11; batch++) {
+        await createNotebookEntries(
+          Array.from({ length: 10 }, (_, i) => ({
+            userId: testUser.id,
+            type: "insight" as const,
+            content: `Newer insight ${batch * 10 + i}`,
+            status: "active" as const,
+          })),
+        );
+      }
+
+      const result = await getActiveNotebookEntries(testUser.id);
+
+      expect(result).toHaveLength(100);
+      const contents = result.map((e) => e.content);
+      expect(contents).toContain("Vegetarian");
+      expect(contents).toContain("120 g protein");
+    });
+
     it("filters by type when types are provided", async () => {
       await createNotebookEntry({
         userId: testUser.id,
@@ -489,6 +533,50 @@ describe("Coach Notebook Storage", () => {
   });
 
   describe("updateNotebookEntryStatus", () => {
+    // Coach chat audit 2026-11-24 (L109): the reminder job and the Accept
+    // route wrote "completed" over whatever the row held by then, including
+    // a note the user had just removed.
+    it("leaves a row alone when it is no longer in the expected status", async () => {
+      const entry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Walk after dinner",
+        status: "rejected",
+      });
+
+      const result = await updateNotebookEntryStatus(
+        entry.id,
+        testUser.id,
+        "completed",
+        "active",
+      );
+
+      expect(result).toBeUndefined();
+      const [row] = await tx
+        .select()
+        .from(coachNotebook)
+        .where(eq(coachNotebook.id, entry.id));
+      expect(row.status).toBe("rejected");
+    });
+
+    it("updates a row that is in the expected status", async () => {
+      const entry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Walk after dinner",
+        status: "active",
+      });
+
+      const result = await updateNotebookEntryStatus(
+        entry.id,
+        testUser.id,
+        "completed",
+        "active",
+      );
+
+      expect(result?.status).toBe("completed");
+    });
+
     it("changes status and updates updatedAt", async () => {
       const entry = await createNotebookEntry({
         userId: testUser.id,

@@ -157,6 +157,48 @@ describe("Coach Blocks Service", () => {
   });
 });
 
+// Coach chat audit 2026-11-24, bundle A: replies that showed broken on screen.
+describe("replies the old parser saved broken", () => {
+  const blocksJson =
+    '[{"type":"quick_replies","options":[{"label":"Log breakfast","message":"Help me log breakfast"}]}]';
+
+  it("reads the cards when the model closes the fence with ``> (seen live)", () => {
+    const { text, blocks } = parseBlocksFromContent(
+      `Try edamame.\n\n\`\`\`coach_blocks\n${blocksJson}\n\`\`>\n`,
+    );
+    expect(text).toBe("Try edamame.");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("quick_replies");
+  });
+
+  it("drops a fence cut off mid-array instead of saving its JSON as prose", () => {
+    const warn = vi.spyOn(logger, "warn");
+    const { text, blocks } = parseBlocksFromContent(
+      'Plan below.\n```coach_blocks\n[{"type":"meal_plan_card","title":"We',
+    );
+    expect(text).toBe("Plan below.");
+    expect(blocks).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("removes the model's own citation markup from the text (seen live)", () => {
+    const { text } = parseBlocksFromContent(
+      "plant-based yogurts vary. \uE200cite\uE202memory_refs\uE201",
+    );
+    expect(text).toBe("plant-based yogurts vary.");
+  });
+
+  it("keeps the tail of a reply longer than 16,000 characters, and its cards", () => {
+    const prose = "word ".repeat(4000).trim();
+    const { text, blocks } = parseBlocksFromContent(
+      `${prose}\n\`\`\`coach_blocks\n${blocksJson}\n\`\`\``,
+    );
+    expect(text).toBe(prose);
+    expect(blocks).toHaveLength(1);
+  });
+});
+
 describe("form block", () => {
   const form = {
     type: "form",
