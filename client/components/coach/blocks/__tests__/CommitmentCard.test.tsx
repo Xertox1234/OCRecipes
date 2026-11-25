@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import CommitmentCard from "../CommitmentCard";
 import type { CommitmentCard as CommitmentCardType } from "@shared/schemas/coach-blocks";
 
-const { mockTriggerPop } = vi.hoisted(() => ({ mockTriggerPop: vi.fn() }));
+const { mockTriggerPop, mockNotesOff } = vi.hoisted(() => ({
+  mockTriggerPop: vi.fn(),
+  mockNotesOff: vi.fn(() => false),
+}));
+
+vi.mock("@/hooks/useHealthConsent", () => ({
+  useCoachNotesOff: () => mockNotesOff(),
+}));
 
 // The pop fires its own Success haptic, so the trigger spy stands for both.
 vi.mock("@/hooks/useSuccessAnimation", () => ({
@@ -62,6 +69,32 @@ describe("CommitmentCard", () => {
     expect(
       screen.queryByRole("button", { name: /accept commitment/i }),
     ).toBeNull();
+  });
+
+  // Coach chat audit 2026-11-24: a card drawn before the health consent was
+  // withdrawn must not offer a check-in that nothing will save.
+  describe("while Coach's notes are off", () => {
+    afterEach(() => mockNotesOff.mockReturnValue(false));
+
+    it("shows no Accept or Dismiss, and says why", () => {
+      mockNotesOff.mockReturnValue(true);
+      renderComponent(<CommitmentCard block={baseBlock} />);
+      expect(
+        screen.queryByRole("button", { name: /accept commitment/i }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /dismiss commitment/i }),
+      ).toBeNull();
+      expect(screen.getByText(/Coach's notes are off/)).toBeTruthy();
+      expect(screen.getByLabelText(/Coach's notes are off/)).toBeTruthy();
+    });
+
+    it("leaves an already accepted card as it is", () => {
+      mockNotesOff.mockReturnValue(true);
+      renderComponent(<CommitmentCard block={baseBlock} isAccepted />);
+      expect(screen.getByLabelText(/accepted commitment/i)).toBeTruthy();
+      expect(screen.queryByText(/Coach's notes are off/)).toBeNull();
+    });
   });
 
   // Accept flips the card locally and the POST failure is non-fatal, so the

@@ -18,6 +18,8 @@ export interface DietaryProfile {
   reminderMutes?: ReminderMutes;
   /** ISO time the health-data consent was given; null/absent = no consent. */
   healthDataConsentAt?: string | null;
+  /** ISO time the consent was last withdrawn; null/absent = never. */
+  healthDataConsentWithdrawnAt?: string | null;
   /** The family-planning switch. Written only via PUT /api/family-planning. */
   familyPlanningEnabled?: boolean;
 }
