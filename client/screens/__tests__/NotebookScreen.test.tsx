@@ -82,16 +82,37 @@ describe("What Coach knows", () => {
   it("asks about an unconfirmed memory: Yes confirms, Remove rejects", () => {
     renderWith([entry(7, "preference", "User likes quick breakfasts", null)]);
     expect(screen.getByText("Is this right?")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Yes, that's right" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Yes, that's right:/ }),
+    );
     expect(m.confirm).toHaveBeenCalledWith([7], expect.anything());
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Remove:/ }));
     expect(m.reject).toHaveBeenCalledWith([7], expect.anything());
   });
 
   it("Edit opens the entry", () => {
     renderWith([entry(7, "preference", "User likes quick breakfasts", null)]);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit:/ }));
     expect(mockNavigate).toHaveBeenCalledWith("NotebookEntry", { entryId: 7 });
+  });
+
+  // Coach chat audit 2026-11-24 (M16): with several memories a screen
+  // reader heard "Remove, Remove, Remove", and Remove is permanent.
+  it("names the memory in each of its three buttons", () => {
+    renderWith([
+      entry(7, "preference", "User likes quick breakfasts", null),
+      entry(8, "goal", "User wants 120 g protein", null),
+    ]);
+    const names = screen
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label") ?? "")
+      .filter((n) => /^(Yes, that's right|Edit|Remove):/.test(n));
+    expect(names).toHaveLength(6);
+    expect(new Set(names).size).toBe(6);
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Remove: .*120 g protein/ }),
+    );
+    expect(m.reject).toHaveBeenCalledWith([8], expect.anything());
   });
 
   it("a confirmed memory opens its entry on tap", () => {

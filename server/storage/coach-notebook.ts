@@ -406,6 +406,8 @@ export async function updateNotebookEntry(
     type?: string;
     followUpDate?: Date | null;
     status?: string;
+    /** Set alone only when a note becomes a commitment with its text unchanged. */
+    label?: string;
   },
 ): Promise<CoachNotebookEntry | undefined> {
   // Editing the text is the user's own confirmation; a commitment's label
