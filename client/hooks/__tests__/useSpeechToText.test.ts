@@ -161,6 +161,33 @@ describe("useSpeechToText", () => {
     expect(result.current.error).toBe("No speech detected. Please try again.");
   });
 
+  it.each([
+    ["no-speech", "no-speech"],
+    ["speech-timeout", "no-speech"],
+    ["not-allowed", "not-allowed"],
+    ["network", "failed"],
+  ])("names the kind of error for %s", (error, kind) => {
+    const { result } = renderHook(() => useSpeechToText());
+    expect(result.current.errorKind).toBeNull();
+    act(() => {
+      eventListeners["error"]?.({ error, message: "x" });
+    });
+    expect(result.current.errorKind).toBe(kind);
+  });
+
+  it("clears the kind of error when listening starts again", async () => {
+    mockRequestPermissionsAsync.mockResolvedValue({ granted: true });
+    const { result } = renderHook(() => useSpeechToText());
+    act(() => {
+      eventListeners["error"]?.({ error: "no-speech", message: "x" });
+    });
+    await act(async () => {
+      await result.current.startListening();
+    });
+    expect(result.current.errorKind).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
   it("updates volume on volumechange event", () => {
     const { result } = renderHook(() => useSpeechToText());
 
@@ -172,6 +199,52 @@ describe("useSpeechToText", () => {
       eventListeners["volumechange"]?.({ value: 5.5 });
     });
     expect(result.current.volume).toBe(5.5);
+  });
+
+  it("cancelListening ends at once and drops what was heard so far", async () => {
+    const { result } = renderHook(() => useSpeechToText());
+    await act(async () => {
+      await result.current.startListening();
+    });
+    act(() => {
+      eventListeners["start"]?.(null);
+    });
+    act(() => {
+      result.current.cancelListening();
+    });
+    expect(mockAbort).toHaveBeenCalledOnce();
+    expect(mockStop).not.toHaveBeenCalled();
+    expect(result.current.isListening).toBe(false);
+    // A result that still arrives is not this caller's any more.
+    act(() => {
+      eventListeners["result"]?.({
+        results: [{ transcript: "log an app" }],
+        isFinal: true,
+      });
+    });
+    expect(result.current.isFinal).toBe(false);
+    expect(result.current.transcript).toBe("");
+  });
+
+  it("does not report the recognizer's own 'aborted' as a failure", async () => {
+    const { result } = renderHook(() => useSpeechToText());
+    await act(async () => {
+      await result.current.startListening();
+    });
+    act(() => {
+      eventListeners["start"]?.(null);
+    });
+    act(() => {
+      result.current.cancelListening();
+    });
+    // abort() is answered with an "aborted" error event, then "end".
+    act(() => {
+      eventListeners["error"]?.({ error: "aborted" });
+      eventListeners["end"]?.(null);
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.errorKind).toBeNull();
+    expect(result.current.isListening).toBe(false);
   });
 
   it("calls ExpoSpeechRecognitionModule.stop() on stopListening", () => {

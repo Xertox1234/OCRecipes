@@ -5,12 +5,18 @@ import {
 } from "expo-speech-recognition";
 import { VOLUME_SILENT } from "@/lib/volume-scale";
 
+/** Nothing was heard, the microphone was refused, or recognition failed. */
+export type SpeechErrorKind = "no-speech" | "not-allowed" | "failed";
+
 export function useSpeechToText() {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isFinal, setIsFinal] = useState(false);
   const [volume, setVolume] = useState(VOLUME_SILENT);
   const [error, setError] = useState<string | null>(null);
+  // What kind of failure `error` is, for a caller that treats a silent
+  // window differently from a real failure (the hands-free loop).
+  const [errorKind, setErrorKind] = useState<SpeechErrorKind | null>(null);
 
   // Track whether we initiated listening to ignore stale events
   const activeRef = useRef(false);
@@ -23,6 +29,7 @@ export function useSpeechToText() {
     activeRef.current = true;
     setIsListening(true);
     setError(null);
+    setErrorKind(null);
   });
 
   useSpeechRecognitionEvent("end", () => {
@@ -46,15 +53,21 @@ export function useSpeechToText() {
     setVolume(VOLUME_SILENT);
 
     switch (event.error) {
+      case "aborted":
+        // Our own abort() (cancelListening, unmount), not a failure.
+        break;
       case "not-allowed":
         setError("Microphone or speech recognition permission not granted.");
+        setErrorKind("not-allowed");
         break;
       case "no-speech":
       case "speech-timeout":
         setError("No speech detected. Please try again.");
+        setErrorKind("no-speech");
         break;
       default:
         setError("Speech recognition failed. Please try again.");
+        setErrorKind("failed");
         break;
     }
   });
@@ -69,11 +82,13 @@ export function useSpeechToText() {
     setTranscript("");
     setIsFinal(false);
     setError(null);
+    setErrorKind(null);
 
     const permissions =
       await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!permissions.granted) {
       setError("Microphone or speech recognition permission not granted.");
+      setErrorKind("not-allowed");
       return;
     }
 
@@ -90,6 +105,18 @@ export function useSpeechToText() {
   const stopListening = useCallback(() => {
     startedRef.current = false;
     ExpoSpeechRecognitionModule.stop();
+  }, []);
+
+  // Ends at once and throws away what was heard: stop() would still deliver
+  // a final result, which a caller that auto-sends would send.
+  const cancelListening = useCallback(() => {
+    activeRef.current = false;
+    startedRef.current = false;
+    ExpoSpeechRecognitionModule.abort();
+    setIsListening(false);
+    setVolume(VOLUME_SILENT);
+    setTranscript("");
+    setIsFinal(false);
   }, []);
 
   // Tear down the recognizer if the component unmounts mid-session — otherwise
@@ -111,7 +138,9 @@ export function useSpeechToText() {
     isFinal,
     volume,
     error,
+    errorKind,
     startListening,
     stopListening,
+    cancelListening,
   };
 }

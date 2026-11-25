@@ -17,7 +17,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import type { AllergenId } from "@shared/constants/allergens";
 
 import * as Haptics from "expo-haptics";
@@ -58,6 +58,13 @@ import {
   type FinderItem,
 } from "@shared/schemas/recipe-finder";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useHandsFree } from "@/hooks/useHandsFree";
+import CoachHandsFreeButton from "@/components/coach/CoachHandsFreeButton";
+import CoachHandsFreeBar from "@/components/coach/CoachHandsFreeBar";
+import {
+  HANDS_FREE_SPEECH_ID,
+  handsFreeStopMessage,
+} from "@/components/coach/hands-free-utils";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
@@ -183,7 +190,7 @@ export default function CoachChat({
   const queryClient = useQueryClient();
   const toast = useToast();
   const haptics = useHaptics();
-  const { reducedMotion } = useAccessibility();
+  const { reducedMotion, screenReaderEnabled } = useAccessibility();
   // Destructure rather than depend on the mutation objects themselves —
   // useMutation returns a new object identity every render, which would
   // make every useCallback below that depends on it re-create every render.
@@ -332,23 +339,100 @@ export default function CoachChat({
     volume,
     startListening,
     stopListening,
+    cancelListening,
     error: speechError,
+    errorKind: speechErrorKind,
   } = useSpeechToText();
 
+  // Hands-free turn-taking (Coach roadmap V2). The ref is how the hooks above
+  // it reach the loop: it is created below them, from their own outputs.
+  const handsFreeRef = useRef<ReturnType<typeof useHandsFree> | null>(null);
+
   // Without this a denied mic permission left the tap with no response.
-  // The toast brings its own error haptic and announcement.
+  // The toast brings its own error haptic and announcement. A hands-free
+  // listen that hears nothing is not an error: that loop ends with its own
+  // quieter line. (This runs before the loop's own effect, so the loop is
+  // still "listening" here.)
+  // The error stays set until the next listen, so the choice to keep quiet
+  // about it is remembered for as long as it does.
+  const quietSpeechErrorRef = useRef(false);
   useEffect(() => {
-    if (speechError) {
-      toast.error(speechError);
+    if (!speechError) {
+      quietSpeechErrorRef.current = false;
+      return;
     }
-  }, [speechError, toast]);
+    if (
+      speechErrorKind === "no-speech" &&
+      handsFreeRef.current?.phaseRef.current === "listening"
+    ) {
+      quietSpeechErrorRef.current = true;
+    }
+    if (quietSpeechErrorRef.current) return;
+    toast.error(speechError);
+  }, [speechError, speechErrorKind, toast]);
 
   const {
     isSpeaking,
     speakingMessageId,
     speak: ttsSpeak,
     stop: ttsStop,
-  } = useTTS();
+  } = useTTS({
+    onFinished: (id) => {
+      if (id === HANDS_FREE_SPEECH_ID) handsFreeRef.current?.spokenFinished();
+    },
+  });
+
+  const handsFree = useHandsFree({
+    // With a screen reader on, the screen reader reads the replies; a second
+    // voice and an open microphone on top cannot be followed.
+    available: hasVoice && !screenReaderEnabled,
+    isListening,
+    isFinal,
+    transcript,
+    speechErrorKind,
+    startListening,
+    // Not stopListening: that delivers the words heard so far as a final
+    // result, and the auto-send below would send them after a Stop.
+    stopListening: cancelListening,
+    speak: (text) => ttsSpeak(HANDS_FREE_SPEECH_ID, text),
+    stopSpeaking: ttsStop,
+    onStopped: (reason) => {
+      const message = handsFreeStopMessage(reason);
+      if (message) toast.info(message);
+    },
+  });
+  useEffect(() => {
+    handsFreeRef.current = handsFree;
+  });
+  const {
+    phase: handsFreePhase,
+    phaseRef: handsFreePhaseRef,
+    start: startHandsFree,
+    stop: stopHandsFree,
+    replyDone: handsFreeReplyDone,
+    replyFailed: handsFreeReplyFailed,
+    speechInterrupted: handsFreeSpeechInterrupted,
+  } = handsFree;
+
+  // The chat stays mounted under a pushed screen (cook mode, the scanner)
+  // and under the other tabs: the loop must not listen or speak from there.
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (!isFocused) stopHandsFree("background");
+  }, [isFocused, stopHandsFree]);
+
+  // Set by the auto-send below for the turn the loop heard, and taken by
+  // handleSend, so a refused tap during that turn is not mistaken for it.
+  const heardSendRef = useRef(false);
+
+  // The spoken reply stopped. A reading that ran to its end has already
+  // moved the loop on (useTTS's onFinished), so this only ends the loop when
+  // the reading was cut off.
+  const wasSpeakingRef = useRef(false);
+  useEffect(() => {
+    if (wasSpeakingRef.current && !isSpeaking) handsFreeSpeechInterrupted();
+    wasSpeakingRef.current = isSpeaking;
+  }, [isSpeaking, handsFreeSpeechInterrupted]);
 
   // A brief send's reminders are cleared by the server; once its turn ends,
   // refresh the tab dot and the brief so neither shows a cleared reminder.
@@ -374,6 +458,8 @@ export default function CoachChat({
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
       finishedTextRef.current = fullText;
+      // Hands-free: read the reply aloud, then listen again.
+      handsFreeReplyDone(fullText);
       // Finder blocks render from the refetched message (with the right
       // active state); keeping them in the footer too would show two lists.
       const liveBlocks = (blocks ?? []).filter(
@@ -407,6 +493,7 @@ export default function CoachChat({
     },
     onError: (_message, code) => {
       refreshAfterBriefSend();
+      handsFreeReplyFailed();
       // Branch on the machine-readable code, not a `message.startsWith("429")`
       // prefix (the raw "<status>: <body>" wire format). Never render the raw
       // message — it leaks the server response body into the UI / VoiceOver.
@@ -737,6 +824,7 @@ export default function CoachChat({
     onPickFailure: (message) => toast.error(message),
     openScanner: () => navigation.navigate("CoachBarcodeScan"),
     onStart: (kind) => {
+      stopHandsFree();
       const isBarcode = kind === "barcode";
       setSendingBarcode(isBarcode);
       stopPhotoFollowUp();
@@ -861,7 +949,17 @@ export default function CoachChat({
       // is set (a voice transcript can still finalize then), and the first
       // send that is still creating the conversation (a second tap on a
       // brief chip used to create a second conversation).
-      if (!content || turnBlocked()) return;
+      const heard = heardSendRef.current;
+      heardSendRef.current = false;
+      if (!content || turnBlocked()) {
+        // A heard turn that cannot be sent would leave the loop waiting for
+        // a reply that is not coming. Any other refused send changes nothing.
+        if (heard) stopHandsFree("error");
+        return;
+      }
+      // Any send but the heard turn (a tap, a quick reply) is the user
+      // taking over.
+      if (!heard) stopHandsFree();
 
       // Only a tap or the return key buzzes. String callers (voice, quick
       // replies, retry, suggestion hand-off) get feedback from their trigger.
@@ -906,6 +1004,7 @@ export default function CoachChat({
           setStreamingError(
             "Couldn't start the conversation. Please try again.",
           );
+          stopHandsFree("error");
           return;
         }
       }
@@ -932,6 +1031,7 @@ export default function CoachChat({
       }
     },
     [
+      stopHandsFree,
       openingBrief,
       // inputText intentionally excluded — handleSend reads the latest value
       // from inputTextRef instead so its identity (and every callback that
@@ -958,6 +1058,9 @@ export default function CoachChat({
   // Auto-send when speech finalizes
   useEffect(() => {
     if (isFinal && transcript) {
+      // The loop's effect runs before this one and has already moved to
+      // "thinking" for a turn it heard.
+      heardSendRef.current = handsFreePhaseRef.current === "thinking";
       void handleSend(transcript);
     }
   }, [isFinal]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1193,6 +1296,7 @@ export default function CoachChat({
       setStreamingError(null);
       setIsAtDailyLimit(false);
       ttsStop();
+      stopHandsFree();
       activeConvIdRef.current = conversationId;
       startStream(conversationId, label, {
         finderAction: action,
@@ -1202,6 +1306,7 @@ export default function CoachChat({
     },
     [
       turnBlocked,
+      stopHandsFree,
       stopPhotoFollowUp,
       conversationId,
       planUnknown,
@@ -1471,19 +1576,39 @@ export default function CoachChat({
   }, [abortStream, queryClient]);
 
   const handleMicPress = useCallback(() => {
+    // While hands-free runs, the mic button ends it.
+    if (handsFreePhaseRef.current !== "off") {
+      stopHandsFree();
+      return;
+    }
     if (isListening) {
       stopListening();
     } else {
       void startListening();
     }
-  }, [isListening, startListening, stopListening]);
+  }, [
+    isListening,
+    startListening,
+    stopListening,
+    handsFreePhaseRef,
+    stopHandsFree,
+  ]);
+
+  const handleHandsFreePress = useCallback(() => {
+    if (turnBlocked()) return;
+    // A reply being read at a tap would be heard by the microphone.
+    ttsStop();
+    startHandsFree();
+  }, [turnBlocked, ttsStop, startHandsFree]);
 
   const handleChangeText = useCallback(
     (text: string) => {
+      // Typing is the user taking over from hands-free.
+      stopHandsFree();
       setInputText(text);
       if (isCoachPro) warmUpHook.sendTextWarmUp(text);
     },
-    [isCoachPro, warmUpHook, setInputText],
+    [isCoachPro, warmUpHook, setInputText, stopHandsFree],
   );
 
   // Shown while the input is empty; the send button takes their place on
@@ -1495,6 +1620,12 @@ export default function CoachChat({
           {isCoachPro ? (
             <CoachCameraButton
               onPress={openPhotoChooser}
+              disabled={isStreaming || isSendingPhoto || isListening}
+            />
+          ) : null}
+          {hasVoice && !screenReaderEnabled && handsFreePhase === "off" ? (
+            <CoachHandsFreeButton
+              onPress={handleHandsFreePress}
               disabled={isStreaming || isSendingPhoto || isListening}
             />
           ) : null}
@@ -1513,6 +1644,9 @@ export default function CoachChat({
       isListening,
       volume,
       handleMicPress,
+      handleHandsFreePress,
+      handsFreePhase,
+      screenReaderEnabled,
       openPhotoChooser,
       isStreaming,
       isSendingPhoto,
@@ -1621,6 +1755,7 @@ export default function CoachChat({
         onLayout={stickToBottom.onLayout}
         scrollEventThrottle={32}
       />
+      <CoachHandsFreeBar phase={handsFreePhase} onStop={stopHandsFree} />
       <JumpToLatestButton
         visible={stickToBottom.showJumpToLatest}
         onPress={stickToBottom.jumpToLatest}

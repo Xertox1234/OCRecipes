@@ -69,6 +69,7 @@ vi.mock("@/hooks/usePlanCheck", () => {
 });
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
+  useIsFocused: () => true,
 }));
 // Thin stub to satisfy render; "Make this mine" is not under test here.
 // One stable mutateAsync, like useMutation's, so callback identities hold.

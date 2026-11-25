@@ -92,6 +92,7 @@ vi.mock("@/hooks/usePlanCheck", () => ({
 }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
+  useIsFocused: () => true,
 }));
 vi.mock("@/lib/query-client", () => ({ apiRequest: vi.fn() }));
 vi.mock("@/hooks/useInspiredSuggestions", () => ({
