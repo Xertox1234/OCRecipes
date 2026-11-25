@@ -10,8 +10,9 @@
  * and answers a nutrition label or a barcode with a one-row card for one
  * serving of that product.
  *
- * S3 added grocery receipts: a receipt is read into the pantry card
- * (coach-receipt-photo.ts).
+ * S3 added grocery receipts, read into the pantry card
+ * (coach-receipt-photo.ts), and restaurant menus, read into a list of the
+ * best dishes for the user's goals (coach-menu-photo.ts).
  */
 import {
   analyzePhoto,
@@ -43,6 +44,9 @@ import type {
   PantryCardPayload,
 } from "@shared/schemas/coach-write-cards";
 import { receiptPhotoReply, type ReceiptFeatures } from "./coach-receipt-photo";
+import { menuPhotoReply } from "./coach-menu-photo";
+import type { SuggestionList } from "@shared/schemas/coach-blocks";
+import type { PremiumFeatures } from "@shared/types/premium";
 
 export {
   COACH_PHOTO_USER_TEXT,
@@ -159,13 +163,18 @@ export async function buildPhotoFoodCard(
 
 /**
  * A photo reply: the food card to show (null: none), a pantry card for a
- * receipt, and the Coach's line.
+ * receipt, a list of picks for a menu, and the Coach's line.
  */
 export interface PhotoReply {
   payload: FoodCardPayload | null;
   pantry?: { args: UpdatePantryCardArgs; payload: PantryCardPayload };
+  suggestions?: SuggestionList;
   text: string;
 }
+
+/** The plan features a receipt or menu read needs, from the route's tier lookup. */
+export type PhotoFeatures = ReceiptFeatures &
+  Pick<PremiumFeatures, "menuScanner">;
 
 /** Below this the classifier's answer is not trusted and the photo is read as a meal. */
 const CLASSIFY_CONFIDENCE = 0.7;
@@ -359,12 +368,13 @@ async function mealPhotoReply(
 /**
  * The Coach's answer to a photo. The photo is classified first: a nutrition
  * label is read as a label, a barcode is looked up, a grocery receipt goes to
- * the pantry card, and anything else (or a photo the classifier is unsure
- * about, or could not classify) is read as a meal, as before S2.
+ * the pantry card, a restaurant menu to a list of picks, and anything else
+ * (or a photo the classifier is unsure about, or could not classify) is read
+ * as a meal, as before S2.
  */
 export async function buildPhotoReply(
   imageBase64: string,
-  ctx: { tz: string; now: Date; userId: string; receipts: ReceiptFeatures },
+  ctx: { tz: string; now: Date; userId: string; features: PhotoFeatures },
 ): Promise<PhotoReply> {
   const seen = await classifyPhoto(imageBase64).catch((err) => {
     logger.warn({ err: toError(err) }, "coach photo: classification failed");
@@ -393,8 +403,16 @@ export async function buildPhotoReply(
   if (seen.contentType === "grocery_receipt") {
     return receiptPhotoReply(imageBase64, {
       userId: ctx.userId,
-      features: ctx.receipts,
+      features: ctx.features,
     });
+  }
+  if (seen.contentType === "restaurant_menu") {
+    const menu = await menuPhotoReply(imageBase64, {
+      userId: ctx.userId,
+      menuScanner: ctx.features.menuScanner,
+    });
+    // No dishes on it: most likely a meal taken for a menu.
+    if (menu) return menu;
   }
   return mealPhotoReply(imageBase64, ctx);
 }

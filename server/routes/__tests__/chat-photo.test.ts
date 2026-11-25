@@ -199,11 +199,12 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(buildPhotoReply).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        receipts: {
+        features: expect.objectContaining({
           pantryTracking: true,
           receiptScanner: true,
           monthlyReceiptScans: 15,
-        },
+          menuScanner: true,
+        }),
       }),
     );
     expect(createWriteCardBlock).toHaveBeenCalledWith(
@@ -227,6 +228,30 @@ describe("POST /api/chat/conversations/:id/photo", () => {
       "assistant",
       expect.stringMatching(/couldn't make the card/i),
       null,
+    );
+  });
+
+  it("stores a menu's list of picks as a block, with no card", async () => {
+    const suggestions = {
+      type: "suggestion_list" as const,
+      items: [
+        { title: "Grilled Salmon", subtitle: "About 620 kcal", action: null },
+      ],
+    };
+    vi.mocked(buildPhotoReply).mockResolvedValue({
+      payload: null,
+      suggestions,
+      text: "Here are my picks from that menu.",
+    });
+    const res = await post(app);
+    expect(res.status).toBe(201);
+    expect(createWriteCardBlock).not.toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "1",
+      "assistant",
+      "Here are my picks from that menu.",
+      { blocks: [suggestions] },
     );
   });
 

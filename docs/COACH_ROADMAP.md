@@ -52,7 +52,7 @@ Then re-rank.
       number, so no model reads it and no photo credit is spent. Left for
       later: the label's micronutrients (the card carries calories and the
       three macros).
-- [ ] **S3. Receipt and menu photos.** A receipt becomes a pantry write card; a
+- [x] **S3. Receipt and menu photos.** A receipt becomes a pantry write card; a
       menu becomes a "what should I order" card. Value: medium. Size: M.
       Needs S1.
       Part 1, PR #2048: a grocery receipt photo sent to the chat becomes the
@@ -60,7 +60,18 @@ Then re-rank.
       already in the pantry in the same unit is topped up). It follows the
       pantry receipt scan's plan rules and counts toward the same monthly
       scans, and spends a receipt credit as well as the photo credit.
-      Part 2: the menu card.
+      Part 2, PR #2049: a restaurant menu photo becomes a list of the three
+      best-rated dishes, each with rough calories, protein and the reason.
+      Dishes rated "avoid" and dishes whose menu text names one of the user's
+      allergens are left out (the Coach says how many, naming none); if the
+      allergy list cannot be read or checked, no dish is picked, and a user
+      with allergies is always told to check with the restaurant. It follows
+      the Menu Scanner's plan rules, spends a menu credit and saves the scan
+      to the menu history; a photo with no dishes on it is read as a meal.
+      The list is the existing suggestion block, so the app needed no new
+      card. Left for later: tapping a dish to log it, and follow-up questions
+      about the list (later turns see only message text, so the Coach does
+      not see the dishes it listed).
 
 ## Touch: blocks the user can operate (rung 8)
 
