@@ -18,9 +18,10 @@ process.env.STRYKER_VITEST_INCLUDE = JSON.stringify(testInclude);
 const config = {
   packageManager: "npm",
   testRunner: "vitest",
-  vitest: {
-    configFile: "vitest.mutation.config.mts",
-  },
+  // `forks`, like the normal suite (vitest.config.mts). The runner's default
+  // is `threads`, where a test's `process.env.TZ = ...` does not move the
+  // process clock, so a file that pins its timezone fails the dry run.
+  vitest: { configFile: "vitest.mutation.config.mts", pool: "forks" },
   coverageAnalysis: "perTest",
   // Stryker sandboxes by COPYING the project. Exclude gitignored native/build dirs:
   // copying ios/Pods (CocoaPods hermes.framework) hits ENOTSUP on socket files, and
