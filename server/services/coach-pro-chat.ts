@@ -152,5 +152,5 @@ export async function* handleCoachChat(
     goalsCard,
     planShopCard,
   });
-  yield* finalizeTurn(params, turn, reply);
+  yield* finalizeTurn(params, turn, reply, intent);
 }

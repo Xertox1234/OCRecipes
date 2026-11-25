@@ -396,6 +396,27 @@ describe("Notebook Extraction", () => {
       expect(entries.map((e) => e.type)).toEqual(["goal"]);
     });
 
+    // Coach chat audit 2026-11-24 (L76): the prompt asks for no strategy
+    // entry on most turns, but nothing dropped one the model wrote anyway.
+    it("drops a coaching strategy the model wrote when none was asked for", async () => {
+      // The default count of 3 means "not this time".
+      const entries = await run({
+        entries: [
+          { type: "coaching_strategy", content: "Keep answers short" },
+          { type: "goal", content: "User aims for 120 g protein" },
+        ],
+      });
+      expect(entries.map((e) => e.type)).toEqual(["goal"]);
+    });
+
+    it("keeps a coaching strategy on a turn that asked for one", async () => {
+      vi.mocked(storage.getNotebookEntryCount).mockResolvedValueOnce(0);
+      const entries = await run({
+        entries: [{ type: "coaching_strategy", content: "Keep answers short" }],
+      });
+      expect(entries.map((e) => e.type)).toEqual(["coaching_strategy"]);
+    });
+
     it("never stores an allergy: allergies belong in the dietary profile", async () => {
       const entries = await run({
         entries: [

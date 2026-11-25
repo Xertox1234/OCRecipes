@@ -1,3 +1,4 @@
+import type { CoachIntent } from "../coach-intent-classifier";
 import { storage } from "../../storage";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { filterMemoryRefs } from "../memory-refs";
@@ -126,6 +127,7 @@ export async function* finalizeTurn(
   params: CoachChatParams,
   turn: TurnContext,
   reply: ReplyResult,
+  intent: CoachIntent,
 ): AsyncGenerator<CoachChatEvent> {
   const { conversationId, userId, content, turnKey, isCoachPro, isAborted } =
     params;
@@ -190,8 +192,17 @@ export async function* finalizeTurn(
     yield { type: "blocks", blocks };
   }
 
-  // Fire-and-forget notebook extraction + archival for Coach Pro
-  if (isCoachPro && fullResponse && !isAborted()) {
+  // Fire-and-forget notebook extraction + archival for Coach Pro. Not for a
+  // turn the safety router refused or the safety screen replaced: what the
+  // user asked for there ("my goal is 800 calories a day") must not be
+  // saved as a goal and handed back to Coach on later turns.
+  if (
+    isCoachPro &&
+    fullResponse &&
+    !isAborted() &&
+    intent !== "safety_refusal" &&
+    !reply.safetyOverridden
+  ) {
     fireAndForget(
       "coach-notebook-extraction",
       extractAndStoreNotebook({

@@ -245,6 +245,9 @@ export async function extractNotebookEntries(
       .filter(
         (e) =>
           e.type !== "emotional_context" &&
+          // The prompt asked for none this time; the model may add one
+          // anyway, so the gate is enforced here.
+          !(e.type === "coaching_strategy" && !includeStrategy) &&
           !ALLERGY_RE.test(e.content) &&
           !(wroteCard && CARD_TURN_DROPPED_TYPES.has(e.type)),
       )

@@ -1437,6 +1437,30 @@ describe("handleCoachChat", () => {
       );
     });
 
+    // Coach chat audit 2026-11-24 (M43): a turn the safety router refused
+    // was still mined, so "my goal is 800 calories a day" could be saved as
+    // a goal and fed back to Coach on later turns.
+    it("does not mine a safety-refusal turn for notes", async () => {
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "I can't help with that.",
+        blocks: [],
+      });
+
+      await collectEvents(
+        handleCoachChat(
+          makeParams({
+            isCoachPro: true,
+            content: "My goal is to eat 800 calories a day",
+          }),
+        ),
+      );
+
+      const extractionCalls = vi
+        .mocked(fireAndForget)
+        .mock.calls.filter(([label]) => label === "coach-notebook-extraction");
+      expect(extractionCalls).toHaveLength(0);
+    });
+
     it("does not trigger notebook extraction for standard coach", async () => {
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Standard response.",
