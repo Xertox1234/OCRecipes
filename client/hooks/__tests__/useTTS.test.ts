@@ -202,6 +202,35 @@ describe("useTTS", () => {
     expect(mockSpeak.mock.calls[1][0]).toBe("Second sentence.");
   });
 
+  it("reads a new message in full when it interrupts one still being read", () => {
+    const { result } = renderHook(() => useTTS());
+    act(() => result.current.speak(1, "Old one. Old two."));
+    const oldOptions = mockSpeak.mock.calls[0][1] as {
+      onStopped: () => void;
+    };
+
+    act(() => result.current.speak(2, "New one. New two."));
+    const newOptions = mockSpeak.mock.calls[1][1] as { onDone: () => void };
+    // The interrupted utterance reports that it stopped only now, after the
+    // new one has started.
+    act(() => oldOptions.onStopped());
+    expect(result.current.speakingMessageId).toBe(2);
+    expect(result.current.isSpeaking).toBe(true);
+
+    act(() => newOptions.onDone());
+    expect(mockSpeak).toHaveBeenLastCalledWith("New two.", expect.anything());
+  });
+
+  it("ignores a late finish from a message that was stopped", () => {
+    const { result } = renderHook(() => useTTS());
+    act(() => result.current.speak(1, "Old one. Old two."));
+    const oldOptions = mockSpeak.mock.calls[0][1] as { onDone: () => void };
+    act(() => result.current.speak(2, "New one."));
+    mockSpeak.mockClear();
+    act(() => oldOptions.onDone());
+    expect(mockSpeak).not.toHaveBeenCalled();
+  });
+
   it("surfaces a toast and resets state when speech errors", () => {
     const { result } = renderHook(() => useTTS());
 

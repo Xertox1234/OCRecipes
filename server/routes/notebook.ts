@@ -11,11 +11,13 @@ import {
 } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
+import { containsUnsafeCoachAdvice } from "../lib/ai-safety";
 import { civilDateToInstant } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   MAX_NOTEBOOK_ENTRIES,
   notebookEntryTypes,
+  USER_NOTE_TYPES,
   notebookEntryStatusValues,
 } from "@shared/schemas/coach-notebook";
 import { toSecondPerson } from "@shared/lib/notebook-text";
@@ -26,8 +28,24 @@ const idsSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(20),
 });
 
+/**
+ * Why a hand-written note cannot be saved, or null. The same two filters the
+ * Coach's own extraction applies before it saves (notebook-extraction.ts):
+ * the manual routes used to store any text and mark it confirmed, and
+ * confirmed notes are stated back by Coach.
+ */
+function refusedNoteText(content: string): string | null {
+  if (/\ballerg/i.test(content)) {
+    return "Allergies belong in your dietary profile, where recipes are checked against them. Add it under Profile.";
+  }
+  if (containsUnsafeCoachAdvice(content)) {
+    return "That can't be saved as a note. Coach's notes can't hold medical or extreme-diet instructions.";
+  }
+  return null;
+}
+
 const createEntrySchema = z.object({
-  type: z.enum(notebookEntryTypes),
+  type: z.enum(USER_NOTE_TYPES),
   content: z.string().min(1).max(500),
   followUpDate: z
     .string()
@@ -38,6 +56,9 @@ const createEntrySchema = z.object({
 
 const updateEntrySchema = z.object({
   content: z.string().min(1).max(500).optional(),
+  // The full list: the app sends the note's own type with every save, also
+  // for a note Coach wrote. Only a change of type is held to USER_NOTE_TYPES
+  // (in the handler, against the stored row).
   type: z.enum(notebookEntryTypes).optional(),
   followUpDate: z
     .string()
@@ -170,7 +191,13 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
+        // The screens ask for no page. The default used to be the newest 50,
+        // so an older note was missing from "What Coach knows" although
+        // Coach still used it. The account's own ceiling bounds the list.
+        const limit = parseQueryInt(req.query.limit, {
+          default: MAX_NOTEBOOK_ENTRIES,
+          max: MAX_NOTEBOOK_ENTRIES,
+        });
         const page = parseQueryInt(req.query.page, {
           default: 1,
           min: 1,
@@ -227,6 +254,9 @@ export function register(app: Express): void {
           );
         if (await refusedWhileCoachNotesPaused(req.userId, res)) return;
         const { type, content, followUpDate } = parsed.data;
+        const refusal = refusedNoteText(content);
+        if (refusal)
+          return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         // A ceiling on what one account can add: the rate limit alone let
         // it reach tens of thousands of rows, which every Coach turn and
         // the daily reminder job then read.
@@ -311,8 +341,52 @@ export function register(app: Express): void {
           (await refusedWhileCoachNotesPaused(req.userId, res))
         )
           return;
+        // The app sends a note's own text and type with every save, so both
+        // are read against the stored row. Unchanged text is not an edit: it
+        // is left out below, because any text in the update counts as the
+        // user confirming the note (an unreviewed memory was confirmed by
+        // moving only its follow-up date).
+        let newContent: string | undefined;
+        let typeChanged = false;
+        let storedContent: string | undefined;
+        if (type !== undefined || content !== undefined) {
+          const stored = await storage.getNotebookEntryById(id, req.userId);
+          if (!stored)
+            return sendError(res, 404, "Entry not found", ErrorCode.NOT_FOUND);
+          storedContent = stored.content;
+          if (content !== undefined && content !== stored.content) {
+            newContent = content;
+          }
+          typeChanged = type !== undefined && type !== stored.type;
+        }
+        // A change of type only into a kind the user may hold.
+        if (
+          typeChanged &&
+          !(USER_NOTE_TYPES as readonly string[]).includes(type as string)
+        )
+          return sendError(
+            res,
+            400,
+            "A note can only be changed to a goal, a preference or a commitment.",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        // New text is checked; so is the stored text when it gets a new kind.
+        const textToCheck =
+          newContent ?? (typeChanged ? storedContent : undefined);
+        const refusal =
+          textToCheck !== undefined ? refusedNoteText(textToCheck) : null;
+        if (refusal)
+          return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         const updated = await storage.updateNotebookEntry(id, req.userId, {
-          ...(content !== undefined && { content }),
+          ...(newContent !== undefined && { content: newContent }),
+          // A note turned into a commitment without rewording still needs
+          // the label Coach names it by (storage writes it only with text).
+          ...(typeChanged &&
+            type === "commitment" &&
+            newContent === undefined &&
+            storedContent !== undefined && {
+              label: storedContent.slice(0, 120),
+            }),
           ...(type !== undefined && { type }),
           ...(followUpDate !== undefined && {
             // Same basis as the POST handler above.

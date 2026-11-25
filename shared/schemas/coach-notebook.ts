@@ -24,6 +24,15 @@ export const notebookEntryStatusValues = [
 
 export type NotebookEntryStatus = (typeof notebookEntryStatusValues)[number];
 
+/**
+ * The note types a user may add or switch to by hand: the ones "What Coach
+ * knows" shows. The other five are Coach's own (insight, summary, strategy…):
+ * a hand-added one could not be seen again on that page, and a hand-written
+ * coaching_strategy went into the prompt as background (coach chat audit
+ * 2026-11-24, L86/M8). The server enforces it; the app offers only these.
+ */
+export const USER_NOTE_TYPES = ["goal", "preference", "commitment"] as const;
+
 export const notebookEntrySchema = z.object({
   type: z.enum(notebookEntryTypes),
   content: z.string().min(1).max(500),
@@ -42,8 +51,22 @@ export const notebookEntrySchema = z.object({
 const MOOD_DELTAS = [-1, -0.5, 0, 0.5, 1] as const;
 type MoodDelta = (typeof MOOD_DELTAS)[number];
 
+/** The most entries one extraction may add. */
+const MAX_EXTRACTED_ENTRIES = 10;
+
 export const extractionResultSchema = z.object({
-  entries: z.array(notebookEntrySchema).max(10),
+  // Entry by entry: one malformed entry (an unknown type, a loose date, an
+  // empty label) is dropped on its own. A strict array failed the whole
+  // parse, losing that turn's valid entries and its mood update (coach chat
+  // audit 2026-11-24, M27). More than ten keeps the first ten.
+  entries: z.array(z.unknown()).transform((raw) =>
+    raw
+      .flatMap((entry) => {
+        const parsed = notebookEntrySchema.safeParse(entry);
+        return parsed.success ? [parsed.data] : [];
+      })
+      .slice(0, MAX_EXTRACTED_ENTRIES),
+  ),
   /** Nudge to the user's mood score from this turn's tone (spec 2026-11-08). */
   // Lenient on purpose: a stray value (null, 0.25, "0") becomes 0 rather
   // than failing the parse and discarding this turn's entries with it.
