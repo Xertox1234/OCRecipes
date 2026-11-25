@@ -843,29 +843,42 @@ seven 300 KB spellings of an api merge (one long line, quoted multi-line values,
 12000 continuation words), because a clause is a single line and grep reads a line to its end,
 so the printf is never cut off. Nothing failed open. The other two read the PR body's
 `## Platform check` section and failed CLOSED: a section over the pipe buffer that named the
-run near its top was denied as "does not name E2E run" (rows P11/P12, 300 KB). All eight now
-read here-strings. The known pattern is
-`docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
-Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
-`CONTRACT_DONE`, redefines a function the hook defines before the libs are sourced (`deny`,
-`registry_active`, `no_decision`, `_gs_grep`, `_gs_no_shadow`), shadows a name that is not in
-`_GS_NO_SHADOW`, or closes fd 9; SIGKILL, the fault signals (SEGV, BUS, FPE, ILL, TRAP: the
-deny is printed but the rc stays 132-139), the
-real-time signals, and PWR/STKFLT (left out because macOS bash has no such names); a signal
-between `deny()` marking the decision and printing it; a lib that defines a function
-called `builtin` defeats the shadow check, which runs through `builtin` (measured:
-`builtin() { "$@"; }; printf() { :; }` allows); a lib that ASSIGNS a variable the hook reads
-(`REG_DIR=""`, `SKIP_WORKTREE_CONTRACT=1`, `CMD=ls`, `PATH=/nonexistent`, `CWD=/tmp`: each
-allows, on `main` too) or redefines another lib's function (`emit_write_targets() { :; }` in
-`own-agent-worktree.sh`); the 15 s hook timeout (a one-line 400 KB command takes about 7 s in
-`split_segments` and `git_c_target`, both quadratic; past the timeout a SIGTERM gets the trap's
-deny, a SIGKILL gets nothing); the stop signals (STOP, TTIN, TTOU), which hang the hook until
-that timeout; the three exits before the trap when `jq` is on PATH
-but cannot read the envelope (lines 46-48); a shell that ends before the inline
-`SKIP_WORKTREE_CONTRACT=1` prefix is read is denied even with that prefix (the safe direction);
-an advisory lost to a signal or to a `jq` that cannot print. Not tested on bash 3.2 (macOS).
-All of these need a change to a reviewed file under `.claude/hooks/lib/` or `scripts/lib/` to
-reach.
+run near its top was denied as "does not name E2E run" (rows P11-P13, 300 KB). Those two now
+read here-strings. The six clause greps stay pipes: a here-string over 64 KB needs a temp
+file, and a failed one reads as "no match", which at `|| continue` is an allow (security
+review, measured with a temp dir holding one copy of the clause but not two).
+Still open, found by that review, on `main` too:
+
+- a FULL temp dir allows any merge command over about 64 KB (measured ALLOW 3 of 3 with 0 KB
+  free, a 37-byte command still denies): `done <<< "$MRG_API_CLAUSES"` fails so the clause loop
+  never runs, and `cmd_gh_pr_has_merge`'s `grep -qE … <<< "$words"` in `lib/cmd-detect.sh`
+  fails with rc 1, read as "no merge here". Needs a three-way answer (match / no match / could
+  not run) in the lib and a deny when the loop ran zero times over a non-empty list.
+- run time grows roughly with the square of the command size (`cmd_words_deep`): 300 KB takes
+  3.3 s, 1.17 MB takes 56 s, past the hook timeout. What the harness does with a timed-out
+  hook was not measured. A size cap that denies before any parsing would close it.
+  The known pattern is
+  `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
+  Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
+  `CONTRACT_DONE`, redefines a function the hook defines before the libs are sourced (`deny`,
+  `registry_active`, `no_decision`, `_gs_grep`, `_gs_no_shadow`), shadows a name that is not in
+  `_GS_NO_SHADOW`, or closes fd 9; SIGKILL, the fault signals (SEGV, BUS, FPE, ILL, TRAP: the
+  deny is printed but the rc stays 132-139), the
+  real-time signals, and PWR/STKFLT (left out because macOS bash has no such names); a signal
+  between `deny()` marking the decision and printing it; a lib that defines a function
+  called `builtin` defeats the shadow check, which runs through `builtin` (measured:
+  `builtin() { "$@"; }; printf() { :; }` allows); a lib that ASSIGNS a variable the hook reads
+  (`REG_DIR=""`, `SKIP_WORKTREE_CONTRACT=1`, `CMD=ls`, `PATH=/nonexistent`, `CWD=/tmp`: each
+  allows, on `main` too) or redefines another lib's function (`emit_write_targets() { :; }` in
+  `own-agent-worktree.sh`); the 15 s hook timeout (a one-line 400 KB command takes about 7 s in
+  `split_segments` and `git_c_target`, both quadratic; past the timeout a SIGTERM gets the trap's
+  deny, a SIGKILL gets nothing); the stop signals (STOP, TTIN, TTOU), which hang the hook until
+  that timeout; the three exits before the trap when `jq` is on PATH
+  but cannot read the envelope (lines 46-48); a shell that ends before the inline
+  `SKIP_WORKTREE_CONTRACT=1` prefix is read is denied even with that prefix (the safe direction);
+  an advisory lost to a signal or to a `jq` that cannot print. Not tested on bash 3.2 (macOS).
+  All of these need a change to a reviewed file under `.claude/hooks/lib/` or `scripts/lib/` to
+  reach.
 
 Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable folder (chmod 000)"
 row asserted a deny that cannot happen for root, and cloud sessions run as root, so
