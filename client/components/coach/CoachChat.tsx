@@ -98,6 +98,7 @@ import { apiRequest } from "@/lib/query-client";
 import { chatMessagesKey } from "@/lib/query-keys";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { chatRequestErrorCopy } from "@/lib/chat-error-copy";
+import { pollUntilTurnSettled } from "@/lib/sse-xhr";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   ChatStackParamList,
@@ -686,6 +687,9 @@ export default function CoachChat({
   const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // Stops the look-for-the-saved-turn poll after an unanswered photo send.
+  const photoPollCancelRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => photoPollCancelRef.current?.(), []);
   const cancelPhotoAnnouncement = useCallback(() => {
     if (photoAnnounceTimerRef.current) {
       clearTimeout(photoAnnounceTimerRef.current);
@@ -705,6 +709,8 @@ export default function CoachChat({
     onStart: (kind) => {
       const isBarcode = kind === "barcode";
       setSendingBarcode(isBarcode);
+      photoPollCancelRef.current?.();
+      photoPollCancelRef.current = null;
       sentTurnRef.current = null;
       turnEpochRef.current += 1;
       followLatest();
@@ -755,6 +761,16 @@ export default function CoachChat({
       if (turnEpochRef.current === epoch) setOptimisticMessage(null);
       // A failure is announced by the error line or the limit banner.
       if (failure) {
+        // The server never answered, so it may still be analysing the photo
+        // (the send has no reply until that is done). Keep looking for the
+        // saved turn, so the card appears instead of the user resending.
+        if (failure.maybeSaved) {
+          photoPollCancelRef.current?.();
+          photoPollCancelRef.current = pollUntilTurnSettled(
+            queryClient,
+            chatMessagesKey(convId),
+          );
+        }
         // The server saves the brief and clears its reminders before the
         // daily-limit check, so a failed first send may still have used it.
         if (sentBrief) {
