@@ -69,6 +69,18 @@ describe("extractAndStoreNotebook after a health-consent withdrawal", () => {
 
     expect(storage.createNotebookEntries).toHaveBeenCalledTimes(1);
   });
+
+  // L108: storage drops the write when the user cleared the notebook after
+  // this turn started, so it needs the turn's start.
+  it("hands the turn's start to the write", async () => {
+    vi.mocked(storage.areCoachNotesPaused).mockResolvedValue(false);
+
+    await extractAndStoreNotebook(turn);
+
+    expect(vi.mocked(storage.createNotebookEntries).mock.calls[0][1]).toEqual({
+      turnStart: turn.today,
+    });
+  });
 });
 
 // Coach chat audit 2026-11-24 (L49): the history already ends with this

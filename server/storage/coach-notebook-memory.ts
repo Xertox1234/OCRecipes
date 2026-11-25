@@ -119,6 +119,15 @@ export async function getConfirmedNotebookEntries(
 /** "Clear everything Coach knows": every row, hidden types too, and mood. */
 export async function clearNotebook(userId: string): Promise<void> {
   await db.transaction(async (tx) => {
+    // The profile first: it takes the row lock a note write from a chat turn
+    // holds while it checks this stamp, so a turn that started before the
+    // clear either finishes before these deletes or sees the stamp and writes
+    // nothing (L108). The server's clock, like the turn start it is compared
+    // with.
+    await tx
+      .update(userProfiles)
+      .set({ moodScore: 0, moodUpdatedAt: null, notebookClearedAt: new Date() })
+      .where(eq(userProfiles.userId, userId));
     await tx.delete(coachNotebook).where(eq(coachNotebook.userId, userId));
     // Reminder rows hold a copy of the commitment's text.
     await tx
@@ -129,10 +138,6 @@ export async function clearNotebook(userId: string): Promise<void> {
           eq(pendingReminders.type, "commitment"),
         ),
       );
-    await tx
-      .update(userProfiles)
-      .set({ moodScore: 0, moodUpdatedAt: null })
-      .where(eq(userProfiles.userId, userId));
   });
 }
 
@@ -152,12 +157,20 @@ export async function updateMoodScore(
         moodScore: userProfiles.moodScore,
         moodUpdatedAt: userProfiles.moodUpdatedAt,
         healthDataConsentAt: userProfiles.healthDataConsentAt,
+        notebookClearedAt: userProfiles.notebookClearedAt,
       })
       .from(userProfiles)
       .where(eq(userProfiles.userId, userId))
       .for("update");
     // No consent, no health data: the mood signal is health-derived.
     if (!profile || profile.healthDataConsentAt == null) return;
+    // `now` is the turn's start: a nudge from a turn that began before the
+    // user cleared everything is dropped, like its notes (L108).
+    if (
+      profile.notebookClearedAt !== null &&
+      profile.notebookClearedAt.getTime() >= now.getTime()
+    )
+      return;
     await tx
       .update(userProfiles)
       .set({

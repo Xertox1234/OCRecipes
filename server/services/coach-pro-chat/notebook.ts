@@ -136,6 +136,9 @@ export async function extractAndStoreNotebook(a: {
           lastAssistantMessage: textContent,
         }),
       })),
+      // Storage drops the write if the user cleared the notebook after this
+      // turn started (L108).
+      { turnStart: today },
     );
   }
   // Archive notebook entries older than 30 days to bound growth.

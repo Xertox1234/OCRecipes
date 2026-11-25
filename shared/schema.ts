@@ -424,6 +424,11 @@ export const userProfiles = pgTable("user_profiles", {
   /** Coach mood score −2…+2, decayed on read (shared/lib/mood.ts). Never shown. */
   moodScore: real("mood_score").default(0).notNull(),
   moodUpdatedAt: timestamp("mood_updated_at", { withTimezone: true }),
+  /**
+   * When the user last cleared everything Coach knows. A note extraction that
+   * started before this writes nothing (migration 0051).
+   */
+  notebookClearedAt: timestamp("notebook_cleared_at", { withTimezone: true }),
   healthConditions: jsonb("health_conditions")
     .$type<string[]>()
     .default([])

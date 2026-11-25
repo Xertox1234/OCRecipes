@@ -302,6 +302,96 @@ describe("visible memory storage", () => {
       expect(profile.moodScore).toBe(0);
       expect(profile.moodUpdatedAt).toBeNull();
     });
+
+    // Coach chat audit 2026-11-24, L108: the note extraction of the latest
+    // turn runs after the reply and can finish after the user tapped Clear.
+    describe("a turn that started before the clear (L108)", () => {
+      const note = (content: string) => ({
+        userId: user.id,
+        type: "goal",
+        content,
+        status: "active",
+        dedupeKey: `k-${content}`,
+      });
+      const consented = () =>
+        tx.insert(userProfiles).values({
+          userId: user.id,
+          healthDataConsentAt: new Date("2026-01-01T00:00:00Z"),
+        });
+      const profile = async () =>
+        (
+          await tx
+            .select()
+            .from(userProfiles)
+            .where(eq(userProfiles.userId, user.id))
+        )[0];
+
+      it("stamps the profile with the time of the clear", async () => {
+        await consented();
+        const before = Date.now();
+        await clearNotebook(user.id);
+        const stamp = (await profile()).notebookClearedAt;
+        expect(stamp?.getTime()).toBeGreaterThanOrEqual(before);
+      });
+
+      it("writes no note from a turn that started before the clear", async () => {
+        await consented();
+        const turnStart = new Date(Date.now() - 5_000);
+        await clearNotebook(user.id);
+
+        const written = await createNotebookEntries([note("late")], {
+          turnStart,
+        });
+
+        expect(written).toEqual([]);
+        expect(
+          await tx
+            .select()
+            .from(coachNotebook)
+            .where(eq(coachNotebook.userId, user.id)),
+        ).toEqual([]);
+      });
+
+      it("still writes notes from a turn that started after the clear", async () => {
+        await consented();
+        await clearNotebook(user.id);
+        const turnStart = new Date(Date.now() + 5_000);
+
+        const written = await createNotebookEntries([note("fresh")], {
+          turnStart,
+        });
+
+        expect(written).toHaveLength(1);
+      });
+
+      it("writes as before for a user who never cleared", async () => {
+        await consented();
+        const written = await createNotebookEntries([note("plain")], {
+          turnStart: new Date(),
+        });
+        expect(written).toHaveLength(1);
+      });
+
+      it("takes no mood nudge from a turn that started before the clear", async () => {
+        await consented();
+        const turnStart = new Date(Date.now() - 5_000);
+        await clearNotebook(user.id);
+
+        await updateMoodScore(user.id, -1, turnStart);
+
+        expect((await profile()).moodScore).toBe(0);
+        expect((await profile()).moodUpdatedAt).toBeNull();
+      });
+
+      it("still takes the mood nudge from a turn after the clear", async () => {
+        await consented();
+        await clearNotebook(user.id);
+
+        await updateMoodScore(user.id, -1, new Date(Date.now() + 5_000));
+
+        expect((await profile()).moodScore).toBe(-1);
+      });
+    });
   });
 
   describe("updateMoodScore", () => {
