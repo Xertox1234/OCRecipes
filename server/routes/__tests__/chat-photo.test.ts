@@ -171,6 +171,59 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(res.body.assistantMessage.metadata.blocks[0].cardId).toBe(CARD_ID);
   });
 
+  it("stores a receipt's pantry card, and tells the reply whether the plan has the pantry", async () => {
+    const pantryArgs = {
+      changes: [{ action: "add" as const, name: "Bread", expiresInDays: 5 }],
+    };
+    const pantryPayload = {
+      rows: [
+        {
+          action: "add" as const,
+          name: "Bread",
+          quantity: null,
+          unit: null,
+          itemId: null,
+          held: null,
+          all: false,
+          expiresInDays: 5,
+        },
+      ],
+    };
+    vi.mocked(buildPhotoReply).mockResolvedValue({
+      payload: null,
+      pantry: { args: pantryArgs, payload: pantryPayload },
+      text: "Here's what I read from your receipt.",
+    });
+    const res = await post(app);
+    expect(res.status).toBe(201);
+    expect(buildPhotoReply).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ pantryTracking: true }),
+    );
+    expect(createWriteCardBlock).toHaveBeenCalledWith(
+      { kind: "pantry", args: pantryArgs },
+      { conversationId: 1, userId: "1", tz: "America/Los_Angeles" },
+      pantryPayload,
+    );
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "1",
+      "assistant",
+      "Here's what I read from your receipt.",
+      { blocks: [cardBlock] },
+    );
+
+    vi.mocked(createWriteCardBlock).mockResolvedValue(null);
+    await post(app);
+    expect(storage.createChatMessage).toHaveBeenLastCalledWith(
+      1,
+      "1",
+      "assistant",
+      expect.stringMatching(/couldn't make the card/i),
+      null,
+    );
+  });
+
   it("refuses a second photo while the first is still being answered, and stores nothing for it", async () => {
     let finish!: () => void;
     vi.mocked(buildPhotoReply).mockImplementationOnce(

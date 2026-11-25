@@ -55,6 +55,10 @@ Then re-rank.
 - [ ] **S3. Receipt and menu photos.** A receipt becomes a pantry write card; a
       menu becomes a "what should I order" card. Value: medium. Size: M.
       Needs S1.
+      Part 1, PR #PRNUM: a grocery receipt photo sent to the chat becomes the
+      pantry card, one row per food with its amount and shelf life (a food
+      already in the pantry in the same unit is topped up). It spends a
+      receipt credit as well as the photo credit. Part 2: the menu card.
 
 ## Touch: blocks the user can operate (rung 8)
 

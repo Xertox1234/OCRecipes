@@ -9,6 +9,9 @@
  * S2 added labels and barcodes: `buildPhotoReply` classifies the photo first
  * and answers a nutrition label or a barcode with a one-row card for one
  * serving of that product.
+ *
+ * S3 added grocery receipts: a receipt is read into the pantry card
+ * (coach-receipt-photo.ts).
  */
 import {
   analyzePhoto,
@@ -32,9 +35,14 @@ import { inferMealTimeHint } from "../lib/meal-time-hint";
 import { civilHourInTz } from "../lib/civil-date";
 import {
   logFoodCardArgsSchema,
+  type UpdatePantryCardArgs,
   type WriteCardProposal,
 } from "./write-cards/tool-args";
-import type { FoodCardPayload } from "@shared/schemas/coach-write-cards";
+import type {
+  FoodCardPayload,
+  PantryCardPayload,
+} from "@shared/schemas/coach-write-cards";
+import { receiptPhotoReply } from "./coach-receipt-photo";
 
 export {
   COACH_PHOTO_USER_TEXT,
@@ -149,9 +157,13 @@ export async function buildPhotoFoodCard(
 
 // ── Labels and barcodes (Coach roadmap S2) ─────────────────────────────
 
-/** A photo reply: the card to show (null: none) and the Coach's line. */
+/**
+ * A photo reply: the food card to show (null: none), a pantry card for a
+ * receipt, and the Coach's line.
+ */
 export interface PhotoReply {
   payload: FoodCardPayload | null;
+  pantry?: { args: UpdatePantryCardArgs; payload: PantryCardPayload };
   text: string;
 }
 
@@ -346,13 +358,14 @@ async function mealPhotoReply(
 
 /**
  * The Coach's answer to a photo. The photo is classified first: a nutrition
- * label is read as a label, a barcode is looked up, and anything else (or a
+ * label is read as a label, a barcode is looked up, a grocery receipt goes to
+ * the pantry card, and anything else (or a
  * photo the classifier is unsure about, or could not classify) is read as a
  * meal, as before S2.
  */
 export async function buildPhotoReply(
   imageBase64: string,
-  ctx: { tz: string; now: Date; userId: string },
+  ctx: { tz: string; now: Date; userId: string; pantryTracking: boolean },
 ): Promise<PhotoReply> {
   const seen = await classifyPhoto(imageBase64).catch((err) => {
     logger.warn({ err: toError(err) }, "coach photo: classification failed");
@@ -377,6 +390,12 @@ export async function buildPhotoReply(
       ctx.userId,
     );
     return barcodePhotoReply(result, profileOutcome, ctx);
+  }
+  if (seen.contentType === "grocery_receipt") {
+    return receiptPhotoReply(imageBase64, {
+      userId: ctx.userId,
+      pantryTracking: ctx.pantryTracking,
+    });
   }
   return mealPhotoReply(imageBase64, ctx);
 }
