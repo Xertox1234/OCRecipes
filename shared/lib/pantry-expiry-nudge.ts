@@ -11,7 +11,10 @@ const MAX_NAMED = 3;
 export interface PantryExpiryNudge {
   /** Push title. */
   title: string;
-  /** Push body: the one sentence saying what expires. */
+  /**
+   * Push body: how many items expire, never which. It shows on the lock
+   * screen, and an item's name is whatever the user typed.
+   */
   body: string;
   /** The Coach's opening message in the conversation. */
   message: string;
@@ -56,10 +59,10 @@ export function renderPantryExpiryNudge(
     list = `${items[0]}, ${items[1]} and ${items.length - 2} more items`;
   }
   const one = items.length === 1;
-  const body = `Your ${list} ${one ? "expires" : "expire"} within a day.`;
+  const verb = one ? "expires" : "expire";
   return {
     title: "Use it before it goes",
-    body,
-    message: `${body} Want an idea for using ${one ? "it" : "them"} up?`,
+    body: `${items.length} ${one ? "item" : "items"} in your pantry ${verb} within a day.`,
+    message: `Your ${list} ${verb} within a day. Want an idea for using ${one ? "it" : "them"} up?`,
   };
 }

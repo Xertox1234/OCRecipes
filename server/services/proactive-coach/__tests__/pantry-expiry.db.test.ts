@@ -94,7 +94,7 @@ describe("nudgeAboutExpiringPantry (real database)", () => {
     expect(sendPushToUser).toHaveBeenCalledWith(
       user.id,
       "Use it before it goes",
-      "Your spinach expires within a day.",
+      "1 item in your pantry expires within a day.",
       {
         url: `ocrecipes://chat/${conversation.id}`,
         type: "pantry-expiring",

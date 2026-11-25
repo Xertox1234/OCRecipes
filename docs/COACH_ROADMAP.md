@@ -88,7 +88,8 @@ Then re-rank.
       daily cap. Value: high. Size: L. PR #2045. At 16:00 the user's time,
       a user with pantry tracking whose food expires within a day gets one
       push ("Use it before it goes"); tapping it opens a new conversation
-      that starts with the Coach's message. The wording is fixed (no model
+      that starts with the Coach's message. The push only counts the items;
+      their names are in the conversation, not on the lock screen. The wording is fixed (no model
       call). At most one a day, none on a day the Coach already pushed a
       commitment follow-up, and each item is named once. A switch in Coach
       reminders turns it off. Left for later: more triggers, and the

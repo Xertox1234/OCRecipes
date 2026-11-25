@@ -57,7 +57,7 @@ describe("nudgeAboutExpiringPantry", () => {
     );
     expect(notify).toHaveBeenCalledWith("u1", "pantry-expiring", {
       title: "Use it before it goes",
-      body: "Your spinach and chicken expire within a day.",
+      body: "2 items in your pantry expire within a day.",
       data: {
         url: "ocrecipes://chat/77",
         type: "pantry-expiring",
