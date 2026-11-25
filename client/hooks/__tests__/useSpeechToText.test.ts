@@ -226,6 +226,27 @@ describe("useSpeechToText", () => {
     expect(result.current.transcript).toBe("");
   });
 
+  it("does not report the recognizer's own 'aborted' as a failure", async () => {
+    const { result } = renderHook(() => useSpeechToText());
+    await act(async () => {
+      await result.current.startListening();
+    });
+    act(() => {
+      eventListeners["start"]?.(null);
+    });
+    act(() => {
+      result.current.cancelListening();
+    });
+    // abort() is answered with an "aborted" error event, then "end".
+    act(() => {
+      eventListeners["error"]?.({ error: "aborted" });
+      eventListeners["end"]?.(null);
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.errorKind).toBeNull();
+    expect(result.current.isListening).toBe(false);
+  });
+
   it("calls ExpoSpeechRecognitionModule.stop() on stopListening", () => {
     const { result } = renderHook(() => useSpeechToText());
 

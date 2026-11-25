@@ -53,6 +53,9 @@ export function useSpeechToText() {
     setVolume(VOLUME_SILENT);
 
     switch (event.error) {
+      case "aborted":
+        // Our own abort() (cancelListening, unmount), not a failure.
+        break;
       case "not-allowed":
         setError("Microphone or speech recognition permission not granted.");
         setErrorKind("not-allowed");
