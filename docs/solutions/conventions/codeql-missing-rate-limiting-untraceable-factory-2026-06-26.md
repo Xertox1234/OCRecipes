@@ -6,6 +6,7 @@ module: server
 tags: [codeql, code-scanning, rate-limiting, express-rate-limit, false-positive, security]
 applies_to: [server/routes/**/*.ts, server/index.ts]
 created: '2026-06-26'
+last_updated: '2026-11-25'
 ---
 
 # CodeQL js/missing-rate-limiting can't trace the _rate-limiters.ts createRateLimiter factory
@@ -75,10 +76,17 @@ app.get(
 );
 ```
 
-The inline form is traced → the alert self-clears on the next scan (verified:
-PR #460 cleared alert #10 to `fixed`). The dominant codebase convention is still
-the factory + dismiss-FP; reserve inline for the rare route where a clean CodeQL
-baseline matters (e.g. a deploy-critical public endpoint).
+The inline form is traced when it is the **first** middleware: PR #460 cleared
+alert #10 to `fixed` that way. **It does not clear when `requireAuth` comes
+before it.** CodeQL then flags `requireAuth` itself as the unlimited handler,
+even though a per-user inline `rateLimit({...})` follows (alerts #346
+`reminders.ts` and #347 `coach-commitments.ts`, 2026-11-25). A per-user limiter
+needs `req.userId`, so it has to come after auth. Those alerts are false
+positives: confirm that the inline limiter is there, then dismiss them as above
+with the owner's OK, because the dismissal is made from the owner's GitHub
+account. The dominant codebase convention is still the factory + dismiss-FP.
+Reserve inline-first for the rare unauthenticated route where a clean CodeQL
+baseline matters, such as a deploy-critical public endpoint.
 
 ## Exceptions
 
