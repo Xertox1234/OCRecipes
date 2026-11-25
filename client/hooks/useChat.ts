@@ -57,6 +57,13 @@ export const CHAT_XHR_TIMEOUT_MS = SSE_TIMEOUT_MS + 30_000;
 // `: ping` comments keep a quiet-but-live reply from tripping this.
 export const CHAT_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
 
+/**
+ * How long a failed send waits for the messages to be re-read before it
+ * reports the error. The re-read pauses while the device is offline, so the
+ * wait has to end on its own.
+ */
+const REREAD_BEFORE_ERROR_MS = 3_000;
+
 /** The SSE event fields `sendMessage` reads (everything is optional). */
 interface ChatSseEvent {
   status?: unknown;
@@ -737,7 +744,17 @@ export function useSendMessage(
             queryKey: ["/api/chat/conversations"],
             refetchType: "none",
           });
-        } else if (!receivedDone && streamingContentRef.current.length > 0) {
+        } else if (
+          !receivedDone &&
+          (streamingContentRef.current.length > 0 ||
+            // A clean 2xx close before the first token (a proxy or the
+            // server dropped it): no reply is coming, so it must not end
+            // silently. A server-sent error already said so.
+            (outcome.kind === "load" &&
+              outcome.status >= 200 &&
+              outcome.status < 300 &&
+              !sseErrorReceived))
+        ) {
           setStreamError(true);
           void queryClient.invalidateQueries({
             queryKey: chatMessagesKey(effectiveId),
@@ -752,6 +769,21 @@ export function useSendMessage(
         // failure (e.g. the token read rejected after this call was
         // aborted or superseded) must not report an error for whichever
         // request is current now.
+        if (epoch === sendEpochRef.current) {
+          // The server saves the question before it streams, so this failure
+          // may have landed after the save. Re-read first: the screen gives
+          // the draft back for a resend as soon as it sees the error, and a
+          // saved question would then be sent twice. Bounded, because the
+          // re-read pauses while the device is offline.
+          await Promise.race([
+            queryClient
+              .invalidateQueries({ queryKey: chatMessagesKey(effectiveId) })
+              .catch(() => undefined),
+            new Promise<void>((resolve) =>
+              setTimeout(resolve, REREAD_BEFORE_ERROR_MS),
+            ),
+          ]);
+        }
         if (epoch === sendEpochRef.current) {
           setRequestError(
             e instanceof Error && e.message
