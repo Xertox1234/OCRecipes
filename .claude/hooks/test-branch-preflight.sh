@@ -571,6 +571,166 @@ assert_deny "control — the stale-base deny still fires for a cwd-local create"
 OUT=$(run_hook_in "$REPO" "git --no-pager checkout $INITIAL_BRANCH && git -C $REPO_DETACHED checkout -b feature/thirteen")
 assert_silent "a create redirected elsewhere is not judged against THIS repo's staleness" "$OUT"
 
+# --- The hook's shell must not end without a decision (2026-11-24) -------------------------
+# A PreToolUse hook that ends with no output is an ALLOW. Each tree is a COPY of the hook beside
+# a copy of lib/ with one line appended to one lib; the real libs are untouched. Run in
+# $REPO_DETACHED, where `git commit` must deny, with $REPO (a named branch) as the control.
+# Conditions grep a here-string, never `... | grep -q` (pipefail + SIGPIPE reads "no match").
+ND_TREES=""
+nd_tree() {  # $1=lib file  $2=line appended ; prints the tree's folder
+  local d; d=$(mktemp -d)
+  cp "$HOOK" "$d/branch-preflight.sh"; cp -R "$(dirname "$HOOK")/lib" "$d/lib"
+  printf '\n%s\n' "$2" >> "$d/lib/$1"
+  printf '%s' "$d"
+}
+nd_run() {  # $1=hook dir  $2=cwd  $3=command ; sets ND_OUT ND_RC ND_ERR
+  local e input; e=$(mktemp)
+  input=$(jq -n --arg c "$3" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+  ND_OUT=$(printf '%s' "$input" | env -u GIT_DIR -u GIT_WORK_TREE bash -c 'cd "$1" && bash "$2/branch-preflight.sh"' _ "$2" "$1" 2>"$e"); ND_RC=$?
+  ND_ERR=$(cat "$e"); rm -f "$e"
+}
+nd_ok() { echo "PASS: $1"; PASS=$((PASS+1)); }
+nd_bad() { echo "FAIL: $1"; echo "  got: rc=$ND_RC out=${ND_OUT:0:300} err=${ND_ERR:0:200}"; FAIL=$((FAIL+1)); }
+nd_only_deny() {  # exactly one JSON value, a deny, rc 0
+  [ "$ND_RC" = 0 ] && [ "$(jq -s 'length' <<<"$ND_OUT" 2>/dev/null)" = 1 ] \
+    && [ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$ND_OUT" 2>/dev/null)" = deny ]
+}
+nd_reason_has() { local r; r=$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$ND_OUT" 2>/dev/null); grep -qF -- "$1" <<<"$r"; }
+nd_silent() { [ -z "$ND_OUT" ] && [ "$ND_RC" = 0 ]; }
+nd_trio() {  # $1=label $2=tree : detached commit denies; commit on a branch and `ls` are silent
+  nd_run "$2" "$REPO_DETACHED" 'git commit -m x'
+  nd_only_deny && nd_ok "$1: a commit on a detached HEAD denies, rc 0" || nd_bad "$1: a commit on a detached HEAD denies, rc 0"
+  nd_run "$2" "$REPO" 'git commit -m x'
+  nd_silent && nd_ok "$1: a commit on a named branch is allowed, rc 0" || nd_bad "$1: a commit on a named branch is allowed, rc 0"
+  nd_run "$2" "$REPO_DETACHED" 'ls -la'
+  nd_silent && nd_ok "$1: an ordinary command is allowed, rc 0" || nd_bad "$1: an ordinary command is allowed, rc 0"
+}
+
+# ND0. Controls on the real hook: the three verdicts are reachable through nd_run, and
+#      nothing is written to stderr.
+nd_trio "ND0 control (healthy libs)" "$(dirname "$HOOK")"
+nd_run "$(dirname "$HOOK")" "$REPO_DETACHED" 'git commit -m x'
+n="ND0 a deny writes nothing to stderr"
+nd_only_deny && [ -z "$ND_ERR" ] && nd_ok "$n" || nd_bad "$n"
+nd_run "$(dirname "$HOOK")" "$REPO" 'git commit -m x'
+n="ND0 an allow past the fast path writes nothing to stderr"
+nd_silent && [ -z "$ND_ERR" ] && nd_ok "$n" || nd_bad "$n"
+
+# ND1-ND3. A lib that ends the shell when SOURCED, a lib FUNCTION that ends it when CALLED,
+#      a lib that leaves errexit on, a lib that shadows a builtin or a command the hook calls.
+while IFS= read -r spec; do
+  T=$(nd_tree "${spec%%|*}" "${spec#*|}"); ND_TREES="$ND_TREES $T"
+  nd_trio "ND ${spec%%|*} + '${spec#*|}'" "$T"
+done <<'SPECS'
+fastpath-filter.sh|exit 0
+cmd-detect.sh|exit 0
+fastpath-filter.sh|cmd_fastpath_has() { exit 0; }
+fastpath-filter.sh|cmd_fastpath_has() { exit 1; }
+cmd-detect.sh|cmd_is_git_commit() { exit 0; }
+cmd-detect.sh|cmd_is_git_commit() { exit 1; }
+cmd-detect.sh|cmd_is_git_branch_create() { exit 0; }
+fastpath-filter.sh|set -e
+cmd-detect.sh|set -e
+cmd-detect.sh|jq() { exit 0; }
+cmd-detect.sh|declare() { exit 0; }
+cmd-detect.sh|git() { exit 0; }
+cmd-detect.sh|printf() { :; }
+SPECS
+
+# ND4. A signal mid-run (a lib function sends it). One deny, rc 0: the trap's, or, where the
+#      runner starts the hook with that signal IGNORED (CI does for SIGPIPE; a non-interactive
+#      bash cannot trap or reset it), the ordinary detached-HEAD deny.
+for sig in TERM PIPE ALRM USR1 USR2 HUP XCPU PROF IO; do
+  T=$(nd_tree cmd-detect.sh "cmd_git_repo_dir() { kill -$sig \$\$; sleep 1; printf .; }"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$REPO_DETACHED" 'git commit -m x'
+  n="ND4 SIG$sig mid-run on a commit: one deny, rc 0"
+  nd_only_deny && { nd_reason_has 'ended before it reached a decision' || nd_reason_has 'detached'; } && nd_ok "$n" || nd_bad "$n"
+done
+# ND5. deny() cannot print: a jq on PATH that reads the envelope but prints nothing for
+#      `jq -n`. deny() prints a static deny itself (the verdict is already known there).
+ND_JQ=$(mktemp -d); ND_TREES="$ND_TREES $ND_JQ"
+printf '#!/usr/bin/env bash\n[ "$1" = -n ] && exit 0\nexec %q "$@"\n' "$(command -v jq)" > "$ND_JQ/jq"; chmod +x "$ND_JQ/jq"
+ND_INPUT=$("$(command -v jq)" -n --arg c 'git commit -m x' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+ND_OUT=$(printf '%s' "$ND_INPUT" | env -u GIT_DIR -u GIT_WORK_TREE PATH="$ND_JQ:$PATH" bash -c 'cd "$1" && bash "$2"' _ "$REPO_DETACHED" "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+n="ND5 deny() cannot render its reason: a static deny, rc 0"
+nd_only_deny && nd_reason_has 'could not render its reason' && nd_ok "$n" || nd_bad "$n"
+
+# ND6. Security review of this change: the degraded paths decided by TEXT, and the text test
+#      missed spellings the lib denies. `git --no-pager commit` is one; each row below was an
+#      allow on a detached HEAD.
+ND_ODD='git --no-pager commit -m x'
+nd_run "$(dirname "$HOOK")" "$REPO_DETACHED" "$ND_ODD"
+n="ND6 control: the healthy hook denies '$ND_ODD' on a detached HEAD"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+for spec in 'cmd-detect.sh|exit 0' 'cmd-detect.sh|cmd_is_git_commit() { exit 0; }' 'cmd-detect.sh|cmd_is_git_commit() { return 2; }'; do
+  T=$(nd_tree "${spec%%|*}" "${spec#*|}"); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$REPO_DETACHED" "$ND_ODD"
+  n="ND6 ${spec#*|}: the fallback still denies '$ND_ODD'"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+  nd_run "$T" "$REPO" "$ND_ODD"
+  n="ND6 ${spec#*|}: and allows it on a named branch"
+  nd_silent && nd_ok "$n" || nd_bad "$n"
+done
+while IFS= read -r odd; do
+  T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+  nd_run "$T" "$REPO_DETACHED" "$odd"
+  n="ND6 fallback spelling: $odd"
+  nd_only_deny && nd_ok "$n" || nd_bad "$n"
+done <<'ODD'
+git -p commit -m x
+git --literal-pathspecs commit -m x
+2>/dev/null git commit -m x
+"git" commit -m x
+git comm""it -m x
+A="b c" git commit -m x
+ODD
+T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" 'git status && echo commit'
+n="ND6 control: the wide test does not join words across a separator"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+T=$(nd_tree cmd-detect.sh "cmd_git_repo_dir() { kill -TERM \$\$; sleep 1; printf .; }"); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" "$ND_ODD"
+n="ND6 a signal mid-run on '$ND_ODD': one deny, rc 0"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+ND_INPUT=$("$(command -v jq)" -n --arg c "$ND_ODD" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+ND_OUT=$(printf '%s' "$ND_INPUT" | env -u GIT_DIR -u GIT_WORK_TREE PATH="$ND_JQ:$PATH" bash -c 'cd "$1" && bash "$2"' _ "$REPO_DETACHED" "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+n="ND6 deny() cannot render its reason for '$ND_ODD': the static deny, rc 0"
+nd_only_deny && nd_reason_has 'could not render its reason' && nd_ok "$n" || nd_bad "$n"
+# ND7. cmd_git_repo_dir broken (rc 127 from a missing helper): a plain detached-HEAD commit
+#      was allowed, on main too. Only a clean rc 1 means "cannot place".
+T=$(nd_tree cmd-detect.sh 'cmd_git_repo_dir() { no_such_helper "$@"; }'); ND_TREES="$ND_TREES $T"
+nd_trio "ND7 cmd_git_repo_dir calls a missing helper" "$T"
+# ND7b. cmd_git_repo_dir turns errexit on and then meets a failure it would tolerate. As a
+#      plain statement its subshell ended with rc 1, which reads as "cannot place": a commit
+#      main denies was allowed by the first version of the ND7 fix (confirmation review).
+T=$(nd_tree cmd-detect.sh 'cmd_git_repo_dir() { set -e; false; printf .; }'); ND_TREES="$ND_TREES $T"
+nd_trio "ND7b cmd_git_repo_dir sets errexit and hits a tolerated failure" "$T"
+# ND7c. Control: a clean rc 1 still means "cannot place" and the commit is not judged.
+T=$(nd_tree cmd-detect.sh 'cmd_git_repo_dir() { return 1; }'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" 'git commit -m x'
+n="ND7c control: cmd_git_repo_dir answering 1 (cannot place) is not judged, as before"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+# ND6b. Two more spellings the text test missed (same review): a line continuation and a
+#      redirect word between `git` and `commit`.
+T=$(nd_tree cmd-detect.sh 'exit 0'); ND_TREES="$ND_TREES $T"
+nd_run "$T" "$REPO_DETACHED" $'git \\\n  commit -m x'
+n="ND6b fallback spelling: git, backslash-newline, commit"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$REPO_DETACHED" 'git >/dev/null commit -m x'
+n="ND6b fallback spelling: git >/dev/null commit"
+nd_only_deny && nd_ok "$n" || nd_bad "$n"
+nd_run "$T" "$REPO_DETACHED" $'git status \\\n  --short'
+n="ND6b control: a continued non-commit command stays silent"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+# ND8. A lib that PRINTS when sourced: its text landed ahead of the deny JSON.
+T=$(nd_tree cmd-detect.sh 'echo "cmd-detect loaded"'); ND_TREES="$ND_TREES $T"
+nd_trio "ND8 cmd-detect.sh prints when sourced" "$T"
+# ND9. A lib that defines its own `deny` or `allow` does not replace the hook's.
+T=$(nd_tree cmd-detect.sh 'deny() { :; }; allow() { :; }'); ND_TREES="$ND_TREES $T"
+nd_trio "ND9 a lib defines deny() and allow()" "$T"
+# shellcheck disable=SC2086
+rm -rf $ND_TREES
+
 # --- Hermeticity guard: prove the caller's real repo is byte-for-byte untouched. ---
 # If an inherited GIT_DIR ever defeats the temp-repo isolation again, this fails loudly in
 # CI/preflight instead of silently corrupting the working repo (the todos P2 git-churn bug).

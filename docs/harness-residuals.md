@@ -643,9 +643,55 @@ directly (none is called directly today); SIGKILL, which nothing can handle; and
 the trap when `jq` is on PATH but cannot read `tool_name` (line 70: an environment fault, and it
 could fall through to the raw-envelope grep the no-`jq` arm uses). `review-stamp-writer.sh` does
 not cap the length of an `unresolved` entry. Not tested on bash 3.2 (macOS).
-(2) other blocking hooks source files at top level with no such probe: `branch-preflight.sh`
-and `pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
+(2) one blocking hook still sources files at top level with no such probe:
+`pr-preflight-guard.sh`, which also sources `scripts/lib/preflight-stamp-path.sh` and
 `scripts/lib/verdict-diff-stamp-path.sh`.
+`branch-preflight.sh` FIXED 2026-11-24 (rows ND0-ND5 in `test-branch-preflight.sh`). Measured
+before the change, a `git commit` on a detached HEAD was allowed in silence when:
+`lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced; `cmd_fastpath_has` or
+`cmd_is_git_commit` exits when called (both ran in the hook's own shell); a lib shadows `jq`,
+`declare`, `git` or `printf`; a signal arrives mid-run; the final `jq` cannot print. Now: the
+fast-path lib is sourced and called inside one `$(...)` and only a clean "1" leaves early;
+`cmd-detect.sh` is probed before it is sourced; `cmd_is_git_commit` and
+`cmd_is_git_branch_create` are called inside `$(...)`, and an answer that is neither 0 nor 1
+takes the same fail-closed regex fallback as a missing lib (for the commit check) or skips the
+check (for the branch-behind-upstream check, which is hygiene and always failed open without
+the lib); the deny builds first; and an EXIT/signal trap denies when the shell ends undecided
+on a command the fallback commit regexes match. Its one `printf | cmd_words | grep -q`
+condition now reads a here-string (under `pipefail` a 141 there read as "no repo redirect",
+which only added denies). Cost: about 2 ms more per Bash call, about 7 ms more on a commit,
+checkout or switch.
+Found by the security review of that change and fixed with it (rows ND6-ND9): the degraded
+paths decide by TEXT, and the two fallback regexes model only the `-c k=v` global, so with the
+lib broken or a signal mid-run a detached-HEAD commit spelled `git --no-pager commit`,
+`git -p commit`, `2>/dev/null git commit`, `"git" commit`, `git comm""it` or
+`A="b c" git commit` was still allowed. The fallback and the trap now share one wider test
+(quotes removed; `git`, option words, `commit`). A deny whose reason `jq` cannot render is
+printed as a static deny by the deny function itself, never handed back to the text test. A
+broken `cmd_git_repo_dir` (rc 127) allowed a plain detached-HEAD commit, on `main` too: only a
+clean rc 1 now means "cannot place". The real source of `cmd-detect.sh` discards stdout, since
+a lib that prints when sourced put its text ahead of the deny JSON. The hook's deny and allow
+functions carry a `_bp_` prefix, so a lib that defines `deny` or `allow` does not replace them.
+Still open in `branch-preflight.sh`: the same list as for `git-safety.sh` below (a lib that
+replaces the trap, sets `DECIDED`, assigns a variable the hook reads, redefines a `_bp_`
+function, defines `builtin`, or closes fd 9; SIGKILL and the real-time and stop signals); the
+four exits before the trap (`SKIP_BRANCH_PREFLIGHT`, and `jq` unable to read the envelope:
+with `jq` missing from PATH the hook allows everything, on `main` too); a
+`cmd_git_repo_dir` that fails with exactly rc 1, or prints a wrong folder, still reads as
+"cannot place" and the commit is not judged; on the degraded paths the wide text test still
+misses a global whose value holds a space (`git -c "a=b c" commit`), and it matches `-C <dir>`
+without FOLLOWING it: those paths read the HEAD of the hook's own folder, so with the lib
+unusable `git -C <detached repo> commit` from a folder on a named branch is allowed, and the
+mirror case is a false deny (on `main` too); the same test over-matches, which costs false
+denies on a detached HEAD while the lib is broken (`echo "git commit"`,
+`git --no-pager log -1 commit`); the trap speaks only for the commit check; and a command that keeps the matcher past the 10 s hook timeout (measured,
+on `main` too: 45 KB with two `$(...)` per line takes 13.7 s, 200 KB of command lines before
+the commit 14.6 s, a 1 MB single line 39 s; a SIGTERM then gets the trap's deny, a SIGKILL
+nothing). Also on `main`, outside this change: on a healthy install the precise matcher does
+not see `git` reached through a path or a wrapper (`/usr/bin/git commit`, `sudo`/`time`/
+`timeout 5`/`xargs git commit`, `command -p git commit`, `bash -c "git commit"`,
+`eval "git commit"`), nor a commit after `if ...; then` or `do`. Not tested on bash 3.2
+(macOS).
 `guard-outward-cli.sh` FIXED 2026-11-24 (rows ND1-ND6 in `test-guard-outward-cli.sh`).
 Measured before the change, `eas update --branch production` was allowed in silence when:
 `lib/fastpath-filter.sh` or `lib/cmd-detect.sh` exits when sourced (both were sourced in the
@@ -720,9 +766,9 @@ main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines,
 every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
 (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
 that outlives the hook cannot hold its stdout open.
-NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `branch-preflight.sh`,
-`pr-preflight-guard.sh`, `merge-review-guard.sh`, `guard-worktree-isolation.sh` and
-`core-bare-guard.sh` (all under `pipefail`; `guard-outward-cli.sh` was checked and converted
+NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `pr-preflight-guard.sh`,
+`merge-review-guard.sh`, `guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under
+`pipefail`; `guard-outward-cli.sh` and `branch-preflight.sh` were checked and converted
 2026-11-24). Whether any of
 them is a condition over a large text that fails open is unmeasured; the known pattern is
 `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
