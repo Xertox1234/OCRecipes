@@ -379,6 +379,14 @@ export function register(app: Express): void {
           return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         const updated = await storage.updateNotebookEntry(id, req.userId, {
           ...(newContent !== undefined && { content: newContent }),
+          // A note turned into a commitment without rewording still needs
+          // the label Coach names it by (storage writes it only with text).
+          ...(typeChanged &&
+            type === "commitment" &&
+            newContent === undefined &&
+            storedContent !== undefined && {
+              label: storedContent.slice(0, 120),
+            }),
           ...(type !== undefined && { type }),
           ...(followUpDate !== undefined && {
             // Same basis as the POST handler above.

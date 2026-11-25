@@ -477,3 +477,27 @@ describe("an edit that leaves the text alone", () => {
     );
   });
 });
+
+// Review of #2036: unchanged text is left out of an edit, and the label was
+// only written together with the text. A goal turned into a commitment
+// without rewording then had no label, so Coach could not name it.
+describe("a note turned into a commitment without rewording", () => {
+  it("gets its label from the stored text, and is not confirmed by it", async () => {
+    vi.mocked(storage.getNotebookEntryById).mockResolvedValue(
+      createMockCoachNotebookEntry({ type: "goal", content: "Walk daily" }),
+    );
+    vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry({ type: "commitment" }),
+    );
+    const res = await request(app)
+      .patch("/api/coach/notebook/1")
+      .send({ type: "commitment", content: "Walk daily" })
+      .set("Authorization", "Bearer valid-token");
+    expect(res.status).toBe(200);
+    const update = vi.mocked(storage.updateNotebookEntry).mock.calls[0][2];
+    expect(update).toEqual(
+      expect.objectContaining({ type: "commitment", label: "Walk daily" }),
+    );
+    expect(update).not.toHaveProperty("content");
+  });
+});
