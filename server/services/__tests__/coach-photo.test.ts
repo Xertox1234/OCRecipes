@@ -13,6 +13,7 @@ import { UpstreamUnavailableError } from "../usda-lookup";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
 import { batchNutritionLookup } from "../nutrition-lookup";
 import { receiptPhotoReply } from "../coach-receipt-photo";
+import { menuPhotoReply } from "../coach-menu-photo";
 import type { NutritionData } from "../nutrition-lookup";
 import {
   buildPhotoFoodCard,
@@ -36,6 +37,7 @@ vi.mock("../barcode-scan-context", () => ({
 }));
 vi.mock("../nutrition-lookup", () => ({ batchNutritionLookup: vi.fn() }));
 vi.mock("../coach-receipt-photo", () => ({ receiptPhotoReply: vi.fn() }));
+vi.mock("../coach-menu-photo", () => ({ menuPhotoReply: vi.fn() }));
 
 /** Per 100 g, as the lookup answers. */
 function per100g(over: Partial<NutritionData> = {}): NutritionData {
@@ -275,10 +277,11 @@ const ctx = {
   tz: "UTC",
   now: new Date("2026-11-24T12:30:00Z"),
   userId: "u1",
-  receipts: {
+  features: {
     pantryTracking: true,
     receiptScanner: true,
     monthlyReceiptScans: 15,
+    menuScanner: true,
   },
 };
 
@@ -336,7 +339,24 @@ describe("buildPhotoReply", () => {
     expect(reply).toBe(receiptReply);
     expect(receiptPhotoReply).toHaveBeenCalledWith("BASE64", {
       userId: "u1",
-      features: ctx.receipts,
+      features: ctx.features,
+    });
+    expect(analyzePhoto).not.toHaveBeenCalled();
+  });
+
+  it("reads a restaurant menu into a list of picks", async () => {
+    vi.mocked(classifyPhoto).mockResolvedValue({
+      contentType: "restaurant_menu",
+      confidence: 0.9,
+      barcode: null,
+    });
+    const menuReply = { payload: null, text: "menu" };
+    vi.mocked(menuPhotoReply).mockResolvedValue(menuReply);
+    const reply = await buildPhotoReply("BASE64", ctx);
+    expect(reply).toBe(menuReply);
+    expect(menuPhotoReply).toHaveBeenCalledWith("BASE64", {
+      userId: "u1",
+      menuScanner: true,
     });
     expect(analyzePhoto).not.toHaveBeenCalled();
   });

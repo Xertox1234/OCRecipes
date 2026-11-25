@@ -171,14 +171,14 @@ export function useCoachPhotoSend(args: Args) {
     if (!argsRef.current.openScanner) {
       Alert.alert(
         "Send a photo",
-        "A meal, a nutrition label, a barcode or a grocery receipt. The Coach will offer to log it or add it to your pantry.",
+        "A meal, a nutrition label, a barcode, a grocery receipt or a menu. The Coach will offer to log it, add it to your pantry or help you order.",
         [...buttons, { text: "Cancel", style: "cancel" }],
       );
       return;
     }
     buttons.unshift({ text: "Scan a Barcode", onPress: () => send("scan") });
     const message =
-      "Scan a barcode, or send a photo of a meal, a nutrition label or a grocery receipt. The Coach will offer to log it or add it to your pantry.";
+      "Scan a barcode, or send a photo of a meal, a nutrition label, a grocery receipt or a menu. The Coach will offer to log it, add it to your pantry or help you order.";
     // An Android alert shows at most three buttons, so there Cancel is the
     // back button or a tap outside.
     if (Platform.OS === "android") {

@@ -1,9 +1,9 @@
 /**
  * POST /api/chat/conversations/:id/photo — a photo sent into the Coach chat:
  * a meal (Coach roadmap S1), a nutrition label or a barcode (S2), or a
- * grocery receipt (S3). The reply is a stored assistant message carrying a
- * food log card, or a pantry card for a receipt; nothing is written until the
- * user saves the card. The photo is analyzed in memory and never
+ * grocery receipt or a restaurant menu (S3). The reply is a stored assistant
+ * message carrying a food log card, a pantry card for a receipt, or a list of
+ * picks for a menu; nothing is written until the user saves a card. The photo is analyzed in memory and never
  * stored.
  */
 import type { Express, Request, Response } from "express";
@@ -184,11 +184,7 @@ export function register(app: Express): void {
               tz,
               now: new Date(),
               userId: req.userId,
-              receipts: {
-                pantryTracking: features.pantryTracking,
-                receiptScanner: features.receiptScanner,
-                monthlyReceiptScans: features.monthlyReceiptScans,
-              },
+              features,
             });
             const cardCtx = { conversationId: id, userId: req.userId, tz };
             const { payload, pantry } = reply;
@@ -206,6 +202,7 @@ export function register(app: Express): void {
                   )
                 : null;
             if (card) blocks = [card];
+            else if (reply.suggestions) blocks = [reply.suggestions];
             text = (payload || pantry) && !card ? CARD_FAILED_TEXT : reply.text;
           }
         } catch (err) {
