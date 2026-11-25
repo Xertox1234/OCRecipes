@@ -20,6 +20,12 @@ vi.mock("@/lib/notifications", () => ({
   requestNotificationPermission: () => mockRequestNotificationPermission(),
 }));
 
+const mockPushRegistered = vi.fn(() => false);
+vi.mock("@/lib/push-token-registration", () => ({
+  isPushRegistered: () => mockPushRegistered(),
+}));
+
+const mockCancel = vi.fn();
 const mockScheduleNotificationAsync = vi.fn();
 const mockCancelAll = vi.fn();
 const mockDismissAll = vi.fn();
@@ -28,7 +34,7 @@ vi.mock("expo-notifications", () => ({
     mockScheduleNotificationAsync(...args),
   cancelAllScheduledNotificationsAsync: () => mockCancelAll(),
   dismissAllNotificationsAsync: () => mockDismissAll(),
-  cancelScheduledNotificationAsync: vi.fn(),
+  cancelScheduledNotificationAsync: (id: string) => mockCancel(id),
   SchedulableTriggerInputTypes: { DATE: "date" },
 }));
 
@@ -38,6 +44,80 @@ describe("useNotebookNotifications", () => {
     mockAsyncStorage.getItem.mockResolvedValue(null);
     mockRequestNotificationPermission.mockResolvedValue(true);
     mockScheduleNotificationAsync.mockResolvedValue("scheduled-id");
+    mockPushRegistered.mockReturnValue(false);
+    mockCancel.mockResolvedValue(undefined);
+  });
+
+  describe("with the id map stored", () => {
+    let stored: string | null;
+    const map = () => JSON.parse(stored ?? "{}") as Record<string, string>;
+    beforeEach(() => {
+      stored = null;
+      mockAsyncStorage.getItem.mockImplementation(async () => stored);
+      mockAsyncStorage.setItem.mockImplementation(
+        async (_key: string, value: string) => {
+          stored = value;
+        },
+      );
+    });
+
+    // L61: cleanup runs on every refetch, so it overlaps a save.
+    it("keeps a reminder scheduled while stale ones are being cancelled", async () => {
+      stored = JSON.stringify({ "1": "old" });
+      let finishCancel = () => {};
+      mockCancel.mockReturnValue(
+        new Promise<void>((resolve) => {
+          finishCancel = resolve;
+        }),
+      );
+      const { result } = renderHook(() => useNotebookNotifications());
+      await act(async () => {
+        const cleanup = result.current.cancelStaleReminders([42]);
+        const save = result.current.scheduleCommitmentReminder(
+          42,
+          "Walk",
+          "2099-01-04",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        finishCancel();
+        await Promise.all([cleanup, save]);
+      });
+      expect(map()).toEqual({ "42": "scheduled-id" });
+    });
+
+    it("a failed step does not block the next one", async () => {
+      mockScheduleNotificationAsync.mockRejectedValueOnce(new Error("native"));
+      const { result } = renderHook(() => useNotebookNotifications());
+      await act(async () => {
+        await expect(
+          result.current.scheduleCommitmentReminder(1, "Walk", "2099-01-04"),
+        ).rejects.toThrow("native");
+        await result.current.scheduleCommitmentReminder(2, "Run", "2099-01-04");
+      });
+      expect(map()).toEqual({ "2": "scheduled-id" });
+    });
+
+    // M12: the server's push is the reminder on a phone registered for it.
+    it("schedules nothing on a phone the server pushes to, and drops the old one", async () => {
+      stored = JSON.stringify({ "42": "old" });
+      mockPushRegistered.mockReturnValue(true);
+      const { result } = renderHook(() => useNotebookNotifications());
+      await act(() =>
+        result.current.scheduleCommitmentReminder(42, "Walk", "2099-01-04"),
+      );
+      expect(mockScheduleNotificationAsync).not.toHaveBeenCalled();
+      expect(mockCancel).toHaveBeenCalledWith("old");
+      expect(map()).toEqual({});
+    });
+
+    it("drops the cancelled id when the new date has passed", async () => {
+      stored = JSON.stringify({ "42": "old" });
+      const { result } = renderHook(() => useNotebookNotifications());
+      await act(() =>
+        result.current.scheduleCommitmentReminder(42, "Walk", "2020-01-04"),
+      );
+      expect(map()).toEqual({});
+    });
   });
 
   // AC: "Reminder payloads carry a URL" — the `linking` config's

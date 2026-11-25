@@ -24,6 +24,14 @@ import { apiRequest } from "./query-client";
 
 const PROJECT_ID = process.env.EXPO_PUBLIC_PROJECT_ID;
 
+/** Whether the server holds this device's token for the signed-in account. */
+let registered = false;
+
+/** True when the server can push to this phone, as far as this run knows. */
+export function isPushRegistered(): boolean {
+  return registered;
+}
+
 /**
  * Register the device's Expo push token with the server.
  * Fire-and-forget — call after a successful login and do not await in hot paths.
@@ -37,6 +45,7 @@ export async function registerPushToken(
   options: { prompt?: boolean } = {},
 ): Promise<string | null> {
   const prompt = options.prompt ?? true;
+  registered = false;
   if (!PROJECT_ID) {
     // No project ID configured — skip silently. Local notifications still work.
     return null;
@@ -64,6 +73,7 @@ export async function registerPushToken(
       platform,
     });
 
+    registered = true;
     return pushToken.data;
   } catch {
     // Non-fatal: local notifications are the fallback.
@@ -98,6 +108,7 @@ export function subscribePushTokenRotation(): () => void {
  * for permission and never throws — sign-out must always continue.
  */
 export async function unregisterPushToken(): Promise<void> {
+  registered = false;
   if (!PROJECT_ID) return;
   // Capped so a slow or offline network can never stall sign-out. Once the
   // cap fires the DELETE must never be sent: apiRequest attaches whatever

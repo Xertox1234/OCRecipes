@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -11,39 +11,67 @@ import { useTheme } from "@/hooks/useTheme";
 import { PressableScale } from "@/components/PressableScale";
 import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { useCoachNotesOff } from "@/hooks/useHealthConsent";
-import { withOpacity } from "@/constants/theme";
+import { useAcceptCommitment, useNotebookEntries } from "@/hooks/useNotebook";
+import { useToast } from "@/context/ToastContext";
+import { insightKey, sameTip } from "@shared/lib/coach-stats";
 import type { CommitmentCard as CommitmentCardType } from "@shared/schemas/coach-blocks";
 
 interface Props {
   block: CommitmentCardType;
-  onAccept?: (
-    notebookEntryId: number | undefined,
-    title: string,
-    followUpDate: string,
-  ) => void;
-  isAccepted?: boolean;
 }
 
 const NOTES_OFF_TEXT =
   "Coach's notes are off, so this check-in can't be saved.";
 
-const CommitmentCard = React.memo(function CommitmentCard({
-  block,
-  onAccept,
-  isAccepted,
-}: Props) {
+const CommitmentCard = React.memo(function CommitmentCard({ block }: Props) {
   const { theme } = useTheme();
   const { trigger: triggerCheckPop, animatedStyle: checkPopStyle } =
     useSuccessPop(1.4);
-  const [localAccepted, setLocalAccepted] = useState(false);
+  const toast = useToast();
+  const accept = useAcceptCommitment({
+    onError: () =>
+      toast.error("Couldn't save this commitment. Please try again."),
+  });
+  // A commitment the user accepted earlier, matched the way the server does.
+  const { data: notes } = useNotebookEntries();
+  const key = insightKey(block.title);
+  const alreadySaved = !!notes?.some(
+    (n) =>
+      n.type === "commitment" &&
+      (n.status === "active" || n.status === "completed") &&
+      n.confirmedAt !== null &&
+      sameTip(insightKey(n.content), key),
+  );
   const [dismissed, setDismissed] = useState(false);
   // A card drawn before the health consent was withdrawn: Coach's notes are
   // off now, so accepting would save nothing. Read here, not passed down:
   // the card is memoised and sits three layers under the chat.
   const notesOff = useCoachNotesOff();
 
-  // Use controlled prop if provided; fall back to local state
-  const accepted = isAccepted ?? localAccepted;
+  const accepted = accept.isSuccess || alreadySaved;
+
+  // Set at the tap: `isPending` turns true only on the next render, so two
+  // quick taps would both send.
+  const sendingRef = useRef(false);
+  const handleAccept = () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    accept.mutate(
+      { title: block.title, followUpDate: block.followUpDate },
+      {
+        onSuccess: () => {
+          // The pop fires its own Success haptic.
+          triggerCheckPop();
+          // Announce acceptance to screen readers. Android picks this up
+          // via re-render; iOS needs the explicit announce call.
+          AccessibilityInfo.announceForAccessibility("Commitment accepted");
+        },
+        onSettled: () => {
+          sendingRef.current = false;
+        },
+      },
+    );
+  };
 
   if (dismissed) {
     return (
@@ -110,27 +138,22 @@ const CommitmentCard = React.memo(function CommitmentCard({
           <PressableScale
             style={[
               styles.acceptBtn,
-              { backgroundColor: withOpacity(theme.link, 0.2) },
+              {
+                backgroundColor: theme.accentSolid,
+                opacity: accept.isPending ? 0.6 : 1,
+              },
             ]}
-            onPress={() => {
-              setLocalAccepted(true);
-              // Accept is local-first (the POST failure is non-fatal), so the
-              // tap is the success moment. The pop fires its own Success haptic.
-              triggerCheckPop();
-              // Announce acceptance to screen readers. Android picks this up
-              // via re-render; iOS needs the explicit announce call.
-              AccessibilityInfo.announceForAccessibility("Commitment accepted");
-              onAccept?.(
-                block.notebookEntryId,
-                block.title,
-                block.followUpDate,
-              );
-            }}
+            onPress={handleAccept}
+            disabled={accept.isPending}
             hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel="Accept commitment"
+            accessibilityState={{
+              disabled: accept.isPending,
+              busy: accept.isPending,
+            }}
           >
-            <Text style={[styles.acceptText, { color: theme.link }]}>
+            <Text style={[styles.acceptText, { color: theme.buttonText }]}>
               Accept
             </Text>
           </PressableScale>

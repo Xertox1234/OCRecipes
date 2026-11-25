@@ -10,9 +10,21 @@ import {
   userProfiles,
   type CoachNotebookEntry,
 } from "@shared/schema";
-import { and, asc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+} from "drizzle-orm";
 import { db } from "../db";
 import { deleteCommitmentReminders } from "./reminders";
+import { insightKey, sameTip } from "@shared/lib/coach-stats";
+import { MAX_NOTEBOOK_ENTRIES } from "@shared/schemas/coach-notebook";
 import { applyMoodDelta } from "@shared/lib/mood";
 
 /** The only notebook types the coach may say out loud, or show in the popup. */
@@ -42,6 +54,79 @@ export async function confirmNotebookEntries(
     )
     .returning({ id: coachNotebook.id });
   return rows.length;
+}
+
+/**
+ * The user accepted a commitment card (coach chat audit 2026-11-24, L57/L64).
+ * The note extraction may have saved the same commitment from that turn: then
+ * it is confirmed, else a new one is added. The profile row is locked, so a
+ * second Accept, or an extraction writing at the same time, sees this one.
+ */
+export async function acceptCommitment(
+  userId: string,
+  card: { title: string; followUpDate: Date | null },
+): Promise<"saved" | "full"> {
+  return db.transaction(async (tx) => {
+    await tx
+      .select({ userId: userProfiles.userId })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .for("update");
+    const now = new Date();
+    const active = await tx
+      .select({
+        id: coachNotebook.id,
+        content: coachNotebook.content,
+        label: coachNotebook.label,
+        confirmedAt: coachNotebook.confirmedAt,
+      })
+      .from(coachNotebook)
+      .where(
+        and(
+          eq(coachNotebook.userId, userId),
+          eq(coachNotebook.type, "commitment"),
+          eq(coachNotebook.status, "active"),
+        ),
+      );
+    const key = insightKey(card.title);
+    const match = active.find((row) => sameTip(insightKey(row.content), key));
+    if (match) {
+      await tx
+        .update(coachNotebook)
+        .set({
+          confirmedAt: match.confirmedAt ?? now,
+          shownAt: now,
+          updatedAt: now,
+          label: match.label ?? card.title,
+          ...(card.followUpDate && { followUpDate: card.followUpDate }),
+        })
+        .where(
+          and(eq(coachNotebook.id, match.id), eq(coachNotebook.userId, userId)),
+        );
+      return "saved";
+    }
+    const [held] = await tx
+      .select({ total: count() })
+      .from(coachNotebook)
+      .where(
+        and(
+          eq(coachNotebook.userId, userId),
+          ne(coachNotebook.status, "archived"),
+        ),
+      );
+    if ((held?.total ?? 0) >= MAX_NOTEBOOK_ENTRIES) return "full";
+    await tx.insert(coachNotebook).values({
+      userId,
+      type: "commitment",
+      content: card.title,
+      label: card.title,
+      status: "active",
+      followUpDate: card.followUpDate,
+      confirmedAt: now,
+      shownAt: now,
+    });
+    return "saved";
+  });
 }
 
 /** Undo / Remove: kept as `rejected` so extraction never re-saves the fact. */

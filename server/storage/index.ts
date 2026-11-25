@@ -419,6 +419,7 @@ export const storage = {
   areCoachNotesPaused: coachNotebook.areCoachNotesPaused,
   createNotebookEntry: coachNotebook.createNotebookEntry,
   createNotebookEntries: coachNotebook.createNotebookEntries,
+  acceptCommitment: coachNotebookMemory.acceptCommitment,
   confirmNotebookEntries: coachNotebookMemory.confirmNotebookEntries,
   rejectNotebookEntries: coachNotebookMemory.rejectNotebookEntries,
   markNotebookEntriesShown: coachNotebookMemory.markNotebookEntriesShown,

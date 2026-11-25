@@ -26,13 +26,7 @@ interface BlockRendererProps {
   block: CoachBlock;
   onAction?: (action: Record<string, unknown>) => void;
   onQuickReply?: (message: string, blockKey?: string) => void;
-  onCommitmentAccept?: (
-    notebookEntryId: number | undefined,
-    title: string,
-    followUpDate: string,
-  ) => void;
   isUsed?: boolean;
-  isCommitmentAccepted?: boolean;
   blockKey?: string;
   /** Recipe finder: only the latest assistant message's block is active. */
   isActive?: boolean;
@@ -92,9 +86,7 @@ function renderBlock(
     block,
     onAction,
     onQuickReply,
-    onCommitmentAccept,
     isUsed,
-    isCommitmentAccepted,
     blockKey,
     isActive,
     lockedFinderButtons,
@@ -121,13 +113,7 @@ function renderBlock(
     case "inline_chart":
       return <InlineChart block={block} />;
     case "commitment_card":
-      return (
-        <CommitmentCard
-          block={block}
-          onAccept={onCommitmentAccept}
-          isAccepted={isCommitmentAccepted}
-        />
-      );
+      return <CommitmentCard block={block} />;
     case "quick_replies":
       return (
         <QuickReplies

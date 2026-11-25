@@ -76,9 +76,9 @@ export async function sendDueCommitmentReminders(
   opts: LocalHourReminderOptions = {},
 ): Promise<void> {
   let after: { followUpDate: Date; id: number } | undefined;
-  // userId → whether this run's one push was delivered. A user's entries can
-  // sit on several pages.
-  const pushed = new Map<string, boolean>();
+  // Users already handled in this run. Their entries on a later page stay
+  // active for the next day: this run's push did not count them.
+  const handled = new Set<string>();
   while (true) {
     let entries;
     try {
@@ -95,7 +95,7 @@ export async function sendDueCommitmentReminders(
     }
     if (entries.length === 0) return;
 
-    await sendCommitmentReminderPage(entries, opts, pushed);
+    await sendCommitmentReminderPage(entries, opts, handled);
 
     const last = entries[entries.length - 1];
     if (entries.length < DUE_COMMITMENT_PAGE_SIZE || !last.followUpDate) {
@@ -112,7 +112,7 @@ type DueCommitment = Awaited<
 async function sendCommitmentReminderPage(
   entries: DueCommitment[],
   opts: LocalHourReminderOptions,
-  pushed: Map<string, boolean>,
+  handled: Set<string>,
 ): Promise<void> {
   const byUser = new Map<string, DueCommitment[]>();
   for (const entry of entries) {
@@ -150,29 +150,25 @@ async function sendCommitmentReminderPage(
   await runBounded(userIds, async (userId) => {
     try {
       if (isMuted(mutes.get(userId), "commitment")) return;
-      let due = byUser.get(userId) ?? [];
+      if (handled.has(userId)) return;
 
-      let delivered = pushed.get(userId);
-      if (delivered === undefined) {
-        // Re-read: the user may have removed a note, or paused Coach's notes,
-        // since the page was fetched.
-        const live = new Set(
-          (
-            await storage.getNotebookEntriesByIds(
-              due.map((e) => e.id),
-              userId,
-            )
+      // Re-read: the user may have removed a note, or paused Coach's notes,
+      // since the page was fetched.
+      const fetched = byUser.get(userId) ?? [];
+      const live = new Set(
+        (
+          await storage.getNotebookEntriesByIds(
+            fetched.map((e) => e.id),
+            userId,
           )
-            .filter((e) => e.status === "active")
-            .map((e) => e.id),
-        );
-        due = due.filter((e) => live.has(e.id));
-        if (due.length === 0) return;
-        pushed.set(userId, false);
-        delivered = await pushCommitments(userId, due);
-        pushed.set(userId, delivered);
-      }
-      if (!delivered) return;
+        )
+          .filter((e) => e.status === "active")
+          .map((e) => e.id),
+      );
+      const due = fetched.filter((e) => live.has(e.id));
+      if (due.length === 0) return;
+      handled.add(userId);
+      if (!(await pushCommitments(userId, due))) return;
 
       // Only while still active: the user may have removed one while the
       // push was on its way.

@@ -68,6 +68,29 @@ export function useCreateNotebookEntry() {
   });
 }
 
+/**
+ * Accept on a commitment card: saves it as a confirmed commitment. `onError`
+ * goes here, not to `mutate`: those callbacks are dropped once the card
+ * unmounts, and the streamed card is replaced by the saved row.
+ */
+export function useAcceptCommitment(options: { onError?: () => void } = {}) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (card: { title: string; followUpDate: string }) => {
+      // Same reason for the header as useCreateNotebookEntry.
+      await apiRequest("POST", "/api/chat/commitments", card, {
+        headers: { "X-Timezone": getDeviceTimezone() },
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+    },
+    onError: options.onError,
+    // The card toasts its own failure copy.
+    meta: { silentError: true },
+  });
+}
+
 export function useUpdateNotebookEntry() {
   const queryClient = useQueryClient();
   return useMutation({

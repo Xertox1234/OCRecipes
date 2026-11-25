@@ -21,7 +21,6 @@ function renderBubble(streamBlocks: CoachBlock[]) {
       streamBlocks={streamBlocks}
       onBlockAction={vi.fn()}
       onQuickReply={vi.fn()}
-      onCommitmentAccept={vi.fn()}
       ttsSpeak={vi.fn()}
       isSpeaking={false}
       speakingMessageId={null}
@@ -52,7 +51,6 @@ describe("StreamingBubble — paced steps (show-the-work spec 2026-11-09)", () =
         streamBlocks={[]}
         onBlockAction={vi.fn()}
         onQuickReply={vi.fn()}
-        onCommitmentAccept={vi.fn()}
         ttsSpeak={vi.fn()}
         isSpeaking={false}
         speakingMessageId={null}
@@ -74,7 +72,6 @@ describe("StreamingBubble — late step announcement", () => {
       streamBlocks: [],
       onBlockAction: vi.fn(),
       onQuickReply: vi.fn(),
-      onCommitmentAccept: vi.fn(),
       ttsSpeak: vi.fn(),
       isSpeaking: false,
       speakingMessageId: null,
