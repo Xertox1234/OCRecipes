@@ -166,6 +166,7 @@ vi.mock("@/components/UpgradeModal", () => ({
 }));
 
 vi.mock("@react-navigation/native", () => ({
+  useIsFocused: () => true,
   useNavigation: () => stable.navigation,
 }));
 

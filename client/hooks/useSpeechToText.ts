@@ -104,6 +104,18 @@ export function useSpeechToText() {
     ExpoSpeechRecognitionModule.stop();
   }, []);
 
+  // Ends at once and throws away what was heard: stop() would still deliver
+  // a final result, which a caller that auto-sends would send.
+  const cancelListening = useCallback(() => {
+    activeRef.current = false;
+    startedRef.current = false;
+    ExpoSpeechRecognitionModule.abort();
+    setIsListening(false);
+    setVolume(VOLUME_SILENT);
+    setTranscript("");
+    setIsFinal(false);
+  }, []);
+
   // Tear down the recognizer if the component unmounts mid-session — otherwise
   // the native module keeps recording and its events setState an unmounted hook.
   // abort() (not stop()) ends immediately without a final-result event. Gated on
@@ -126,5 +138,6 @@ export function useSpeechToText() {
     errorKind,
     startListening,
     stopListening,
+    cancelListening,
   };
 }

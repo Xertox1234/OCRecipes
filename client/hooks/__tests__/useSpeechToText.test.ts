@@ -201,6 +201,31 @@ describe("useSpeechToText", () => {
     expect(result.current.volume).toBe(5.5);
   });
 
+  it("cancelListening ends at once and drops what was heard so far", async () => {
+    const { result } = renderHook(() => useSpeechToText());
+    await act(async () => {
+      await result.current.startListening();
+    });
+    act(() => {
+      eventListeners["start"]?.(null);
+    });
+    act(() => {
+      result.current.cancelListening();
+    });
+    expect(mockAbort).toHaveBeenCalledOnce();
+    expect(mockStop).not.toHaveBeenCalled();
+    expect(result.current.isListening).toBe(false);
+    // A result that still arrives is not this caller's any more.
+    act(() => {
+      eventListeners["result"]?.({
+        results: [{ transcript: "log an app" }],
+        isFinal: true,
+      });
+    });
+    expect(result.current.isFinal).toBe(false);
+    expect(result.current.transcript).toBe("");
+  });
+
   it("calls ExpoSpeechRecognitionModule.stop() on stopListening", () => {
     const { result } = renderHook(() => useSpeechToText());
 

@@ -252,6 +252,44 @@ describe("useHandsFree", () => {
     spy.mockRestore();
   });
 
+  it("listens again when the reply has nothing that can be read", () => {
+    // A reply that is only a card: the voice reports it started nothing.
+    const h = setup({ speak: vi.fn(() => false) });
+    startListening(h);
+    hearATurn(h);
+    act(() => h.result.current.replyDone("```coach_blocks\n[]\n```"));
+    expect(h.result.current.phase).toBe("listening");
+    expect(h.fns.startListening).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops with an error when the microphone cannot be started", async () => {
+    const h = setup({
+      startListening: vi.fn(() => Promise.reject(new Error("no mic"))),
+    });
+    await act(async () => {
+      h.result.current.start();
+    });
+    expect(h.result.current.phase).toBe("off");
+    expect(h.fns.onStopped).toHaveBeenCalledExactlyOnceWith("error");
+  });
+
+  it("keeps going when the app is only inactive (a system dialog)", () => {
+    let listener: ((state: AppStateStatus) => void) | undefined;
+    const spy = vi
+      .spyOn(AppState, "addEventListener")
+      .mockImplementation((_type, fn) => {
+        listener = fn as (state: AppStateStatus) => void;
+        return { remove: vi.fn() } as unknown as ReturnType<
+          typeof AppState.addEventListener
+        >;
+      });
+    const h = setup();
+    startListening(h);
+    act(() => listener?.("inactive"));
+    expect(h.result.current.phase).toBe("listening");
+    spy.mockRestore();
+  });
+
   it("closes the microphone when it goes away mid-listen", () => {
     const h = setup();
     startListening(h);

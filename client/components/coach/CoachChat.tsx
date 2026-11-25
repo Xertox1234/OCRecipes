@@ -17,7 +17,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import type { AllergenId } from "@shared/constants/allergens";
 
 import * as Haptics from "expo-haptics";
@@ -329,6 +329,7 @@ export default function CoachChat({
     volume,
     startListening,
     stopListening,
+    cancelListening,
     error: speechError,
     errorKind: speechErrorKind,
   } = useSpeechToText();
@@ -380,7 +381,9 @@ export default function CoachChat({
     transcript,
     speechErrorKind,
     startListening,
-    stopListening,
+    // Not stopListening: that delivers the words heard so far as a final
+    // result, and the auto-send below would send them after a Stop.
+    stopListening: cancelListening,
     speak: (text) => ttsSpeak(HANDS_FREE_SPEECH_ID, text),
     stopSpeaking: ttsStop,
     onStopped: (reason) => {
@@ -400,6 +403,17 @@ export default function CoachChat({
     replyFailed: handsFreeReplyFailed,
     speechInterrupted: handsFreeSpeechInterrupted,
   } = handsFree;
+
+  // The chat stays mounted under a pushed screen (cook mode, the scanner)
+  // and under the other tabs: the loop must not listen or speak from there.
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (!isFocused) stopHandsFree("background");
+  }, [isFocused, stopHandsFree]);
+
+  // Set by the auto-send below for the turn the loop heard, and taken by
+  // handleSend, so a refused tap during that turn is not mistaken for it.
+  const heardSendRef = useRef(false);
 
   // The spoken reply stopped. A reading that ran to its end has already
   // moved the loop on (useTTS's onFinished), so this only ends the loop when
@@ -853,15 +867,17 @@ export default function CoachChat({
       // is set (a voice transcript can still finalize then), and the first
       // send that is still creating the conversation (a second tap on a
       // brief chip used to create a second conversation).
+      const heard = heardSendRef.current;
+      heardSendRef.current = false;
       if (!content || turnBlocked()) {
         // A heard turn that cannot be sent would leave the loop waiting for
-        // a reply that is not coming.
-        if (handsFreePhaseRef.current === "thinking") stopHandsFree("error");
+        // a reply that is not coming. Any other refused send changes nothing.
+        if (heard) stopHandsFree("error");
         return;
       }
-      // A heard turn has already moved the loop to "thinking". Any other
-      // send (a tap, a quick reply) is the user taking over.
-      if (handsFreePhaseRef.current !== "thinking") stopHandsFree();
+      // Any send but the heard turn (a tap, a quick reply) is the user
+      // taking over.
+      if (!heard) stopHandsFree();
 
       // Only a tap or the return key buzzes. String callers (voice, quick
       // replies, retry, suggestion hand-off) get feedback from their trigger.
@@ -931,7 +947,6 @@ export default function CoachChat({
       }
     },
     [
-      handsFreePhaseRef,
       stopHandsFree,
       openingBrief,
       // inputText intentionally excluded — handleSend reads the latest value
@@ -957,6 +972,9 @@ export default function CoachChat({
   // Auto-send when speech finalizes
   useEffect(() => {
     if (isFinal && transcript) {
+      // The loop's effect runs before this one and has already moved to
+      // "thinking" for a turn it heard.
+      heardSendRef.current = handsFreePhaseRef.current === "thinking";
       void handleSend(transcript);
     }
   }, [isFinal]); // eslint-disable-line react-hooks/exhaustive-deps

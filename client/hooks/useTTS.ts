@@ -43,7 +43,8 @@ function stripCoachBlocks(text: string): string {
 export interface UseTTSReturn {
   isSpeaking: boolean;
   speakingMessageId: number | null;
-  speak: (messageId: number, text: string) => void;
+  /** False when no reading started (nothing readable, or a toggle off). */
+  speak: (messageId: number, text: string) => boolean;
   stop: () => void;
 }
 
@@ -138,7 +139,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
       // Toggle off if already speaking this message
       if (activeRef.current && currentMessageIdRef.current === messageId) {
         stop();
-        return;
+        return false;
       }
 
       // Stop any current speech before starting new
@@ -148,7 +149,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
 
       const cleaned = stripMarkdown(stripCoachBlocks(text));
       const sentences = splitSentences(cleaned);
-      if (sentences.length === 0) return;
+      if (sentences.length === 0) return false;
 
       generationRef.current += 1;
       sentenceQueueRef.current = sentences;
@@ -157,6 +158,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
       setIsSpeaking(true);
       setSpeakingMessageId(messageId);
       speakNextSentence();
+      return true;
     },
     [stop, speakNextSentence],
   );

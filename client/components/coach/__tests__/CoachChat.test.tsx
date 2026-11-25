@@ -149,6 +149,7 @@ vi.mock("@/hooks/usePlanCheck", () => {
 });
 
 vi.mock("@react-navigation/native", () => ({
+  useIsFocused: () => true,
   useNavigation: () => ({ navigate: mockNavigate }),
 }));
 

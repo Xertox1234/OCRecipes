@@ -26,9 +26,16 @@ interface Args {
   transcript: string;
   speechErrorKind: SpeechErrorKind | null;
   startListening: () => Promise<void> | void;
+  /**
+   * Close the microphone when the loop is stopped. It must not deliver the
+   * words heard so far as a final result: the host would send them.
+   */
   stopListening: () => void;
-  /** Read a reply aloud. The host reports its end with `spokenFinished`. */
-  speak: (text: string) => void;
+  /**
+   * Read a reply aloud. The host reports its end with `spokenFinished`.
+   * Returning false means nothing was read (the reply was only a card).
+   */
+  speak: (text: string) => boolean | void;
   stopSpeaking: () => void;
   onStopped?: (reason: HandsFreeStopReason) => void;
 }
@@ -63,12 +70,6 @@ export function useHandsFree(args: Args) {
     setPhaseState(next);
   }, []);
 
-  const listen = useCallback(() => {
-    micOpenedRef.current = false;
-    setPhase("listening");
-    void argsRef.current.startListening();
-  }, [setPhase]);
-
   const stop = useCallback(
     (reason: HandsFreeStopReason = "user") => {
       const was = phaseRef.current;
@@ -80,6 +81,21 @@ export function useHandsFree(args: Args) {
     },
     [setPhase],
   );
+
+  const listen = useCallback(() => {
+    micOpenedRef.current = false;
+    setPhase("listening");
+    // A start that fails without an error event would leave the loop
+    // "listening" to a microphone that never opened.
+    const failed = () => {
+      if (phaseRef.current === "listening") stop("error");
+    };
+    try {
+      Promise.resolve(argsRef.current.startListening()).catch(failed);
+    } catch {
+      failed();
+    }
+  }, [setPhase, stop]);
 
   const start = useCallback(() => {
     if (!argsRef.current.available || phaseRef.current !== "off") return;
@@ -96,7 +112,8 @@ export function useHandsFree(args: Args) {
         return;
       }
       setPhase("speaking");
-      argsRef.current.speak(spoken);
+      // Nothing readable: no end-of-reading will ever be reported.
+      if (argsRef.current.speak(spoken) === false) listen();
     },
     [listen, setPhase],
   );
@@ -148,10 +165,11 @@ export function useHandsFree(args: Args) {
     stop,
   ]);
 
-  // An open microphone does not outlive the app being in front.
+  // An open microphone does not outlive the app being in front. "inactive"
+  // is not that: iOS reports it for a permission dialog or Control Center.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active") stop("background");
+      if (state === "background") stop("background");
     });
     return () => subscription.remove();
   }, [stop]);
