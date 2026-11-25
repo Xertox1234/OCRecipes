@@ -305,6 +305,8 @@ export function buildMealPatternSummary(
 
 /** The profile screens offer ten conditions; more than that is not from them. */
 const HEALTH_CONDITIONS_SENT_MAX = 10;
+/** The longest id the screens send is 19 characters; free text is cut short. */
+const HEALTH_CONDITION_SENT_CHARS = 40;
 
 /** Parse a Drizzle decimal string into a finite positive kg value, else undefined. */
 function parseDecimalKg(value: string | null): number | undefined {
@@ -357,7 +359,7 @@ function buildAboutUser(
   const conditions = (profile?.healthConditions ?? [])
     .filter((c): c is string => typeof c === "string" && c.trim() !== "")
     .slice(0, HEALTH_CONDITIONS_SENT_MAX)
-    .map((c) => sanitizeContextField(c, 100))
+    .map((c) => sanitizeContextField(c, HEALTH_CONDITION_SENT_CHARS))
     .filter(Boolean);
   if (conditions.length > 0) {
     aboutUser.healthConditions = conditions;

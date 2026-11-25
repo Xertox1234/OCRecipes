@@ -99,6 +99,16 @@ describe("coach prompt: profile health conditions", () => {
     ]);
   });
 
+  it("treats a name inherited from Object as free text", () => {
+    expect(
+      formatAboutUserLines({
+        healthConditions: ["constructor", "toString", "__proto__", "ibs"],
+      }),
+    ).toEqual([
+      "Health conditions (from their profile): constructor, toString, proto, IBS",
+    ]);
+  });
+
   it("renders no line for an empty list", () => {
     expect(formatAboutUserLines({ healthConditions: [] })).toEqual([]);
   });

@@ -844,7 +844,7 @@ describe("handleCoachChat", () => {
         "high_blood_pressure",
       ]);
       expect(conditions).toHaveLength(10);
-      expect(sanitizeContextField).toHaveBeenCalledWith("diabetes_type2", 100);
+      expect(sanitizeContextField).toHaveBeenCalledWith("diabetes_type2", 40);
     });
 
     it("omits aboutUser entirely when the profile has no personalization signal", async () => {

@@ -98,18 +98,20 @@ export interface CoachContext {
 }
 
 /** Plain names for the conditions the profile screens offer. */
-const HEALTH_CONDITION_NAMES: Record<string, string> = {
-  diabetes_type1: "type 1 diabetes",
-  diabetes_type2: "type 2 diabetes",
-  heart_disease: "a heart condition",
-  high_blood_pressure: "high blood pressure",
-  high_cholesterol: "high cholesterol",
-  ibs: "IBS",
-  celiac: "celiac disease",
-  kidney_disease: "kidney disease",
-  pcos: "PCOS",
-  gerd: "acid reflux (GERD)",
-};
+const HEALTH_CONDITION_NAMES = new Map<string, string>(
+  Object.entries({
+    diabetes_type1: "type 1 diabetes",
+    diabetes_type2: "type 2 diabetes",
+    heart_disease: "a heart condition",
+    high_blood_pressure: "high blood pressure",
+    high_cholesterol: "high cholesterol",
+    ibs: "IBS",
+    celiac: "celiac disease",
+    kidney_disease: "kidney disease",
+    pcos: "PCOS",
+    gerd: "acid reflux (GERD)",
+  }),
+);
 
 /**
  * Labeled prose lines for CoachContext.aboutUser. Shared by the system prompt
@@ -145,7 +147,7 @@ export function formatAboutUserLines(
   const conditions = (au.healthConditions ?? [])
     .map(
       (c) =>
-        HEALTH_CONDITION_NAMES[c] ??
+        HEALTH_CONDITION_NAMES.get(c) ??
         humanize(c)
           .replace(/[\s,]+/g, " ")
           .trim(),
