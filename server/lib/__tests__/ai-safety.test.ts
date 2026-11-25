@@ -391,6 +391,21 @@ describe("containsUnsafeCoachAdvice", () => {
     ).toBe(false);
   });
 
+  // Owner ruling 2026-11-25: Coach is told the profile's conditions, so its
+  // replies will name them. Naming a known condition is not a diagnosis.
+  it.each([
+    "Since you manage type 2 diabetes, pair the rice with chicken and greens for a steadier meal.",
+    "With high blood pressure in mind, I kept this dinner low in salt.",
+    "For celiac disease, swap the soy sauce for tamari, which is gluten-free.",
+    "Oats with berries is a good pick with high cholesterol; your dietitian can fine-tune portions.",
+    "Because of your IBS, I left the onions and garlic out of this one.",
+  ])(
+    "lets through a reply that fits food to a known condition: %s",
+    (reply) => {
+      expect(containsUnsafeCoachAdvice(reply)).toBe(false);
+    },
+  );
+
   // The client shows fenced JSON (coach_blocks, the recipe card) after
   // JSON.parse, so the screen has to read the decoded strings too.
   describe("text inside a JSON fence", () => {

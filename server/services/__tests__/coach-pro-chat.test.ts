@@ -824,6 +824,29 @@ describe("handleCoachChat", () => {
       expect(sanitizeContextField).toHaveBeenCalledWith("Mexican", 100);
     });
 
+    it("passes the profile's health conditions to Coach, cleaned and capped (owner ruling 2026-11-25)", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        makeProfile({
+          healthConditions: [
+            "diabetes_type2",
+            "  ",
+            "high_blood_pressure",
+            ...Array.from({ length: 20 }, (_, i) => `extra_${i}`),
+          ],
+        }),
+      );
+
+      await collectEvents(handleCoachChat(makeParams()));
+
+      const conditions = capturedProContext().aboutUser?.healthConditions;
+      expect(conditions?.slice(0, 2)).toEqual([
+        "diabetes_type2",
+        "high_blood_pressure",
+      ]);
+      expect(conditions).toHaveLength(10);
+      expect(sanitizeContextField).toHaveBeenCalledWith("diabetes_type2", 100);
+    });
+
     it("omits aboutUser entirely when the profile has no personalization signal", async () => {
       // Factory defaults: all personalization fields null, householdSize 1
       // (the column default — carries no signal), cuisinePreferences [].

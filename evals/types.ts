@@ -194,6 +194,7 @@ const coachAboutUserSchema = z
     cookingTimeAvailable: z.string(),
     cuisinePreferences: z.array(z.string()),
     householdSize: z.number().int(),
+    healthConditions: z.array(z.string()),
     weightKg: z.number(),
     goalWeightKg: z.number(),
     measurementUnit: z.enum(["metric", "imperial"]),

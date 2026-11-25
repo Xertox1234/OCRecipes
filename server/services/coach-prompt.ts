@@ -86,11 +86,30 @@ export interface CoachContext {
     cookingTimeAvailable?: string;
     cuisinePreferences?: string[];
     householdSize?: number;
+    /**
+     * Conditions from the dietary profile (owner ruling 2026-11-25). The app's
+     * own ids ("diabetes_type2") or, from an older client, free text.
+     */
+    healthConditions?: string[];
     weightKg?: number;
     goalWeightKg?: number;
     measurementUnit?: MeasurementUnit;
   };
 }
+
+/** Plain names for the conditions the profile screens offer. */
+const HEALTH_CONDITION_NAMES: Record<string, string> = {
+  diabetes_type1: "type 1 diabetes",
+  diabetes_type2: "type 2 diabetes",
+  heart_disease: "a heart condition",
+  high_blood_pressure: "high blood pressure",
+  high_cholesterol: "high cholesterol",
+  ibs: "IBS",
+  celiac: "celiac disease",
+  kidney_disease: "kidney disease",
+  pcos: "PCOS",
+  gerd: "acid reflux (GERD)",
+};
 
 /**
  * Labeled prose lines for CoachContext.aboutUser. Shared by the system prompt
@@ -122,6 +141,20 @@ export function formatAboutUserLines(
     } else if (au.goalWeightKg !== undefined) {
       aboutLines.push(`Goal weight: ${display(au.goalWeightKg)} ${label}`);
     }
+  }
+  const conditions = (au.healthConditions ?? [])
+    .map(
+      (c) =>
+        HEALTH_CONDITION_NAMES[c] ??
+        humanize(c)
+          .replace(/[\s,]+/g, " ")
+          .trim(),
+    )
+    .filter(Boolean);
+  if (conditions.length > 0) {
+    aboutLines.push(
+      `Health conditions (from their profile): ${conditions.join(", ")}`,
+    );
   }
   if (au.activityLevel) {
     aboutLines.push(`Activity level: ${humanize(au.activityLevel)}`);
@@ -319,6 +352,7 @@ export function buildSystemPrompt(
     "- Under 18: no calorie deficit, no weight-loss target or pace, no goal-weight encouragement, even if goals are set. Focus on balanced, regular meals that fuel growth, and suggest involving a parent or guardian and a doctor for any weight goal.",
     "- Distress about their body, bingeing, guilt-driven restricting or skipping meals, or earning or burning off food: no calorie, macro or weight numbers and no goal-weight encouragement. Be warm, point to a normal next meal, and gently suggest a doctor, dietitian or therapist. A plain 'I ate too much today' is not this.",
     "- Pregnant or breastfeeding: an ordinary state — answer food questions normally, never suggest a deficit or weight loss, and mention food-safety cautions (unpasteurized cheese, raw or undercooked fish, meat or eggs, high-mercury fish, alcohol) only when the food in question raises them.",
+    "- PROFILE HEALTH CONDITIONS, when the context below lists any: let general dietary guidance for that condition shape what you suggest, without being asked. Do not restate the condition in every reply; name it only when it explains a choice. Suggest a doctor or dietitian in one short clause when the question is about managing the condition, not in every answer. The limits above still hold: no diagnosis, no dose, no treatment change, and no telling them how strictly to restrict a food to manage it.",
     "Only cite numbers that actually appear in USER CONTEXT below. If no daily goals are set, do not invent, assume, or estimate goal or 'remaining' figures — instead, invite the user to set goals so you can give precise guidance.",
     "",
     // ── Intent-specific instructions + examples ────────────────────────────

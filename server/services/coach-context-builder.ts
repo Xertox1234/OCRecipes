@@ -303,6 +303,9 @@ export function buildMealPatternSummary(
   return patterns.join("; ");
 }
 
+/** The profile screens offer ten conditions; more than that is not from them. */
+const HEALTH_CONDITIONS_SENT_MAX = 10;
+
 /** Parse a Drizzle decimal string into a finite positive kg value, else undefined. */
 function parseDecimalKg(value: string | null): number | undefined {
   if (value == null) return undefined;
@@ -348,6 +351,16 @@ function buildAboutUser(
   }
   if (profile?.householdSize != null && profile.householdSize > 1) {
     aboutUser.householdSize = profile.householdSize;
+  }
+  // Owner ruling 2026-11-25: Coach is told the profile's health conditions.
+  // The route accepts free text (20 x 200 chars), so clean and cap them here.
+  const conditions = (profile?.healthConditions ?? [])
+    .filter((c): c is string => typeof c === "string" && c.trim() !== "")
+    .slice(0, HEALTH_CONDITIONS_SENT_MAX)
+    .map((c) => sanitizeContextField(c, 100))
+    .filter(Boolean);
+  if (conditions.length > 0) {
+    aboutUser.healthConditions = conditions;
   }
   const weightKg = parseDecimalKg(user.weight);
   const goalWeightKg = parseDecimalKg(user.goalWeight);
