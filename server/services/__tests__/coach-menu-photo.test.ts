@@ -1,15 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { analyzeMenuPhoto } from "../menu-analysis";
+import { loadAllergyProfile } from "../barcode-scan-context";
 import { storage } from "../../storage";
 import { suggestionListSchema } from "@shared/schemas/coach-blocks";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
-import type { AllergenMatch } from "@shared/constants/allergens";
-import { menuPhotoReply, menuToPicks, MENU_TEXT } from "../coach-menu-photo";
+import { detectAllergens } from "@shared/constants/allergens";
+import {
+  flagAllergenDishes,
+  menuPhotoReply,
+  menuToPicks,
+  MENU_TEXT,
+} from "../coach-menu-photo";
 
 vi.mock("../menu-analysis", () => ({ analyzeMenuPhoto: vi.fn() }));
+vi.mock("../barcode-scan-context", () => ({ loadAllergyProfile: vi.fn() }));
 vi.mock("../../storage", () => ({
   storage: { claimDailyAiCall: vi.fn(), createMenuScan: vi.fn() },
 }));
+// The real matcher, wrapped so one test can make it throw.
+vi.mock("@shared/constants/allergens", async (orig) => {
+  const actual = await orig<typeof import("@shared/constants/allergens")>();
+  return { ...actual, detectAllergens: vi.fn(actual.detectAllergens) };
+});
 
 type Menu = Awaited<ReturnType<typeof analyzeMenuPhoto>>;
 type Dish = Menu["menuItems"][number];
@@ -19,7 +31,7 @@ function dish(over: Partial<Dish> = {}): Dish {
     name: "Grilled Salmon",
     description: "with greens",
     price: "$18",
-    estimatedCalories: 620.4,
+    estimatedCalories: 624.4,
     estimatedProtein: 42.6,
     estimatedCarbs: 20,
     estimatedFat: 30,
@@ -30,18 +42,15 @@ function dish(over: Partial<Dish> = {}): Dish {
   };
 }
 
-const peanutMatch: AllergenMatch = {
-  allergenId: "peanuts",
-  severity: "severe",
-  ingredientName: "peanuts",
-  matchedKeyword: "peanut",
-  isDerived: false,
-  isPossible: false,
-};
-
 function menu(items: Dish[], over: Partial<Menu> = {}): Menu {
   return { menuItems: items, restaurantName: "Some Place", ...over };
 }
+
+const padThai = dish({
+  name: "Pad Thai",
+  description: "rice noodles with crushed peanuts",
+});
+const peanutAllergy = [{ name: "peanuts", severity: "severe" as const }];
 
 describe("menuToPicks", () => {
   it("shows the best-rated dishes first, at most 3, with rough numbers and the reason", () => {
@@ -58,6 +67,7 @@ describe("menuToPicks", () => {
       "Chicken Bowl",
       "Soup",
     ]);
+    // Calories to the nearest 10: the estimate is rough.
     expect(items[0]).toEqual({
       title: "Grilled Salmon",
       subtitle:
@@ -66,7 +76,7 @@ describe("menuToPicks", () => {
     });
   });
 
-  it("leaves out dishes rated avoid and counts nothing for them", () => {
+  it("leaves out dishes rated avoid", () => {
     const { items, allergyLeftOut } = menuToPicks(
       menu([dish({ recommendation: "avoid" }), dish({ name: "Salad" })]),
     );
@@ -74,13 +84,10 @@ describe("menuToPicks", () => {
     expect(allergyLeftOut).toBe(0);
   });
 
-  it("leaves out and counts dishes flagged for the user's allergies", () => {
+  it("leaves out and counts the dishes flagged for the user's allergies", () => {
     const { items, allergyLeftOut } = menuToPicks(
-      menu([dish({ name: "Pad Thai" }), dish({ name: "Salad" })], {
-        allergenFlags: {
-          "Pad Thai": peanutMatch,
-        },
-      }),
+      menu([padThai, dish({ name: "Salad" })]),
+      new Set([0]),
     );
     expect(items.map((i) => i.title)).toEqual(["Salad"]);
     expect(allergyLeftOut).toBe(1);
@@ -101,25 +108,25 @@ describe("menuToPicks", () => {
     expect(items[1].subtitle).toBe("About 620 kcal, 43 g protein");
   });
 
-  it("cleans and clips menu text, and leaves out a dish it cannot show", () => {
+  it("cleans and clips menu text, and leaves out a dish with no name", () => {
     const { items } = menuToPicks(
       menu([
         dish({ name: "  " }),
         dish({
-          name: "Sal​mon‮ " + "x".repeat(200),
+          name: "Sal\u200bmon\u202e " + "x".repeat(200),
           recommendationReason: "r".repeat(300),
           estimatedCalories: Number.NaN,
         }),
         dish({ name: "Steak", estimatedCalories: -5 }),
       ]),
     );
-    // The blank name is left out; a dish with unusable numbers shows without them.
+    // A dish with unusable numbers shows without them.
     expect(items.map((i) => i.title.slice(0, 6))).toEqual(["Salmon", "Steak"]);
-    expect(items[1].subtitle).not.toMatch(/kcal/);
     expect(items[0].title.startsWith("Salmon x")).toBe(true);
     expect([...items[0].title].length).toBeLessThanOrEqual(80);
     expect(items[0].subtitle.length).toBeLessThanOrEqual(160);
     expect(items[0].subtitle).not.toMatch(/kcal/);
+    expect(items[1].subtitle).not.toMatch(/kcal/);
   });
 
   it("makes a block the app can draw", () => {
@@ -131,6 +138,20 @@ describe("menuToPicks", () => {
   });
 });
 
+describe("flagAllergenDishes", () => {
+  it("flags each dish whose name or description names an allergen, duplicates included", () => {
+    const flagged = flagAllergenDishes(
+      menu([padThai, dish({ name: "Salad" }), padThai]),
+      peanutAllergy,
+    );
+    expect([...flagged].sort()).toEqual([0, 2]);
+  });
+
+  it("flags nothing for a user with no allergies", () => {
+    expect(flagAllergenDishes(menu([padThai]), []).size).toBe(0);
+  });
+});
+
 describe("menuPhotoReply", () => {
   const ctx = { userId: "u1", menuScanner: true };
 
@@ -138,6 +159,10 @@ describe("menuPhotoReply", () => {
     vi.clearAllMocks();
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(analyzeMenuPhoto).mockResolvedValue(menu([dish()]));
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: [],
+    });
   });
 
   it("reads the menu into a list of picks and saves the scan to the menu history", async () => {
@@ -154,21 +179,55 @@ describe("menuPhotoReply", () => {
       cuisine: null,
       menuItems: [dish()],
     });
-    expect(reply.payload).toBeNull();
-    expect(reply.suggestions?.type).toBe("suggestion_list");
-    expect(reply.suggestions?.items[0].title).toBe("Grilled Salmon");
-    expect(reply.text).toBe(MENU_TEXT);
+    expect(reply?.payload).toBeNull();
+    expect(reply?.suggestions?.type).toBe("suggestion_list");
+    expect(reply?.suggestions?.items[0].title).toBe("Grilled Salmon");
+    expect(reply?.text).toBe(MENU_TEXT);
   });
 
-  it("never repeats dish names in its line (they are model output)", async () => {
-    vi.mocked(analyzeMenuPhoto).mockResolvedValue(
-      menu([dish(), dish({ name: "Pad Thai" })], {
-        allergenFlags: { "Pad Thai": peanutMatch },
-      }),
-    );
+  it("leaves out an allergen dish, says so without naming it, and always adds the menu caveat", async () => {
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: peanutAllergy,
+    });
+    vi.mocked(analyzeMenuPhoto).mockResolvedValue(menu([dish(), padThai]));
     const reply = await menuPhotoReply("BASE64", ctx);
-    expect(reply.text).not.toMatch(/salmon|pad thai/i);
-    expect(reply.text).toMatch(/left out 1 dish/);
+    expect(reply?.suggestions?.items.map((i) => i.title)).toEqual([
+      "Grilled Salmon",
+    ]);
+    expect(reply?.text).not.toMatch(/salmon|pad thai|peanut/i);
+    expect(reply?.text).toMatch(/left out 1 dish/);
+    expect(reply?.text).toMatch(/check with the restaurant/);
+
+    // The caveat stands even when no dish was left out.
+    vi.mocked(analyzeMenuPhoto).mockResolvedValue(menu([dish()]));
+    const clean = await menuPhotoReply("BASE64", ctx);
+    expect(clean?.text).toMatch(/check with the restaurant/);
+    expect(clean?.text).not.toMatch(/left out/);
+  });
+
+  it("picks nothing when the allergy profile cannot be read", async () => {
+    vi.mocked(loadAllergyProfile).mockResolvedValue({ ok: false });
+    const reply = await menuPhotoReply("BASE64", ctx);
+    expect(reply?.suggestions).toBeUndefined();
+    expect(reply?.text).toMatch(
+      /couldn't check that menu against your allergies/,
+    );
+  });
+
+  it("picks nothing when the allergy check itself fails", async () => {
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: peanutAllergy,
+    });
+    vi.mocked(detectAllergens).mockImplementationOnce(() => {
+      throw new Error("matcher broke");
+    });
+    const reply = await menuPhotoReply("BASE64", ctx);
+    expect(reply?.suggestions).toBeUndefined();
+    expect(reply?.text).toMatch(
+      /couldn't check that menu against your allergies/,
+    );
   });
 
   it("says when nothing on the menu fits", async () => {
@@ -176,8 +235,14 @@ describe("menuPhotoReply", () => {
       menu([dish({ recommendation: "avoid" })]),
     );
     const reply = await menuPhotoReply("BASE64", ctx);
-    expect(reply.suggestions).toBeUndefined();
-    expect(reply.text).toMatch(/couldn't find a dish/);
+    expect(reply?.suggestions).toBeUndefined();
+    expect(reply?.text).toMatch(/couldn't find a dish/);
+  });
+
+  it("hands back no reply, and saves no scan, when the photo shows no dishes", async () => {
+    vi.mocked(analyzeMenuPhoto).mockResolvedValue(menu([]));
+    expect(await menuPhotoReply("BASE64", ctx)).toBeNull();
+    expect(storage.createMenuScan).not.toHaveBeenCalled();
   });
 
   it("asks for the plan and spends nothing without the menu scanner", async () => {
@@ -187,19 +252,19 @@ describe("menuPhotoReply", () => {
     });
     expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
     expect(analyzeMenuPhoto).not.toHaveBeenCalled();
-    expect(reply.text).toMatch(/menu scanner/);
+    expect(reply?.text).toMatch(/menu scanner/);
   });
 
   it("stops at the daily menu limit without reading the menu", async () => {
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(false);
     const reply = await menuPhotoReply("BASE64", ctx);
     expect(analyzeMenuPhoto).not.toHaveBeenCalled();
-    expect(reply.text).toMatch(/limit/);
+    expect(reply?.text).toMatch(/limit/);
   });
 
   it("still answers when the menu history cannot be saved", async () => {
     vi.mocked(storage.createMenuScan).mockRejectedValue(new Error("db down"));
     const reply = await menuPhotoReply("BASE64", ctx);
-    expect(reply.suggestions?.items).toHaveLength(1);
+    expect(reply?.suggestions?.items).toHaveLength(1);
   });
 });

@@ -61,13 +61,17 @@ Then re-rank.
       pantry receipt scan's plan rules and counts toward the same monthly
       scans, and spends a receipt credit as well as the photo credit.
       Part 2, PR #PRNUM: a restaurant menu photo becomes a list of the three
-      best-rated dishes for the user's goals, each with rough calories,
-      protein and the reason. Dishes rated "avoid" and dishes that may hold
-      one of the user's allergens are left out (the Coach says how many,
-      naming none). It follows the Menu Scanner's plan rules, spends a menu
-      credit and saves the scan to the menu history. The list is the existing
-      suggestion block, so the app needed no new card; to log a dish the user
-      says what they ordered. Left for later: tapping a dish to log it.
+      best-rated dishes, each with rough calories, protein and the reason.
+      Dishes rated "avoid" and dishes whose menu text names one of the user's
+      allergens are left out (the Coach says how many, naming none); if the
+      allergy list cannot be read or checked, no dish is picked, and a user
+      with allergies is always told to check with the restaurant. It follows
+      the Menu Scanner's plan rules, spends a menu credit and saves the scan
+      to the menu history; a photo with no dishes on it is read as a meal.
+      The list is the existing suggestion block, so the app needed no new
+      card. Left for later: tapping a dish to log it, and follow-up questions
+      about the list (later turns see only message text, so the Coach does
+      not see the dishes it listed).
 
 ## Touch: blocks the user can operate (rung 8)
 

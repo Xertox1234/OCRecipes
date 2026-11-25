@@ -361,6 +361,18 @@ describe("buildPhotoReply", () => {
     expect(analyzePhoto).not.toHaveBeenCalled();
   });
 
+  it("reads a photo the classifier took for a menu as a meal when it shows no dishes", async () => {
+    vi.mocked(classifyPhoto).mockResolvedValue({
+      contentType: "restaurant_menu",
+      confidence: 0.9,
+      barcode: null,
+    });
+    vi.mocked(menuPhotoReply).mockResolvedValue(null);
+    const reply = await buildPhotoReply("BASE64", ctx);
+    expect(analyzePhoto).toHaveBeenCalled();
+    expect(reply.payload?.items[0].name).toBe("Grilled chicken breast");
+  });
+
   it("reads a receipt the classifier is unsure about as a meal", async () => {
     vi.mocked(classifyPhoto).mockResolvedValue({
       contentType: "grocery_receipt",

@@ -407,10 +407,12 @@ export async function buildPhotoReply(
     });
   }
   if (seen.contentType === "restaurant_menu") {
-    return menuPhotoReply(imageBase64, {
+    const menu = await menuPhotoReply(imageBase64, {
       userId: ctx.userId,
       menuScanner: ctx.features.menuScanner,
     });
+    // No dishes on it: most likely a meal taken for a menu.
+    if (menu) return menu;
   }
   return mealPhotoReply(imageBase64, ctx);
 }
