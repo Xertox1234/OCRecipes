@@ -132,6 +132,14 @@ interface CoachChatProps {
   onReminderHandled?: () => void;
   /** A reply finished streaming (the host looks for new notebook saves). */
   onReplyDone?: () => void;
+  /**
+   * True while a turn is on its way: the first send is creating the
+   * conversation, a reply is streaming, a photo is uploading, or Regenerate
+   * is deleting the last exchange. The host holds its thread controls
+   * meanwhile: this component is mounted once for every thread, so a switch
+   * would show the live reply in another one.
+   */
+  onTurnBusyChange?: (busy: boolean) => void;
   /** The brief's "Not today": the host clears just that reminder type. */
   onDismissReminder?: (type: "meal-log") => void;
 }
@@ -161,6 +169,7 @@ export default function CoachChat({
   openingBrief,
   onReminderHandled,
   onReplyDone,
+  onTurnBusyChange,
   onDismissReminder,
 }: CoachChatProps) {
   const { theme } = useTheme();
@@ -664,6 +673,14 @@ export default function CoachChat({
   // True while a typed send is still creating its conversation: no rendered
   // state shows that yet, and a photo started then would create a second one.
   const startingTurnRef = useRef(false);
+  // The same fact as state, for the host: it holds its thread controls while
+  // the first send is still creating the conversation (and while Regenerate
+  // is deleting the last exchange), not only once the reply streams.
+  const [isStartingTurn, setIsStartingTurn] = useState(false);
+  const setStartingTurn = useCallback((starting: boolean) => {
+    startingTurnRef.current = starting;
+    setIsStartingTurn(starting);
+  }, []);
   // The pending "Looking at your photo" announcement, so a send that never
   // starts (the conversation could not be created) or an unmount cancels it.
   const photoAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -756,6 +773,12 @@ export default function CoachChat({
     },
   });
 
+  // What the host is told (audit 2026-11-24, M24). The camera or picker
+  // being open is not part of it: the thread bar is covered then.
+  useEffect(() => {
+    onTurnBusyChange?.(isStreaming || isSendingPhoto || isStartingTurn);
+  }, [isStreaming, isSendingPhoto, isStartingTurn, onTurnBusyChange]);
+
   // The one busy rule for every way a turn can start (audit 2026-11-24,
   // M20/M22/M53). Read at call time: the two refs change without a render.
   const turnBlocked = useCallback(
@@ -807,11 +830,11 @@ export default function CoachChat({
       // Only the send that creates the conversation carries the brief form.
       const briefForm = !convId && openingBrief ? openingBrief.form : undefined;
       if (!convId) {
-        startingTurnRef.current = true;
+        setStartingTurn(true);
         try {
           convId = await onCreateConversation();
         } catch {
-          startingTurnRef.current = false;
+          setStartingTurn(false);
           // The input was already cleared and the optimistic bubble was
           // already shown above — a bare catch here left the user with no
           // feedback and their typed message gone. Restore what they typed
@@ -826,7 +849,7 @@ export default function CoachChat({
         }
       }
 
-      startingTurnRef.current = false;
+      setStartingTurn(false);
       activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
       const live = latestLiveWriteCard(writeCardLists);
@@ -854,6 +877,7 @@ export default function CoachChat({
       // transitively depends on it: handleRetry, handleBlockAction,
       // handleQuickReply, renderItem) stays stable across keystrokes.
       turnBlocked,
+      setStartingTurn,
       conversationId,
       onCreateConversation,
       warmUpHook,
@@ -902,13 +926,13 @@ export default function CoachChat({
     // Nothing else may start a turn (a photo, a second tap) while the two
     // rows are being deleted: the resend below would then be refused with
     // the exchange already gone.
-    startingTurnRef.current = true;
+    setStartingTurn(true);
     try {
       // Delete assistant then user message (in order — each was "most recent" at time of delete)
       await deleteChatMessage(lastMsg.id);
       await deleteChatMessage(lastUserMsg.id);
     } catch {
-      startingTurnRef.current = false;
+      setStartingTurn(false);
       queryClient.setQueryData(msgQueryKey, snapshot);
       // The first delete may have gone through before the second failed, so
       // the snapshot can show a reply the server no longer has. Re-read.
@@ -916,7 +940,7 @@ export default function CoachChat({
       setStreamingError("Retry failed. Check your connection and try again.");
       return;
     }
-    startingTurnRef.current = false;
+    setStartingTurn(false);
     void handleSend(lastUserMsg.content);
   }, [
     messages,
@@ -926,6 +950,7 @@ export default function CoachChat({
     queryClient,
     handleSend,
     turnBlocked,
+    setStartingTurn,
   ]);
 
   // Auto-send suggestion chip messages

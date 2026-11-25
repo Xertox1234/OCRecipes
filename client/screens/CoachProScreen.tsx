@@ -74,6 +74,13 @@ export default function CoachProScreen() {
     silentError: true,
   });
   const [conversationId, setConversationId] = useState<number | null>(null);
+  // A reply (or a photo) is on its way in the open thread. The chat below is
+  // one mounted component, so switching threads now would draw that reply in
+  // the other thread; the thread controls wait until it is done.
+  const [turnBusy, setTurnBusy] = useState(false);
+  // The open conversation, once the list has shown it: lets "it left the
+  // list" mean "it was deleted", not "the list has not caught up yet".
+  const [listedId, setListedId] = useState<number | null>(null);
   // Bottom edge of the thread bar, measured: the save popup hangs just under
   // it (absolute children ignore the container's safe-area padding).
   const [threadBarBottom, setThreadBarBottom] = useState<number | null>(null);
@@ -177,6 +184,7 @@ export default function CoachProScreen() {
     ),
   );
   const startDraft = useCallback(() => {
+    if (turnBusy) return;
     setDraftForm(
       briefFormFor(
         getCachedLastBriefSeenDate(),
@@ -186,7 +194,7 @@ export default function CoachProScreen() {
     );
     setIsNewDraft(true);
     setConversationId(null);
-  }, [hasPendingReminder]);
+  }, [hasPendingReminder, turnBusy]);
   const isDraft = conversationId === null;
   const { brief } = useCoachBrief(draftForm, isDraft);
   // The conversation the draft's first send created, and the brief it showed:
@@ -211,17 +219,40 @@ export default function CoachProScreen() {
     setConversationId(threadBarConversations[0].id);
   }
 
+  // The open thread was deleted elsewhere (See all): it was in the list and
+  // now is not. Move off it, or the next send posts to a conversation that
+  // no longer exists. Same render-phase adjustment as above. The list is the
+  // newest 50, so a thread pushed past that by 50 newer ones reads the same
+  // way; it is still reachable from See all.
+  const openIsListed =
+    conversationId !== null &&
+    coachConversations.some((c) => c.id === conversationId);
+  if (openIsListed && listedId !== conversationId) {
+    setListedId(conversationId);
+  } else if (
+    conversationId !== null &&
+    !openIsListed &&
+    listedId === conversationId &&
+    !conversationsError &&
+    !turnBusy
+  ) {
+    setListedId(null);
+    setIsNewDraft(false);
+    setConversationId(null);
+  }
+
   // Apply a conversation selected from AllConversationsScreen (navigation param pattern
   // replaces the non-serializable onSelect callback that was previously passed as a route param).
   useEffect(() => {
     const selectedId = route.params?.selectedConversationId;
-    if (selectedId !== undefined) {
+    // Mid-reply the pick waits: this effect runs again when the reply is done.
+    if (selectedId !== undefined && !turnBusy) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- consumes a one-shot navigation param; the state must land together with the navigation.setParams clear below
       setIsNewDraft(false);
       setConversationId(selectedId);
       navigation.setParams({ selectedConversationId: undefined });
     }
-  }, [route.params?.selectedConversationId, navigation]);
+  }, [route.params?.selectedConversationId, navigation, turnBusy]);
 
   const { cancelStaleReminders } = useNotebookNotifications();
   const { data: notebookEntries = [], isLoading: isEntriesLoading } =
@@ -291,6 +322,7 @@ export default function CoachProScreen() {
           onPress={startDraft}
           style={({ pressed }) => [
             styles.newThreadButton,
+            turnBusy && { opacity: 0.5 },
             {
               borderColor: theme.border,
               backgroundColor: pressed
@@ -301,6 +333,8 @@ export default function CoachProScreen() {
           hitSlop={{ top: 4, bottom: 4 }}
           accessibilityRole="button"
           accessibilityLabel="Start a new coach conversation"
+          accessibilityState={{ disabled: turnBusy }}
+          accessibilityHint={turnBusy ? HELD_HINT : undefined}
         >
           <ThemedText
             type="caption"
@@ -343,11 +377,13 @@ export default function CoachProScreen() {
               <Pressable
                 key={conversation.id}
                 onPress={() => {
+                  if (turnBusy) return;
                   setIsNewDraft(false);
                   setConversationId(conversation.id);
                 }}
                 style={[
                   styles.threadChip,
+                  turnBusy && !isSelected && { opacity: 0.5 },
                   {
                     borderColor: isSelected ? theme.link : theme.border,
                     backgroundColor: isSelected
@@ -357,7 +393,13 @@ export default function CoachProScreen() {
                 ]}
                 hitSlop={{ top: 4, bottom: 4 }}
                 accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
+                accessibilityState={{
+                  selected: isSelected,
+                  disabled: turnBusy && !isSelected,
+                }}
+                accessibilityHint={
+                  turnBusy && !isSelected ? HELD_HINT : undefined
+                }
                 accessibilityLabel={`${conversation.isPinned ? "Pinned. " : ""}Open coach conversation ${conversation.title}`}
               >
                 {conversation.isPinned && (
@@ -428,6 +470,7 @@ export default function CoachProScreen() {
         }}
         onReminderHandled={handleMessageSent}
         onReplyDone={checkForSaves}
+        onTurnBusyChange={setTurnBusy}
         onDismissReminder={(type) => {
           acknowledgeType(type).catch((err) =>
             logger.warn("[CoachProScreen] acknowledgeType failed", err),
@@ -442,6 +485,9 @@ export default function CoachProScreen() {
     </View>
   );
 }
+
+/** Spoken on a thread control that is held while a reply is on its way. */
+const HELD_HINT = "Unavailable while Coach is replying";
 
 /** 44pt buttons plus vertical padding — used until the bar is measured. */
 const THREAD_BAR_FALLBACK_HEIGHT = 44 + Spacing.sm * 2;
