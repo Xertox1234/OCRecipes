@@ -10,8 +10,8 @@ import type { CoachIntent } from "../coach-intent-classifier";
 describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
-  it("matches the pinned value (last intended edit: profile health conditions, 2026-11-25)", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("0833b827995eac67");
+  it("matches the pinned value (last intended edit: no referral on ordinary food answers, 2026-11-25)", () => {
+    expect(getSystemPromptTemplateVersion()).toBe("0b4b993c21150339");
   });
 });
 
@@ -128,6 +128,11 @@ describe("coach prompt: profile health conditions", () => {
         "Health conditions (from their profile): type 2 diabetes",
       );
       expect(prompt).toContain("PROFILE HEALTH CONDITIONS");
+      // Owner 2026-11-25: no "check with your doctor" tacked onto every
+      // ordinary food answer just because the profile lists a condition.
+      expect(prompt).toContain(
+        "A condition listed there is not the user mentioning it",
+      );
     }
   });
 });
