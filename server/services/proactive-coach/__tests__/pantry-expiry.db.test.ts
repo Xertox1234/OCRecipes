@@ -50,7 +50,11 @@ const conversations = () =>
 describe("nudgeAboutExpiringPantry (real database)", () => {
   beforeEach(async () => {
     tx = await setupTestTransaction();
-    user = await createTestUser(tx, { subscriptionTier: "premium" });
+    user = await createTestUser(tx);
+    await tx
+      .update(schema.users)
+      .set({ subscriptionTier: "premium" })
+      .where(eq(schema.users.id, user.id));
     await tx.insert(schema.pantryItems).values([
       {
         userId: user.id,
