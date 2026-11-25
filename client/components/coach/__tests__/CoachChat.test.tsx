@@ -994,6 +994,48 @@ describe("CoachChat — photo announcement", () => {
   });
 });
 
+// Coach chat audit 2026-11-24 (L27): the server saves the brief and clears
+// its reminders before the daily-limit check, so a failed first photo send
+// can still have used the brief.
+describe("CoachChat — a failed photo send that carried the opening brief", () => {
+  it("refreshes the reminder and brief caches", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    renderCoachChat({ isCoachPro: true });
+    await act(async () => {
+      await photoHook.args!.onSettled(
+        1,
+        { atDailyLimit: true, message: null },
+        true,
+      );
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/reminders/pending"],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/coach/brief"],
+    });
+    invalidate.mockRestore();
+  });
+
+  it("leaves them alone when the failed send carried no brief", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    renderCoachChat({ isCoachPro: true });
+    await act(async () => {
+      await photoHook.args!.onSettled(
+        1,
+        { atDailyLimit: false, message: "Couldn't send that photo." },
+        false,
+      );
+    });
+    expect(invalidate).not.toHaveBeenCalledWith({
+      queryKey: ["/api/coach/brief"],
+    });
+    invalidate.mockRestore();
+  });
+});
+
 describe("CoachChat — live barcode scanner", () => {
   it("opens the scanner screen for the photo hook", () => {
     renderCoachChat({ isCoachPro: true });
