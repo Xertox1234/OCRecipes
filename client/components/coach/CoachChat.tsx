@@ -754,7 +754,17 @@ export default function CoachChat({
         .catch(() => undefined);
       if (turnEpochRef.current === epoch) setOptimisticMessage(null);
       // A failure is announced by the error line or the limit banner.
-      if (failure) return;
+      if (failure) {
+        // The server saves the brief and clears its reminders before the
+        // daily-limit check, so a failed first send may still have used it.
+        if (sentBrief) {
+          void queryClient.invalidateQueries({
+            queryKey: PENDING_REMINDERS_KEY,
+          });
+          void queryClient.invalidateQueries({ queryKey: COACH_BRIEF_KEY });
+        }
+        return;
+      }
       // The photo path has no stream, so nothing else says the reply is here.
       // After the refetch, so the reply is on screen when it is spoken. As
       // for a typed turn: VoiceOver hears the reply, TalkBack a short cue.
