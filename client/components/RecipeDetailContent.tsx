@@ -176,6 +176,10 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
 
   const isCommunityRecipe = props.recipeType === "community";
   const isFavourited = useIsRecipeFavourited(props.recipeId, props.recipeType);
+  // Cook mode loads the recipe by id, so it needs a saved recipe with steps.
+  const canCook =
+    props.recipeId > 0 &&
+    (props.instructions ?? []).some((step) => step.trim().length > 0);
 
   const handleRemixPress = useCallback(() => {
     // Status unknown (loading or failed): re-check instead of walling a user
@@ -415,6 +419,36 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
                 style={[styles.saveButtonText, { color: theme.link }]}
               >
                 Remix Recipe
+              </ThemedText>
+            </Pressable>
+          )}
+
+          {/* 4c. Cook mode: the steps one at a time, read aloud, with timers */}
+          {canCook && (
+            <Pressable
+              onPress={() =>
+                navigation.navigate("CookMode", {
+                  recipeId: props.recipeId,
+                  recipeType: props.recipeType,
+                })
+              }
+              style={[
+                styles.saveButton,
+                { backgroundColor: withOpacity(theme.link, 0.1) },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Start cooking"
+              accessibilityHint="Shows the steps one at a time, read aloud, with timers"
+            >
+              <Ionicons
+                name="restaurant-outline"
+                size={14}
+                color={theme.link}
+              />
+              <ThemedText
+                style={[styles.saveButtonText, { color: theme.link }]}
+              >
+                Start Cooking
               </ThemedText>
             </Pressable>
           )}

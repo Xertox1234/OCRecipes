@@ -56,6 +56,23 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
         >
           <Text style={styles.primaryBtnText}>View</Text>
         </PressableScale>
+        <PressableScale
+          style={[styles.secondaryBtn, { borderColor: theme.border }]}
+          onPress={() =>
+            onAction?.({
+              type: "navigate",
+              screen: "CookMode",
+              params: { recipeId: recipe.recipeId, recipeType: "community" },
+            })
+          }
+          accessibilityRole="button"
+          accessibilityLabel="Cook this recipe step by step"
+          hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
+        >
+          <Text style={[styles.secondaryBtnText, { color: theme.link }]}>
+            Cook
+          </Text>
+        </PressableScale>
       </View>
     </View>
   );
@@ -77,5 +94,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  secondaryBtn: {
+    minHeight: 44,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryBtnText: { fontSize: 13, fontWeight: "600" },
   primaryBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" }, // hardcoded
 });

@@ -36,6 +36,17 @@ describe("RecipeCard", () => {
     });
   });
 
+  it("opens cook mode for the recipe from the Cook button", () => {
+    const onAction = vi.fn();
+    renderComponent(<RecipeCard block={block} onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: /cook this recipe/i }));
+    expect(onAction).toHaveBeenCalledExactlyOnceWith({
+      type: "navigate",
+      screen: "CookMode",
+      params: { recipeId: 88, recipeType: "community" },
+    });
+  });
+
   it("opens a generated card as a community recipe", () => {
     const onAction = vi.fn();
     renderComponent(

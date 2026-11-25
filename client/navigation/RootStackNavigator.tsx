@@ -53,6 +53,7 @@ import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
 import CoachBarcodeScanScreen from "@/screens/CoachBarcodeScanScreen";
+import CookModeScreen from "@/screens/CookModeScreen";
 import CoachChatScreen from "@/screens/CoachChatScreen";
 import RecipeChatScreen from "@/screens/RecipeChatScreen";
 import AllConversationsScreen from "@/screens/AllConversationsScreen";
@@ -225,6 +226,12 @@ export type RootStackParamList = {
   /** The live scanner opened from the Coach chat; answers through
    * `settleCoachBarcode` (client/lib/coach-barcode-scan.ts). */
   CoachBarcodeScan: undefined;
+  /** Cook mode: a recipe's steps one card at a time, read aloud, with timers. */
+  CookMode: {
+    recipeId: number;
+    /** As on FeaturedRecipeDetail: "community" (default) or "mealPlan". */
+    recipeType?: "community" | "mealPlan";
+  };
   CoachChat: {
     question: string;
     questionText: string;
@@ -538,6 +545,15 @@ export default function RootStackNavigator() {
             options={{
               headerTitle: "Product Details",
               presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="CookMode"
+            component={CookModeScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
             }}
           />
           <Stack.Screen

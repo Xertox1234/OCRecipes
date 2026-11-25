@@ -368,6 +368,37 @@ describe("validateNavigateParams stripping", () => {
     });
   });
 
+  const cookModeItem = (params: unknown) => ({
+    type: "suggestion_list",
+    items: [
+      {
+        title: "Cook it",
+        subtitle: "Step by step",
+        action: { type: "navigate", screen: "CookMode", params },
+      },
+    ],
+  });
+
+  it("accepts a CookMode link with a recipe id, and strips anything else", () => {
+    const parsed = suggestionListSchema.parse(
+      cookModeItem({ recipeId: 123, recipeType: "mealPlan", extra: "x" }),
+    );
+    const action = parsed.items[0].action;
+    if (!action || action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(action.params).toEqual({ recipeId: 123, recipeType: "mealPlan" });
+  });
+
+  it("rejects a CookMode link with no recipe id", () => {
+    expect(suggestionListSchema.safeParse(cookModeItem({})).success).toBe(
+      false,
+    );
+    expect(
+      suggestionListSchema.safeParse(cookModeItem({ recipeId: "7" })).success,
+    ).toBe(false);
+  });
+
   it("retains initialMessage, remixSourceRecipeId, and remixSourceRecipeTitle on RecipeChat params after stripping", () => {
     const card = {
       type: "action_card",

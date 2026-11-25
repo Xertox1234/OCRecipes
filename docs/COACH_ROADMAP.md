@@ -95,8 +95,13 @@ Then re-rank.
       provider carries realtime audio (models go through OpenRouter today, which
       may not), which React Native native module it needs, and what a minute
       costs. Value: de-risks the goal. Size: S.
-- [ ] **V1. Cook mode.** Step cards with timers, read aloud with `expo-speech`.
-      Value: high. Size: M.
+- [x] **V1. Cook mode.** Step cards with timers, read aloud with `expo-speech`.
+      Value: high. Size: M. PR #PRNUM. A full-screen cook view opened from the
+      Coach's recipe card ("Cook") and from the recipe page ("Start Cooking"):
+      the ingredients, then one step per card, read aloud, with timers read
+      from the step's own wording. Left for later: an alarm while the app is
+      in the background, and the Coach offering cook mode itself (its prompt
+      does not describe the link yet).
 - [ ] **V2. Hands-free turn-taking.** Listen, transcribe, reply, speak, with no
       tapping. Value: high. Size: M. Needs V1.
 - [ ] **V3. Realtime voice.** Interruptible spoken conversation. Value: high.
