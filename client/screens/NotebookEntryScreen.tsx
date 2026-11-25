@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef } from "react";
 import {
+  ActivityIndicator,
   View,
   Pressable,
   ScrollView,
@@ -177,14 +178,18 @@ export default function NotebookEntryScreen() {
   const { scheduleCommitmentReminder, cancelCommitmentReminder } =
     useNotebookNotifications();
 
+  // Nothing is edited until there is a note to compare against: while it is
+  // still loading, a blank form used to count as changed (Save enabled, and
+  // "Discard changes?" on Back).
   const isDirty = isCreate
     ? content.trim().length > 0
-    : content !== entry?.content ||
-      type !== entry?.type ||
-      followUpDate !==
-        (entry?.followUpDate
-          ? toLocalDateString(new Date(entry.followUpDate))
-          : null);
+    : entry !== undefined &&
+      (content !== entry.content ||
+        type !== entry.type ||
+        followUpDate !==
+          (entry.followUpDate
+            ? toLocalDateString(new Date(entry.followUpDate))
+            : null));
 
   // Disabled only while saving, or when an edit changed nothing. An empty
   // note is a press that says what's missing.
@@ -350,6 +355,29 @@ export default function NotebookEntryScreen() {
   // load — distinguish them (isError before empty) so a network failure is not
   // mislabeled "deleted", and offer Retry. Gate on !isLoading so a still-loading
   // state isn't mislabeled either.
+  // Opened before the list has loaded (a cold open from a reminder): say so,
+  // instead of a blank form that would be overwritten when the note arrives.
+  if (!isCreate && isLoading && !entry) {
+    return (
+      <View
+        accessibilityViewIsModal
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel="Loading this note"
+        style={[
+          styles.notFound,
+          {
+            backgroundColor: theme.backgroundDefault,
+            paddingTop: insets.top + Spacing.xl,
+            paddingBottom: insets.bottom + Spacing.xl,
+          },
+        ]}
+      >
+        <ActivityIndicator color={theme.link} />
+      </View>
+    );
+  }
+
   if (!isCreate && !isLoading && !entry) {
     return (
       <View

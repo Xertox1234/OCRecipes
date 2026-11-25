@@ -30,6 +30,10 @@ register(app);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // An edit reads the stored note first; by default there is one.
+  vi.mocked(storage.getNotebookEntryById).mockResolvedValue(
+    createMockCoachNotebookEntry({ type: "goal", content: "Stored text" }),
+  );
 });
 
 describe("GET /api/coach/notebook", () => {
@@ -428,6 +432,48 @@ describe("what a user may add or change by hand", () => {
     expect(storage.getNotebookEntries).toHaveBeenCalledWith(
       "1",
       expect.objectContaining({ limit: 500 }),
+    );
+  });
+});
+
+// Coach chat audit 2026-11-24 (L63): the app sends the text with every save,
+// and any text in the request counted as the user confirming the note. Moving
+// only the follow-up date of an unreviewed memory then confirmed it unread.
+describe("an edit that leaves the text alone", () => {
+  const patch = (body: Record<string, unknown>) =>
+    request(app)
+      .patch("/api/coach/notebook/1")
+      .send(body)
+      .set("Authorization", "Bearer valid-token");
+
+  beforeEach(() => {
+    vi.mocked(storage.getNotebookEntryById).mockResolvedValue(
+      createMockCoachNotebookEntry({
+        type: "commitment",
+        content: "Walk after dinner",
+      }),
+    );
+    vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry({ type: "commitment" }),
+    );
+  });
+
+  it("does not pass the unchanged text on (so it does not confirm the note)", async () => {
+    const res = await patch({
+      type: "commitment",
+      content: "Walk after dinner",
+      followUpDate: "2026-12-01",
+    });
+    expect(res.status).toBe(200);
+    const update = vi.mocked(storage.updateNotebookEntry).mock.calls[0][2];
+    expect(update).not.toHaveProperty("content");
+    expect(update).toHaveProperty("followUpDate");
+  });
+
+  it("passes changed text on (control)", async () => {
+    await patch({ type: "commitment", content: "Walk after lunch" });
+    expect(vi.mocked(storage.updateNotebookEntry).mock.calls[0][2]).toEqual(
+      expect.objectContaining({ content: "Walk after lunch" }),
     );
   });
 });

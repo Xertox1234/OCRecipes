@@ -341,31 +341,44 @@ export function register(app: Express): void {
           (await refusedWhileCoachNotesPaused(req.userId, res))
         )
           return;
-        // A change of type: only into a type the user may hold, and the
-        // text that will carry the new type is checked (the stored text when
-        // this request brings none).
-        let textToCheck = content;
-        if (type !== undefined) {
+        // The app sends a note's own text and type with every save, so both
+        // are read against the stored row. Unchanged text is not an edit: it
+        // is left out below, because any text in the update counts as the
+        // user confirming the note (an unreviewed memory was confirmed by
+        // moving only its follow-up date).
+        let newContent: string | undefined;
+        let typeChanged = false;
+        let storedContent: string | undefined;
+        if (type !== undefined || content !== undefined) {
           const stored = await storage.getNotebookEntryById(id, req.userId);
           if (!stored)
             return sendError(res, 404, "Entry not found", ErrorCode.NOT_FOUND);
-          if (stored.type !== type) {
-            if (!(USER_NOTE_TYPES as readonly string[]).includes(type))
-              return sendError(
-                res,
-                400,
-                "A note can only be changed to a goal, a preference or a commitment.",
-                ErrorCode.VALIDATION_ERROR,
-              );
-            textToCheck = content ?? stored.content;
+          storedContent = stored.content;
+          if (content !== undefined && content !== stored.content) {
+            newContent = content;
           }
+          typeChanged = type !== undefined && type !== stored.type;
         }
+        // A change of type only into a kind the user may hold.
+        if (
+          typeChanged &&
+          !(USER_NOTE_TYPES as readonly string[]).includes(type as string)
+        )
+          return sendError(
+            res,
+            400,
+            "A note can only be changed to a goal, a preference or a commitment.",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        // New text is checked; so is the stored text when it gets a new kind.
+        const textToCheck =
+          newContent ?? (typeChanged ? storedContent : undefined);
         const refusal =
           textToCheck !== undefined ? refusedNoteText(textToCheck) : null;
         if (refusal)
           return sendError(res, 400, refusal, ErrorCode.VALIDATION_ERROR);
         const updated = await storage.updateNotebookEntry(id, req.userId, {
-          ...(content !== undefined && { content }),
+          ...(newContent !== undefined && { content: newContent }),
           ...(type !== undefined && { type }),
           ...(followUpDate !== undefined && {
             // Same basis as the POST handler above.

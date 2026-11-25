@@ -692,3 +692,25 @@ describe("NotebookEntryScreen — the kinds of note a user can hold", () => {
     );
   });
 });
+
+// Coach chat audit 2026-11-24 (M15): opened from a reminder before the list
+// has loaded, the editor drew a blank form that counted as edited.
+describe("NotebookEntryScreen — while the note is still loading", () => {
+  it("shows a loading state, not an editable form", () => {
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([], { isLoading: true });
+    renderComponent(<NotebookEntryScreen />);
+
+    expect(screen.getByLabelText("Loading this note")).toBeDefined();
+    expect(screen.queryByText("Save")).toBeNull();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  });
+
+  it("a new note is never held behind the loading state", () => {
+    mockRouteParams.params = undefined;
+    setupEntries([], { isLoading: true });
+    renderComponent(<NotebookEntryScreen />);
+
+    expect(screen.getByText("Save")).toBeDefined();
+  });
+});
