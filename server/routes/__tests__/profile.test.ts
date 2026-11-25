@@ -629,6 +629,7 @@ describe("Profile Routes", () => {
           healthDataConsentHistory: [{ event: "granted", at: "1999-01-01" }],
           moodScore: 1,
           moodUpdatedAt: "1999-01-01T00:00:00Z",
+          notebookClearedAt: null,
         });
 
       expect(res.status).toBe(200);
