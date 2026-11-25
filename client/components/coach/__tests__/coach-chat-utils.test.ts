@@ -11,6 +11,7 @@ import {
   latestLiveWriteCard,
   lockOlderWriteCards,
   deriveMessageView,
+  turnStartBlocked,
 } from "../coach-chat-utils";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
@@ -501,6 +502,20 @@ describe("deriveMessageView", () => {
     ).toBe(false);
   });
 
+  // Coach chat audit 2026-11-24 (M21): Regenerate resends the stored text,
+  // and a photo turn's stored text is a placeholder with no photo behind it.
+  it("no retry under a photo or barcode turn", () => {
+    for (const lastUserText of ["Sent a photo", "Scanned a barcode"]) {
+      expect(
+        deriveMessageView(msg(), ctx({ lastUserText })).isRetryTarget,
+      ).toBe(false);
+    }
+    expect(
+      deriveMessageView(msg(), ctx({ lastUserText: "How much protein?" }))
+        .isRetryTarget,
+    ).toBe(true);
+  });
+
   it("finder block hides the bubble text path and the retry", () => {
     const v = deriveMessageView(msg(), ctx({ savedBlocks: [finder, quick] }));
     expect(v.hasFinderBlock).toBe(true);
@@ -538,5 +553,32 @@ describe("deriveMessageView", () => {
       deriveMessageView(m, ctx({ savedRecipeIds: new Map([[7, 9]]) }))
         .savedRecipeId,
     ).toBe(9);
+  });
+});
+
+// Coach chat audit 2026-11-24 (M20, M22, M53): every way a turn can start
+// asks the same question.
+describe("turnStartBlocked", () => {
+  const idle = {
+    isStreaming: false,
+    isSendingPhoto: false,
+    photoBusy: false,
+    startingTurn: false,
+  };
+
+  it("lets a turn start when nothing is in flight", () => {
+    expect(turnStartBlocked(idle)).toBe(false);
+  });
+
+  it.each([
+    ["a reply is streaming", { isStreaming: true }],
+    ["a photo is uploading", { isSendingPhoto: true }],
+    ["the camera or picker is open", { photoBusy: true }],
+    [
+      "the first send is still creating the conversation",
+      { startingTurn: true },
+    ],
+  ])("blocks while %s", (_label, over) => {
+    expect(turnStartBlocked({ ...idle, ...over })).toBe(true);
   });
 });

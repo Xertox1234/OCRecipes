@@ -84,6 +84,8 @@ import {
   latestLiveWriteCard,
   lockOlderWriteCards,
   deriveMessageView,
+  isPhotoTurnText,
+  turnStartBlocked,
 } from "@/components/coach/coach-chat-utils";
 import { CoachMessageRow } from "@/components/coach/CoachMessageRow";
 import { useCoachStream } from "@/hooks/useCoachStream";
@@ -474,6 +476,12 @@ export default function CoachChat({
   // populated thread with an error screen.
   const showHistoryError = isHistoryError && (messages?.length ?? 0) === 0;
 
+  const lastUserText = useMemo(
+    () =>
+      [...(messages ?? [])].reverse().find((m) => m.role === "user")?.content ??
+      null,
+    [messages],
+  );
   const lastAssistantMessageId = useMemo(() => {
     if (!messages || messages.length === 0) return null;
     const last = messages[messages.length - 1];
@@ -716,15 +724,30 @@ export default function CoachChat({
     },
   });
 
+  // The one busy rule for every way a turn can start (audit 2026-11-24,
+  // M20/M22/M53). Read at call time: the two refs change without a render.
+  const turnBlocked = useCallback(
+    () =>
+      turnStartBlocked({
+        isStreaming,
+        isSendingPhoto,
+        photoBusy: isPhotoBusy(),
+        startingTurn: startingTurnRef.current,
+      }),
+    [isStreaming, isSendingPhoto, isPhotoBusy],
+  );
+
   const handleSend = useCallback(
     async (text?: string) => {
       // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
       const content = (
         typeof text === "string" ? text : inputTextRef.current
       ).trim();
-      // isPhotoBusy covers the time the camera or picker is open, before
-      // isSendingPhoto is set: a voice transcript can still finalize then.
-      if (!content || isStreaming || isSendingPhoto || isPhotoBusy()) return;
+      // Covers the time the camera or picker is open, before isSendingPhoto
+      // is set (a voice transcript can still finalize then), and the first
+      // send that is still creating the conversation (a second tap on a
+      // brief chip used to create a second conversation).
+      if (!content || turnBlocked()) return;
 
       // Only a tap or the return key buzzes. String callers (voice, quick
       // replies, retry, suggestion hand-off) get feedback from their trigger.
@@ -794,9 +817,7 @@ export default function CoachChat({
       // from inputTextRef instead so its identity (and every callback that
       // transitively depends on it: handleRetry, handleBlockAction,
       // handleQuickReply, renderItem) stays stable across keystrokes.
-      isStreaming,
-      isSendingPhoto,
-      isPhotoBusy,
+      turnBlocked,
       conversationId,
       onCreateConversation,
       warmUpHook,
@@ -820,11 +841,16 @@ export default function CoachChat({
   }, [isFinal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRetry = useCallback(async () => {
-    if (!messages || messages.length < 2 || showLiveReply) return;
+    // turnBlocked: Regenerate during a photo upload used to delete the last
+    // exchange and then have its resend refused.
+    if (!messages || messages.length < 2 || showLiveReply || turnBlocked()) {
+      return;
+    }
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role !== "assistant") return;
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    if (!lastUserMsg) return;
+    // A photo turn's text is a placeholder; there is nothing to resend.
+    if (!lastUserMsg || isPhotoTurnText(lastUserMsg.content)) return;
 
     const msgQueryKey = chatMessagesKey(conversationId);
     const snapshot = queryClient.getQueryData<ChatMessage[]>(msgQueryKey);
@@ -854,6 +880,7 @@ export default function CoachChat({
     deleteChatMessage,
     queryClient,
     handleSend,
+    turnBlocked,
   ]);
 
   // Auto-send suggestion chip messages
@@ -988,6 +1015,9 @@ export default function CoachChat({
 
   const handleQuickReply = useCallback(
     (message: string, blockKey?: string) => {
+      // Before the chip row or form is marked used: a tap that cannot send
+      // must leave it in place.
+      if (turnBlocked()) return;
       if (blockKey) {
         usedQuickRepliesRef.current = new Set([
           ...usedQuickRepliesRef.current,
@@ -997,13 +1027,13 @@ export default function CoachChat({
       }
       void handleSend(message);
     },
-    [handleSend],
+    [handleSend, turnBlocked],
   );
 
   // A finder tap sends its visible label as the message, with the action.
   const handleFinderAction = useCallback(
     (action: FinderAction, label: string) => {
-      if (isStreaming || !conversationId) return;
+      if (turnBlocked() || !conversationId) return;
       if (planUnknown && finderActionNeedsPlan(action.type)) {
         recheckPlan();
         return;
@@ -1029,7 +1059,7 @@ export default function CoachChat({
       onMessageSent?.();
     },
     [
-      isStreaming,
+      turnBlocked,
       conversationId,
       planUnknown,
       recheckPlan,
@@ -1127,6 +1157,7 @@ export default function CoachChat({
           showLiveReply,
           lastAssistantMessageId,
           savedRecipeIds: savedRecipeIdsRef.current,
+          lastUserText,
         });
         return (
           <CoachMessageRow
@@ -1181,6 +1212,7 @@ export default function CoachChat({
       handleCommitmentAccept,
       handleQuickReply,
       handleRetry,
+      lastUserText,
       handleWriteCardEdit,
       lockedMessageBlocks,
       writeCardEdits,
