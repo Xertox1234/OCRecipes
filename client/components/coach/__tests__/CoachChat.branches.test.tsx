@@ -883,6 +883,42 @@ describe("CoachChat — handleRetry", () => {
     expect(state.startStream).not.toHaveBeenCalled();
   });
 
+  // Coach chat audit 2026-11-24 (L56): the first delete went through, the
+  // second failed. The snapshot then shows a reply the server no longer has.
+  it("re-reads the chat after a partial delete failure and releases the turn guard", async () => {
+    assistantThenUser();
+    state.deleteMutate = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("net"));
+    const { QueryClient } = await import("@tanstack/react-query");
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    renderCoachChat({ conversationId: 7 });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /regenerate response/i }),
+      );
+    });
+    expect(state.deleteMutate).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("streaming-error")).toBeTruthy();
+    expect(state.startStream).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/7/messages"],
+    });
+    invalidate.mockRestore();
+
+    // The guard held during the deletes is released: a later send goes out.
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "next question" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(state.startStream).toHaveBeenCalledWith(
+      7,
+      "next question",
+      expect.anything(),
+    );
+  });
+
   it("does nothing when there are fewer than two messages", async () => {
     // Single assistant message: retry button shows (last is assistant) but
     // handleRetry guards on messages.length < 2.
