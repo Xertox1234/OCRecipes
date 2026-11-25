@@ -776,14 +776,42 @@ update`, `node --run`/`deno task`/`bun run update:production`, and any `gh` with
 flag before the subcommand (`gh -R o/r pr merge 1 --squash`, `gh -R o/r api -X PUT x`,
 `gh -R o/r release create v1`), and `npx @railway/cli up`. With `cmd-detect.sh` broken, or
 a signal mid-run, those are allowed (measured). Not tested on bash 3.2 (macOS).
-SEPARATE, found by the same review, on `main`, NOT fixed here (2026-11-24): the PRECISE path
-of a healthy install allows an OTA update spelled `npm exec eas-cli -- update --branch
-preview` (also `npm exec eas -- update …` and `npm x eas-cli -- update …`): silent, rc 0.
-With a harmless local stub, npm 11.19.1 hands the stub `update --branch preview`, so the
-spelling is a real publish. Denied controls: `npm exec -- eas-cli update …`,
-`npm exec eas-cli update …`, `npm exec --package=eas-cli -- eas update …`. The launcher
-grammar (from line 2711) does not let the launcher-to-verb separator absorb a `--` after the
-package word, as the `explore` arm near line 2894 does.
+SEPARATE, found by the same review, on `main`: FIXED 2026-11-25 (rows `DD` in
+`test-guard-outward-cli.sh`). The PRECISE path of a healthy install allowed an OTA update
+spelled `npm exec eas-cli -- update --branch preview`: silent, rc 0. npm removes that `--`
+and runs `eas-cli update …` (measured again with `npm exec node -- -e …`), so the spelling is
+a real publish. Measured before the fix, the gap was wider than first recorded: a `--`
+between the binary and its verb was allowed for every eas and railway verb check, through
+every launcher (`npx`, `npm exec|x`, `pnpm dlx|exec`, `yarn`, `bunx`, `bun x`) and bare
+(`npm exec railway -- up`, `npm exec eas-cli -- submit`, `eas -- update`). Now every check
+where a gated verb follows a gated binary accepts any number of `--` words in between
+(`_OUT_DD`), and flag-shaped words in front of a `--` with it (`npm exec eas-cli --yes --
+update`). Found by the security review of that change, allowed on `main` too, fixed with it
+(rows `DD2`): a `--` between the two words of the railway checks (`npm exec railway variable
+-- set A=b`: npm removes the first `--` wherever it sits), `npm exec npm -- publish` and
+`npm -- publish` (`npm -- prefix` runs `prefix`), the package-directory paths
+(`npm exec node node_modules/eas-cli/bin/run -- update`), and an expansion in the verb slot
+(`eas -- $V`). `npx`, `bunx` and `node` pass the `--` on to the binary (measured); what eas or
+railway do with a leading `--` was not measured, so those spellings are denied without
+knowing that they publish. Still open, on `main` too, all measured ALLOW:
+- npm's own flags after the package word with NO `--`: `npm exec eas-cli --yes update`,
+  `-y`, `--silent`, `-s`, `--loglevel=error`, `npm exec railway --silent up`. npm consumes
+  the flag (a local stub received only `x` from `npm exec <stub> --yes x`), so these are real
+  publishes. High.
+- any other flag in that slot (`eas --json update`, `npx eas-cli --non-interactive update`,
+  `railway --verbose up`; whether the real CLIs accept a flag there was not measured; the
+  hook's header lists "a global flag before the verb" as a known gap), and `npm -s publish`,
+  `npm --registry=x publish`.
+- a flag whose value is a SEPARATE word in front of the `--`: `npm exec eas-cli --loglevel
+  error -- update`, `npm --prefix . -- publish` (npm consumed the flag, its value and the
+  `--` when measured with `node` as the target). The `=` spellings are denied.
+- a backslash inside the `--` (`npm exec eas-cli -\- update`: the shell delivers `--`), the
+  same blindness as `eas up\date`.
+- a brace or an expansion in place of the `--` or after it under a launcher
+  (`npm exec eas-cli {--,} update`, `npm exec eas-cli $DD update`), and the brace form after
+  a bare `--` (`eas -- {update,}`, `railway -- {up,}`): the brace counters were not changed.
+- `npm exec gh pr -- merge 1 --squash` (`npm exec gh` resolves a registry package, not the
+  real gh).
 `git-safety.sh` FIXED 2026-11-24 (rows ND1-ND7 in `test-git-safety.sh`). Its two unprobed libs
 (`cmd-detect.sh`, `gh-pr-rest.sh`) sit in the advisor branch, after the contract check has
 finished, so a lib that exits there lost a warning and was never a bypass; both are now probed.

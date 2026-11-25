@@ -6964,7 +6964,96 @@ rm -rf $ND_TREES
 # (four), ND3 (sixteen), ND4 (ten), ND5, ND6 (three). RED before the guard change: 20 of them
 # (ND1 and ND2 outward rows, the exit-1 ordinary row, four ND3 rows, all of ND4, ND5).
 # 1360 -> 1367 (2026-11-24, security review of that change): +7 = ND3b (four), ND5b (three).
-EXPECTED_TOTAL=1367
+# ---------- a `--` between the gated binary and its verb (2026-11-25) ----------
+# `npm exec <pkg> -- <args>` is npm's documented spelling: npm removes the `--` and hands
+# <args> to the package's binary (measured here with `npm exec node -- -e ...`). So
+# `npm exec eas-cli -- update` IS `eas update`, and it was ALLOWED: every verb check wanted
+# the verb to be the word right after the binary. `npx <pkg> -- <args>` and `bunx` pass the
+# `--` on to the binary (measured); what eas or railway do with a leading `--` was not
+# measured, so those spellings and the bare `eas -- update` deny too (fail closed).
+DD_L='reached through a launcher'
+while IFS='|' read -r dd_cmd dd_reason; do
+  [ -n "$dd_cmd" ] || continue
+  assert_deny "DD '$dd_cmd' denies" "$(jsonc "$dd_cmd")" "$dd_reason"
+done <<DDROWS
+npm exec eas-cli -- update --branch production|'eas update/publish/submit' $DD_L
+npm exec eas -- update --branch production|'eas update/publish/submit' $DD_L
+npm x eas-cli -- update --branch production|'eas update/publish/submit' $DD_L
+npm exec eas-cli@latest -- update --branch production|'eas update/publish/submit' $DD_L
+npm exec eas-cli 2>&1 -- update --branch production|'eas update/publish/submit' $DD_L
+npm exec eas-cli -- -- update --branch production|'eas update/publish/submit' $DD_L
+npx eas-cli -- update --branch production|'eas update/publish/submit' $DD_L
+pnpm dlx eas-cli -- update --branch production|'eas update/publish/submit' $DD_L
+yarn eas -- update --branch production|'eas update/publish/submit' $DD_L
+bunx eas-cli -- update --branch production|'eas update/publish/submit' $DD_L
+npm exec eas-cli -- submit|'eas update/publish/submit' $DD_L
+npm exec eas-cli -- build --auto-submit|'eas build --auto-submit' $DD_L
+npm exec eas-cli -- update:rollback|'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' $DD_L
+npm exec eas-cli -- channel:edit production|'eas channel:/branch: create/edit/delete/rename' $DD_L
+npm exec railway -- up|'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' $DD_L
+npx @railway/cli -- variable set A=b|'railway variable/vars/var set/delete' $DD_L
+npx railway -- service delete|'railway service/environment delete' $DD_L
+eas -- update --branch production|eas update/publish/submit
+railway -- up|railway up/deploy
+DDROWS
+while IFS= read -r dd_cmd; do
+  [ -n "$dd_cmd" ] || continue
+  assert_allow "DD control '$dd_cmd' stays allowed" "$(jsonc "$dd_cmd")"
+done <<'DDROWS'
+npm exec eas-cli -- whoami
+npm exec eas-cli -- build --platform ios
+npm exec tsc -- --noEmit
+npm exec vitest -- run update
+npm run test -- update
+eas -- whoami
+DDROWS
+
+# DD2 (security review of the change above, all ALLOWED before it and on main): flags in
+# front of the `--`, a `--` between the two words of the railway checks, `npm publish`
+# behind a `--`, the package-directory paths, and an expansion in the verb slot.
+while IFS='|' read -r dd_cmd dd_reason; do
+  [ -n "$dd_cmd" ] || continue
+  assert_deny "DD2 '$dd_cmd' denies" "$(jsonc "$dd_cmd")" "$dd_reason"
+done <<'DDROWS'
+npm exec eas-cli --yes -- update --branch production|'eas update/publish/submit' reached through a launcher
+npm exec eas-cli -s --yes -- update --branch production|'eas update/publish/submit' reached through a launcher
+npm exec railway variable -- set A=b|railway variable/vars/var set/delete
+npm x railway variables -- delete A|railway variable/vars/var set/delete
+npm exec @railway/cli@latest service -- delete|railway service/environment delete
+npm exec railway environment -- delete|railway service/environment delete
+railway variable -- set A=b|railway variable/vars/var set/delete
+railway -- service -- delete|railway service/environment delete
+npm exec npm -- publish|npm publish
+npm exec npm@10 -- publish|npm publish
+npx npm -- publish|npm publish
+npm -- publish|npm publish
+npm exec node node_modules/eas-cli/bin/run -- update|guard-outward-cli
+node node_modules/eas-cli/bin/run -- update|guard-outward-cli
+node node_modules/@railway/cli/bin/railway.js -- up|guard-outward-cli
+eas -- $V|guard-outward-cli
+eas -- "$(echo update)"|guard-outward-cli
+DDROWS
+while IFS= read -r dd_cmd; do
+  [ -n "$dd_cmd" ] || continue
+  assert_allow "DD2 control '$dd_cmd' stays allowed" "$(jsonc "$dd_cmd")"
+done <<'DDROWS'
+railway -- variable list
+railway variable -- list
+npm exec railway -- status
+npm exec eas-cli --yes -- whoami
+npm -- prefix
+npm -- run build
+node node_modules/eas-cli/bin/run -- whoami
+npm exec eas-cli -- update:list
+git diff main -- eas-cli update
+npm test -- eas -- update
+DDROWS
+
+# 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
+# (all RED before the guard change) and 6 allow controls.
+# 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
+# allowed before) and 10 allow controls.
+EXPECTED_TOTAL=1419
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
