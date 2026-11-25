@@ -48,6 +48,14 @@ const state = vi.hoisted(() => ({
     startListening: vi.fn(),
     stopListening: vi.fn(),
   },
+  // useTTS: stable functions, and the finished-reading callback it was given.
+  tts: {
+    speak: vi.fn(),
+    stop: vi.fn(),
+    isSpeaking: false,
+    onFinished: undefined as ((id: number) => void) | undefined,
+  },
+  screenReaderEnabled: false,
   // premium — "coachPro" (mic) stays on the pre-existing `hasVoice` flag;
   // "catalogSave" (the finder's "Get ideas for you" lock) is independent so
   // existing hasVoice-driven tests are unaffected.
@@ -141,11 +149,21 @@ vi.mock("@/hooks/useSpeechToText", () => ({
 }));
 
 vi.mock("@/hooks/useTTS", () => ({
-  useTTS: () => ({
-    isSpeaking: false,
-    speakingMessageId: null,
-    speak: vi.fn(),
-    stop: vi.fn(),
+  useTTS: (options?: { onFinished?: (id: number) => void }) => {
+    state.tts.onFinished = options?.onFinished;
+    return {
+      isSpeaking: state.tts.isSpeaking,
+      speakingMessageId: null,
+      speak: state.tts.speak,
+      stop: state.tts.stop,
+    };
+  },
+}));
+
+vi.mock("@/hooks/useAccessibility", () => ({
+  useAccessibility: () => ({
+    reducedMotion: false,
+    screenReaderEnabled: state.screenReaderEnabled,
   }),
 }));
 
@@ -440,6 +458,13 @@ function resetState() {
     startListening: vi.fn(),
     stopListening: vi.fn(),
   };
+  state.tts = {
+    speak: vi.fn(),
+    stop: vi.fn(),
+    isSpeaking: false,
+    onFinished: undefined,
+  };
+  state.screenReaderEnabled = false;
   state.hasVoice = false;
   state.canSearchOnline = true;
   state.navigate = vi.fn();
@@ -1177,6 +1202,196 @@ describe("CoachChat — speech effects", () => {
     };
     renderCoachChat({ conversationId: 7, isCoachPro: true });
     expect(warmUpHook.sendWarmUp).toHaveBeenCalledWith("interim");
+  });
+});
+
+// ── hands-free turn-taking (Coach roadmap V2) ────────────────────────────────
+describe("CoachChat — hands-free", () => {
+  const START = "Start hands-free conversation";
+  const ui = () => (
+    <CoachChat
+      conversationId={7}
+      onCreateConversation={vi.fn().mockResolvedValue(99)}
+      isCoachPro
+      warmUpHook={warmUpHook}
+    />
+  );
+  /** Change what the speech recognizer reports and re-render. */
+  const speech = (
+    view: ReturnType<typeof renderComponent>,
+    change: Partial<typeof state.speech> & {
+      error?: string | null;
+      errorKind?: string | null;
+    },
+  ) => {
+    state.speech = { ...state.speech, ...change };
+    view.rerender(ui());
+  };
+  /** Start the loop and let the microphone open. */
+  const begin = () => {
+    state.hasVoice = true;
+    const view = renderComponent(ui());
+    fireEvent.click(screen.getByLabelText(START));
+    speech(view, { isListening: true });
+    return view;
+  };
+  /** The user says something and the recognizer ends. */
+  const say = (view: ReturnType<typeof renderComponent>, text: string) => {
+    speech(view, { isFinal: true, transcript: text });
+    speech(view, { isListening: false });
+  };
+
+  it("is offered beside the mic to a user with voice", () => {
+    state.hasVoice = true;
+    renderComponent(ui());
+    expect(screen.getByLabelText(START)).toBeDefined();
+    expect(screen.queryByText("Hands-free")).toBeNull();
+  });
+
+  it("is not offered without voice, or while a screen reader is on", () => {
+    renderComponent(ui());
+    expect(screen.queryByLabelText(START)).toBeNull();
+    state.hasVoice = true;
+    state.screenReaderEnabled = true;
+    renderComponent(ui());
+    expect(screen.queryByLabelText(START)).toBeNull();
+  });
+
+  it("opens the microphone and says it is listening", () => {
+    begin();
+    expect(state.speech.startListening).toHaveBeenCalledOnce();
+    expect(screen.getByText("Listening…")).toBeDefined();
+  });
+
+  it("sends what was heard, reads the reply aloud, then listens again", () => {
+    const view = begin();
+    say(view, "log an apple");
+    expect(state.startStream).toHaveBeenCalledExactlyOnceWith(
+      7,
+      "log an apple",
+      expect.anything(),
+    );
+    expect(screen.getByText("Thinking…")).toBeDefined();
+
+    act(() => state.onDone?.("Logged. Anything else?"));
+    expect(state.tts.speak).toHaveBeenCalledExactlyOnceWith(
+      -2,
+      "Logged. Anything else?",
+    );
+    expect(screen.getByText("Speaking…")).toBeDefined();
+    // The microphone stays shut while the reply is read.
+    expect(state.speech.startListening).toHaveBeenCalledOnce();
+
+    act(() => state.tts.onFinished?.(-2));
+    expect(state.speech.startListening).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Listening…")).toBeDefined();
+  });
+
+  it("does not read replies aloud when hands-free is off", () => {
+    state.hasVoice = true;
+    state.speech = { ...state.speech, isFinal: true, transcript: "hello" };
+    renderComponent(ui());
+    act(() => state.onDone?.("Hi there."));
+    expect(state.tts.speak).not.toHaveBeenCalled();
+  });
+
+  it("ignores another reading finishing", () => {
+    const view = begin();
+    say(view, "log an apple");
+    act(() => state.onDone?.("Logged."));
+    act(() => state.tts.onFinished?.(42));
+    expect(state.speech.startListening).toHaveBeenCalledOnce();
+  });
+
+  it("stops from the Stop button and closes the microphone", () => {
+    begin();
+    fireEvent.click(screen.getByLabelText("Stop hands-free"));
+    expect(state.speech.stopListening).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Hands-free")).toBeNull();
+    expect(state.toastInfo).not.toHaveBeenCalled();
+  });
+
+  it("stops when the user starts typing", () => {
+    begin();
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "a" },
+    });
+    expect(state.speech.stopListening).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Hands-free")).toBeNull();
+  });
+
+  it("stops when the user sends the half-heard words by hand", () => {
+    const view = begin();
+    // The interim transcript fills the message box; the user taps Send.
+    speech(view, { transcript: "log an app" });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(state.startStream).toHaveBeenCalledExactlyOnceWith(
+      7,
+      "log an app",
+      expect.anything(),
+    );
+    expect(state.speech.stopListening).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Hands-free")).toBeNull();
+    // That reply is not read aloud: the loop is over.
+    act(() => state.onDone?.("Logged."));
+    expect(state.tts.speak).not.toHaveBeenCalled();
+  });
+
+  it("stops quietly, with a line saying why, when nothing was said", () => {
+    const view = begin();
+    speech(view, {
+      isListening: false,
+      error: "No speech detected. Please try again.",
+      errorKind: "no-speech",
+    });
+    expect(screen.queryByText("Hands-free")).toBeNull();
+    expect(state.toastError).not.toHaveBeenCalled();
+    expect(state.toastInfo).toHaveBeenCalledExactlyOnceWith(
+      "Hands-free stopped: I didn't hear anything.",
+    );
+    expect(state.startStream).not.toHaveBeenCalled();
+  });
+
+  it("still shows the no-speech error for a plain tap on the mic", () => {
+    state.hasVoice = true;
+    const view = renderComponent(ui());
+    speech(view, {
+      error: "No speech detected. Please try again.",
+      errorKind: "no-speech",
+    });
+    expect(state.toastError).toHaveBeenCalledExactlyOnceWith(
+      "No speech detected. Please try again.",
+    );
+  });
+
+  it("stops when the reply fails, leaving the chat's own error to say so", () => {
+    const view = begin();
+    say(view, "log an apple");
+    act(() => state.onError?.("500: boom"));
+    expect(screen.queryByText("Hands-free")).toBeNull();
+    expect(screen.getByTestId("streaming-error")).toBeDefined();
+    expect(state.toastInfo).not.toHaveBeenCalled();
+    expect(state.tts.speak).not.toHaveBeenCalled();
+  });
+
+  it("stops when the spoken reply is cut off", () => {
+    const view = begin();
+    say(view, "log an apple");
+    act(() => state.onDone?.("A long reply."));
+    state.tts.isSpeaking = true;
+    view.rerender(ui());
+    state.tts.isSpeaking = false;
+    view.rerender(ui());
+    expect(screen.queryByText("Hands-free")).toBeNull();
+    expect(state.speech.startListening).toHaveBeenCalledOnce();
+  });
+
+  it("cannot be started while a reply is on its way", () => {
+    state.hasVoice = true;
+    state.isStreaming = true;
+    renderComponent(ui());
+    fireEvent.click(screen.getByLabelText(START));
+    expect(state.speech.startListening).not.toHaveBeenCalled();
   });
 });
 
