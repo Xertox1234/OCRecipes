@@ -968,6 +968,14 @@ export default function CoachChat({
               params as RootStackParamList["NutritionDetail"],
             );
             break;
+          case "CookMode":
+            // Cook mode reads its steps aloud with its own voice.
+            ttsStop();
+            navigation.navigate(
+              "CookMode",
+              params as RootStackParamList["CookMode"],
+            );
+            break;
           case "FeaturedRecipeDetail":
             navigation.navigate(
               "FeaturedRecipeDetail",
@@ -1028,7 +1036,7 @@ export default function CoachChat({
         });
       }
     },
-    [navigation],
+    [navigation, ttsStop],
   );
 
   const handleCommitmentAccept = useCallback(
