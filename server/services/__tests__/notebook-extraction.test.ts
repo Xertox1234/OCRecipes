@@ -449,6 +449,45 @@ describe("Notebook Extraction", () => {
       expect(entries).toHaveLength(1);
     });
 
+    // Owner ruling 2026-11-25: no conditions, no medications in the notes.
+    it.each([
+      { type: "insight", content: "User is diabetic." },
+      { type: "preference", content: "User takes Ozempic." },
+      {
+        type: "commitment",
+        content: "User will log every meal this week.",
+        label: "logging meals on Ozempic",
+      },
+    ])(
+      "drops a note that names a condition or a medication: $content",
+      async (entry) => {
+        mockCreate.mockResolvedValue(
+          mockCompletion(JSON.stringify({ entries: [entry] })),
+        );
+        const entries = await extractNotebookEntries(
+          [{ role: "user", content: "remember this about me" }],
+          "user-1",
+          1,
+          { tz: "UTC" },
+        );
+        expect(entries).toEqual([]);
+      },
+    );
+
+    it("tells the model conditions and medications are never notes", async () => {
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(
+        [{ role: "user", content: "I'm diabetic" }],
+        "user-1",
+        1,
+        { tz: "UTC" },
+      );
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toMatch(
+        /never record a medical condition, a diagnosis, a medication/i,
+      );
+    });
+
     it("drops a commitment whose label names the unsafe plan", async () => {
       mockCreate.mockResolvedValue(
         mockCompletion(

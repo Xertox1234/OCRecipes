@@ -63,6 +63,12 @@ user data.
   keep them. Until the consent is given again Coach reads none, saves none and sends no commitment
   reminders; the user can still see and delete kept notes. A user who never answered the consent
   question is paused the same way (owner, later the same day: "Pause them too").
+- **Coach's notes hold no medical conditions and no medications** (2026-11-25, coach chat audit).
+  Owner: "I don't think it is appropriate to keep info like that in the notes, if the user is
+  diabetic it should be known from onboarding, as for the meds I would say do not keep." Enforced
+  in code for the notes Coach extracts and the ones a user types
+  (`server/lib/health-note-screen.ts`). The onboarding conditions stay on the profile; they are not
+  passed to Coach today, and that was not changed.
 - **Privacy page date, not the consent version** (2026-11-24). The notes wording change moved the
   pages' effective date to November 24, 2026. `HEALTH_CONSENT_VERSION` stays at `2026-11-10`:
   nobody is asked to agree again (owner: "Date only").

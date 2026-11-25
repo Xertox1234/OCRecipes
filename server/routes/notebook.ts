@@ -1,3 +1,4 @@
+import { mentionsHealthCondition } from "../lib/health-note-screen";
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -29,7 +30,7 @@ const idsSchema = z.object({
 });
 
 /**
- * Why a hand-written note cannot be saved, or null. The same two filters the
+ * Why a hand-written note cannot be saved, or null. The same filters the
  * Coach's own extraction applies before it saves (notebook-extraction.ts):
  * the manual routes used to store any text and mark it confirmed, and
  * confirmed notes are stated back by Coach.
@@ -40,6 +41,9 @@ function refusedNoteText(content: string): string | null {
   }
   if (containsUnsafeCoachAdvice(content)) {
     return "That can't be saved as a note. Coach's notes can't hold medical or extreme-diet instructions.";
+  }
+  if (mentionsHealthCondition(content)) {
+    return "Health conditions and medications aren't kept in Coach's notes. A condition belongs in your dietary profile, under Profile.";
   }
   return null;
 }

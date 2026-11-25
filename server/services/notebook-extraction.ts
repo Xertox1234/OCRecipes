@@ -7,6 +7,7 @@ import {
   type NotebookEntryType,
 } from "@shared/schemas/coach-notebook";
 import { storage } from "../storage";
+import { mentionsHealthCondition } from "../lib/health-note-screen";
 import { logger, toError } from "../lib/logger";
 import {
   containsUnsafeCoachAdvice,
@@ -101,6 +102,7 @@ Rules:
 - Motivations are the deeper "why" behind their goals
 - Never record allergies — they belong in the user's dietary profile, not here
 - Never record feelings as entries — express them only through moodDelta
+- Never record a medical condition, a diagnosis, a medication, a pregnancy or an eating-disorder history, in any type. A way of eating that follows from one may be recorded without the reason ("eats low-carb", never "is diabetic")
 - Never record a goal, commitment, plan or habit that involves fasting for a day or longer, eating under 1,200 calories a day, purging, laxatives, or skipping food to make up for eating. Return no entry for it, in any wording
 - conversation_summary: at most one, 1-2 sentences, and only when the user decided something in "latest" that no saved note covers. Otherwise none
 - coaching_strategy describes how the user responds best (only include if clear signal)
@@ -322,6 +324,9 @@ export async function extractNotebookEntries(
             !(e.type === "coaching_strategy" && !includeStrategy) &&
             !ALLERGY_RE.test(e.content) &&
             !COMPENSATION_RE.test(e.content) &&
+            // Owner ruling 2026-11-25: no conditions, no medications.
+            !mentionsHealthCondition(e.content) &&
+            !(e.label && mentionsHealthCondition(e.label)) &&
             !(wroteCard && CARD_TURN_DROPPED_TYPES.has(e.type)),
         )
         .map((e) => {

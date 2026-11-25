@@ -367,6 +367,17 @@ describe("what a user may add or change by hand", () => {
     expect(storage.createNotebookEntry).not.toHaveBeenCalled();
   });
 
+  // Owner ruling 2026-11-25.
+  it.each(["I have type 2 diabetes", "I take Ozempic on Mondays"])(
+    "refuses a note that names a condition or a medication: %s",
+    async (content) => {
+      const res = await post({ type: "preference", content });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/conditions and medications/i);
+      expect(storage.createNotebookEntry).not.toHaveBeenCalled();
+    },
+  );
+
   it("refuses a note that reads as unsafe advice", async () => {
     const res = await post({ type: "goal", content: "Fast for 3 days" });
     expect(res.status).toBe(400);
