@@ -129,6 +129,31 @@ export function CoachOverlayContent({
   // double it.
   const createConversation = useCreateConversation({ silentError: true });
   const { data: messages } = useChatMessages(conversationId);
+  // The saved messages as of the last render, for the stream callbacks.
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  // The turn on its way: what was sent, and the newest saved id at that
+  // moment, so a failure can tell whether the server saved the question.
+  const sentTurnRef = useRef<{
+    text: string;
+    lastSavedId: number | null;
+  } | null>(null);
+  const noteSent = (text: string) => {
+    const ids = (messagesRef.current ?? []).map((m) => m.id);
+    sentTurnRef.current = {
+      text,
+      lastSavedId: ids.length > 0 ? Math.max(...ids) : null,
+    };
+  };
+  // The reply that just finished, shown until its saved copy arrives: the
+  // streamed bubble goes away with the stream, and the saved copy needs a
+  // round trip, so the answer used to blink out in between (audit L58).
+  const [finishedReply, setFinishedReply] = useState<{
+    text: string;
+    savedAssistantCount: number;
+  } | null>(null);
   // Set by onDone; read by the stream-finish announcement so a failed
   // stream isn't announced as a received reply.
   const replyArrivedRef = useRef(false);
@@ -146,6 +171,14 @@ export function CoachOverlayContent({
       // dead-socket abort also lands here, possibly with nothing received.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
+      if (fullText.trim().length > 0) {
+        setFinishedReply({
+          text: fullText,
+          savedAssistantCount: (messagesRef.current ?? []).filter(
+            (m) => m.role === "assistant",
+          ).length,
+        });
+      }
       if (conversationId !== null) {
         void queryClient.invalidateQueries({
           queryKey: chatMessagesKey(conversationId),
@@ -157,6 +190,29 @@ export function CoachOverlayContent({
     },
     onError: () => {
       setStreamError(true);
+      // Re-read the thread, then give the question back if the server never
+      // saved it (offline, refused, handed back). "Try sending again" used
+      // to point at an input that only sends follow-ups, so a failed first
+      // question had to be retyped (audit L58).
+      const sent = sentTurnRef.current;
+      const reread =
+        conversationId !== null
+          ? queryClient
+              .invalidateQueries({ queryKey: chatMessagesKey(conversationId) })
+              .catch(() => undefined)
+          : Promise.resolve();
+      void reread.then(() => {
+        if (!sent || sentTurnRef.current !== sent) return;
+        const floor = sent.lastSavedId ?? Number.NEGATIVE_INFINITY;
+        const saved = (messagesRef.current ?? []).some(
+          (m) => m.role === "user" && m.id > floor,
+        );
+        if (!saved) {
+          setInputText((current) =>
+            current.trim() === "" ? sent.text : current,
+          );
+        }
+      });
       // The banner's assertive live region speaks this on Android; announce
       // only for iOS VoiceOver so TalkBack doesn't read it twice.
       if (Platform.OS === "ios") {
@@ -195,6 +251,7 @@ export function CoachOverlayContent({
     didSendRef.current = true;
     setDidSend(true);
 
+    noteSent(question.question);
     startStream(conversationId, question.question, { screenContext });
 
     return () => {
@@ -220,6 +277,12 @@ export function CoachOverlayContent({
   // Build display messages — show optimistic user bubble before server messages load
   const serverMessages = (messages ?? []).filter((m) => m.role !== "system");
   const showOptimisticUser = serverMessages.length === 0 && didSend;
+  // Until the saved copy of the finished reply is in the thread.
+  const showFinishedReply =
+    !isStreaming &&
+    finishedReply !== null &&
+    serverMessages.filter((m) => m.role === "assistant").length <=
+      finishedReply.savedAssistantCount;
 
   const displayMessages = [
     ...(showOptimisticUser
@@ -242,6 +305,18 @@ export function CoachOverlayContent({
             conversationId: conversationId ?? 0,
             role: "assistant" as const,
             content: streamingContent,
+            metadata: null,
+            createdAt: new Date().toISOString(),
+          },
+        ]
+      : []),
+    ...(showFinishedReply
+      ? [
+          {
+            id: -1,
+            conversationId: conversationId ?? 0,
+            role: "assistant" as const,
+            content: finishedReply.text,
             metadata: null,
             createdAt: new Date().toISOString(),
           },
@@ -286,6 +361,8 @@ export function CoachOverlayContent({
     const text = inputText.trim();
     setInputText("");
     setStreamError(false);
+    setFinishedReply(null);
+    noteSent(text);
     // No reminder clear here: this sheet never shows why the Coach tab dot is
     // lit, so a send must not erase that reason (opening-brief spec).
     startStream(conversationId, text);

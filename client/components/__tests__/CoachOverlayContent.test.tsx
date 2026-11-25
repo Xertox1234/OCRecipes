@@ -438,3 +438,93 @@ describe("CoachOverlayContent — replies with cards", () => {
     ).toBeNull();
   });
 });
+
+// Coach chat audit 2026-11-24 (L58).
+describe("CoachOverlayContent — the reply and the question are not lost", () => {
+  const proto = HTMLElement.prototype as unknown as {
+    scrollToEnd?: () => void;
+  };
+  beforeAll(() => {
+    proto.scrollToEnd = vi.fn();
+  });
+  afterAll(() => {
+    delete proto.scrollToEnd;
+  });
+  afterEach(() => {
+    messagesHolder.messages = [];
+    stream.startStream.mockClear();
+  });
+
+  const renderOverlay = async () => {
+    const view = renderComponent(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(stream.startStream).toHaveBeenCalled());
+    return view;
+  };
+  const savedMessage = (id: number, role: string, content: string) => ({
+    id,
+    conversationId: 9,
+    role,
+    content,
+    metadata: null,
+    createdAt: new Date().toISOString(),
+  });
+
+  // The streamed bubble went away when the stream ended, and the saved copy
+  // only arrived after a round trip: the answer blinked out in between.
+  it("keeps the finished reply on screen until its saved copy arrives", async () => {
+    const view = await renderOverlay();
+    act(() => {
+      stream.setStreaming(false);
+      stream.opts.onDone?.("About 80 grams so far.", []);
+    });
+    expect(screen.getByText("About 80 grams so far.")).toBeDefined();
+
+    messagesHolder.messages = [
+      savedMessage(1, "user", "protein_today"),
+      savedMessage(2, "assistant", "About 80 grams so far."),
+    ];
+    view.rerender(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText("About 80 grams so far.")).toHaveLength(1);
+  });
+
+  // "Try sending again" pointed at an input that only sends follow-ups.
+  it("puts a failed first question back in the input", async () => {
+    await renderOverlay();
+    await act(async () => {
+      stream.setStreaming(false);
+      stream.opts.onError?.("Network error");
+    });
+    const input = await screen.findByLabelText("Type a follow-up question");
+    await waitFor(() => expect(reactProps(input).value).toBe("protein_today"));
+  });
+
+  it("gives nothing back when the server saved the question", async () => {
+    const view = await renderOverlay();
+    messagesHolder.messages = [savedMessage(1, "user", "protein_today")];
+    view.rerender(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+    await act(async () => {
+      stream.setStreaming(false);
+      stream.opts.onError?.("Response interrupted");
+    });
+    const input = await screen.findByLabelText("Type a follow-up question");
+    expect(reactProps(input).value).toBe("");
+  });
+});
