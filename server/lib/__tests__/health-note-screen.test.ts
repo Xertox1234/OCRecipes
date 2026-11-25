@@ -31,6 +31,19 @@ describe("mentionsHealthCondition", () => {
     "User is on antidepressants.",
     "User's doctor prescribed a low-sodium diet.",
     "your ozempic routine",
+    "User has asthma.",
+    "User has arthritis.",
+    "User has lupus.",
+    "User gets migraines.",
+    "User has hypoglycemia.",
+    "User has high blood sugar.",
+    "User has kidney stones.",
+    "User takes blood thinners.",
+    "User is on warfarin.",
+    "User takes lisinopril.",
+    "User uses an inhaler.",
+    "User is on antibiotics.",
+    "User takes steroids for a flare-up.",
   ])("flags a condition or medication: %s", (text) => {
     expect(mentionsHealthCondition(text)).toBe(true);
   });

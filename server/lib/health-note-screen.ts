@@ -4,6 +4,9 @@
  * are not kept). This is the code screen behind that rule, for the notes
  * Coach extracts and the ones a user types. It errs toward dropping: a lost
  * note costs little, a stored diagnosis is health data in the wrong place.
+ * A word list cannot name every condition or drug: the extraction prompt
+ * carries the rule too, and a typed note that names only an unlisted drug
+ * gets through.
  *
  * Words are chosen so ordinary food notes pass: "heart-healthy", "pressure
  * cooker", "low-sodium" and "cutting carbs" name no condition.
@@ -47,6 +50,13 @@ const CONDITIONS = [
   "postpartum",
   "menopaus\\w*",
   "(?:bariatric|gastric|weight[- ]loss)\\s+(?:surgery|bypass|sleeve|band)",
+  "asthma\\w*",
+  "arthritis",
+  "lupus",
+  "migraines?",
+  "hypoglyc(?:a)?emi[ac]",
+  "(?:high|low)\\s+blood\\s+sugar",
+  "kidney\\s+stones?",
   "diagnos\\w*",
 ];
 
@@ -68,6 +78,13 @@ const MEDICATIONS = [
   "antidepressants?",
   "ssris?",
   "beta[- ]blockers?",
+  "blood\\s+thinners?",
+  "anticoagulants?",
+  "warfarin",
+  "lisinopril",
+  "antibiotics?",
+  "steroids?",
+  "inhalers?",
   "medications?",
   "meds",
   "prescri\\w*",
