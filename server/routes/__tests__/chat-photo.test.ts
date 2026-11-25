@@ -198,7 +198,13 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(res.status).toBe(201);
     expect(buildPhotoReply).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ pantryTracking: true }),
+      expect.objectContaining({
+        receipts: {
+          pantryTracking: true,
+          receiptScanner: true,
+          monthlyReceiptScans: 15,
+        },
+      }),
     );
     expect(createWriteCardBlock).toHaveBeenCalledWith(
       { kind: "pantry", args: pantryArgs },

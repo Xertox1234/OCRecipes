@@ -184,7 +184,11 @@ export function register(app: Express): void {
               tz,
               now: new Date(),
               userId: req.userId,
-              pantryTracking: !!features.pantryTracking,
+              receipts: {
+                pantryTracking: features.pantryTracking,
+                receiptScanner: features.receiptScanner,
+                monthlyReceiptScans: features.monthlyReceiptScans,
+              },
             });
             const cardCtx = { conversationId: id, userId: req.userId, tz };
             const { payload, pantry } = reply;

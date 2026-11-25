@@ -13,7 +13,11 @@ import {
 vi.mock("../receipt-analysis", () => ({ analyzeReceiptPhotos: vi.fn() }));
 vi.mock("../write-cards/pantry", () => ({ planPantryCard: vi.fn() }));
 vi.mock("../../storage", () => ({
-  storage: { claimDailyAiCall: vi.fn() },
+  storage: {
+    claimDailyAiCall: vi.fn(),
+    getMonthlyReceiptScanCount: vi.fn(),
+    createReceiptScan: vi.fn(),
+  },
 }));
 
 type Line = Parameters<typeof receiptToPantryChanges>[0][number];
@@ -119,6 +123,20 @@ describe("receiptToPantryChanges", () => {
     expect((changes[0] as { unit?: string }).unit).toHaveLength(40);
   });
 
+  it("strips invisible characters from names and clips by whole characters", () => {
+    const { changes } = receiptToPantryChanges([
+      line({ name: "Ba\u200bna\u202enas" }),
+      line({ name: "x".repeat(199) + "\u{1F34C}" + "y" }),
+    ]);
+    expect(changes[0].name).toBe("Bananas");
+    expect(changes[1].name).toBe("x".repeat(199) + "\u{1F34C}");
+  });
+
+  it("leaves off an amount too large for the pantry to store", () => {
+    const { changes } = receiptToPantryChanges([line({ quantity: 1e12 })]);
+    expect(changes[0]).not.toHaveProperty("quantity");
+  });
+
   it("leaves the amount off when the receipt shows none", () => {
     const { changes } = receiptToPantryChanges([line({ quantity: 0 })]);
     expect(changes[0]).not.toHaveProperty("quantity");
@@ -135,7 +153,12 @@ describe("receiptToPantryChanges", () => {
 });
 
 describe("receiptPhotoReply", () => {
-  const ctx = { userId: "u1", pantryTracking: true };
+  const features = {
+    pantryTracking: true,
+    receiptScanner: true,
+    monthlyReceiptScans: 15,
+  };
+  const ctx = { userId: "u1", features };
   const payload = {
     rows: [
       {
@@ -154,6 +177,7 @@ describe("receiptPhotoReply", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
+    vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
     vi.mocked(analyzeReceiptPhotos).mockResolvedValue(receipt([line()]));
     vi.mocked(planPantryCard).mockResolvedValue({ payload, dropped: 0 });
   });
@@ -185,6 +209,45 @@ describe("receiptPhotoReply", () => {
       pantryCardPayloadSchema.safeParse(reply.pantry?.payload).success,
     ).toBe(true);
     expect(reply.text).toBe(RECEIPT_TEXT);
+    // Counted toward the same monthly total as the pantry's receipt scan.
+    expect(storage.createReceiptScan).toHaveBeenCalledWith({
+      userId: "u1",
+      itemCount: 1,
+      photoCount: 1,
+      status: "completed",
+    });
+  });
+
+  it("stops at the monthly receipt limit before any credit or read", async () => {
+    vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(15);
+    const reply = await receiptPhotoReply("BASE64", ctx);
+    expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
+    expect(analyzeReceiptPhotos).not.toHaveBeenCalled();
+    expect(reply.pantry).toBeUndefined();
+    expect(reply.text).toMatch(/this month/);
+  });
+
+  it("records a failed read, which the monthly limit does not count, and rethrows", async () => {
+    vi.mocked(analyzeReceiptPhotos).mockRejectedValue(new Error("vision down"));
+    await expect(receiptPhotoReply("BASE64", ctx)).rejects.toThrow(
+      "vision down",
+    );
+    expect(storage.createReceiptScan).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed", itemCount: 0 }),
+    );
+  });
+
+  it("shows no card for a read it has little confidence in (a photo that is not a receipt)", async () => {
+    vi.mocked(analyzeReceiptPhotos).mockResolvedValue(
+      receipt([line()], { overallConfidence: 0.2 }),
+    );
+    const reply = await receiptPhotoReply("BASE64", ctx);
+    expect(planPantryCard).not.toHaveBeenCalled();
+    expect(reply.pantry).toBeUndefined();
+    expect(reply.text).toMatch(/couldn't read/);
+    expect(storage.createReceiptScan).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
   });
 
   it("never repeats item names in its line (they are model output)", async () => {
@@ -199,6 +262,9 @@ describe("receiptPhotoReply", () => {
     const reply = await receiptPhotoReply("BASE64", ctx);
     expect(reply.text).toMatch(/left out 1 line/);
     expect(reply.text).toMatch(/cut off/);
+    expect(storage.createReceiptScan).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "partial" }),
+    );
   });
 
   it("says no food was found and shows no card", async () => {
@@ -209,16 +275,20 @@ describe("receiptPhotoReply", () => {
     expect(reply.text).toMatch(/couldn't find any food/);
   });
 
-  it("asks for the pantry plan and spends nothing without one", async () => {
-    const reply = await receiptPhotoReply("BASE64", {
-      ...ctx,
-      pantryTracking: false,
-    });
-    expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
-    expect(analyzeReceiptPhotos).not.toHaveBeenCalled();
-    expect(reply.pantry).toBeUndefined();
-    expect(reply.text).toMatch(/pantry/);
-  });
+  it.each(["pantryTracking", "receiptScanner"] as const)(
+    "asks for the plan and spends nothing without %s",
+    async (flag) => {
+      const reply = await receiptPhotoReply("BASE64", {
+        ...ctx,
+        features: { ...features, [flag]: false },
+      });
+      expect(storage.getMonthlyReceiptScanCount).not.toHaveBeenCalled();
+      expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
+      expect(analyzeReceiptPhotos).not.toHaveBeenCalled();
+      expect(reply.pantry).toBeUndefined();
+      expect(reply.text).toMatch(/pantry/);
+    },
+  );
 
   it("stops at the daily receipt limit without reading the receipt", async () => {
     vi.mocked(storage.claimDailyAiCall).mockResolvedValue(false);

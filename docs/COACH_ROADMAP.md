@@ -57,8 +57,10 @@ Then re-rank.
       Needs S1.
       Part 1, PR #PRNUM: a grocery receipt photo sent to the chat becomes the
       pantry card, one row per food with its amount and shelf life (a food
-      already in the pantry in the same unit is topped up). It spends a
-      receipt credit as well as the photo credit. Part 2: the menu card.
+      already in the pantry in the same unit is topped up). It follows the
+      pantry receipt scan's plan rules and counts toward the same monthly
+      scans, and spends a receipt credit as well as the photo credit.
+      Part 2: the menu card.
 
 ## Touch: blocks the user can operate (rung 8)
 

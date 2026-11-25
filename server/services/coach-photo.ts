@@ -42,7 +42,7 @@ import type {
   FoodCardPayload,
   PantryCardPayload,
 } from "@shared/schemas/coach-write-cards";
-import { receiptPhotoReply } from "./coach-receipt-photo";
+import { receiptPhotoReply, type ReceiptFeatures } from "./coach-receipt-photo";
 
 export {
   COACH_PHOTO_USER_TEXT,
@@ -365,7 +365,7 @@ async function mealPhotoReply(
  */
 export async function buildPhotoReply(
   imageBase64: string,
-  ctx: { tz: string; now: Date; userId: string; pantryTracking: boolean },
+  ctx: { tz: string; now: Date; userId: string; receipts: ReceiptFeatures },
 ): Promise<PhotoReply> {
   const seen = await classifyPhoto(imageBase64).catch((err) => {
     logger.warn({ err: toError(err) }, "coach photo: classification failed");
@@ -394,7 +394,7 @@ export async function buildPhotoReply(
   if (seen.contentType === "grocery_receipt") {
     return receiptPhotoReply(imageBase64, {
       userId: ctx.userId,
-      pantryTracking: ctx.pantryTracking,
+      features: ctx.receipts,
     });
   }
   return mealPhotoReply(imageBase64, ctx);

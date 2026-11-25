@@ -275,7 +275,11 @@ const ctx = {
   tz: "UTC",
   now: new Date("2026-11-24T12:30:00Z"),
   userId: "u1",
-  pantryTracking: true,
+  receipts: {
+    pantryTracking: true,
+    receiptScanner: true,
+    monthlyReceiptScans: 15,
+  },
 };
 
 function scanContext(
@@ -332,7 +336,7 @@ describe("buildPhotoReply", () => {
     expect(reply).toBe(receiptReply);
     expect(receiptPhotoReply).toHaveBeenCalledWith("BASE64", {
       userId: "u1",
-      pantryTracking: true,
+      features: ctx.receipts,
     });
     expect(analyzePhoto).not.toHaveBeenCalled();
   });
