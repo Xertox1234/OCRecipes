@@ -835,12 +835,16 @@ main checkout, or an `rm -rf <main>/server` followed by 200 KB of comment lines,
 every time; 60-100 KB some of the time. Every such grep in the hook now reads a here-string
 (`_gs_grep`), the no-`jq` arm included. Also: `git` and `gh` run with fd 9 closed, so a child
 that outlives the hook cannot hold its stdout open.
-NOT yet checked: the same `printf '%s' "$VAR" | grep` shape in `merge-review-guard.sh`,
-`guard-worktree-isolation.sh` and `core-bare-guard.sh` (all under `pipefail`;
-`guard-outward-cli.sh` and `branch-preflight.sh` were checked and converted 2026-11-24;
-`pr-preflight-guard.sh` was read 2026-11-25 and has no `grep -q` condition fed by a pipe: its
-piped greps are `grep -o` captures with `|| true`). Whether any of
-them is a condition over a large text that fails open is unmeasured; the known pattern is
+CHECKED 2026-11-25, the last three hooks under `pipefail`: `guard-worktree-isolation.sh` and
+`core-bare-guard.sh` have no `grep -q` at all (`guard-outward-cli.sh` and `branch-preflight.sh`
+were converted 2026-11-24; `pr-preflight-guard.sh` has only `grep -o` captures with `|| true`).
+`merge-review-guard.sh` had eight. Six read one `gh api` clause each: measured DENY 3 of 3 for
+seven 300 KB spellings of an api merge (one long line, quoted multi-line values, a heredoc,
+12000 continuation words), because a clause is a single line and grep reads a line to its end,
+so the printf is never cut off. Nothing failed open. The other two read the PR body's
+`## Platform check` section and failed CLOSED: a section over the pipe buffer that named the
+run near its top was denied as "does not name E2E run" (rows P11/P12, 300 KB). All eight now
+read here-strings. The known pattern is
 `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-*.md`.
 Still open in `git-safety.sh`: a lib that replaces the trap, sets `DECIDED` or
 `CONTRACT_DONE`, redefines a function the hook defines before the libs are sourced (`deny`,

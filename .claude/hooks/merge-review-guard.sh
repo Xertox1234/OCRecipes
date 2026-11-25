@@ -509,7 +509,13 @@ case "$TOOL" in
           # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`. A redirect
           # operator terminates a word without whitespace, so a hand-spelled closer skips a glued
           # `>`; #992 swept these. Do not re-spell one.
-          printf '%s' "$MRG_API_CLAUSE" | grep -qiE 'pulls.*merge' || continue
+          # EVERY `grep -q` CONDITION IN THIS FILE READS A HERE-STRING, NEVER A PIPE. Under
+          # `pipefail`, `printf "$BIG" | grep -q` reports 141 for a MATCH once the text outgrows
+          # the pipe buffer: grep leaves at its first match and the printf dies of SIGPIPE. The
+          # clause greps here were safe only because a clause is one line (grep reads a line to
+          # its end); the two '## Platform check' greps below were not, and denied a section
+          # over 64 KB that named the run (rows P11/P12).
+          grep -qiE 'pulls.*merge' <<< "$MRG_API_CLAUSE" || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a
           # -X/--method flag is present at all alongside a `$`/backtick anywhere in the
@@ -540,11 +546,11 @@ case "$TOOL" in
           # this pipeline byte-for-byte.
           MRG_API_ARGV=$(printf '%s' "$MRG_API_CLAUSE" | sed -E 's/[[:space:]]#.*$//')
           [ -n "${_CMD_REDIR:-}" ] && MRG_API_ARGV=$(printf '%s' "$MRG_API_ARGV" | sed -E "s/(^|[[:space:]])${_CMD_REDIR}/\1 /g")
-          if printf '%s' "$MRG_API_CLAUSE" | grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" \
-             || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' \
-                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; } \
-             || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_FIELD" \
-                  && ! printf '%s' "$MRG_API_ARGV" | grep -Eq "$MRG_API_ANYMETHOD"; }; then
+          if grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" <<< "$MRG_API_CLAUSE" \
+             || { grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' <<< "$MRG_API_CLAUSE" \
+                  && grep -qE '[$`]' <<< "$MRG_API_CLAUSE"; } \
+             || { grep -Eq "$MRG_API_FIELD" <<< "$MRG_API_CLAUSE" \
+                  && ! grep -Eq "$MRG_API_ANYMETHOD" <<< "$MRG_API_ARGV"; }; then
             MRG_API_HIT=1
             break
           fi
@@ -800,10 +806,10 @@ case "$P_RC" in
     P_SECTION=$(printf '%s\n' "$P_BODY" | awk '/^## /{on = ($0 ~ /^## Platform check[[:space:]]*$/); next} on')
     [ -n "$P_SECTION" ] \
       || deny "Blocked: PR #$PR needs a real-platform check ($P_WHY_ONE). E2E run $P_ID on head ${HEAD_SHA:0:7} finished ($P_CONC), but the PR body has no '## Platform check' section. Add one naming run $P_ID and the real simulator upload you did (which upload, and the server's 2xx line). $BYPASS"
-    printf '%s\n' "$P_SECTION" | grep -qw "$P_ID" \
+    grep -qw "$P_ID" <<< "$P_SECTION" \
       || deny "Blocked: PR #$PR's '## Platform check' section does not name E2E run $P_ID, the newest completed run on head ${HEAD_SHA:0:7} ($P_CONC). Record that run, not an earlier one. $BYPASS"
     if [ "$P_CONC" != "success" ]; then
-      printf '%s\n' "$P_SECTION" | grep -q '^Already failing on main:' \
+      grep -q '^Already failing on main:' <<< "$P_SECTION" \
         || deny "Blocked: E2E run $P_ID on head ${HEAD_SHA:0:7} is $P_CONC. PR #$PR may merge only if every failed flow also failed on main's latest nightly: list them in '## Platform check' on a line starting 'Already failing on main:' with that nightly's run id. Otherwise fix the failure, push, and run E2E again. $BYPASS"
     fi
     ;;
