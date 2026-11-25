@@ -85,7 +85,7 @@ Then re-rank.
       card. Only this one job is chained; other pairs still take two turns.
 - [x] **A2. Proactive Coach.** The Coach starts a conversation by push
       notification. One trigger first (expiring pantry items), with a strict
-      daily cap. Value: high. Size: L. PR #PRNUM. At 16:00 the user's time,
+      daily cap. Value: high. Size: L. PR #2045. At 16:00 the user's time,
       a user with pantry tracking whose food expires within a day gets one
       push ("Use it before it goes"); tapping it opens a new conversation
       that starts with the Coach's message. The wording is fixed (no model
