@@ -93,7 +93,52 @@ export async function createNotebookEntry(
 const MAX_ENTRY_CONTENT_LENGTH = 500;
 const MAX_ENTRIES_PER_BATCH = 10;
 
+/** The pool or a transaction client. */
+type Executor = Pick<typeof db, "select" | "insert" | "update">;
+
+/**
+ * `turnStart`: for notes taken from a chat turn, when that turn began. The
+ * extraction runs after the reply and takes seconds; if the user cleared the
+ * notebook in between ("Clear everything Coach knows"), nothing is written
+ * (coach chat audit 2026-11-24, L108). The profile row is locked for the
+ * check and the insert, and the clear writes that row first, so the two
+ * cannot interleave.
+ */
 export async function createNotebookEntries(
+  entries: InsertCoachNotebookEntry[],
+  opts: { turnStart?: Date } = {},
+): Promise<CoachNotebookEntry[]> {
+  if (entries.length === 0) return [];
+  const { turnStart } = opts;
+  if (!turnStart) return insertNotebookEntries(db, entries);
+  return db.transaction(async (tx) => {
+    const userIds = [...new Set(entries.map((e) => e.userId))];
+    const profiles = await tx
+      .select({
+        userId: userProfiles.userId,
+        notebookClearedAt: userProfiles.notebookClearedAt,
+      })
+      .from(userProfiles)
+      .where(inArray(userProfiles.userId, userIds))
+      .for("update");
+    const cleared = new Set(
+      profiles
+        .filter(
+          (p) =>
+            p.notebookClearedAt !== null &&
+            p.notebookClearedAt.getTime() >= turnStart.getTime(),
+        )
+        .map((p) => p.userId),
+    );
+    return insertNotebookEntries(
+      tx,
+      entries.filter((e) => !cleared.has(e.userId)),
+    );
+  });
+}
+
+async function insertNotebookEntries(
+  exec: Executor,
   entries: InsertCoachNotebookEntry[],
 ): Promise<CoachNotebookEntry[]> {
   if (entries.length === 0) return [];
@@ -131,9 +176,9 @@ export async function createNotebookEntries(
   // unique index makes this insert idempotent when the SSE stream is retried.
   // Rows without a `dedupeKey` (legacy/manual inserts) still insert normally
   // because Postgres treats NULLs as distinct in a unique index.
-  const fresh = await refreshRepeats(clamped);
+  const fresh = await refreshRepeats(exec, clamped);
   if (fresh.length === 0) return [];
-  return db
+  return exec
     .insert(coachNotebook)
     .values(fresh)
     .onConflictDoNothing()
@@ -159,6 +204,7 @@ export const REPEAT_SCAN_LIMIT = 200;
  * so that set stays small. Active rows are read up to `REPEAT_SCAN_LIMIT`.
  */
 async function refreshRepeats(
+  exec: Executor,
   entries: InsertCoachNotebookEntry[],
 ): Promise<InsertCoachNotebookEntry[]> {
   const userIds = [...new Set(entries.map((e) => e.userId))];
@@ -176,11 +222,11 @@ async function refreshRepeats(
   ];
   // One after the other: this can run on a transaction client, which takes
   // one query at a time.
-  const rejected = await db
+  const rejected = await exec
     .select(columns)
     .from(coachNotebook)
     .where(and(...scope, eq(coachNotebook.status, "rejected")));
-  const active = await db
+  const active = await exec
     .select(columns)
     .from(coachNotebook)
     .where(and(...scope, eq(coachNotebook.status, "active")))
@@ -202,7 +248,7 @@ async function refreshRepeats(
     else if (match.status === "active") toRefresh.push(match.id);
   }
   if (toRefresh.length > 0) {
-    await db
+    await exec
       .update(coachNotebook)
       .set({ updatedAt: new Date() })
       .where(inArray(coachNotebook.id, [...new Set(toRefresh)]));

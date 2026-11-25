@@ -48,6 +48,7 @@ const userProfileDefaults: UserProfile = {
   allergies: [],
   moodScore: 0,
   moodUpdatedAt: null,
+  notebookClearedAt: null,
   healthConditions: [],
   dietType: null,
   foodDislikes: [],

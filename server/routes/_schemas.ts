@@ -362,6 +362,9 @@ export const userProfileInputSchema = insertUserProfileSchema
     healthDataConsentHistory: true,
     moodScore: true,
     moodUpdatedAt: true,
+    // Stamped only by "Clear everything Coach knows"; a client that could
+    // reset it would let a late note write through again.
+    notebookClearedAt: true,
     // Written only by PUT /api/family-planning, behind the premium gate.
     familyPlanningEnabled: true,
   })

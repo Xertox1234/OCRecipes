@@ -16,6 +16,7 @@ const mockProfile: UserProfile = {
   allergies: [{ name: "peanuts", severity: "severe" as const }],
   moodScore: 0,
   moodUpdatedAt: null,
+  notebookClearedAt: null,
   healthConditions: [],
   dietType: "keto",
   foodDislikes: [],
