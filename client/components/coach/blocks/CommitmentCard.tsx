@@ -10,6 +10,7 @@ import Animated from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
 import { PressableScale } from "@/components/PressableScale";
 import { useSuccessPop } from "@/hooks/useSuccessAnimation";
+import { useCoachNotesOff } from "@/hooks/useHealthConsent";
 import { withOpacity } from "@/constants/theme";
 import type { CommitmentCard as CommitmentCardType } from "@shared/schemas/coach-blocks";
 
@@ -23,6 +24,9 @@ interface Props {
   isAccepted?: boolean;
 }
 
+const NOTES_OFF_TEXT =
+  "Coach's notes are off, so this check-in can't be saved.";
+
 const CommitmentCard = React.memo(function CommitmentCard({
   block,
   onAccept,
@@ -33,6 +37,10 @@ const CommitmentCard = React.memo(function CommitmentCard({
     useSuccessPop(1.4);
   const [localAccepted, setLocalAccepted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  // A card drawn before the health consent was withdrawn: Coach's notes are
+  // off now, so accepting would save nothing. Read here, not passed down:
+  // the card is memoised and sits three layers under the chat.
+  const notesOff = useCoachNotesOff();
 
   // Use controlled prop if provided; fall back to local state
   const accepted = isAccepted ?? localAccepted;
@@ -59,7 +67,7 @@ const CommitmentCard = React.memo(function CommitmentCard({
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
       role="group"
-      accessibilityLabel={`${accepted ? "Accepted commitment" : "Commitment"}: ${block.title}. ${block.followUpText}`}
+      accessibilityLabel={`${accepted ? "Accepted commitment" : "Commitment"}: ${block.title}. ${block.followUpText}${!accepted && notesOff ? ` ${NOTES_OFF_TEXT}` : ""}`}
     >
       <View style={styles.header}>
         {/*
@@ -92,7 +100,12 @@ const CommitmentCard = React.memo(function CommitmentCard({
       <Text style={[styles.followUp, { color: theme.textSecondary }]}>
         {block.followUpText}
       </Text>
-      {!accepted && (
+      {!accepted && notesOff && (
+        <Text style={[styles.followUp, { color: theme.textSecondary }]}>
+          {NOTES_OFF_TEXT}
+        </Text>
+      )}
+      {!accepted && !notesOff && (
         <View style={styles.actions}>
           <PressableScale
             style={[

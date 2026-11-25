@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   HEALTH_CONSENT_PROMPT,
   WITHDRAW_HEALTH_CONSENT_PROMPT,
+  coachNotesOff,
   hasConsented,
   needsHealthConsent,
 } from "../health-consent";
@@ -68,5 +69,26 @@ describe("consent prompts", () => {
     expect(WITHDRAW_HEALTH_CONSENT_PROMPT.message).toMatch(/allergies/i);
     expect(WITHDRAW_HEALTH_CONSENT_PROMPT.message).toMatch(/diet type/i);
     expect(WITHDRAW_HEALTH_CONSENT_PROMPT.destructive).toBe(true);
+  });
+});
+
+describe("coachNotesOff", () => {
+  const withdrawn = {
+    healthDataConsentAt: null,
+    healthDataConsentWithdrawnAt: "2026-11-20T00:00:00Z",
+  };
+  const consented = { healthDataConsentAt: "2026-11-21T00:00:00Z" };
+
+  it("is true for a loaded profile whose consent was withdrawn", () => {
+    expect(coachNotesOff(withdrawn, true)).toBe(true);
+  });
+
+  it("is false for a loaded profile with the consent on record", () => {
+    expect(coachNotesOff(consented, true)).toBe(false);
+  });
+
+  it("is false until the profile has loaded, whatever it holds", () => {
+    expect(coachNotesOff(undefined, false)).toBe(false);
+    expect(coachNotesOff(withdrawn, false)).toBe(false);
   });
 });

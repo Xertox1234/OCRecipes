@@ -1,4 +1,4 @@
-import { hasHealthData } from "@shared/lib/health-consent";
+import { coachNotesPaused, hasHealthData } from "@shared/lib/health-consent";
 import { AI_RECIPIENT_NAMES } from "@shared/lib/ai-sharing";
 
 /**
@@ -10,6 +10,7 @@ import { AI_RECIPIENT_NAMES } from "@shared/lib/ai-sharing";
 /** The part of the dietary profile the consent check reads. */
 interface ConsentRecord {
   healthDataConsentAt?: string | null;
+  healthDataConsentWithdrawnAt?: string | null;
 }
 
 /** True once the server has stamped a health-data consent on the profile. */
@@ -17,6 +18,18 @@ export function hasConsented(
   profile: ConsentRecord | null | undefined,
 ): boolean {
   return profile?.healthDataConsentAt != null;
+}
+
+/**
+ * True when Coach's notes are off for this user, by the server's own rule
+ * (`coachNotesPaused`). False until the profile has loaded (`loaded`), so a
+ * screen never takes a control away on a guess.
+ */
+export function coachNotesOff(
+  profile: ConsentRecord | null | undefined,
+  loaded: boolean,
+): boolean {
+  return loaded && coachNotesPaused(profile);
 }
 
 /** True when saving `payload` would store a health detail without consent. */

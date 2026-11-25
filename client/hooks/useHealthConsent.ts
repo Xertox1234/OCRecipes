@@ -3,7 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
-import { hasConsented, type CoachNotesChoice } from "@/lib/health-consent";
+import {
+  coachNotesOff,
+  hasConsented,
+  type CoachNotesChoice,
+} from "@/lib/health-consent";
 import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
 import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 
@@ -53,4 +57,13 @@ export function useHealthConsent() {
   );
 
   return { consented, grant, withdraw };
+}
+
+/**
+ * Whether Coach's notes are off for this user (no health-data consent the
+ * server accepts). False while the profile is loading or failed to load.
+ */
+export function useCoachNotesOff(): boolean {
+  const { data, isSuccess } = useQuery(dietaryProfileQueryOptions);
+  return coachNotesOff(data, isSuccess);
 }
