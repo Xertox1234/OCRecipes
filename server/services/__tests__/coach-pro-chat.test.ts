@@ -1613,9 +1613,10 @@ describe("handleCoachChat", () => {
         "2026-09-05",
         "America/Los_Angeles",
       );
-      expect(storage.createNotebookEntries).toHaveBeenCalledWith([
-        expect.objectContaining({ followUpDate: expectedAnchor }),
-      ]);
+      expect(storage.createNotebookEntries).toHaveBeenCalledWith(
+        [expect.objectContaining({ followUpDate: expectedAnchor })],
+        { turnStart: expect.any(Date) },
+      );
 
       // Names the property the bug actually broke, not a snapshot literal:
       // `new Date("2026-09-05")` (the old, buggy anchor) is UTC midnight — a
@@ -1689,9 +1690,10 @@ describe("handleCoachChat", () => {
       await flushNotebookExtraction();
 
       const expectedAnchor = civilDateToInstant("2026-09-05", "Asia/Tokyo");
-      expect(storage.createNotebookEntries).toHaveBeenCalledWith([
-        expect.objectContaining({ followUpDate: expectedAnchor }),
-      ]);
+      expect(storage.createNotebookEntries).toHaveBeenCalledWith(
+        [expect.objectContaining({ followUpDate: expectedAnchor })],
+        { turnStart: expect.any(Date) },
+      );
 
       // For a UTC-POSITIVE zone the relationship inverts: local midnight in
       // Tokyo is BEFORE UTC midnight, so the correct anchor is EARLIER than
