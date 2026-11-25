@@ -24,6 +24,15 @@ export const notebookEntryStatusValues = [
 
 export type NotebookEntryStatus = (typeof notebookEntryStatusValues)[number];
 
+/**
+ * The note types a user may add or switch to by hand: the ones "What Coach
+ * knows" shows. The other five are Coach's own (insight, summary, strategy…):
+ * a hand-added one could not be seen again on that page, and a hand-written
+ * coaching_strategy went into the prompt as background (coach chat audit
+ * 2026-11-24, L86/M8). The server enforces it; the app offers only these.
+ */
+export const USER_NOTE_TYPES = ["goal", "preference", "commitment"] as const;
+
 export const notebookEntrySchema = z.object({
   type: z.enum(notebookEntryTypes),
   content: z.string().min(1).max(500),
