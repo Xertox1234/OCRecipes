@@ -22,8 +22,12 @@ vi.mock("../query-client", () => ({
 
 // PROJECT_ID is read at module load, so stub it before importing.
 vi.stubEnv("EXPO_PUBLIC_PROJECT_ID", "proj-1");
-const { unregisterPushToken, registerPushToken, subscribePushTokenRotation } =
-  await import("../push-token-registration");
+const {
+  unregisterPushToken,
+  registerPushToken,
+  isPushRegistered,
+  subscribePushTokenRotation,
+} = await import("../push-token-registration");
 
 describe("unregisterPushToken (auth audit H2)", () => {
   beforeEach(() => {
@@ -161,5 +165,28 @@ describe("subscribePushTokenRotation", () => {
 
     unsubscribe();
     expect(removeTokenListener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isPushRegistered", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPermissionsAsync.mockResolvedValue({ status: "granted" });
+    getExpoPushTokenAsync.mockResolvedValue({ data: "ExponentPushToken[x]" });
+    apiRequest.mockResolvedValue({});
+  });
+
+  it("is true only after the server took the token, and false after sign-out", async () => {
+    await registerPushToken();
+    expect(isPushRegistered()).toBe(true);
+    await unregisterPushToken();
+    expect(isPushRegistered()).toBe(false);
+  });
+
+  it("goes back to false when a later registration fails", async () => {
+    await registerPushToken();
+    apiRequest.mockRejectedValue(new Error("offline"));
+    await registerPushToken();
+    expect(isPushRegistered()).toBe(false);
   });
 });

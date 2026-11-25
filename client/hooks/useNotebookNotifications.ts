@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { requestNotificationPermission } from "@/lib/notifications";
+import { isPushRegistered } from "@/lib/push-token-registration";
 
 const STORAGE_KEY = "COACH_NOTIFICATION_IDS";
 
@@ -17,6 +18,16 @@ async function getNotificationMap(): Promise<Record<string, string>> {
 
 async function setNotificationMap(map: Record<string, string>): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+}
+
+// One map change at a time. Each reads the whole map, awaits OS calls, then
+// writes it back; overlapping ones lost each other's ids, and a reminder whose
+// id is lost can never be cancelled (coach chat audit 2026-11-24, L61).
+let mapQueue: Promise<unknown> = Promise.resolve();
+function withMapLock<T>(step: () => Promise<T>): Promise<T> {
+  const run = mapQueue.then(step, step);
+  mapQueue = run.catch(() => undefined);
+  return run;
 }
 
 /**
@@ -58,81 +69,90 @@ export function useNotebookNotifications() {
       const granted = await requestNotificationPermission();
       if (!granted) return;
 
-      const map = await getNotificationMap();
-      const existing = map[String(entryId)];
-      if (existing) {
-        await Notifications.cancelScheduledNotificationAsync(existing).catch(
-          () => {},
-        );
-      }
+      await withMapLock(async () => {
+        const map = await getNotificationMap();
+        const existing = map[String(entryId)];
+        if (existing) {
+          await Notifications.cancelScheduledNotificationAsync(existing).catch(
+            () => {},
+          );
+          delete map[String(entryId)];
+          await setNotificationMap(map);
+        }
+        // The server pushes the same reminder to this phone at the same hour
+        // (M12); the local one is for a phone it cannot reach.
+        if (isPushRegistered()) return;
 
-      const [year, month, day] = followUpDate.split("-").map(Number);
-      const fireDate = new Date(year, month - 1, day, 9, 0, 0);
-      if (fireDate <= new Date()) return;
+        const [year, month, day] = followUpDate.split("-").map(Number);
+        const fireDate = new Date(year, month - 1, day, 9, 0, 0);
+        if (fireDate <= new Date()) return;
 
-      const id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Coach reminder",
-          body: content.slice(0, 100),
-          // `url` is what client/navigation/linking.ts's getInitialURL/
-          // subscribe resolve a tap through. `entryId` stays alongside it,
-          // matching the server-driven push payload
-          // (server/services/notification-scheduler.ts, the primary delivery
-          // path; this client-side scheduler is only a fallback), which sends
-          // the same `{ entryId, url }` shape. linking.ts's fallback
-          // (constructing this URL from a bare entryId) still serves
-          // notifications delivered before `url` existed.
-          data: { entryId, url: `ocrecipes://notebook-entry/${entryId}` },
-          ...(Platform.OS === "android"
-            ? { channelId: "coach-reminders" }
-            : {}),
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: fireDate,
-        },
+        const id = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Coach reminder",
+            body: content.slice(0, 100),
+            // `url` is what client/navigation/linking.ts's getInitialURL/
+            // subscribe resolve a tap through. `entryId` stays alongside it,
+            // matching the server-driven push payload
+            // (server/services/notification-scheduler.ts, the primary delivery
+            // path; this client-side scheduler is only a fallback), which sends
+            // the same `{ entryId, url }` shape. linking.ts's fallback
+            // (constructing this URL from a bare entryId) still serves
+            // notifications delivered before `url` existed.
+            data: { entryId, url: `ocrecipes://notebook-entry/${entryId}` },
+            ...(Platform.OS === "android"
+              ? { channelId: "coach-reminders" }
+              : {}),
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: fireDate,
+          },
+        });
+
+        map[String(entryId)] = id;
+        await setNotificationMap(map);
       });
-
-      map[String(entryId)] = id;
-      await setNotificationMap(map);
     },
     [],
   );
 
   const cancelCommitmentReminder = useCallback(
-    async (entryId: number): Promise<void> => {
-      const map = await getNotificationMap();
-      const id = map[String(entryId)];
-      if (id) {
-        await Notifications.cancelScheduledNotificationAsync(id).catch(
-          () => {},
-        );
-        const updated = { ...map };
-        delete updated[String(entryId)];
-        await setNotificationMap(updated);
-      }
-    },
+    (entryId: number): Promise<void> =>
+      withMapLock(async () => {
+        const map = await getNotificationMap();
+        const id = map[String(entryId)];
+        if (id) {
+          await Notifications.cancelScheduledNotificationAsync(id).catch(
+            () => {},
+          );
+          const updated = { ...map };
+          delete updated[String(entryId)];
+          await setNotificationMap(updated);
+        }
+      }),
     [],
   );
 
   const cancelStaleReminders = useCallback(
-    async (activeEntryIds: number[]): Promise<void> => {
-      const map = await getNotificationMap();
-      const activeSet = new Set(activeEntryIds.map(String));
-      const toCancel = Object.keys(map).filter((id) => !activeSet.has(id));
-      await Promise.all(
-        toCancel.map((id) =>
-          Notifications.cancelScheduledNotificationAsync(map[id]).catch(
-            () => {},
+    (activeEntryIds: number[]): Promise<void> =>
+      withMapLock(async () => {
+        const map = await getNotificationMap();
+        const activeSet = new Set(activeEntryIds.map(String));
+        const toCancel = Object.keys(map).filter((id) => !activeSet.has(id));
+        await Promise.all(
+          toCancel.map((id) =>
+            Notifications.cancelScheduledNotificationAsync(map[id]).catch(
+              () => {},
+            ),
           ),
-        ),
-      );
-      if (toCancel.length > 0) {
-        const updated = { ...map };
-        toCancel.forEach((id) => delete updated[id]);
-        await setNotificationMap(updated);
-      }
-    },
+        );
+        if (toCancel.length > 0) {
+          const updated = { ...map };
+          toCancel.forEach((id) => delete updated[id]);
+          await setNotificationMap(updated);
+        }
+      }),
     [],
   );
 

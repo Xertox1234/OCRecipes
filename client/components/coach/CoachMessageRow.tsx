@@ -31,10 +31,8 @@ interface CoachMessageRowProps {
   showLiveReply: boolean;
   isActive: boolean;
   usedQuickReplies: ReadonlySet<string>;
-  acceptedCommitments: ReadonlySet<number | string>;
   onBlockAction: NonNullable<BlockRendererProps["onAction"]>;
   onQuickReply: NonNullable<BlockRendererProps["onQuickReply"]>;
-  onCommitmentAccept: NonNullable<BlockRendererProps["onCommitmentAccept"]>;
   lockedFinderButtons: FinderButton[];
   onFinderAction: (action: FinderAction, label: string) => void;
   onLockedFinderButton: (button: FinderButton) => void;
@@ -64,10 +62,8 @@ function CoachMessageRowImpl({
   showLiveReply,
   isActive,
   usedQuickReplies,
-  acceptedCommitments,
   onBlockAction,
   onQuickReply,
-  onCommitmentAccept,
   lockedFinderButtons,
   onFinderAction,
   onLockedFinderButton,
@@ -114,16 +110,7 @@ function CoachMessageRowImpl({
             onAction={onBlockAction}
             onQuickReply={onQuickReply}
             blockKey={bKey}
-            onCommitmentAccept={onCommitmentAccept}
             isUsed={usedQuickReplies.has(bKey)}
-            isCommitmentAccepted={
-              block.type === "commitment_card"
-                ? acceptedCommitments.has(
-                    block.notebookEntryId ??
-                      `${block.title}::${block.followUpDate}`,
-                  )
-                : undefined
-            }
             isActive={isActive}
             lockedFinderButtons={lockedFinderButtons}
             onFinderAction={onFinderAction}

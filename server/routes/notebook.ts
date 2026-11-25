@@ -1,4 +1,3 @@
-import { mentionsHealthCondition } from "../lib/health-note-screen";
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -12,7 +11,6 @@ import {
 } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
-import { containsUnsafeCoachAdvice } from "../lib/ai-safety";
 import { civilDateToInstant } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -23,30 +21,12 @@ import {
 } from "@shared/schemas/coach-notebook";
 import { toSecondPerson } from "@shared/lib/notebook-text";
 import { refusedWhileCoachNotesPaused } from "./_health-consent";
+import { refusedNoteText } from "./_note-text";
 
 /** Ids the save popup / "What Coach knows" page acts on (visible memory). */
 const idsSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(20),
 });
-
-/**
- * Why a hand-written note cannot be saved, or null. The same filters the
- * Coach's own extraction applies before it saves (notebook-extraction.ts):
- * the manual routes used to store any text and mark it confirmed, and
- * confirmed notes are stated back by Coach.
- */
-function refusedNoteText(content: string): string | null {
-  if (/\ballerg/i.test(content)) {
-    return "Allergies belong in your dietary profile, where recipes are checked against them. Add it under Profile.";
-  }
-  if (containsUnsafeCoachAdvice(content)) {
-    return "That can't be saved as a note. Coach's notes can't hold medical or extreme-diet instructions.";
-  }
-  if (mentionsHealthCondition(content)) {
-    return "Health conditions and medications aren't kept in Coach's notes. A condition belongs in your dietary profile, under Profile.";
-  }
-  return null;
-}
 
 const createEntrySchema = z.object({
   type: z.enum(USER_NOTE_TYPES),

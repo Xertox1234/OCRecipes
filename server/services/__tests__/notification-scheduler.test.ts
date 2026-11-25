@@ -260,25 +260,39 @@ describe("sendDueCommitmentReminders", () => {
       expect(done).toEqual([3, 4]);
     });
 
-    it("does not push again for the same user's entries on a later page", async () => {
-      const page = Array.from({ length: 500 }, (_, i) => ({
-        ...unnamed,
-        id: i + 1,
-        followUpDate: new Date(2026, 0, 1),
-      }));
-      vi.mocked(storage.getDueCommitmentsAllUsers)
-        .mockResolvedValueOnce(page)
-        .mockResolvedValueOnce([{ ...unnamed, id: 900 }]);
+    describe("entries on a later page", () => {
+      beforeEach(() => {
+        vi.mocked(storage.getDueCommitmentsAllUsers)
+          .mockResolvedValueOnce(
+            Array.from({ length: 500 }, (_, i) => ({
+              ...unnamed,
+              id: i + 1,
+              followUpDate: new Date(2026, 0, 1),
+            })),
+          )
+          .mockResolvedValueOnce([{ ...unnamed, id: 900 }]);
+      });
+      const completedIds = () =>
+        vi
+          .mocked(storage.updateNotebookEntryStatus)
+          .mock.calls.map((c) => c[0]);
 
-      await sendDueCommitmentReminders();
+      it("are left for the next day: this run's push did not count them", async () => {
+        await sendDueCommitmentReminders();
 
-      expect(notify).toHaveBeenCalledTimes(1);
-      expect(storage.updateNotebookEntryStatus).toHaveBeenCalledWith(
-        900,
-        "42",
-        "completed",
-        "active",
-      );
+        expect(notify).toHaveBeenCalledTimes(1);
+        expect(completedIds()).toHaveLength(500);
+        expect(completedIds()).not.toContain(900);
+      });
+
+      it("get no second push when the first one threw", async () => {
+        vi.mocked(notify).mockRejectedValueOnce(new Error("network error"));
+
+        await sendDueCommitmentReminders();
+
+        expect(notify).toHaveBeenCalledTimes(1);
+        expect(completedIds()).toEqual([]);
+      });
     });
 
     it("sends nothing for a note removed after the batch was read", async () => {

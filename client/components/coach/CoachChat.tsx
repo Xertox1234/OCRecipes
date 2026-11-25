@@ -322,15 +322,10 @@ export default function CoachChat({
   const activeConvIdRef = useRef<number | null>(null);
   const usedQuickRepliesRef = useRef<Set<string>>(new Set());
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
-  const acceptedCommitmentsRef = useRef<Set<number | string>>(new Set());
-  const [commitmentVersion, setCommitmentVersion] = useState(0);
   // extraData must be treated immutably (FlatList is a PureComponent and
   // React Compiler does not protect its internal class-component compare) —
   // an inline array literal would re-render every visible cell per keystroke.
-  const listExtraData = useMemo(
-    () => [quickReplyVersion, commitmentVersion],
-    [quickReplyVersion, commitmentVersion],
-  );
+  const listExtraData = useMemo(() => [quickReplyVersion], [quickReplyVersion]);
 
   const {
     isListening,
@@ -1229,33 +1224,6 @@ export default function CoachChat({
     [navigation, ttsStop],
   );
 
-  const handleCommitmentAccept = useCallback(
-    async (
-      notebookEntryId: number | undefined,
-      title: string,
-      followUpDate: string,
-    ) => {
-      // Use notebookEntryId if available, otherwise a string key for local tracking
-      const key: number | string =
-        notebookEntryId ?? `${title}::${followUpDate}`;
-      acceptedCommitmentsRef.current = new Set([
-        ...acceptedCommitmentsRef.current,
-        key,
-      ]);
-      setCommitmentVersion((v) => v + 1);
-      if (!notebookEntryId) return;
-      try {
-        await apiRequest(
-          "POST",
-          `/api/chat/commitments/${notebookEntryId}/accept`,
-        );
-      } catch {
-        // Non-fatal — local state already updated
-      }
-    },
-    [],
-  );
-
   const handleQuickReply = useCallback(
     (message: string, blockKey?: string) => {
       // Before the chip row or form is marked used: a tap that cannot send
@@ -1418,10 +1386,8 @@ export default function CoachChat({
             showLiveReply={showLiveReply}
             isActive={!showLiveReply && msg.id === lastAssistantMessageId}
             usedQuickReplies={usedQuickRepliesRef.current}
-            acceptedCommitments={acceptedCommitmentsRef.current}
             onBlockAction={handleBlockAction}
             onQuickReply={handleQuickReply}
-            onCommitmentAccept={handleCommitmentAccept}
             lockedFinderButtons={finderLocks}
             onFinderAction={handleFinderAction}
             onLockedFinderButton={openUpgrade}
@@ -1457,7 +1423,6 @@ export default function CoachChat({
     },
     [
       handleBlockAction,
-      handleCommitmentAccept,
       handleQuickReply,
       handleRetry,
       lastUserText,
@@ -1504,7 +1469,6 @@ export default function CoachChat({
           onWriteCardEdit={handleWriteCardEdit}
           onBlockAction={handleBlockAction}
           onQuickReply={handleQuickReply}
-          onCommitmentAccept={handleCommitmentAccept}
           ttsSpeak={ttsSpeak}
           isSpeaking={isSpeaking}
           speakingMessageId={speakingMessageId}
@@ -1522,7 +1486,6 @@ export default function CoachChat({
       handleWriteCardEdit,
       handleBlockAction,
       handleQuickReply,
-      handleCommitmentAccept,
       ttsSpeak,
       isSpeaking,
       speakingMessageId,

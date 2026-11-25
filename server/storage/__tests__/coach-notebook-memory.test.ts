@@ -37,6 +37,7 @@ const {
   getNotebookEntries,
 } = await import("../coach-notebook");
 const {
+  acceptCommitment,
   confirmNotebookEntries,
   rejectNotebookEntries,
   markNotebookEntriesShown,
@@ -347,6 +348,90 @@ describe("visible memory storage", () => {
     });
     expect((await getReminderMutes([other.id])).has(user.id)).toBe(false);
     expect((await getReminderMutes([])).size).toBe(0);
+  });
+
+  describe("acceptCommitment (L57, L64)", () => {
+    const date = new Date("2030-01-04T00:00:00Z");
+    const card = { title: "Eat more greens", followUpDate: date };
+    const mine = () =>
+      tx.select().from(coachNotebook).where(eq(coachNotebook.userId, user.id));
+
+    it("saves an active, confirmed, labelled commitment, once", async () => {
+      expect(await acceptCommitment(user.id, card)).toBe("saved");
+      expect(await acceptCommitment(user.id, card)).toBe("saved");
+      const rows = await mine();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        type: "commitment",
+        status: "active",
+        content: "Eat more greens",
+        label: "Eat more greens",
+        followUpDate: date,
+      });
+      expect(rows[0].confirmedAt).not.toBeNull();
+      expect(rows[0].shownAt).not.toBeNull();
+    });
+
+    it("confirms the note the extraction already saved, keeping its label", async () => {
+      const row = await insert({
+        type: "commitment",
+        content: "eat more greens.",
+        label: "your greens",
+      });
+      await acceptCommitment(user.id, card);
+      const rows = await mine();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        id: row.id,
+        label: "your greens",
+        followUpDate: date,
+      });
+      expect(rows[0].confirmedAt).not.toBeNull();
+    });
+
+    it("keeps the saved date when the card's is unusable", async () => {
+      await insert({
+        type: "commitment",
+        content: "Eat more greens",
+        followUpDate: date,
+      });
+      await acceptCommitment(user.id, { ...card, followUpDate: null });
+      expect((await mine())[0].followUpDate).toEqual(date);
+    });
+
+    it("does not touch another user's or a removed note", async () => {
+      const theirs = await insert(
+        { type: "commitment", content: "Eat more greens" },
+        other.id,
+      );
+      const removed = await insert({
+        type: "commitment",
+        content: "Eat more greens",
+        status: "rejected",
+      });
+      await acceptCommitment(user.id, card);
+      const rows = await mine();
+      expect(rows).toHaveLength(2);
+      expect(rows.find((r) => r.id === removed.id)?.status).toBe("rejected");
+      const [t] = await tx
+        .select()
+        .from(coachNotebook)
+        .where(eq(coachNotebook.id, theirs.id));
+      expect(t.confirmedAt).toBeNull();
+    });
+
+    it("adds nothing to a full notebook", async () => {
+      await tx.insert(coachNotebook).values(
+        Array.from({ length: 500 }, (_, i) => ({
+          userId: user.id,
+          type: "goal",
+          content: `Goal ${i}`,
+          status: "active",
+        })),
+      );
+      expect(await acceptCommitment(user.id, card)).toBe("full");
+      expect(await mine()).toHaveLength(500);
+    });
   });
 
   describe("a repeated commitment takes the new date (L67)", () => {

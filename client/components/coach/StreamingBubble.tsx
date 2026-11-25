@@ -15,11 +15,6 @@ interface StreamingBubbleProps {
   streamBlocks: CoachBlock[];
   onBlockAction: (action: Record<string, unknown>) => void;
   onQuickReply: (message: string) => void;
-  onCommitmentAccept: (
-    notebookEntryId: number | undefined,
-    title: string,
-    followUpDate: string,
-  ) => void;
   ttsSpeak: (messageId: number, text: string) => void;
   isSpeaking: boolean;
   speakingMessageId: number | null;
@@ -35,7 +30,6 @@ const StreamingBubble = memo(function StreamingBubble({
   streamBlocks,
   onBlockAction,
   onQuickReply,
-  onCommitmentAccept,
   ttsSpeak,
   isSpeaking,
   speakingMessageId,
@@ -64,7 +58,6 @@ const StreamingBubble = memo(function StreamingBubble({
             block={block}
             onAction={onBlockAction}
             onQuickReply={onQuickReply}
-            onCommitmentAccept={onCommitmentAccept}
             writeCardEdits={
               block.type === "write_card"
                 ? writeCardEdits?.[block.cardId]

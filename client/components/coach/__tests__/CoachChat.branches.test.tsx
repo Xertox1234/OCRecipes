@@ -7,7 +7,7 @@
  * ChatBubble) are mocked as thin doubles that surface their callback props as
  * clickable buttons. That lets these tests drive CoachChat's internal handlers
  * (handleSend, handleRetry, handleBlockAction, handleQuickReply,
- * handleCommitmentAccept) and exercise the streaming/state branches directly,
+ * and the rest) and exercise the streaming/state branches directly,
  * without real network, SSE, navigation, or IAP behavior.
  *
  * The hooks (useCoachStream, useChat, useSpeechToText, useTTS, premium feature)
@@ -65,7 +65,7 @@ const state = vi.hoisted(() => ({
   canSearchOnline: true,
   // navigation
   navigate: vi.fn(),
-  // apiRequest (commitment accept)
+  // apiRequest
   apiRequest: vi.fn().mockResolvedValue(undefined),
   // Captured from the mocked BlockRenderer's onAction prop so tests can fire
   // an arbitrary action without a canned block.action.
@@ -258,14 +258,13 @@ vi.mock("@/components/coach/CoachChatBase", () => ({
   ),
 }));
 
-// Thin BlockRenderer double: exposes onAction / onQuickReply / onCommitmentAccept
+// Thin BlockRenderer double: exposes onAction / onQuickReply
 // so tests can drive CoachChat's block handlers.
 vi.mock("@/components/coach/blocks", () => ({
   default: ({
     block,
     onAction,
     onQuickReply,
-    onCommitmentAccept,
     onFinderAction,
     onOpenFinderItem,
     onMakeFinderItem,
@@ -286,11 +285,6 @@ vi.mock("@/components/coach/blocks", () => ({
     isActive?: boolean;
     onAction?: (action: Record<string, unknown>) => void;
     onQuickReply?: (message: string, blockKey?: string) => void;
-    onCommitmentAccept?: (
-      id: number | undefined,
-      title: string,
-      date: string,
-    ) => void;
   }) => {
     // Captured so tests can fire an arbitrary action (not just the one fixed
     // block.action a given render was mounted with) via `state.onAction?.(...)`.
@@ -319,18 +313,6 @@ vi.mock("@/components/coach/blocks", () => ({
           onClick={() => onQuickReply?.("a quick reply", "qk-1")}
         >
           quick-reply
-        </button>
-        <button
-          data-testid="block-commit"
-          onClick={() =>
-            onCommitmentAccept?.(
-              block.notebookEntryId as number | undefined,
-              (block.title as string) ?? "",
-              (block.followUpDate as string) ?? "",
-            )
-          }
-        >
-          commit
         </button>
       </div>
     );
@@ -1069,30 +1051,8 @@ describe("CoachChat — handleBlockAction", () => {
   });
 });
 
-// ── handleQuickReply + handleCommitmentAccept ────────────────────────────────
-describe("CoachChat — quick reply & commitment", () => {
-  function renderWithCommitment(notebookEntryId?: number) {
-    state.messages = [
-      makeMessage({
-        id: 11,
-        role: "assistant",
-        content: "commit",
-        metadata: {
-          blocks: [
-            {
-              type: "commitment_card",
-              title: "Walk daily",
-              followUpText: "Did you walk?",
-              followUpDate: "2026-06-01",
-              ...(notebookEntryId !== undefined ? { notebookEntryId } : {}),
-            },
-          ],
-        } as unknown as ChatMessage["metadata"],
-      }),
-    ];
-    renderCoachChat({ conversationId: 7 });
-  }
-
+// ── handleQuickReply ─────────────────────────────────────────────────────────
+describe("CoachChat — quick reply", () => {
   it("quick reply triggers a send", () => {
     state.messages = [
       makeMessage({
@@ -1130,25 +1090,6 @@ describe("CoachChat — quick reply & commitment", () => {
     renderCoachChat({ conversationId: 7 });
     fireEvent.click(screen.getByTestId("block-quick-reply"));
     expect(state.startStream).not.toHaveBeenCalled();
-  });
-
-  it("commitment accept with a notebookEntryId posts to the API", async () => {
-    renderWithCommitment(42);
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("block-commit"));
-    });
-    expect(state.apiRequest).toHaveBeenCalledWith(
-      "POST",
-      "/api/chat/commitments/42/accept",
-    );
-  });
-
-  it("commitment accept without a notebookEntryId skips the API call", async () => {
-    renderWithCommitment(undefined);
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("block-commit"));
-    });
-    expect(state.apiRequest).not.toHaveBeenCalled();
   });
 });
 
