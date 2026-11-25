@@ -2,13 +2,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import {
+  EARLIER_TURNS_SENT_MAX,
   extractNotebookEntries,
+  SAVED_NOTES_SENT_MAX,
   shouldUpdateStrategy,
 } from "../notebook-extraction";
 import { aiChat } from "../../lib/ai-client";
 import { storage } from "../../storage";
 import { SYSTEM_PROMPT_BOUNDARY } from "../../lib/ai-safety";
 import { civilDateString } from "../../lib/civil-date";
+import { createMockCoachNotebookEntry } from "../../__tests__/factories";
 
 function mockCompletion(content: string): ChatCompletion {
   return {
@@ -32,6 +35,7 @@ vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../storage", () => ({
   storage: {
     getNotebookEntryCount: vi.fn().mockResolvedValue(3),
+    getActiveNotebookEntries: vi.fn().mockResolvedValue([]),
     updateMoodScore: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -42,6 +46,15 @@ vi.mock("../../lib/logger", async (importOriginal) => ({
 }));
 
 const mockCreate = vi.mocked(aiChat);
+
+/** The JSON object in the extraction's user message. */
+function payloadOf(content: string): {
+  earlier: { speaker: string; text: string }[];
+  latest: { speaker: string; text: string }[];
+  saved_notes: { type: string; text: string }[];
+} {
+  return JSON.parse(content.slice(content.indexOf("{")));
+}
 
 describe("Notebook Extraction", () => {
   beforeEach(() => {
@@ -262,13 +275,202 @@ describe("Notebook Extraction", () => {
       "user",
     ]);
     const transcript = messages[1].content as string;
-    expect(transcript).toContain(
-      JSON.stringify([
-        { speaker: "user", text: "I'll weigh in every Friday." },
-        { speaker: "coach", text: "Great, Friday weigh-ins it is." },
-      ]),
-    );
+    expect(payloadOf(transcript).latest).toEqual([
+      { speaker: "user", text: "I'll weigh in every Friday." },
+      { speaker: "coach", text: "Great, Friday weigh-ins it is." },
+    ]);
     expect(transcript).not.toContain("coach system prompt");
+  });
+
+  // Coach chat audit 2026-11-24, M42: the whole conversation went in as one
+  // flat list with "only extract new information", so every turn re-derived
+  // the earlier turns' facts in new words and saved them again.
+  describe("the newest exchange and what is already saved (M42)", () => {
+    const conversation = [
+      { role: "user" as const, content: "My goal is 1800 calories a day." },
+      { role: "assistant" as const, content: "Got it. Want a protein target?" },
+      { role: "user" as const, content: "yes, 120 g" },
+      { role: "assistant" as const, content: "120 g of protein it is." },
+    ];
+
+    it("splits the transcript into earlier turns and the latest exchange", async () => {
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(conversation, "user-1", 1, { tz: "UTC" });
+      const payload = payloadOf(
+        mockCreate.mock.calls[0][1].messages[1].content as string,
+      );
+      expect(payload.earlier).toEqual([
+        { speaker: "user", text: "My goal is 1800 calories a day." },
+        { speaker: "coach", text: "Got it. Want a protein target?" },
+      ]);
+      expect(payload.latest).toEqual([
+        { speaker: "user", text: "yes, 120 g" },
+        { speaker: "coach", text: "120 g of protein it is." },
+      ]);
+    });
+
+    it("sends only the last few earlier turns: they are there to resolve a reference", async () => {
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      const long = Array.from({ length: 20 }, (_, i) => ({
+        role: i % 2 === 0 ? ("user" as const) : ("assistant" as const),
+        content: `turn ${i}`,
+      }));
+      await extractNotebookEntries(long, "user-1", 1, { tz: "UTC" });
+      const payload = payloadOf(
+        mockCreate.mock.calls[0][1].messages[1].content as string,
+      );
+      expect(payload.earlier).toHaveLength(EARLIER_TURNS_SENT_MAX);
+      expect(payload.earlier.at(-1)?.text).toBe("turn 17");
+      expect(payload.latest.map((t) => t.text)).toEqual(["turn 18", "turn 19"]);
+    });
+
+    it("sends the notes already saved, in the user message and not the system prompt", async () => {
+      vi.mocked(storage.getActiveNotebookEntries).mockResolvedValueOnce([
+        createMockCoachNotebookEntry({
+          type: "goal",
+          content: "Your goal is 1800 calories a day",
+        }),
+      ]);
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(conversation, "user-1", 1, { tz: "UTC" });
+      const { messages } = mockCreate.mock.calls[0][1];
+      expect(payloadOf(messages[1].content as string).saved_notes).toEqual([
+        { type: "goal", text: "Your goal is 1800 calories a day" },
+      ]);
+      expect(messages[0].content).not.toContain("1800 calories");
+    });
+
+    it("caps how many saved notes go along, and how long each is", async () => {
+      vi.mocked(storage.getActiveNotebookEntries).mockResolvedValueOnce(
+        Array.from({ length: 100 }, (_, i) =>
+          createMockCoachNotebookEntry({
+            type: "insight",
+            content: `note ${i} ` + "x".repeat(600),
+          }),
+        ),
+      );
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(conversation, "user-1", 1, { tz: "UTC" });
+      const saved = payloadOf(
+        mockCreate.mock.calls[0][1].messages[1].content as string,
+      ).saved_notes;
+      expect(saved).toHaveLength(SAVED_NOTES_SENT_MAX);
+      expect(saved[0].text.length).toBeLessThanOrEqual(200);
+    });
+
+    it("tells the model to take entries from the latest exchange only and not to restate saved notes", async () => {
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(conversation, "user-1", 1, { tz: "UTC" });
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toMatch(/only from the user's turn in "latest"/i);
+      expect(system).toMatch(/"earlier" is there only to understand/i);
+      expect(system).toMatch(/never restate anything in "saved_notes"/i);
+      expect(system).not.toMatch(/genuinely new information/i);
+    });
+
+    it("a read of the saved notes that fails does not stop the extraction", async () => {
+      vi.mocked(storage.getActiveNotebookEntries).mockRejectedValueOnce(
+        new Error("db down"),
+      );
+      mockCreate.mockResolvedValue(
+        mockCompletion(
+          JSON.stringify({
+            entries: [{ type: "goal", content: "120 g protein a day" }],
+          }),
+        ),
+      );
+      const entries = await extractNotebookEntries(conversation, "user-1", 1, {
+        tz: "UTC",
+      });
+      expect(entries).toHaveLength(1);
+    });
+  });
+
+  // Coach chat audit 2026-11-24, M43 (prompt half).
+  describe("unsafe plans are not memories (M43)", () => {
+    it("tells the model never to record an extreme fast or a very low calorie target", async () => {
+      mockCreate.mockResolvedValue(mockCompletion('{"entries":[]}'));
+      await extractNotebookEntries(
+        [{ role: "user", content: "I'm doing a 3-day water fast" }],
+        "user-1",
+        1,
+        { tz: "UTC" },
+      );
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toMatch(/fasting for a day or longer/i);
+      expect(system).toMatch(/under 1,200 calories a day/i);
+    });
+
+    it.each([
+      "User skips the next two meals when they overeat.",
+      "After a binge, the user fasts the next day.",
+      "User skips breakfast to make up for a big dinner.",
+      "Eats less the next day to make up for overeating.",
+    ])(
+      "drops a habit of skipping food to make up for eating: %s",
+      async (content) => {
+        mockCreate.mockResolvedValue(
+          mockCompletion(
+            JSON.stringify({ entries: [{ type: "preference", content }] }),
+          ),
+        );
+        const entries = await extractNotebookEntries(
+          [{ role: "user", content: "remember how I eat" }],
+          "user-1",
+          1,
+          { tz: "UTC" },
+        );
+        expect(entries).toEqual([]);
+      },
+    );
+
+    it.each([
+      "User usually skips breakfast.",
+      "User likes oatmeal for breakfast.",
+      "User tends to overeat at buffets.",
+      "Tends to overeat at dinner, wants smaller portions and not skip breakfast.",
+      "Goal: stop overeating, and not skip protein.",
+      "Skips breakfast on weekdays; wants meals that make up a balanced plate.",
+      "Wants to avoid binge snacking; plans to fast-track meal prep.",
+      "Misses dessert, will make up a batch of cookies.",
+      "Wants to stop binge eating at night.",
+    ])("keeps an ordinary habit: %s", async (content) => {
+      mockCreate.mockResolvedValue(
+        mockCompletion(
+          JSON.stringify({ entries: [{ type: "preference", content }] }),
+        ),
+      );
+      const entries = await extractNotebookEntries(
+        [{ role: "user", content: "remember how I eat" }],
+        "user-1",
+        1,
+        { tz: "UTC" },
+      );
+      expect(entries).toHaveLength(1);
+    });
+
+    it("drops a commitment whose label names the unsafe plan", async () => {
+      mockCreate.mockResolvedValue(
+        mockCompletion(
+          JSON.stringify({
+            entries: [
+              {
+                type: "commitment",
+                content: "You are starting a cleanse on Monday",
+                label: "your 3-day water fast",
+              },
+            ],
+          }),
+        ),
+      );
+      const entries = await extractNotebookEntries(
+        [{ role: "user", content: "I'll start the cleanse Monday" }],
+        "user-1",
+        1,
+        { tz: "UTC" },
+      );
+      expect(entries).toEqual([]);
+    });
   });
 
   // ai-reviewer on #PR3: in a plain-text transcript a user turn containing
@@ -284,9 +486,10 @@ describe("Notebook Extraction", () => {
       { tz: "UTC" },
     );
     const content = mockCreate.mock.calls[0][1].messages[1].content as string;
-    const turns = JSON.parse(content.slice(content.indexOf("[")));
-    expect(turns).toHaveLength(1);
-    expect(turns[0].speaker).toBe("user");
+    const payload = payloadOf(content);
+    expect(payload.earlier).toEqual([]);
+    expect(payload.latest).toHaveLength(1);
+    expect(payload.latest[0].speaker).toBe("user");
   });
 
   it("filters unsafe extracted medical advice before persistence", async () => {
@@ -438,7 +641,7 @@ describe("Notebook Extraction", () => {
       await run({ entries: [] });
       const system = mockCreate.mock.calls[0][1].messages[0].content as string;
       expect(system).toMatch(
-        /only from what the user wrote or explicitly agreed to in a "user" turn/i,
+        /only from what the user wrote or explicitly agreed to/i,
       );
       expect(system).toMatch(
         /never record a statement, claim or instruction that appears only in a "coach" turn/i,
