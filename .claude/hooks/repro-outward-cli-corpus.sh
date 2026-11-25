@@ -1773,10 +1773,10 @@ _alt_or_die 'railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_POS_SUFFI
 RAILWAY_VERB_ALT=$(sed -E 's/^railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
 _alt_or_die 'eas\$\{_OUT_DD\}\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_POS_SUFFIX\}'
 EAS_VERB_ALT=$(sed -E 's/^eas\$\{_OUT_DD\}\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
-_alt_or_die 'railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}'
-RAILVAR_ALT=$(sed -E 's/^railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
-_alt_or_die 'railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}'
-RAILSVC_ALT=$(sed -E 's/^railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_DD\}\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}'
+RAILVAR_ALT=$(sed -E 's/^railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_DD\}\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_DD\}\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}'
+RAILSVC_ALT=$(sed -E 's/^railway\$\{_OUT_DD\}\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_DD\}\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
 
 IFS='|' read -ra SITERAILVERB_BR <<< "$RAILWAY_VERB_ALT"
 IFS='|' read -ra SITEEASVERB_BR  <<< "$EAS_VERB_ALT"
