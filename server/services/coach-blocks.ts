@@ -5,6 +5,7 @@ import {
 } from "@shared/schemas/coach-blocks";
 import { isFinderBlockType } from "@shared/schemas/recipe-finder";
 import { logger, toError } from "../lib/logger";
+import { extractBlockFences, stripCitationMarkers } from "./coach-reply-text";
 
 export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   const valid: CoachBlock[] = [];
@@ -39,42 +40,36 @@ export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   return valid;
 }
 
-/** Maximum length of content scanned for coach_blocks fences (defense-in-depth
- *  against theoretical ReDoS on unterminated fences). Responses are already
- *  capped at 1500 tokens upstream, but this explicit guard makes the limit
- *  local and auditable. L4 — 2026-04-18. */
-const MAX_BLOCKS_CONTENT_LENGTH = 16_000;
-
+/**
+ * Splits a model reply into the text to show and its cards. The fence is read
+ * by `extractBlockFences`, which counts brackets, so a wrong closer or a reply
+ * cut off inside the fence no longer leaves block JSON in the text; the
+ * model's own citation markup is removed too. The scan is one linear pass,
+ * so the reply is no longer cut at 16,000 characters first.
+ */
 export function parseBlocksFromContent(content: string): {
   text: string;
   blocks: CoachBlock[];
 } {
-  // L4: cap length before running the regex to bound backtracking on
-  // unterminated fences.
-  const safeContent =
-    content.length > MAX_BLOCKS_CONTENT_LENGTH
-      ? content.slice(0, MAX_BLOCKS_CONTENT_LENGTH)
-      : content;
-  // Use global flag so multiple fences in one response are all found and stripped.
-  const blockPattern = /```coach_blocks\n([\s\S]*?)```/g;
-  const matches = [...safeContent.matchAll(blockPattern)];
-
-  if (matches.length === 0) {
-    return { text: safeContent.trim(), blocks: [] };
-  }
-
-  const text = safeContent.replace(blockPattern, "").trim();
+  const fences = extractBlockFences(content);
+  const text = stripCitationMarkers(fences.text).trim();
   const allBlocks: CoachBlock[] = [];
 
-  for (const match of matches) {
+  // warn, not debug: persistent model drift here silently strips every
+  // interactive block, and debug is off in production.
+  if (fences.truncated) {
+    logger.warn(
+      { err: new Error("coach_blocks fence never closed its array") },
+      "Failed to parse coach blocks JSON",
+    );
+  }
+  for (const raw of fences.arrays) {
     try {
-      const rawBlocks = JSON.parse(match[1]);
+      const rawBlocks = JSON.parse(raw);
       if (Array.isArray(rawBlocks)) {
         allBlocks.push(...validateBlocks(rawBlocks));
       }
     } catch (err) {
-      // warn, not debug: persistent model drift here silently strips every
-      // interactive block, and debug is off in production.
       logger.warn({ err: toError(err) }, "Failed to parse coach blocks JSON");
     }
   }

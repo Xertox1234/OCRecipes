@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef } from "react";
 import {
+  ActivityIndicator,
   View,
   Pressable,
   ScrollView,
@@ -45,7 +46,7 @@ import {
   formatFollowUpDate,
 } from "@/components/coach/notebook-date-utils";
 import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
-import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
+import { USER_NOTE_TYPES } from "@shared/schemas/coach-notebook";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NotebookEntryNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
@@ -111,7 +112,15 @@ export default function NotebookEntryScreen() {
     (e) => e.id === entryId,
   );
 
-  const [type, setType] = useState(entry?.type ?? "insight");
+  // A new note is one of the three kinds a user can hold; "insight" was the
+  // old default and is one of Coach's own (audit 2026-11-24, M8).
+  const [type, setType] = useState(entry?.type ?? "preference");
+  // The three, plus this note's own kind when Coach wrote it as another: it
+  // stays shown and selected, and the user can move it to one of the three.
+  const typeOptions: readonly string[] =
+    entry && !(USER_NOTE_TYPES as readonly string[]).includes(entry.type)
+      ? [...USER_NOTE_TYPES, entry.type]
+      : USER_NOTE_TYPES;
   // Save stays pressable with an empty note; pressing it names the field
   // (form-fields spec §5.1).
   const contentField = useFieldValidation(
@@ -169,14 +178,18 @@ export default function NotebookEntryScreen() {
   const { scheduleCommitmentReminder, cancelCommitmentReminder } =
     useNotebookNotifications();
 
+  // Nothing is edited until there is a note to compare against: while it is
+  // still loading, a blank form used to count as changed (Save enabled, and
+  // "Discard changes?" on Back).
   const isDirty = isCreate
     ? content.trim().length > 0
-    : content !== entry?.content ||
-      type !== entry?.type ||
-      followUpDate !==
-        (entry?.followUpDate
-          ? toLocalDateString(new Date(entry.followUpDate))
-          : null);
+    : entry !== undefined &&
+      (content !== entry.content ||
+        type !== entry.type ||
+        followUpDate !==
+          (entry.followUpDate
+            ? toLocalDateString(new Date(entry.followUpDate))
+            : null));
 
   // Disabled only while saving, or when an edit changed nothing. An empty
   // note is a press that says what's missing.
@@ -342,6 +355,29 @@ export default function NotebookEntryScreen() {
   // load — distinguish them (isError before empty) so a network failure is not
   // mislabeled "deleted", and offer Retry. Gate on !isLoading so a still-loading
   // state isn't mislabeled either.
+  // Opened before the list has loaded (a cold open from a reminder): say so,
+  // instead of a blank form that would be overwritten when the note arrives.
+  if (!isCreate && isLoading && !entry) {
+    return (
+      <View
+        accessibilityViewIsModal
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel="Loading this note"
+        style={[
+          styles.notFound,
+          {
+            backgroundColor: theme.backgroundDefault,
+            paddingTop: insets.top + Spacing.xl,
+            paddingBottom: insets.bottom + Spacing.xl,
+          },
+        ]}
+      >
+        <ActivityIndicator color={theme.link} />
+      </View>
+    );
+  }
+
   if (!isCreate && !isLoading && !entry) {
     return (
       <View
@@ -453,7 +489,7 @@ export default function NotebookEntryScreen() {
           </ThemedText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View role="radiogroup" style={styles.typeRow}>
-              {notebookEntryTypes.map((t) => (
+              {typeOptions.map((t) => (
                 <SelectableTile
                   key={t}
                   shape="chip"
