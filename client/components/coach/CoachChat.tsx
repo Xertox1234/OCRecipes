@@ -86,6 +86,7 @@ import {
   deriveMessageView,
   isPhotoTurnText,
   turnStartBlocked,
+  draftToRestore,
 } from "@/components/coach/coach-chat-utils";
 import { CoachMessageRow } from "@/components/coach/CoachMessageRow";
 import { useCoachStream } from "@/hooks/useCoachStream";
@@ -96,6 +97,7 @@ import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { apiRequest } from "@/lib/query-client";
 import { chatMessagesKey } from "@/lib/query-keys";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { chatRequestErrorCopy } from "@/lib/chat-error-copy";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   ChatStackParamList,
@@ -246,6 +248,12 @@ export default function CoachChat({
   const lastAssistantIdRef = useRef<number | null>(null);
   // Newest saved row id, read at send time (see `optimisticAfter`).
   const lastSavedIdRef = useRef<number | null>(null);
+  // The turn on its way, for onError: the typed text (null for a photo or a
+  // finder button) and the newest saved id when it started.
+  const sentTurnRef = useRef<{
+    text: string | null;
+    lastSavedId: number | null;
+  } | null>(null);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -395,7 +403,9 @@ export default function CoachChat({
       if (code === ErrorCode.DAILY_LIMIT_REACHED) {
         setIsAtDailyLimit(true);
       } else {
-        setStreamingError("Something went wrong. Please try again.");
+        // Static copy picked by the code (AI off, too fast, still
+        // answering); anything else gets the generic line.
+        setStreamingError(chatRequestErrorCopy(code));
       }
       setOptimisticMessage(null);
       // The server may already have saved this turn (the chat route persists
@@ -403,11 +413,32 @@ export default function CoachChat({
       // it, or even after the reply). Clearing the optimistic copy without a refetch hid a
       // saved question and invited a duplicate retry (R23) — reconcile.
       const convId = activeConvIdRef.current;
-      if (convId !== null) {
-        void queryClient.invalidateQueries({
-          queryKey: chatMessagesKey(convId),
+      const epoch = turnEpochRef.current;
+      const sent = sentTurnRef.current;
+      const reread =
+        convId !== null
+          ? queryClient
+              .invalidateQueries({ queryKey: chatMessagesKey(convId) })
+              .catch(() => undefined)
+          : Promise.resolve();
+      // If the re-read shows the server never saved the question (offline,
+      // refused, or handed back), it goes back into the input: it would
+      // otherwise be gone from the screen and the user would retype it.
+      void reread.then(() => {
+        if (turnEpochRef.current !== epoch) return;
+        const draft = draftToRestore({
+          sentText: sent?.text ?? null,
+          lastSavedIdAtSend: sent?.lastSavedId ?? null,
+          messages:
+            convId !== null
+              ? (queryClient.getQueryData<ChatMessage[]>(
+                  chatMessagesKey(convId),
+                ) ?? [])
+              : [],
+          currentInput: inputTextRef.current,
         });
-      }
+        if (draft !== null) setInputText(draft);
+      });
     },
   });
 
@@ -657,6 +688,7 @@ export default function CoachChat({
     onStart: (kind) => {
       const isBarcode = kind === "barcode";
       setSendingBarcode(isBarcode);
+      sentTurnRef.current = null;
       turnEpochRef.current += 1;
       followLatest();
       setPendingSave(null);
@@ -754,6 +786,10 @@ export default function CoachChat({
       if (typeof text !== "string") {
         haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       }
+      sentTurnRef.current = {
+        text: content,
+        lastSavedId: lastSavedIdRef.current,
+      };
       setInputText("");
       turnEpochRef.current += 1;
       // Sending brings the user back to the conversation's end, even if
@@ -863,15 +899,24 @@ export default function CoachChat({
         [],
     );
 
+    // Nothing else may start a turn (a photo, a second tap) while the two
+    // rows are being deleted: the resend below would then be refused with
+    // the exchange already gone.
+    startingTurnRef.current = true;
     try {
       // Delete assistant then user message (in order — each was "most recent" at time of delete)
       await deleteChatMessage(lastMsg.id);
       await deleteChatMessage(lastUserMsg.id);
     } catch {
+      startingTurnRef.current = false;
       queryClient.setQueryData(msgQueryKey, snapshot);
+      // The first delete may have gone through before the second failed, so
+      // the snapshot can show a reply the server no longer has. Re-read.
+      void queryClient.invalidateQueries({ queryKey: msgQueryKey });
       setStreamingError("Retry failed. Check your connection and try again.");
       return;
     }
+    startingTurnRef.current = false;
     void handleSend(lastUserMsg.content);
   }, [
     messages,
@@ -1040,6 +1085,7 @@ export default function CoachChat({
       }
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      sentTurnRef.current = null;
       turnEpochRef.current += 1;
       // Sending brings the user back to the conversation's end, even if
       // they had scrolled up to reread.

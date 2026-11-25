@@ -11,6 +11,7 @@ import {
   latestLiveWriteCard,
   lockOlderWriteCards,
   deriveMessageView,
+  draftToRestore,
   turnStartBlocked,
 } from "../coach-chat-utils";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -580,5 +581,73 @@ describe("turnStartBlocked", () => {
     ],
   ])("blocks while %s", (_label, over) => {
     expect(turnStartBlocked({ ...idle, ...over })).toBe(true);
+  });
+});
+
+// Coach chat audit 2026-11-24 (M19): a failed send used to leave the question
+// neither on screen nor in the input.
+describe("draftToRestore", () => {
+  const user = (id: number, content: string) =>
+    ({ id, role: "user", content }) as Parameters<
+      typeof draftToRestore
+    >[0]["messages"][number];
+  const reply = (id: number) =>
+    ({ id, role: "assistant", content: "ok" }) as Parameters<
+      typeof draftToRestore
+    >[0]["messages"][number];
+
+  it("gives the text back when the server did not save the turn", () => {
+    expect(
+      draftToRestore({
+        sentText: "How much protein?",
+        lastSavedIdAtSend: 8,
+        messages: [user(7, "earlier"), reply(8)],
+        currentInput: "",
+      }),
+    ).toBe("How much protein?");
+  });
+
+  it("gives it back on a brand-new conversation with no messages", () => {
+    expect(
+      draftToRestore({
+        sentText: "Hello",
+        lastSavedIdAtSend: null,
+        messages: [],
+        currentInput: "",
+      }),
+    ).toBe("Hello");
+  });
+
+  it("gives nothing back when the server saved the question", () => {
+    expect(
+      draftToRestore({
+        sentText: "How much protein?",
+        lastSavedIdAtSend: 8,
+        messages: [user(7, "earlier"), reply(8), user(9, "How much protein?")],
+        currentInput: "",
+      }),
+    ).toBeNull();
+  });
+
+  it("never overwrites what the user has typed since", () => {
+    expect(
+      draftToRestore({
+        sentText: "How much protein?",
+        lastSavedIdAtSend: 8,
+        messages: [reply(8)],
+        currentInput: "something new",
+      }),
+    ).toBeNull();
+  });
+
+  it("gives nothing back for a turn that was not typed text", () => {
+    expect(
+      draftToRestore({
+        sentText: null,
+        lastSavedIdAtSend: 8,
+        messages: [reply(8)],
+        currentInput: "",
+      }),
+    ).toBeNull();
   });
 });

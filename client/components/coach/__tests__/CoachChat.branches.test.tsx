@@ -634,6 +634,48 @@ describe("CoachChat — stream error", () => {
     expect(banner.textContent).toBe("Something went wrong. Please try again.");
     expect(banner.textContent).not.toContain("server exploded");
   });
+  // Coach chat audit 2026-11-24 (L39).
+  it("uses the code's own copy when there is one", () => {
+    renderCoachChat();
+    act(() => {
+      state.onError?.("429: slow down", "RATE_LIMITED");
+    });
+    expect(screen.getByTestId("streaming-error").textContent).toMatch(
+      /too fast/i,
+    );
+  });
+
+  // Coach chat audit 2026-11-24 (M19): the question used to be gone from
+  // the screen and from the input after a failed send.
+  it("puts the question back in the input when a send fails unsaved", async () => {
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "How much protein?" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(screen.getByTestId("input-text").textContent).toBe("");
+    await act(async () => {
+      state.onError?.("Network error");
+    });
+    expect(screen.getByTestId("input-text").textContent).toBe(
+      "How much protein?",
+    );
+  });
+
+  it("does not overwrite what was typed after the failed send", async () => {
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "first" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "typing again" },
+    });
+    await act(async () => {
+      state.onError?.("Network error");
+    });
+    expect(screen.getByTestId("input-text").textContent).toBe("typing again");
+  });
 });
 
 // ── history-load error branch ────────────────────────────────────────────────

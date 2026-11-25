@@ -38,6 +38,11 @@ describe("chatRequestErrorCopy", () => {
     );
   });
 
+  // Coach chat audit 2026-11-24 (L39): the rate limit read as a server fault.
+  it("says to slow down for RATE_LIMITED", () => {
+    expect(chatRequestErrorCopy("RATE_LIMITED")).toMatch(/too fast/i);
+  });
+
   it("says the Coach is still answering when a turn overlaps another", () => {
     expect(chatRequestErrorCopy("REQUEST_IN_FLIGHT")).toMatch(
       /still answering/i,
