@@ -40,6 +40,8 @@ export function chatRequestErrorCopy(code: string | undefined): string {
       return CHAT_AI_OFF_ERROR;
     case "CONFLICT":
       return "Recipe finder isn't available right now.";
+    case "RATE_LIMITED":
+      return "You're sending messages too fast. Wait a moment and try again.";
     case "REQUEST_IN_FLIGHT":
       // Another turn in this conversation is still open on the server: a
       // second device, or a reply cut off by a bad connection that the

@@ -320,3 +320,23 @@ export function deriveMessageView(
     savedRecipeId,
   };
 }
+
+/**
+ * The text to put back in the input after a turn failed, or null. A failed
+ * turn the server never saved (offline, refused, refunded) is otherwise gone
+ * from the screen and from the input, and the user has to retype it.
+ * `messages` is the thread as re-read after the failure.
+ */
+export function draftToRestore(turn: {
+  /** What the user sent as text; null for a photo or a finder button. */
+  sentText: string | null;
+  /** The newest saved message id when the turn started. */
+  lastSavedIdAtSend: number | null;
+  messages: readonly Pick<ChatMessage, "id" | "role">[];
+  currentInput: string;
+}): string | null {
+  if (!turn.sentText || turn.currentInput.trim() !== "") return null;
+  const floor = turn.lastSavedIdAtSend ?? Number.NEGATIVE_INFINITY;
+  const saved = turn.messages.some((m) => m.role === "user" && m.id > floor);
+  return saved ? null : turn.sentText;
+}

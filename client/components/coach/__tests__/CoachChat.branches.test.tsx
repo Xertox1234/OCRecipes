@@ -634,6 +634,48 @@ describe("CoachChat — stream error", () => {
     expect(banner.textContent).toBe("Something went wrong. Please try again.");
     expect(banner.textContent).not.toContain("server exploded");
   });
+  // Coach chat audit 2026-11-24 (L39).
+  it("uses the code's own copy when there is one", () => {
+    renderCoachChat();
+    act(() => {
+      state.onError?.("429: slow down", "RATE_LIMITED");
+    });
+    expect(screen.getByTestId("streaming-error").textContent).toMatch(
+      /too fast/i,
+    );
+  });
+
+  // Coach chat audit 2026-11-24 (M19): the question used to be gone from
+  // the screen and from the input after a failed send.
+  it("puts the question back in the input when a send fails unsaved", async () => {
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "How much protein?" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(screen.getByTestId("input-text").textContent).toBe("");
+    await act(async () => {
+      state.onError?.("Network error");
+    });
+    expect(screen.getByTestId("input-text").textContent).toBe(
+      "How much protein?",
+    );
+  });
+
+  it("does not overwrite what was typed after the failed send", async () => {
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "first" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "typing again" },
+    });
+    await act(async () => {
+      state.onError?.("Network error");
+    });
+    expect(screen.getByTestId("input-text").textContent).toBe("typing again");
+  });
 });
 
 // ── history-load error branch ────────────────────────────────────────────────
@@ -839,6 +881,42 @@ describe("CoachChat — handleRetry", () => {
     });
     expect(screen.getByTestId("streaming-error")).toBeTruthy();
     expect(state.startStream).not.toHaveBeenCalled();
+  });
+
+  // Coach chat audit 2026-11-24 (L56): the first delete went through, the
+  // second failed. The snapshot then shows a reply the server no longer has.
+  it("re-reads the chat after a partial delete failure and releases the turn guard", async () => {
+    assistantThenUser();
+    state.deleteMutate = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("net"));
+    const { QueryClient } = await import("@tanstack/react-query");
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    renderCoachChat({ conversationId: 7 });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /regenerate response/i }),
+      );
+    });
+    expect(state.deleteMutate).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("streaming-error")).toBeTruthy();
+    expect(state.startStream).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/7/messages"],
+    });
+    invalidate.mockRestore();
+
+    // The guard held during the deletes is released: a later send goes out.
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "next question" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    expect(state.startStream).toHaveBeenCalledWith(
+      7,
+      "next question",
+      expect.anything(),
+    );
   });
 
   it("does nothing when there are fewer than two messages", async () => {
