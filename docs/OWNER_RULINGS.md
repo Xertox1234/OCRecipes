@@ -72,7 +72,9 @@ user data.
   on-boarding info to function properly." The conditions go into Coach's context beside the goal,
   weight and activity level (`buildAboutUser` in `server/services/coach-context-builder.ts`), which
   sends them to the AI companies that run Coach. The privacy pages already name health conditions
-  for AI coaching. The GLP-1 profile fields are still not read.
+  for AI coaching. The GLP-1 profile fields are still not read (owner, same day: "leave GLP-1 out").
+  Coach does not add "check with your doctor" to an ordinary food answer because of a condition on
+  the profile (owner, same day: "I don't like the repitition").
 - **Privacy page date, not the consent version** (2026-11-24). The notes wording change moved the
   pages' effective date to November 24, 2026. `HEALTH_CONSENT_VERSION` stays at `2026-11-10`:
   nobody is asked to agree again (owner: "Date only").
