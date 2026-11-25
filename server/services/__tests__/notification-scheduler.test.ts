@@ -41,6 +41,7 @@ vi.mock("../../storage", () => ({
 
 vi.mock("../proactive-coach/pantry-expiry", () => ({
   nudgeAboutExpiringPantry: vi.fn(),
+  PANTRY_EXPIRY_LOCAL_HOUR: 16,
 }));
 
 vi.mock("../notifications/notify", () => ({
@@ -678,6 +679,29 @@ describe("sendPantryExpiryNudges", () => {
 
     expect(nudgeAboutExpiringPantry).toHaveBeenCalledTimes(1);
     expect(nudgeAboutExpiringPantry).toHaveBeenCalledWith("on", NOW, "UTC");
+  });
+
+  it("runs in the hourly job, for users at 16:00 their time", async () => {
+    // Every job in the hourly run pages the users for itself.
+    vi.mocked(storage.getUserIdPage).mockResolvedValue(["utc-user"]);
+    vi.mocked(storage.getPushTokensForUsers).mockResolvedValue([
+      token("utc-user"),
+    ]);
+    vi.useFakeTimers({ now: NOW });
+    try {
+      startNotificationScheduler();
+      const call = vi
+        .mocked(cron.schedule)
+        .mock.calls.find((c) => c[0] === "0 * * * *");
+      await (call![1] as unknown as () => Promise<unknown>)();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(nudgeAboutExpiringPantry).toHaveBeenCalledWith(
+      "utc-user",
+      expect.any(Date),
+      "UTC",
+    );
   });
 
   it("carries on with the next user when one fails", async () => {

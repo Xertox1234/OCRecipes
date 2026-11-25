@@ -17,11 +17,23 @@ export interface PantryExpiryNudge {
   message: string;
 }
 
-/** One line, lower case, at most 40 characters. */
+/** Control characters, zero-width characters and text-direction marks. */
+const INVISIBLE =
+  /[\u0000-\u0008\u000B-\u001F\u007F\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+
+/**
+ * One line, lower case, nothing invisible, at most 40 characters (counted so
+ * an emoji is never cut in half).
+ */
 function tidyName(raw: string): string {
-  const flat = raw.replace(/\s+/g, " ").trim().toLowerCase();
-  return flat.length > MAX_NAME_CHARS
-    ? `${flat.slice(0, MAX_NAME_CHARS - 1)}…`
+  const flat = raw
+    .replace(INVISIBLE, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const chars = Array.from(flat);
+  return chars.length > MAX_NAME_CHARS
+    ? `${chars.slice(0, MAX_NAME_CHARS - 1).join("")}…`
     : flat;
 }
 

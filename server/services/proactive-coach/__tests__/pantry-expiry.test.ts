@@ -43,10 +43,10 @@ describe("nudgeAboutExpiringPantry", () => {
     const result = await nudgeAboutExpiringPantry("u1", NOW, "UTC");
 
     expect(result).toBe("sent");
-    // The items that expire in the next 24 hours, and no others.
+    // From 16:00 today to 16:00 tomorrow, the user's time.
     expect(storage.getPantryItemsExpiringBetween).toHaveBeenCalledWith(
       "u1",
-      NOW,
+      new Date("2026-11-25T16:00:00Z"),
       new Date("2026-11-26T16:00:00Z"),
     );
     expect(storage.createConversationWithAssistantMessage).toHaveBeenCalledWith(
@@ -72,8 +72,38 @@ describe("nudgeAboutExpiringPantry", () => {
     expect(await nudgeAboutExpiringPantry("u1", NOW, "UTC")).toBe(
       "skipped-no-pantry",
     );
-    expect(storage.getPantryItemsExpiringBetween).not.toHaveBeenCalled();
+    expect(storage.claimNotificationSend).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("uses the same window whenever the tick lands inside the hour", async () => {
+    await nudgeAboutExpiringPantry(
+      "u1",
+      new Date("2026-11-25T16:00:07.120Z"),
+      "UTC",
+    );
+    expect(storage.getPantryItemsExpiringBetween).toHaveBeenCalledWith(
+      "u1",
+      new Date("2026-11-25T16:00:00Z"),
+      new Date("2026-11-26T16:00:00Z"),
+    );
+  });
+
+  it("joins up day to day across a clock change, in the user's own timezone", async () => {
+    // Toronto leaves daylight time on 2026-11-01: 16:00 is 20:00Z the day
+    // before and 21:00Z on the day and after.
+    const windowAt = async (iso: string) => {
+      vi.mocked(storage.getPantryItemsExpiringBetween).mockClear();
+      await nudgeAboutExpiringPantry("u1", new Date(iso), "America/Toronto");
+      const [, from, to] = vi.mocked(storage.getPantryItemsExpiringBetween).mock
+        .calls[0];
+      return [from.toISOString(), to.toISOString()];
+    };
+    const saturday = await windowAt("2026-10-31T20:00:00Z");
+    const sunday = await windowAt("2026-11-01T21:00:00Z");
+    const monday = await windowAt("2026-11-02T21:00:00Z");
+    expect(sunday[0]).toBe(saturday[1]);
+    expect(monday[0]).toBe(sunday[1]);
   });
 
   it("does nothing when nothing is about to expire, and spends no daily slot", async () => {
@@ -82,6 +112,8 @@ describe("nudgeAboutExpiringPantry", () => {
       "skipped-nothing-expiring",
     );
     expect(storage.claimNotificationSend).not.toHaveBeenCalled();
+    // Most users have nothing expiring: their plan is never looked up.
+    expect(storage.getEffectiveTierForUser).not.toHaveBeenCalled();
   });
 
   it("stays quiet on a day the Coach already pushed a follow-up", async () => {
@@ -122,11 +154,11 @@ describe("nudgeAboutExpiringPantry", () => {
     expect(storage.deleteChatConversation).toHaveBeenCalledWith(77, "u1");
   });
 
-  it("removes the conversation when the push throws", async () => {
-    vi.mocked(notify).mockRejectedValue(new Error("expo down"));
+  it("keeps the conversation when the push throws: it may already be on the phone", async () => {
+    vi.mocked(notify).mockRejectedValue(new Error("ledger down"));
     await expect(nudgeAboutExpiringPantry("u1", NOW, "UTC")).rejects.toThrow(
-      "expo down",
+      "ledger down",
     );
-    expect(storage.deleteChatConversation).toHaveBeenCalledWith(77, "u1");
+    expect(storage.deleteChatConversation).not.toHaveBeenCalled();
   });
 });

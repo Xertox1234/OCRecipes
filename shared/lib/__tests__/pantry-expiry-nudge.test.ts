@@ -44,6 +44,17 @@ describe("renderPantryExpiryNudge", () => {
     );
   });
 
+  it("drops invisible and control characters and never cuts an emoji in half", () => {
+    const hidden = "mi\u200blk\u202e\u0007";
+    expect(renderPantryExpiryNudge([hidden])?.body).toBe(
+      "Your milk expires within a day.",
+    );
+    const emoji = "🥬".repeat(45);
+    expect(renderPantryExpiryNudge([emoji])?.body).toBe(
+      `Your ${"🥬".repeat(39)}… expires within a day.`,
+    );
+  });
+
   it("returns null when no name is usable", () => {
     expect(renderPantryExpiryNudge([])).toBeNull();
     expect(renderPantryExpiryNudge(["  ", ""])).toBeNull();

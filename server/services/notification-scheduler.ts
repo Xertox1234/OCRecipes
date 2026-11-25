@@ -31,7 +31,10 @@ import {
   sendDueWeeklyReportPushes,
 } from "./weekly-report/generate";
 import { reportWeekFor } from "./weekly-report/week-window";
-import { nudgeAboutExpiringPantry } from "./proactive-coach/pantry-expiry";
+import {
+  nudgeAboutExpiringPantry,
+  PANTRY_EXPIRY_LOCAL_HOUR,
+} from "./proactive-coach/pantry-expiry";
 import type { ReminderMutes } from "@shared/types/reminders";
 
 /**
@@ -195,8 +198,6 @@ export interface LocalHourReminderOptions {
 /** Local hour each per-user reminder is delivered at. */
 export const DAILY_CHECKIN_LOCAL_HOUR = 9;
 export const MEAL_LOG_LOCAL_HOUR = 12;
-/** Mid-afternoon: early enough to plan tonight's dinner around what expires. */
-export const PANTRY_EXPIRY_LOCAL_HOUR = 16;
 
 /**
  * Iterate all user IDs in cursor-based pages (500 at a time) and invoke
