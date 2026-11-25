@@ -1,4 +1,9 @@
 import {
+  extractBlockFences,
+  streamVisibleText,
+  stripCitationMarkers,
+} from "../coach-reply-text";
+import {
   generateCoachResponse,
   generateCoachProResponse,
   SAFETY_OVERRIDE_SENTINEL,
@@ -98,6 +103,8 @@ async function* streamProReply(
   const { planShopCard } = a;
   const { userId, isAborted, abortSignal } = params;
   const reply = emptyReply();
+  /** Characters of visible text already sent to the client. */
+  let sent = 0;
 
   for await (const chunk of generateCoachProResponse(
     turn.messageHistory,
@@ -308,7 +315,14 @@ async function* streamProReply(
     }
     if (isAborted()) break;
     reply.fullResponse += chunk.content;
-    yield { type: "content", content: chunk.content };
+    // Only prose goes out: the card fence and the model's citation markup
+    // are held back (cards arrive in the blocks event). The raw reply stays
+    // in `fullResponse` for the parser.
+    const visible = streamVisibleText(reply.fullResponse);
+    if (visible.length > sent) {
+      yield { type: "content", content: visible.slice(sent) };
+      sent = visible.length;
+    }
   }
   return reply;
 }
@@ -318,6 +332,8 @@ async function* streamFreeReply(
 ): AsyncGenerator<CoachChatEvent, ReplyResult> {
   const { params, turn, intent } = a;
   const reply = emptyReply();
+  /** Characters of visible text already sent to the client. */
+  let sent = 0;
   for await (const chunk of generateCoachResponse(
     turn.messageHistory,
     turn.context,
@@ -334,8 +350,18 @@ async function* streamFreeReply(
       break;
     }
     reply.fullResponse += chunk;
-    yield { type: "content", content: chunk };
+    const visible = streamVisibleText(reply.fullResponse);
+    if (visible.length > sent) {
+      yield { type: "content", content: visible.slice(sent) };
+      sent = visible.length;
+    }
   }
+  // Saved and cached as it was shown: without the model's citation markup,
+  // and without a card fence the free tier never asked for. The safety
+  // message has neither.
+  reply.fullResponse = stripCitationMarkers(
+    extractBlockFences(reply.fullResponse).text,
+  ).trim();
   return reply;
 }
 

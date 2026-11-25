@@ -382,6 +382,126 @@ describe("useSendMessage", () => {
     );
   });
 
+  // Coach chat audit 2026-11-24 (M23): the server saves the question before
+  // it streams, so a failure mid-reply can leave a saved turn the screen has
+  // not seen. Without a re-read the screen gave the draft back for a resend
+  // and the conversation ended up with the question twice.
+  it.each([
+    ["a network error", () => xhrInstance.simulateNetworkError()],
+    ["a timeout", () => xhrInstance.simulateTimeout()],
+  ])(
+    "re-reads the messages after %s, and reports the error only once that is done",
+    async (_l, fail) => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("token");
+      let finishReread!: () => void;
+      const keys: string[] = [];
+      const invalidate = vi
+        .spyOn(queryClient, "invalidateQueries")
+        .mockImplementation((filters) => {
+          keys.push(JSON.stringify(filters?.queryKey));
+          return new Promise<void>((resolve) => (finishReread = resolve));
+        });
+
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      let p!: Promise<void>;
+      await act(async () => {
+        p = result.current.sendMessage("test");
+        await Promise.resolve();
+        await Promise.resolve();
+        fail();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // The re-read is under way and the error has not been reported yet.
+      expect(keys).toContain('["/api/chat/conversations/1/messages"]');
+      expect(result.current.requestError).toBeNull();
+      expect(result.current.isStreaming).toBe(true);
+
+      await act(async () => {
+        finishReread();
+        await p;
+      });
+      expect(result.current.requestError).not.toBeNull();
+      expect(result.current.isStreaming).toBe(false);
+      invalidate.mockRestore();
+    },
+  );
+
+  it("does not wait forever for that re-read (it can pause while offline)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { wrapper, queryClient } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("token");
+      const invalidate = vi
+        .spyOn(queryClient, "invalidateQueries")
+        .mockImplementation(() => new Promise<void>(() => undefined));
+
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      let settled = false;
+      await act(async () => {
+        const p = result.current.sendMessage("test").then(() => {
+          settled = true;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.simulateNetworkError();
+        await vi.advanceTimersByTimeAsync(5000);
+        await p;
+      });
+
+      expect(settled).toBe(true);
+      expect(result.current.isStreaming).toBe(false);
+      expect(result.current.requestError).toBe(
+        "Network error. Please check your connection and try again.",
+      );
+      invalidate.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Coach chat audit 2026-11-24 (L38): a clean close before the first token
+  // used to be silent: no reply, no error, no re-read.
+  it("treats a clean close with no reply and no done as an interrupted reply", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateChunks(['data: {"status":"Thinking"}\n']);
+      await p;
+    });
+
+    expect(result.current.streamError).toBe(true);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+    });
+    invalidate.mockRestore();
+  });
+
+  it("a server-sent error with no reply is reported once, not also as interrupted", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateChunks(['data: {"error":"x"}\n']);
+      await p;
+    });
+
+    expect(result.current.requestError).toBe(CHAT_GENERIC_ERROR);
+    expect(result.current.streamError).toBe(false);
+  });
+
   it("sets requestError on application-level error from SSE stream", async () => {
     const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue("token");
