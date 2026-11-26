@@ -451,6 +451,49 @@ describe("Chat Routes", () => {
       });
     });
 
+    // Audit 2026-11-24, L107: the user's saved timezone decides whether a
+    // live food card's day is over; with none saved the card stays live.
+    it.each([
+      ["America/New_York", "expired"],
+      [null, "live"],
+    ])(
+      "GET messages with saved timezone %s serves a two-day-old food card as %s",
+      async (timezone, status) => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        const cardId = "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        vi.mocked(storage.getChatMessages).mockResolvedValue([
+          createMockChatMessage({
+            role: "assistant",
+            metadata: {
+              blocks: [
+                { type: "write_card", cardId, kind: "food", status: "live" },
+              ],
+            },
+          }),
+        ]);
+        vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
+          createMockCoachWriteCard({
+            id: cardId,
+            kind: "food",
+            status: "live",
+            createdAt: new Date(Date.now() - 48 * 3600_000),
+          }),
+        ]);
+        vi.mocked(storage.getUser).mockResolvedValue(
+          createMockUser({ timezone }),
+        );
+
+        const res = await request(app)
+          .get("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token");
+
+        expect(res.status).toBe(200);
+        expect(res.body[0].metadata.blocks[0].status).toBe(status);
+      },
+    );
+
     it("GET messages without write cards does not read card rows", async () => {
       vi.mocked(storage.getChatConversation).mockResolvedValue(
         createMockChatConversation(),

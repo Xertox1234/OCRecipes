@@ -102,3 +102,74 @@ describe("enrichWriteCardBlocks and logs applied at once", () => {
     expect(block.status).toBe("live");
   });
 });
+
+// Audit 2026-11-24, L107: a food card stops offering Save once the day it
+// was shown is over in the user's timezone. The app already locks an
+// expired card, so this needs no app update.
+describe("enrichWriteCardBlocks and a food card from an earlier day", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const liveFood = (createdAt: Date, kind: "food" | "goals" = "food") =>
+    createMockCoachWriteCard({
+      id: CARD_ID,
+      kind,
+      payload: foodPayload,
+      status: "live",
+      createdAt,
+    });
+  const yesterday = () => new Date(Date.now() - 36 * 3600_000);
+
+  it("serves a live food card from an earlier day as expired", async () => {
+    vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
+      liveFood(yesterday()),
+    ]);
+    const block = blockOf(
+      await enrichWriteCardBlocks(
+        [messageWithCard()],
+        "user-42",
+        async () => "UTC",
+      ),
+    );
+    expect(block.status).toBe("expired");
+  });
+
+  it("leaves a food card shown today live", async () => {
+    vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
+      liveFood(new Date()),
+    ]);
+    const block = blockOf(
+      await enrichWriteCardBlocks(
+        [messageWithCard()],
+        "user-42",
+        async () => "UTC",
+      ),
+    );
+    expect(block.status).toBe("live");
+  });
+
+  it("leaves it live when the user's timezone is not known", async () => {
+    vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
+      liveFood(yesterday()),
+    ]);
+    const block = blockOf(
+      await enrichWriteCardBlocks(
+        [messageWithCard()],
+        "user-42",
+        async () => null,
+      ),
+    );
+    expect(block.status).toBe("live");
+  });
+
+  it("does not expire other kinds of card, nor look up the timezone", async () => {
+    vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
+      liveFood(yesterday(), "goals"),
+    ]);
+    const resolveTz = vi.fn(async () => "UTC");
+    const block = blockOf(
+      await enrichWriteCardBlocks([messageWithCard()], "user-42", resolveTz),
+    );
+    expect(block.status).toBe("live");
+    expect(resolveTz).not.toHaveBeenCalled();
+  });
+});
