@@ -401,10 +401,12 @@ describe("write-card prompt rules", () => {
       writeCards: true,
       quickLog: true,
     });
-    expect(quick).toMatch(
-      /log_food_item result says the food is already logged/,
-    );
+    expect(quick).toMatch(/log_food_item result says it is already logged/);
     expect(quick).toMatch(/would log it twice/);
+    // The tap-to-save sentence names its exception instead of contradicting it.
+    expect(quick).toMatch(
+      /never say something was logged or added, except a small food log/,
+    );
     // Without it, never: the card waits on the user's tap.
     const plain = getBlocksSystemPrompt(false, { writeCards: true });
     expect(plain).not.toMatch(/already logged/);

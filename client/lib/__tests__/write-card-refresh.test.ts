@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   arrivedSavedRefreshKeys,
+  loggedAtOnceReceipt,
   writeCardRefreshKeys,
 } from "../write-card-refresh";
 
@@ -79,5 +80,34 @@ describe("arrivedSavedRefreshKeys", () => {
       arrivedSavedRefreshKeys([{ type: "quick_replies", options: [] }]),
     ).toEqual([]);
     expect(arrivedSavedRefreshKeys([])).toEqual([]);
+  });
+});
+
+// Mobile review: on iOS a card that arrives saved is silent, so the reply's
+// finish announcement carries its receipt.
+describe("loggedAtOnceReceipt", () => {
+  const card = (over: Record<string, unknown>) =>
+    ({
+      type: "write_card",
+      cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+      kind: "food",
+      payload: { items: [], mealType: "breakfast", day: "today" },
+      status: "saved",
+      receipt: "✓ Logged to Breakfast · 144 cal",
+      ...over,
+    }) as Parameters<typeof loggedAtOnceReceipt>[0][number];
+
+  it("gives the receipt, without the tick, for a log applied at once", () => {
+    expect(loggedAtOnceReceipt([card({ loggedAtOnce: true })])).toBe(
+      "Logged to Breakfast · 144 cal. Undo is on the card.",
+    );
+  });
+
+  it("is null for any other card", () => {
+    expect(loggedAtOnceReceipt([card({})])).toBeNull();
+    expect(
+      loggedAtOnceReceipt([card({ loggedAtOnce: true, status: "live" })]),
+    ).toBeNull();
+    expect(loggedAtOnceReceipt([])).toBeNull();
   });
 });

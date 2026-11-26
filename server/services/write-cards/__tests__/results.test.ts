@@ -79,6 +79,7 @@ describe("foodCardResult", () => {
     expect(result.card_shown).toBe(true);
     expect(result.message).toMatch(/already logged/);
     expect(result.message).toMatch(/Undo/);
+    expect(result.message).toMatch(/Do not call log_food_item again/);
     // Never the "nothing has been saved" wording of a card waiting on Save.
     expect(result.message).not.toMatch(/Nothing has been saved/);
     // A second call would log the food twice.

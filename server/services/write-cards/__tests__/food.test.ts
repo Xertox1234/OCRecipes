@@ -428,10 +428,11 @@ describe("performFoodSave / revertFoodSave", () => {
 // Coach roadmap T2: a small log is applied at once, with Undo, instead of
 // waiting on the card's Save.
 describe("isSmallFoodLog", () => {
+  // Macros that add up to the calories (4/4/9), as a real food's do.
   const item = (calories: number, count = 1) => ({
     name: "Large eggs",
     unitLabel: "egg",
-    perUnit: { calories, protein: 6, carbs: 0, fat: 5 },
+    perUnit: { calories, protein: calories / 8, carbs: calories / 8, fat: 0 },
     count,
     source: "estimate" as const,
   });
@@ -463,6 +464,31 @@ describe("isSmallFoodLog", () => {
   it("is not small past 1000 kcal", () => {
     expect(isSmallFoodLog(payload([item(600), item(401)]))).toBe(false);
     expect(isSmallFoodLog(payload([item(600), item(400)]))).toBe(true);
+  });
+
+  // Security review: the size cap is in calories, so a "0 kcal" item with
+  // large macros (a misread, or a prompt-injected log) must not slip under it.
+  it("is not small when an item's macros do not match its calories", () => {
+    const off = (calories: number, carbs: number) => ({
+      ...item(calories),
+      perUnit: { calories, protein: 0, carbs, fat: 0 },
+    });
+    expect(isSmallFoodLog(payload([off(0, 1000)]))).toBe(false);
+    expect(isSmallFoodLog(payload([off(300, 5)]))).toBe(false);
+    // Black coffee: a few calories, near-zero macros.
+    expect(isSmallFoodLog(payload([off(2, 0)]))).toBe(true);
+    expect(isSmallFoodLog(payload([off(0, 0)]))).toBe(true);
+    // Toast: 80 kcal from 15 g carbs, 3 g protein, 1 g fat (81 kcal).
+    expect(
+      isSmallFoodLog(
+        payload([
+          {
+            ...item(80),
+            perUnit: { calories: 80, protein: 3, carbs: 15, fat: 1 },
+          },
+        ]),
+      ),
+    ).toBe(true);
   });
 
   it("logs for yesterday too", () => {

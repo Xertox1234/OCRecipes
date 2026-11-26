@@ -184,7 +184,11 @@ export function latestLiveWriteCard(
 ): { cardId: string; kind: WriteCardBlockLike["kind"] } | null {
   let newest: WriteCardBlockLike | null = null;
   for (const blocks of blockLists) {
-    for (const b of blocks) if (b.type === "write_card") newest = b;
+    // A food logged at once (T2) was never live and locks nothing it did
+    // not replace, so it never hides an older live card.
+    for (const b of blocks) {
+      if (b.type === "write_card" && !b.loggedAtOnce) newest = b;
+    }
   }
   return newest?.status === "live"
     ? { cardId: newest.cardId, kind: newest.kind }
@@ -202,23 +206,39 @@ export function lockOlderWriteCards(
   blockLists: readonly CoachBlock[][],
 ): CoachBlock[][] {
   let newest: WriteCardBlockLike | null = null;
+  // Coach roadmap T2: a food logged at once was never live, so it locks only
+  // the food card it replaced (the server left any other card live).
+  const replacedByLog = new Set<string>();
   for (const blocks of blockLists) {
-    for (const b of blocks) if (b.type === "write_card") newest = b;
+    for (const b of blocks) {
+      if (b.type !== "write_card") continue;
+      if (b.loggedAtOnce) {
+        if (b.replacesCardId) replacedByLog.add(b.replacesCardId);
+      } else {
+        newest = b;
+      }
+    }
   }
-  if (!newest) return blockLists as CoachBlock[][];
+  if (!newest && replacedByLog.size === 0) return blockLists as CoachBlock[][];
   const keep = newest;
   // By id, not identity: the finished reply's card can be on screen twice
   // (the footer's live copy and the saved message) for a moment.
   const older = (b: CoachBlock): b is WriteCardBlockLike =>
-    b.type === "write_card" && b.cardId !== keep.cardId && b.status === "live";
+    b.type === "write_card" &&
+    b.status === "live" &&
+    ((keep !== null && b.cardId !== keep.cardId) ||
+      replacedByLog.has(b.cardId));
+  const lockedAs = (b: WriteCardBlockLike) =>
+    replacedByLog.has(b.cardId) || keep?.replacesCardId === b.cardId
+      ? "replaced"
+      : "expired";
   return blockLists.map((blocks) =>
     blocks.some(older)
       ? blocks.map((b) =>
           older(b)
             ? {
                 ...b,
-                status:
-                  keep.replacesCardId === b.cardId ? "replaced" : "expired",
+                status: lockedAs(b),
               }
             : b,
         )

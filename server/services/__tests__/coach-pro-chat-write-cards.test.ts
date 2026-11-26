@@ -47,7 +47,9 @@ vi.mock("../../storage", () => ({
     getLiveWriteCard: vi.fn(),
     setWriteCardEdits: vi.fn(),
     createWriteCard: vi.fn(),
-    saveWriteCard: vi.fn(),
+    createLoggedWriteCard: vi.fn(),
+    withdrawLoggedWriteCard: vi.fn(),
+    getLatestLoggedFoodCard: vi.fn(),
   },
 }));
 
@@ -1099,92 +1101,159 @@ describe("handleCoachChat with write cards", () => {
   });
 
   // Coach roadmap T2: a small food log the user typed is applied at once,
-  // with Undo, for an app that can show that ("quick_log").
+  // with Undo, for an app that can show that ("quick_log"). It is saved
+  // during the tool call, so the tool result only says what has happened.
   describe("a small food log applied at once", () => {
-    const savedCard = () =>
+    const LOGGED_ID = "22222222-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+    const loggedCard = () =>
       createMockCoachWriteCard({
-        id: CARD_ID,
+        id: LOGGED_ID,
         kind: "food",
         payload: foodPayload,
         status: "saved",
         savedAt: new Date(),
         savedRefs: { scannedItemIds: [9], loggedAtOnce: true },
       });
+    const loggedBlock = {
+      type: "write_card",
+      cardId: LOGGED_ID,
+      kind: "food",
+      payload: foodPayload,
+      status: "saved",
+      receipt: "✓ Logged to Breakfast · 144 cal",
+      loggedAtOnce: true,
+    };
 
     beforeEach(() => {
-      vi.mocked(storage.saveWriteCard).mockResolvedValue({
-        status: "saved",
-        card: savedCard(),
+      vi.mocked(storage.createLoggedWriteCard).mockResolvedValue({
+        card: loggedCard(),
+        previous: null,
       });
+      vi.mocked(storage.withdrawLoggedWriteCard).mockResolvedValue(true);
+      vi.mocked(storage.getLatestLoggedFoodCard).mockResolvedValue(undefined);
+      vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
     });
 
-    const proposeOnce = (p: WriteCardProposal, seen: unknown[]) =>
+    /** Fires these proposals in order, recording each tool result. */
+    const proposeAll = (
+      ps: WriteCardProposal[],
+      seen: unknown[],
+      after?: CoachProChunk,
+    ) =>
       async function* (
         ...args: Parameters<typeof generateCoachProResponse>
       ): AsyncGenerator<CoachProChunk> {
-        seen.push(await args[7]?.onWriteCardProposal?.(p));
+        for (const p of ps) seen.push(await args[7]?.onWriteCardProposal?.(p));
         const chunk: CoachProChunk = { type: "content", content: "Logged." };
         yield chunk;
+        if (after) yield after;
       };
+    const quick = (o: Partial<CoachChatParams> = {}) =>
+      makeParams({ writeCards: true, quickLog: true, turnKey: "tk-1", ...o });
 
-    it("the tool hears it is logged, and the card arrives saved, with its receipt", async () => {
+    it("saves during the tool call; the tool hears it is logged and the card arrives saved", async () => {
       const seen: unknown[] = [];
       vi.mocked(generateCoachProResponse).mockImplementation(
-        proposeOnce({ kind: "food", args: foodArgs }, seen),
+        proposeAll([{ kind: "food", args: foodArgs }], seen),
       );
-      const events = await collect(
-        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
-      );
+      const events = await collect(handleCoachChat(quick()));
 
       expect(seen).toEqual([{ kind: "food", shown: true, loggedAtOnce: true }]);
-      expect(storage.saveWriteCard).toHaveBeenCalledWith(
-        CARD_ID,
-        "user-42",
+      expect(storage.createLoggedWriteCard).toHaveBeenCalledWith(
+        {
+          userId: "user-42",
+          conversationId: 1,
+          kind: "food",
+          payload: foodPayload,
+        },
         expect.any(Function),
-        {},
       );
-      const block = {
-        type: "write_card",
-        cardId: CARD_ID,
-        kind: "food",
-        payload: foodPayload,
-        status: "saved",
-        receipt: "✓ Logged to Breakfast · 144 cal",
-        loggedAtOnce: true,
-      };
-      expect(blocksEvent(events)?.blocks).toEqual([block]);
+      // Not also made as a card waiting on Save.
+      expect(storage.createWriteCard).not.toHaveBeenCalled();
+      expect(blocksEvent(events)?.blocks).toEqual([loggedBlock]);
       expect(vi.mocked(storage.createChatMessage).mock.calls[0][4]).toEqual({
-        blocks: [block],
+        blocks: [loggedBlock],
       });
-      // The prompt carries the rule for logs applied at once.
+      expect(storage.withdrawLoggedWriteCard).not.toHaveBeenCalled();
       const context = vi.mocked(generateCoachProResponse).mock
         .calls[0][1] as CoachContext;
       expect(context.blocksPrompt).toBe("[BLOCKS+WRITE+QUICK]");
     });
 
-    it("saves with the card's own contents and marks the save as applied at once", async () => {
+    it("saves the card's own contents, as a Save tap with no edits would", async () => {
       vi.mocked(generateCoachProResponse).mockImplementation(
-        proposeOnce({ kind: "food", args: foodArgs }, []),
+        proposeAll([{ kind: "food", args: foodArgs }], []),
       );
       vi.mocked(performWriteCardSave).mockResolvedValue({
         scannedItemIds: [9],
       });
-      await collect(
-        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
-      );
-      const perform = vi.mocked(storage.saveWriteCard).mock.calls[0][2];
+      await collect(handleCoachChat(quick()));
+      const perform = vi.mocked(storage.createLoggedWriteCard).mock.calls[0][1];
       const tx = {} as Parameters<typeof perform>[0];
-      const card = createMockCoachWriteCard({ id: CARD_ID, kind: "food" });
-      await expect(perform(tx, card)).resolves.toEqual({
-        scannedItemIds: [9],
-        loggedAtOnce: true,
-      });
+      const card = createMockCoachWriteCard({ id: LOGGED_ID, kind: "food" });
+      await expect(perform(tx, card)).resolves.toEqual({ scannedItemIds: [9] });
       expect(performWriteCardSave).toHaveBeenCalledWith(
         tx,
         card,
         {},
         expect.objectContaining({ userId: "user-42", tz: "UTC" }),
       );
+    });
+
+    it("stays logged when a later tool call in the turn makes another card", async () => {
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeAll(
+          [
+            { kind: "food", args: foodArgs },
+            { kind: "grocery", args: groceryArgs },
+          ],
+          seen,
+        ),
+      );
+      vi.mocked(storage.createWriteCard).mockResolvedValue({
+        card: createMockCoachWriteCard({
+          id: CARD_ID,
+          kind: "grocery",
+          payload: groceryPayload,
+        }),
+        previous: null,
+      });
+      const events = await collect(handleCoachChat(quick()));
+      expect(seen[0]).toEqual({
+        kind: "food",
+        shown: true,
+        loggedAtOnce: true,
+      });
+      const blocks = blocksEvent(events)?.blocks ?? [];
+      expect(blocks.map((b) => (b as { cardId?: string }).cardId)).toEqual([
+        LOGGED_ID,
+        CARD_ID,
+      ]);
+      expect(storage.withdrawLoggedWriteCard).not.toHaveBeenCalled();
+    });
+
+    it("logs at most one food at once a turn: a second one waits on Save", async () => {
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeAll(
+          [
+            { kind: "food", args: foodArgs },
+            { kind: "food", args: foodArgs },
+          ],
+          seen,
+        ),
+      );
+      const events = await collect(handleCoachChat(quick()));
+      expect(seen).toEqual([
+        { kind: "food", shown: true, loggedAtOnce: true },
+        { kind: "food", shown: true },
+      ]);
+      expect(storage.createLoggedWriteCard).toHaveBeenCalledTimes(1);
+      expect(blocksEvent(events)?.blocks).toEqual([
+        loggedBlock,
+        expect.objectContaining({ cardId: CARD_ID, status: "live" }),
+      ]);
     });
 
     it("a large log keeps the card for the user to save", async () => {
@@ -1195,69 +1264,68 @@ describe("handleCoachChat with write cards", () => {
       vi.mocked(buildWriteCardPayload).mockResolvedValue(big);
       const seen: unknown[] = [];
       vi.mocked(generateCoachProResponse).mockImplementation(
-        proposeOnce({ kind: "food", args: foodArgs }, seen),
+        proposeAll([{ kind: "food", args: foodArgs }], seen),
       );
-      const events = await collect(
-        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
-      );
+      const events = await collect(handleCoachChat(quick()));
       expect(seen).toEqual([{ kind: "food", shown: true }]);
-      expect(storage.saveWriteCard).not.toHaveBeenCalled();
+      expect(storage.createLoggedWriteCard).not.toHaveBeenCalled();
       expect(blocksEvent(events)?.blocks[0]).toMatchObject({ status: "live" });
     });
 
     it("an app that did not declare it keeps the card for the user to save", async () => {
       const seen: unknown[] = [];
       vi.mocked(generateCoachProResponse).mockImplementation(
-        proposeOnce({ kind: "food", args: foodArgs }, seen),
+        proposeAll([{ kind: "food", args: foodArgs }], seen),
       );
-      await collect(handleCoachChat(makeParams({ writeCards: true })));
+      await collect(
+        handleCoachChat(makeParams({ writeCards: true, turnKey: "tk-1" })),
+      );
       expect(seen).toEqual([{ kind: "food", shown: true }]);
-      expect(storage.saveWriteCard).not.toHaveBeenCalled();
+      expect(storage.createLoggedWriteCard).not.toHaveBeenCalled();
       const context = vi.mocked(generateCoachProResponse).mock
         .calls[0][1] as CoachContext;
       expect(context.blocksPrompt).toBe("[BLOCKS+WRITE]");
     });
 
-    it("only food: other cards still wait on Save", async () => {
+    it("nothing is logged at once on a turn the safety rules refuse", async () => {
+      const seen: unknown[] = [];
       vi.mocked(generateCoachProResponse).mockImplementation(
-        proposing({ kind: "grocery", args: groceryArgs }),
-      );
-      vi.mocked(storage.createWriteCard).mockResolvedValue({
-        card: createMockCoachWriteCard({
-          id: CARD_ID,
-          kind: "grocery",
-          payload: groceryPayload,
-        }),
-        previous: null,
-      });
-      await collect(
-        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
-      );
-      expect(storage.saveWriteCard).not.toHaveBeenCalled();
-    });
-
-    it("a food card built only at the end of the turn waits on Save", async () => {
-      // The tool was told nothing about logging, so the reply never said so.
-      vi.mocked(buildWriteCardPayload)
-        .mockRejectedValueOnce(new Error("db down"))
-        .mockResolvedValueOnce(foodPayload);
-      vi.mocked(generateCoachProResponse).mockImplementation(
-        proposeOnce({ kind: "food", args: foodArgs }, []),
+        proposeAll([{ kind: "food", args: foodArgs }], seen),
       );
       await collect(
-        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+        handleCoachChat(
+          quick({ content: "I have diabetes, what should I eat?" }),
+        ),
       );
-      expect(storage.createWriteCard).toHaveBeenCalled();
-      expect(storage.saveWriteCard).not.toHaveBeenCalled();
+      expect(seen).toEqual([{ kind: "food", shown: true }]);
+      expect(storage.createLoggedWriteCard).not.toHaveBeenCalled();
     });
 
-    it("a save that fails leaves the card for the user to save, and is logged", async () => {
-      vi.mocked(storage.saveWriteCard).mockRejectedValue(new Error("db down"));
-      vi.mocked(generateCoachProResponse).mockImplementation(
-        proposeOnce({ kind: "food", args: foodArgs }, []),
+    it("a turn already answered (a replayed turn key) logs nothing again", async () => {
+      vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+        createMockChatMessage(),
       );
-      const events = await collect(
-        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeAll([{ kind: "food", args: foodArgs }], seen),
+      );
+      await collect(handleCoachChat(quick()));
+      expect(seen).toEqual([{ kind: "food", shown: true }]);
+      expect(storage.createLoggedWriteCard).not.toHaveBeenCalled();
+    });
+
+    it("a save that fails gives a card waiting on Save, and the tool is told so", async () => {
+      vi.mocked(storage.createLoggedWriteCard).mockRejectedValue(
+        new Error("db down"),
+      );
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeAll([{ kind: "food", args: foodArgs }], seen),
+      );
+      const events = await collect(handleCoachChat(quick()));
+      expect(seen).toEqual([{ kind: "food", shown: true }]);
+      expect(storage.createWriteCard).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "food", payload: foodPayload }),
       );
       const block = blocksEvent(events)?.blocks[0];
       expect(block).toMatchObject({ status: "live" });
@@ -1266,6 +1334,67 @@ describe("handleCoachChat with write cards", () => {
         expect.objectContaining({ kind: "food" }),
         expect.stringMatching(/logged at once/),
       );
+    });
+
+    it("a save the card refuses on purpose is a warning", async () => {
+      vi.mocked(storage.createLoggedWriteCard).mockRejectedValue(
+        new WriteCardEditError("Nothing to log."),
+      );
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeAll([{ kind: "food", args: foodArgs }], []),
+      );
+      await collect(handleCoachChat(quick()));
+      expect(svcLog.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "food" }),
+        expect.stringMatching(/logged at once/),
+      );
+      expect(svcLog.error).not.toHaveBeenCalled();
+    });
+
+    it("a log the user never got to see is withdrawn: the safety message replaced the reply", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeAll([{ kind: "food", args: foodArgs }], [], {
+          type: "safety_override",
+        }),
+      );
+      const events = await collect(handleCoachChat(quick()));
+      expect(storage.withdrawLoggedWriteCard).toHaveBeenCalledWith(
+        LOGGED_ID,
+        "user-42",
+        expect.any(Function),
+      );
+      expect(blocksEvent(events)).toBeUndefined();
+    });
+
+    it("a log the user never got to see is withdrawn: the client left", async () => {
+      let aborted = false;
+      vi.mocked(generateCoachProResponse).mockImplementation(async function* (
+        ...args: Parameters<typeof generateCoachProResponse>
+      ): AsyncGenerator<CoachProChunk> {
+        await args[7]?.onWriteCardProposal?.({ kind: "food", args: foodArgs });
+        const chunk: CoachProChunk = { type: "content", content: "Logged." };
+        yield chunk;
+        aborted = true;
+      });
+      await collect(handleCoachChat(quick({ isAborted: () => aborted })));
+      expect(storage.withdrawLoggedWriteCard).toHaveBeenCalledWith(
+        LOGGED_ID,
+        "user-42",
+        expect.any(Function),
+      );
+    });
+
+    it("tells the Coach what it already logged, so a change is not logged twice", async () => {
+      vi.mocked(storage.getLatestLoggedFoodCard).mockResolvedValue(
+        loggedCard(),
+      );
+      vi.mocked(generateCoachProResponse).mockImplementation(proposing());
+      await collect(handleCoachChat(quick()));
+      const context = vi.mocked(generateCoachProResponse).mock
+        .calls[0][1] as CoachContext;
+      expect(context.liveWriteCard).toMatch(/Already logged in this chat/);
+      expect(context.liveWriteCard).toMatch(/2 × large egg/);
+      expect(context.liveWriteCard).toMatch(/Undo/);
     });
   });
 });

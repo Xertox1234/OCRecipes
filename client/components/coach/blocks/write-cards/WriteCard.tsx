@@ -140,15 +140,24 @@ export default function WriteCard({
   const [error, setError] = useState<string | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
-  // Undo on a log applied at once (T2) was tapped, or came back too late.
+  // Undo on a log applied at once (T2) was tapped, came back too late, or
+  // the user sent the next message.
   const [atOnceClosed, setAtOnceClosed] = useState(false);
+  // A card that mounts already saved (a log applied at once, the saved copy
+  // taking over from the streamed one, a reopened chat) does not fade in:
+  // only a save made on this card does.
+  const [mountedSaved] = useState(block.status === "saved");
   const busyRef = useRef(false);
   // Sending the next message ends Undo. Adjusted during render when the
   // prop flips (React's "adjust state when a prop changes" pattern).
   const [prevReplyInFlight, setPrevReplyInFlight] = useState(replyInFlight);
   if (prevReplyInFlight !== replyInFlight) {
     setPrevReplyInFlight(replyInFlight);
-    if (replyInFlight) setUndoVisible(false);
+    if (replyInFlight) {
+      setUndoVisible(false);
+      // Also for a log applied at once: a failed send does not bring it back.
+      setAtOnceClosed(true);
+    }
   }
 
   const handleSave = async () => {
@@ -220,6 +229,7 @@ export default function WriteCard({
       state={state}
       receipt={receipt}
       undoVisible={showUndo}
+      fadeInSaved={!mountedSaved}
       buttonLabel={writeCardButtonLabel(block.kind, block.payload, edits)}
       canSave={canSave(block, edits)}
       error={status === "saved" ? null : error}

@@ -60,3 +60,20 @@ export function arrivedSavedRefreshKeys(
   );
   return logged ? writeCardRefreshKeys("food") : [];
 }
+
+/**
+ * What a screen reader should hear for a food log the Coach applied at once:
+ * the card mounts already saved, so no Save tap announces its receipt. Null
+ * when the reply carries none.
+ */
+export function loggedAtOnceReceipt(
+  blocks: readonly CoachBlock[],
+): string | null {
+  for (const b of blocks) {
+    if (b.type === "write_card" && b.loggedAtOnce && b.status === "saved") {
+      const receipt = (b.receipt ?? "Logged").replace(/^✓\s*/, "");
+      return `${receipt}. Undo is on the card.`;
+    }
+  }
+  return null;
+}

@@ -103,8 +103,9 @@ export function planShoppingPreview(names: string[], max = 8): string {
 /**
  * Coach roadmap T2: Undo on a food log the Coach applied at once. It shows
  * with no Save tap, on the newest reply's card only (`isActive` is unset on
- * the reply still coming in), and goes when the user sends the next message,
- * once it is undone, or once the server said it is too late. No timer
+ * the reply still coming in), and goes for good when the user sends the next
+ * message (`closed`), once it is undone, or once the server said it is too
+ * late. No timer
  * (WCAG 2.2.1); the server keeps Undo open for 5 minutes.
  */
 export function atOnceUndoShown(a: {

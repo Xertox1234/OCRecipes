@@ -7,9 +7,10 @@ import { filterAllergyCards } from "../allergy-cards";
 import { dropCommitmentCards, parseBlocksFromContent } from "../coach-blocks";
 import { buildTrail } from "../coach-step-labels";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
-import { createWriteCardBlock, logCardAtOnce } from "./write-card-context";
-import { isSmallFoodLog } from "../write-cards/food";
-import type { FoodCardPayload } from "@shared/schemas/coach-write-cards";
+import {
+  createWriteCardBlock,
+  withdrawFoodLoggedAtOnce,
+} from "./write-card-context";
 import { deliverOfferToolCall, persistCoachReply } from "./offer-delivery";
 import { extractAndStoreNotebook } from "./notebook";
 import type { TurnContext } from "./load-turn-context";
@@ -67,6 +68,17 @@ async function proReplyBlocks(
   // not do. A reply the safety check replaced carries no card either: the
   // card would sit under the safety message, offering what it withdrew.
   let wroteCard = false;
+  // Coach roadmap T2: a food logged at once during the turn leads its cards.
+  // A reply that will never show it (the client left, the safety message
+  // replaced it, it came back empty) has it withdrawn instead.
+  if (reply.loggedAtOnce) {
+    if (fullResponse && !reply.safetyOverridden && !isAborted()) {
+      blocks = [...blocks, reply.loggedAtOnce];
+      wroteCard = true;
+    } else {
+      await withdrawFoodLoggedAtOnce(reply.loggedAtOnce, userId);
+    }
+  }
   if (
     reply.writeCardProposal &&
     fullResponse &&
@@ -79,22 +91,7 @@ async function proReplyBlocks(
       reply.writeCardPrepared,
     );
     if (card) {
-      // Coach roadmap T2: a small food log the user typed is applied at
-      // once, with Undo. Only a card worked out during the tool call: that
-      // tool result told the model it was logged, so the reply says so.
-      const prepared = reply.writeCardPrepared;
-      const logNow =
-        params.quickLog &&
-        card.type === "write_card" &&
-        card.kind === "food" &&
-        prepared !== null &&
-        isSmallFoodLog(prepared as FoodCardPayload);
-      blocks = [
-        ...blocks,
-        logNow && card.type === "write_card"
-          ? await logCardAtOnce(card, { userId, tz: turn.tz })
-          : card,
-      ];
+      blocks = [...blocks, card];
       wroteCard = true;
     }
   }

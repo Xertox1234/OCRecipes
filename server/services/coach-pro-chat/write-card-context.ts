@@ -7,13 +7,17 @@ import type { CoachContext } from "../coach-prompt";
 import {
   buildWriteCardPayload,
   describeLiveCard,
+  describeLoggedFood,
   performWriteCardSave,
+  revertWriteCardSave,
   writeCardReceiptFor,
   WriteCardEditError,
   type WriteCardProposal,
 } from "../write-cards";
 import {
   WRITE_CARD_EDITS_SCHEMAS,
+  type FoodCardPayload,
+  type WriteCardBlock,
   type WriteCardPayload,
 } from "@shared/schemas/coach-write-cards";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -51,10 +55,21 @@ export async function applyWriteCardContext(
       await storage.setWriteCardEdits(card.id, a.userId, a.liveCard.edits);
     }
   }
+  const lines: string[] = [];
   const live = await storage.getLiveWriteCard(a.conversationId, a.userId);
-  if (live) {
+  if (live) lines.push(describeLiveCard(live));
+  if (a.quickLog) {
+    // A food logged at once is saved, not live, so no line above names it:
+    // without this, "make it three eggs" would be logged a second time.
+    const logged = await storage.getLatestLoggedFoodCard(
+      a.conversationId,
+      a.userId,
+    );
+    if (logged) lines.push(describeLoggedFood(logged));
+  }
+  if (lines.length > 0) {
     // Item names came from model output — sanitize like any context field.
-    context.liveWriteCard = sanitizeContextField(describeLiveCard(live), 1500);
+    context.liveWriteCard = sanitizeContextField(lines.join("\n"), 1800);
   }
 }
 
@@ -103,55 +118,76 @@ export async function createWriteCardBlock(
 }
 
 /**
- * Coach roadmap T2: saves a small food card at once, as the user's Save tap
- * would (the card's own contents, no edits), and marks the save so Undo
- * stays open longer. Returns the block as saved, with its receipt, or the
- * live block unchanged (logged) when the save fails: the user can still tap
- * Save.
+ * Coach roadmap T2: logs a small food card at once, during the tool call, so
+ * the tool result only ever says what has happened. The card is created and
+ * saved in one step with the card's own contents (as a Save tap with no
+ * edits). Null (logged) when it could not be: the turn then gets a card
+ * waiting on Save, and the tool is told so.
  */
-export async function logCardAtOnce(
-  block: Extract<CoachBlock, { type: "write_card" }>,
-  a: { userId: string; tz: string },
-): Promise<CoachBlock> {
+export async function logFoodAtOnce(
+  payload: FoodCardPayload,
+  a: { conversationId: number; userId: string; tz: string },
+): Promise<WriteCardBlock | null> {
   try {
-    const result = await storage.saveWriteCard(
-      block.cardId,
-      a.userId,
-      async (tx, card) => ({
-        ...(await performWriteCardSave(
+    const { card, previous } = await storage.createLoggedWriteCard(
+      {
+        userId: a.userId,
+        conversationId: a.conversationId,
+        kind: "food",
+        payload,
+      },
+      (tx, row) =>
+        performWriteCardSave(
           tx,
-          card,
+          row,
           {},
           {
             userId: a.userId,
             tz: a.tz,
             now: new Date(),
           },
-        )),
-        loggedAtOnce: true,
-      }),
-      {},
+        ),
     );
-    if (result.status !== "saved") {
-      log.warn(
-        { kind: block.kind, status: result.status },
-        "coach write card not logged at once",
-      );
-      return block;
-    }
     return {
-      ...block,
+      type: "write_card",
+      cardId: card.id,
+      kind: "food",
+      payload,
       status: "saved",
-      receipt: writeCardReceiptFor(result.card),
+      receipt: writeCardReceiptFor(card),
       loggedAtOnce: true,
+      ...(previous && { replacesCardId: previous.id }),
     };
   } catch (err) {
-    // The reply says the food was logged, and it was not: Sentry should see
-    // it. The card still offers Save. Never log the payload.
+    // A save the card refuses on purpose is a warning; anything else (a
+    // storage break) is an error, so Sentry sees it. Never log the payload.
+    const fields = { err: toError(err), kind: "food" };
+    if (err instanceof WriteCardEditError) {
+      log.warn(fields, "coach write card not logged at once");
+    } else {
+      log.error(fields, "coach write card not logged at once");
+    }
+    return null;
+  }
+}
+
+/**
+ * Takes back a log applied at once that no reply will show (the client left,
+ * the safety message replaced the reply, or it came back empty), so no food
+ * is logged that the user cannot see or undo.
+ */
+export async function withdrawFoodLoggedAtOnce(
+  block: WriteCardBlock,
+  userId: string,
+): Promise<void> {
+  try {
+    await storage.withdrawLoggedWriteCard(block.cardId, userId, (tx, card) =>
+      revertWriteCardSave(tx, card),
+    );
+  } catch (err) {
     log.error(
       { err: toError(err), kind: block.kind },
-      "coach write card not logged at once",
+      "coach write card logged at once not withdrawn",
     );
-    return block;
   }
 }

@@ -135,9 +135,12 @@ const WRITE_CARDS_RULES = [
  * Coach roadmap T2: an app that shows a food log applied at once. The rule
  * above still holds for every other card; this one names the exception.
  */
+const TAP_TO_SAVE =
+  "Nothing is saved until the user taps it, so never say something was logged or added.";
+const TAP_TO_SAVE_EXCEPT =
+  "Nothing is saved until the user taps it, so never say something was logged or added, except a small food log as the next rule says.";
 const QUICK_LOG_RULE =
-  "- When a log_food_item result says the food is already logged, say it was logged and that the user can tap Undo on its card. To change a food that is already logged, ask the user to tap Undo on its card first, or to edit it in their log: calling log_food_item again would log it twice.";
-
+  "- A small food log can be logged at once: when the log_food_item result says it is already logged, say it was logged and that the user can tap Undo on its card. To change a food that is already logged, ask the user to tap Undo on its card first or to edit it in their log; never call log_food_item again for it, which would log it twice.";
 const COMMITMENT_CARD_LINE =
   '- commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }';
 const NOTES_PAUSED_RULE =
@@ -188,8 +191,10 @@ function blocksPromptFor(
       ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
   if (!opts.writeCards) return base;
   // Appended to the Rules list (before the example), never replacing a rule.
+  // With quick log, the "never say logged" sentence names its exception
+  // rather than contradict the rule after it.
   const rules = opts.quickLog
-    ? `${WRITE_CARDS_RULES}\n${QUICK_LOG_RULE}`
+    ? `${WRITE_CARDS_RULES.replace(TAP_TO_SAVE, TAP_TO_SAVE_EXCEPT)}\n${QUICK_LOG_RULE}`
     : WRITE_CARDS_RULES;
   return base.replace("\n\nExample response", `\n${rules}\n\nExample response`);
 }

@@ -102,12 +102,11 @@ export function foodCardResult(outcome: void | WriteCardOutcome) {
 }
 
 /**
- * A small food log the turn applies at once (Coach roadmap T2): the card
- * shows it logged, with Undo. The model must say so, and must not log it
- * again to change it.
+ * A small food log applied at once (Coach roadmap T2), already saved when
+ * this result is sent. The prompt's quick-log rule says what to do with it.
  */
 const LOGGED_AT_ONCE_MESSAGE =
-  "This food is already logged, as the card on screen shows, and the user can tap Undo on the card to take it back. Say it was logged and that they can undo it. If they later want it changed, tell them to tap Undo on that card first, or to edit it in their log; calling log_food_item again would log it twice.";
+  "This food is already logged; its card shows Undo. Do not call log_food_item again for it, even to change it: that would log it twice.";
 
 /**
  * The pantry card's result. The row lines carry pantry item names, which the
