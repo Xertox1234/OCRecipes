@@ -532,7 +532,8 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
 }
 
 /**
- * H6 — the client left mid-answer. The user message is already quota-counted,
+ * H6 — the turn stopped mid-answer (the client left, the SSE timeout fired or
+ * the size cap tripped). The user message is already quota-counted,
  * so refund it (nothing streamed) or keep what they paid for as the assistant
  * reply (something streamed) — refunding delivered content would let a client
  * read an answer and abort just before `done` to get the message free.
@@ -540,7 +541,11 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
 async function settleAbortedCoachTurn(ctx: TurnContext): Promise<void> {
   const { req, conversationId: id, features, userMessage, coachTurnKey } = ctx;
   const { streamedContent } = ctx.state;
-  if (!ctx.state.clientDisconnected) return;
+  // Any coach abort, not only a disconnect: the SSE timeout and the size cap
+  // end the response themselves, and finalizeTurn skips an aborted turn, so
+  // without this the answer the user saw was never saved (audit 2026-11-24,
+  // L43). Recipe/remix turns keep their own handling.
+  if (!ctx.state.aborted || ctx.conversationType !== "coach") return;
   try {
     // Skip if the service's own write landed before the close did.
     const alreadyPersisted = await storage.getChatMessageByTurnKey(

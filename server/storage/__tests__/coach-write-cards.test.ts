@@ -33,6 +33,7 @@ const {
   saveWriteCard,
   undoWriteCard,
   getWriteCardsByIds,
+  withdrawWriteCard,
 } = await import("../coach-write-cards");
 
 const foodPayload: FoodCardPayload = {
@@ -117,6 +118,48 @@ describe("coach-write-cards storage", () => {
     const second = await create("grocery");
     expect(second.previous).toEqual({ id: first.card.id, status: "expired" });
     expect(await liveCount()).toBe(1);
+  });
+
+  // L87: a card built for a client that left is never shown.
+  it("withdrawWriteCard removes the unseen card and makes the previous live again", async () => {
+    const first = await create();
+    const second = await create();
+    await withdrawWriteCard({
+      cardId: second.card.id,
+      userId: user.id,
+      previous: second.previous,
+    });
+    expect(await getWriteCard(second.card.id, user.id)).toBeUndefined();
+    expect((await getWriteCard(first.card.id, user.id))?.status).toBe("live");
+    expect(await liveCount()).toBe(1);
+  });
+
+  it("withdrawWriteCard leaves a previous card alone once it is no longer the one it replaced", async () => {
+    const first = await create("food");
+    const second = await create("grocery");
+    // The previous card changed after it was expired: never revive it.
+    await tx
+      .update(schema.coachWriteCards)
+      .set({ status: "saved" })
+      .where(eq(schema.coachWriteCards.id, first.card.id));
+    await withdrawWriteCard({
+      cardId: second.card.id,
+      userId: user.id,
+      previous: second.previous,
+    });
+    expect((await getWriteCard(first.card.id, user.id))?.status).toBe("saved");
+    expect(await liveCount()).toBe(0);
+  });
+
+  it("withdrawWriteCard is scoped to the owner", async () => {
+    const other = await createTestUser(tx);
+    const first = await create();
+    await withdrawWriteCard({
+      cardId: first.card.id,
+      userId: other.id,
+      previous: null,
+    });
+    expect((await getWriteCard(first.card.id, user.id))?.status).toBe("live");
   });
 
   it("createWriteCard with no live card reports no previous", async () => {

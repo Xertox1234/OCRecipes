@@ -57,7 +57,13 @@ export async function applyWriteCardContext(
 /** Builds the proposal's card and its row; null (logged) when it can't. */
 export async function createWriteCardBlock(
   proposal: WriteCardProposal,
-  a: { conversationId: number; userId: string; tz: string },
+  a: {
+    conversationId: number;
+    userId: string;
+    tz: string;
+    /** True once the client has left; checked again after each slow step. */
+    isAborted?: () => boolean;
+  },
   /** A payload the tool call already worked out (grocery). */
   prepared?: WriteCardPayload | null,
 ): Promise<CoachBlock | null> {
@@ -69,12 +75,25 @@ export async function createWriteCardBlock(
         tz: a.tz,
         now: new Date(),
       }));
+    // The build can take seconds (nutrition lookups). A client that left
+    // meanwhile gets no row: it would lock the card it was looking at, and
+    // the reply that names it is never saved (audit 2026-11-24, L87).
+    if (a.isAborted?.()) return null;
     const { card, previous } = await storage.createWriteCard({
       userId: a.userId,
       conversationId: a.conversationId,
       kind: proposal.kind,
       payload,
     });
+    if (a.isAborted?.()) {
+      // Left while the row was written: take it back.
+      await storage.withdrawWriteCard({
+        cardId: card.id,
+        userId: a.userId,
+        previous,
+      });
+      return null;
+    }
     return {
       type: "write_card",
       cardId: card.id,
