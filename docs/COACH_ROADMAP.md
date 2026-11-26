@@ -143,7 +143,7 @@ Then re-rank.
       Value: high. Size: L. Needs V3 and S1.
 - [x] **V5. On-device OCR pre-read.** Read label text on the phone before
       upload, for speed, cost and privacy. Value: medium. Size: M. Needs S2.
-      PR #PRNUM. Before a chat photo uploads, the phone's own text reader
+      PR #2055. Before a chat photo uploads, the phone's own text reader
       (ML Kit, as on the Scan screen) reads it. When the text is plainly a
       nutrition panel (its "Nutrition Facts" heading, and calories, protein,
       carbs, fat and a serving in grams or millilitres all read off the
