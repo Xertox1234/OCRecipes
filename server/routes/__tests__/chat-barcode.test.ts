@@ -340,6 +340,25 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     );
   });
 
+  it("400s on a label with an unknown field or no serving", async () => {
+    const label = {
+      calories: 120,
+      protein: 3,
+      carbs: 16,
+      fat: 5,
+      servingSize: "1 cup (240 ml)",
+    };
+    expect(
+      (await post(app, { barcode: BARCODE, label: { ...label, sodium: 1 } }))
+        .status,
+    ).toBe(400);
+    const { servingSize: _omit, ...noServing } = label;
+    expect(
+      (await post(app, { barcode: BARCODE, label: noServing })).status,
+    ).toBe(400);
+    expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+  });
+
   it("400s, storing nothing, on label numbers that don't add up", async () => {
     const res = await post(app, {
       barcode: BARCODE,

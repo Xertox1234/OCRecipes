@@ -194,7 +194,11 @@ describe("CoachBarcodeScanScreen", () => {
     expect(screen.getByText("Got it")).toBeDefined();
     expect(screen.getByText("4006381333931")).toBeDefined();
     // VoiceOver reads the digits one by one, not as one number.
-    expect(screen.getByLabelText("4 0 0 6 3 8 1 3 3 3 9 3 1")).toBeDefined();
+    expect(
+      screen.getByLabelText(
+        "Step 1 of 2: barcode. Got it. 4 0 0 6 3 8 1 3 3 3 9 3 1",
+      ),
+    ).toBeDefined();
     expect(mockNotification).toHaveBeenCalledOnce();
 
     advance(REVEAL_MS);
@@ -224,12 +228,22 @@ describe("CoachBarcodeScanScreen", () => {
     });
     expect(screen.getByText("Reading the label…")).toBeDefined();
     expect(screen.getByTestId("barcode-viewfinder-sweep")).toBeDefined();
+    expect(announce).toHaveBeenCalledWith("Reading the label");
+    // The controls stay (so VoiceOver focus does) but do nothing mid-read.
+    fireEvent.click(screen.getByLabelText("Skip the label"));
+    expect(settleCoachBarcode).not.toHaveBeenCalled();
 
     advance(SWEEP_MS);
     expect(screen.getByText("Got the label")).toBeDefined();
     expect(
-      screen.getByText("120 cal · 3 g protein · 16 g carbs · 5 g fat"),
+      screen.getByText(
+        "Per serving: 120 cal · 3 g protein · 16 g carbs · 5 g fat",
+      ),
     ).toBeDefined();
+    // VoiceOver hears the numbers, in words.
+    expect(announce).toHaveBeenCalledWith(
+      "Label read. Per serving: 120 calories, 3 grams protein, 16 grams carbs, 5 grams fat.",
+    );
     expect(settleCoachBarcode).not.toHaveBeenCalled();
 
     advance(REVEAL_MS);

@@ -4,6 +4,7 @@ import React, {
   useLayoutEffect,
   useReducer,
   useRef,
+  useState,
 } from "react";
 import {
   AccessibilityInfo,
@@ -37,6 +38,7 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   ARM_MS,
   INITIAL_PACING,
+  labelSpoken,
   LOST_MS,
   REVEAL_MS,
   SWEEP_MS,
@@ -70,6 +72,18 @@ const PRODUCT_BARCODE_TYPES: ExpoBarcodeType[] = [
  * while a sweep plays over it, and never leaves the phone; the user can skip
  * it, and the card then carries the product's own numbers.
  */
+/**
+ * Announce once the controls that appear with this step have mounted: iOS
+ * does not queue announcements, so one made as focus moves can be dropped.
+ */
+function announceLater(message: string): () => void {
+  const timer = setTimeout(
+    () => AccessibilityInfo.announceForAccessibility(message),
+    500,
+  );
+  return () => clearTimeout(timer);
+}
+
 export default function CoachBarcodeScanScreen() {
   const navigation = useNavigation<NavProp>();
   const isFocused = useIsFocused();
@@ -144,23 +158,27 @@ export default function CoachBarcodeScanScreen() {
         return () => clearTimeout(timer);
       }
       case "label":
-        AccessibilityInfo.announceForAccessibility(
+        return announceLater(
           "Now take a photo of the nutrition label, or skip it.",
         );
-        return;
       case "reading": {
+        AccessibilityInfo.announceForAccessibility("Reading the label");
         const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
         return () => clearTimeout(timer);
       }
       case "unreadable":
         haptic.notification(Haptics.NotificationFeedbackType.Warning);
-        AccessibilityInfo.announceForAccessibility(
+        return announceLater(
           "I couldn't read that label. Retake the photo, or skip it.",
         );
-        return;
       case "labelFound": {
         haptic.notification(Haptics.NotificationFeedbackType.Success);
-        AccessibilityInfo.announceForAccessibility("Label read");
+        const found = pacingRef.current;
+        AccessibilityInfo.announceForAccessibility(
+          found.phase === "labelFound"
+            ? `Label read. ${labelSpoken(found.label)}`
+            : "Label read",
+        );
         const timer = setTimeout(
           () => dispatch({ type: "revealed" }),
           REVEAL_MS,
@@ -192,7 +210,7 @@ export default function CoachBarcodeScanScreen() {
     let label: PhoneLabelRead | null = null;
     let uri: string | undefined;
     try {
-      uri = (await cameraRef.current?.takePicture({ quality: 0.8 }))?.uri;
+      uri = (await cameraRef.current?.takePicture())?.uri;
       if (uri) label = await preReadLabel(uri, recognizeTextFromPhoto);
     } catch {
       label = null;
@@ -202,6 +220,18 @@ export default function CoachBarcodeScanScreen() {
     }
     dispatch({ type: "labelRead", label });
   }, []);
+
+  const onSkip = useCallback(() => {
+    const p = phaseRef.current;
+    if (shooting.current || (p !== "label" && p !== "unreadable")) return;
+    // Closed at once: a shutter tap in the same frame cannot start a photo.
+    phaseRef.current = "done";
+    dispatch({ type: "skip" });
+  }, []);
+
+  // The bottom card and controls' height: the label frame centres in the
+  // space above them, so it never sits under them on a small phone.
+  const [bottomHeight, setBottomHeight] = useState(0);
 
   // However the screen goes away (close button, back gesture), the chat
   // stops waiting. A no-op after a read.
@@ -262,12 +292,14 @@ export default function CoachBarcodeScanScreen() {
   }
 
   const hint = pacingHint(pacing);
+  const reading = phase === "reading";
   const labelStep =
     phase === "label" ||
     phase === "reading" ||
     phase === "unreadable" ||
     phase === "labelFound" ||
     (phase === "done" && "label" in pacing);
+  const stepText = labelStep ? "Step 2 of 2: label" : "Step 1 of 2: barcode";
   return (
     <View style={styles.container} accessibilityViewIsModal>
       {/* accessible={false} keeps VoiceOver off the camera preview */}
@@ -283,6 +315,7 @@ export default function CoachBarcodeScanScreen() {
 
       <BarcodeViewfinder
         shape={labelStep ? "label" : "barcode"}
+        bottomInset={labelStep ? bottomHeight : 0}
         confidence={labelStep ? 0 : pacingConfidence(pacing)}
         armed={phase !== "arming"}
         sweeping={phase === "scanning" || phase === "reading"}
@@ -307,15 +340,31 @@ export default function CoachBarcodeScanScreen() {
         <Feather name="x" size={24} color={theme.text} />
       </Pressable>
 
-      <View style={[styles.bottom, { bottom: insets.bottom + Spacing.xl }]}>
+      <View
+        style={[styles.bottom, { bottom: insets.bottom + Spacing.xl }]}
+        onLayout={(e) =>
+          setBottomHeight(
+            e.nativeEvent.layout.height + insets.bottom + Spacing.xl,
+          )
+        }
+      >
         <View
           style={[
             styles.hint,
             { backgroundColor: withOpacity(theme.backgroundRoot, 0.85) },
           ]}
+          // One VoiceOver stop for the step, the title and the body.
+          accessible
+          accessibilityLabel={`${stepText}. ${hint.title}. ${
+            phase === "found" && code
+              ? code.split("").join(" ")
+              : phase === "labelFound" && "label" in pacing && pacing.label
+                ? labelSpoken(pacing.label)
+                : hint.body
+          }`}
         >
-          <Text style={[styles.hintStep, { color: theme.textSecondary }]}>
-            {labelStep ? "Step 2 of 2: label" : "Step 1 of 2: barcode"}
+          <Text style={[styles.hintStep, { color: theme.text }]}>
+            {stepText}
           </Text>
           <Text style={[styles.hintTitle, { color: theme.text }]}>
             {hint.title}
@@ -327,22 +376,22 @@ export default function CoachBarcodeScanScreen() {
                 styles.hintDigits,
               { color: theme.text },
             ]}
-            // Digits one by one, not as one huge number.
-            accessibilityLabel={
-              phase === "found" && code ? code.split("").join(" ") : undefined
-            }
           >
             {hint.body}
           </Text>
         </View>
 
-        {(phase === "label" || phase === "unreadable") && (
+        {/* Kept mounted while the photo is read, so VoiceOver focus stays. */}
+        {(phase === "label" || phase === "unreadable" || reading) && (
           <View style={styles.controls}>
             <Pressable
-              onPress={() => dispatch({ type: "skip" })}
+              onPress={onSkip}
+              disabled={reading}
+              accessibilityState={{ disabled: reading }}
               style={[
                 styles.skipButton,
                 { backgroundColor: withOpacity(theme.backgroundRoot, 0.85) },
+                reading && styles.disabled,
               ]}
               accessibilityRole="button"
               accessibilityLabel="Skip the label"
@@ -352,8 +401,11 @@ export default function CoachBarcodeScanScreen() {
             </Pressable>
             <Pressable
               onPress={() => void onShutter()}
-              style={styles.shutter}
+              disabled={reading}
+              accessibilityState={{ disabled: reading, busy: reading }}
+              style={[styles.shutter, reading && styles.disabled]}
               accessibilityRole="button"
+              accessibilityHint="Reads the label on your phone. The photo isn't sent."
               accessibilityLabel={
                 phase === "unreadable"
                   ? "Retake the label photo"
@@ -468,6 +520,9 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF", // hardcoded — live-camera overlay
     justifyContent: "center",
     alignItems: "center",
+  },
+  disabled: {
+    opacity: 0.4,
   },
   shutterInner: {
     width: 56,

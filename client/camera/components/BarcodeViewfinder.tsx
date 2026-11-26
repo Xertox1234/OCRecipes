@@ -31,6 +31,8 @@ interface Props {
    * tall nutrition label (the line sweeps down it). Barcode by default.
    */
   shape?: "barcode" | "label";
+  /** Space kept clear at the bottom (controls): the frame centres above it. */
+  bottomInset?: number;
   /** 0 while looking, rising while a code holds, 1 from the lock on. */
   confidence: number;
   /** False while the viewfinder settles: drawn dim, not yet listening. */
@@ -53,6 +55,7 @@ interface Props {
  */
 export function BarcodeViewfinder({
   shape = "barcode",
+  bottomInset = 0,
   confidence,
   armed,
   sweeping,
@@ -119,7 +122,7 @@ export function BarcodeViewfinder({
       importantForAccessibility="no-hide-descendants"
       style={StyleSheet.absoluteFill}
     >
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingBottom: bottomInset }]}>
         <Animated.View style={[{ width, height }, frameStyle]}>
           {tinted && (
             <View

@@ -161,7 +161,7 @@ export function pacingHint(state: PacingState): PacingHint {
     case "label":
       return {
         title: "Now the nutrition label",
-        body: "Fit the Nutrition Facts panel in the frame, then take the photo. Its numbers go on the card.",
+        body: "Fit the Nutrition Facts panel in the frame and take the photo.",
       };
     case "reading":
       return {
@@ -171,7 +171,7 @@ export function pacingHint(state: PacingState): PacingHint {
     case "unreadable":
       return {
         title: "I couldn't read that label",
-        body: "Fit the whole panel in the frame, flat and in good light, or skip it.",
+        body: "Try it flat and in good light, or skip it.",
       };
     case "labelFound":
     case "done":
@@ -181,12 +181,27 @@ export function pacingHint(state: PacingState): PacingHint {
   }
 }
 
-/** The label's numbers, short: "120 cal · 3 g protein · 16 g carbs · 5 g fat". */
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** The label's numbers, short: "Per serving: 120 cal · 3 g protein · …". */
 export function labelSummary(label: PhoneLabelRead): string {
-  return [
-    `${label.calories} cal`,
-    `${label.protein} g protein`,
-    `${label.carbs} g carbs`,
-    `${label.fat} g fat`,
-  ].join(" · ");
+  return (
+    "Per serving: " +
+    [
+      `${round1(label.calories)} cal`,
+      `${round1(label.protein)} g protein`,
+      `${round1(label.carbs)} g carbs`,
+      `${round1(label.fat)} g fat`,
+    ].join(" · ")
+  );
+}
+
+/** The same numbers in words, for VoiceOver. */
+export function labelSpoken(label: PhoneLabelRead): string {
+  return (
+    `Per serving: ${round1(label.calories)} calories, ` +
+    `${round1(label.protein)} grams protein, ` +
+    `${round1(label.carbs)} grams carbs, ` +
+    `${round1(label.fat)} grams fat.`
+  );
 }

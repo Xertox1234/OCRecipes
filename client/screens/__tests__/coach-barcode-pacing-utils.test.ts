@@ -4,6 +4,8 @@ import {
   LOST_MS,
   REVEAL_MS,
   SWEEP_MS,
+  labelSpoken,
+  labelSummary,
   pacingConfidence,
   pacingHint,
   pacingReducer,
@@ -161,6 +163,24 @@ describe("pacingReducer: the label step", () => {
   });
 });
 
+describe("labelSummary / labelSpoken", () => {
+  const noisy = {
+    calories: 123.456,
+    protein: 3.333,
+    carbs: 16,
+    fat: 0.05,
+    servingSize: "1 bar",
+  };
+  it("rounds to one decimal and says it is per serving", () => {
+    expect(labelSummary(noisy)).toBe(
+      "Per serving: 123.5 cal · 3.3 g protein · 16 g carbs · 0.1 g fat",
+    );
+    expect(labelSpoken(noisy)).toBe(
+      "Per serving: 123.5 calories, 3.3 grams protein, 16 grams carbs, 0.1 grams fat.",
+    );
+  });
+});
+
 describe("pacingConfidence", () => {
   it("grows with the hold and is full from the lock on", () => {
     expect(pacingConfidence({ phase: "arming" })).toBe(0);
@@ -215,7 +235,7 @@ describe("pacingHint", () => {
       }),
     ).toEqual({
       title: "Got the label",
-      body: "120 cal · 3 g protein · 16 g carbs · 5 g fat",
+      body: "Per serving: 120 cal · 3 g protein · 16 g carbs · 5 g fat",
     });
   });
 });

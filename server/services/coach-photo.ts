@@ -31,7 +31,7 @@ import {
   loadBarcodeScanContext,
 } from "./barcode-scan-context";
 import { buildScanResponseFlags } from "./scan-flags";
-import type { BarcodeLookupResult } from "./barcode-lookup";
+import { parseServingGrams, type BarcodeLookupResult } from "./barcode-lookup";
 import { UpstreamUnavailableError } from "./usda-lookup";
 import type { ProfileOutcome } from "./scan-flags";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
@@ -346,18 +346,16 @@ export interface PhoneLabelRead {
   servingSize: string;
 }
 
-/**
- * A nutrition label the phone read itself, as a one-serving card. No model
- * reads anything: the numbers are the user's own phone's reading, as trusted
- * as numbers the user types, and the card's own limits still apply. The
- * panel shows no product name, so the row is "Packaged food".
- */
 // A barcode scanned with its label read on the phone (the scanner's label
 // step): the name is the product's, the numbers are the pack's own.
 const BARCODE_LABEL_TEXT =
   "I found this product from its barcode and used the numbers from your label. Check it's the right one, set how many servings you had, then log it.";
 const BARCODE_UNKNOWN_LABEL_TEXT =
   "I couldn't find that product from its barcode, so I used the numbers from your label. Check them against the pack, set how many servings you had, then log it.";
+// The label is far from what the barcode's product makes: likely another
+// pack, so the card keeps the label's numbers but not the product's name.
+const BARCODE_MISMATCH_LABEL_TEXT =
+  "Your label's numbers don't match what I have for this barcode, so I left the product's name off. Check you scanned the right pack, set how many servings you had, then log it.";
 const BARCODE_DOWN_LABEL_TEXT =
   "I couldn't look that product up just now, so I used the numbers from your label. Check them against the pack, set how many servings you had, then log it.";
 
@@ -379,6 +377,12 @@ function phoneLabelRow(read: PhoneLabelRead, name: string): CardItem | null {
   );
 }
 
+/**
+ * A nutrition label the phone read itself, as a one-serving card. No model
+ * reads anything: the numbers are the user's own phone's reading, as trusted
+ * as numbers the user types, and the card's own limits still apply. The
+ * panel shows no product name, so the row is "Packaged food".
+ */
 export function phoneLabelReply(
   read: PhoneLabelRead,
   profileOutcome: ProfileOutcome,
@@ -431,6 +435,32 @@ function productDisplayName(product: BarcodeLookupResult): string {
   return [product.brandName, productName].filter(Boolean).join(" ");
 }
 
+// How far the label's calories per 100 g may sit from the product's before
+// the label is taken to be another pack's: a ratio band, plus a floor in
+// kcal so near-zero foods (diet drinks, broth) are not flagged on rounding.
+const FIT_RATIO_MIN = 0.7;
+const FIT_RATIO_MAX = 1.4;
+const FIT_KCAL_100G_FLOOR = 25;
+
+/**
+ * Whether the label read plausibly belongs to the barcode's product. Compared
+ * per 100 g, since the label's serving and the database's need not match;
+ * true when either side gives nothing to compare.
+ */
+function labelFitsProduct(
+  read: PhoneLabelRead,
+  product: BarcodeLookupResult,
+): boolean {
+  const grams = parseServingGrams(read.servingSize);
+  const known = product.per100g.calories;
+  if (!grams || known === undefined) return true;
+  const label = (read.calories / grams) * 100;
+  if (Math.abs(label - known) <= FIT_KCAL_100G_FLOOR) return true;
+  if (known <= 0) return false;
+  const ratio = label / known;
+  return ratio >= FIT_RATIO_MIN && ratio <= FIT_RATIO_MAX;
+}
+
 /**
  * A barcode scanned together with its nutrition label read on the phone: the
  * card is named from the product and carries the label's numbers, which are
@@ -449,6 +479,15 @@ export function barcodeWithLabelReply(
       profileOutcome,
       ctx,
       BARCODE_UNKNOWN_LABEL_TEXT,
+    );
+  }
+  if (!labelFitsProduct(read, product)) {
+    // Neither the name nor its allergen data is trusted for this pack.
+    return phoneLabelReply(
+      read,
+      profileOutcome,
+      ctx,
+      BARCODE_MISMATCH_LABEL_TEXT,
     );
   }
   const item = phoneLabelRow(read, productDisplayName(product));
