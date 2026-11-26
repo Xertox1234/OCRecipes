@@ -61,18 +61,6 @@ const PRODUCT_BARCODE_TYPES: ExpoBarcodeType[] = [
 ];
 
 /**
- * The live barcode scanner opened from the Coach chat. It reads one product
- * barcode, then asks for its nutrition label, and hands both back to the
- * chat (`settleCoachBarcode`); the chat sends them as one Coach turn.
- * Nothing is looked up or logged here.
- *
- * The scan is paced so it is seen (coach-barcode-pacing-utils): the
- * viewfinder settles before it listens, the code must hold for a few frames,
- * a sweep plays and the digits show. The label photo is read on the phone
- * while a sweep plays over it, and never leaves the phone; the user can skip
- * it, and the card then carries the product's own numbers.
- */
-/**
  * Announce once the controls that appear with this step have mounted: iOS
  * does not queue announcements, so one made as focus moves can be dropped.
  */
@@ -84,6 +72,18 @@ function announceLater(message: string): () => void {
   return () => clearTimeout(timer);
 }
 
+/**
+ * The live barcode scanner opened from the Coach chat. It reads one product
+ * barcode, then asks for its nutrition label, and hands both back to the
+ * chat (`settleCoachBarcode`); the chat sends them as one Coach turn.
+ * Nothing is looked up or logged here.
+ *
+ * The scan is paced so it is seen (coach-barcode-pacing-utils): the
+ * viewfinder settles before it listens, the code must hold for a few frames,
+ * a sweep plays and the digits show. The label photo is read on the phone
+ * while a sweep plays over it, and never leaves the phone; the user can skip
+ * it, and the card then carries the product's own numbers.
+ */
 export default function CoachBarcodeScanScreen() {
   const navigation = useNavigation<NavProp>();
   const isFocused = useIsFocused();
