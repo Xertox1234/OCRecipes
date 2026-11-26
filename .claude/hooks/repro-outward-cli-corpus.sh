@@ -3434,7 +3434,11 @@ EXPECTED_ROWS=2160
 # THE `1789 -> 1792` THIS BRANCH ORIGINALLY WROTE WAS AGAINST ITS OWN PRE-#993 BASE. Main
 # carried the pin to 1918 over rounds 3/4/8; the +3 is orthogonal to those rounds (different
 # rows, different check), so it re-applies additively. MEASURED on the merged tree, not derived.
-EXPECTED_DENY_ATTRIB_ROWS=1921
+# 1921 -> 1925 (2026-11-26, npm's publish abbreviations): +4 rows, 16 rows rerouted. `npm pu`/`pub`/`publ`/`publi`/`publis`
+# now deny as `npm publish`, so the four `npm pub...` rows below start denying on the precise path, and 16 brace-split
+# `npm pub{...}ish` rows that still deny now attribute to the npm publish check instead of
+# the brace RANGE/LIST checks (the verb's first three letters are themselves a publish). MEASURED by the aggregate on that commit.
+EXPECTED_DENY_ATTRIB_ROWS=1925
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -3473,7 +3477,10 @@ EXPECTED_DENY_ATTRIB_ROWS=1921
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
 # unguarded in the first place.
-EXPECTED_PRECISE_GAPS=62
+# 62 -> 58 (2026-11-26, npm's publish abbreviations): -4 closed, 0 opened. `npm pu`/`pub`/`publ`/`publi`/`publis`
+# now deny as `npm publish`, so r4brlist-nested-npmpub, r4brlist-nested-list-npmpub, verbvcasecomment-npmpub and
+# verbvcaseparen-npmpub, each spelled `npm pub...`, close. MEASURED by the aggregate on that commit.
+EXPECTED_PRECISE_GAPS=58
 
 # PRE-EXISTING STALENESS, found incidentally while bumping this pin for the
 # brace-range fix (2026-09-14) and left AS FOUND rather than silently
@@ -3596,7 +3603,9 @@ EXPECTED_PRECISE_GAPS=62
 # `lp-site-interpexp`; this branch's -3 removed `apicolfp-oneshot`, `c2-fp-methodology` and
 # `c2-fp-backtick`. Disjoint ids, so 359 + 0 - 3 = 356. The MEMBERSHIP pin below is what
 # actually proves that -- a net total could hold while rows swapped.
-EXPECTED_ALLPATH_GAPS=356
+# 356 -> 352 (2026-11-26, npm's publish abbreviations): -4, the same four rows. `npm pu`/`pub`/`publ`/`publi`/`publis`
+# now deny as `npm publish`, so they were `p=ALLOW j=DENY l=DENY a=DENY` and now deny on all four paths. MEASURED by the aggregate on that commit.
+EXPECTED_ALLPATH_GAPS=352
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -3622,9 +3631,7 @@ r4brlist-nested-list-easupd
 r4brlist-nested-list-ghapi
 r4brlist-nested-list-ghcomment
 r4brlist-nested-list-ghmerge
-r4brlist-nested-list-npmpub
 r4brlist-nested-list-railup
-r4brlist-nested-npmpub
 r4brlist-nested-railup
 r4brlist-tool-easbld
 r4brlist-tool-easupd
@@ -3652,14 +3659,12 @@ verbvcasecomment-easupd
 verbvcasecomment-ghapi
 verbvcasecomment-ghcomment
 verbvcasecomment-ghmerge
-verbvcasecomment-npmpub
 verbvcasecomment-railup
 verbvcaseparen-easbld
 verbvcaseparen-easupd
 verbvcaseparen-ghapi
 verbvcaseparen-ghcomment
 verbvcaseparen-ghmerge
-verbvcaseparen-npmpub
 verbvcaseparen-railup
 PIN_PRECISE_EOF
 )
@@ -3900,9 +3905,7 @@ r4brlist-nested-list-easupd p=ALLOW j=DENY l=DENY a=DENY
 r4brlist-nested-list-ghapi p=ALLOW j=DENY l=DENY a=DENY
 r4brlist-nested-list-ghcomment p=ALLOW j=DENY l=DENY a=DENY
 r4brlist-nested-list-ghmerge p=ALLOW j=DENY l=DENY a=DENY
-r4brlist-nested-list-npmpub p=ALLOW j=DENY l=DENY a=DENY
 r4brlist-nested-list-railup p=ALLOW j=DENY l=DENY a=DENY
-r4brlist-nested-npmpub p=ALLOW j=DENY l=DENY a=DENY
 r4brlist-nested-railup p=ALLOW j=DENY l=DENY a=DENY
 r4brlist-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4brlist-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
@@ -4006,14 +4009,12 @@ verbvcasecomment-easupd p=ALLOW j=DENY l=DENY a=DENY
 verbvcasecomment-ghapi p=ALLOW j=DENY l=DENY a=DENY
 verbvcasecomment-ghcomment p=ALLOW j=DENY l=DENY a=DENY
 verbvcasecomment-ghmerge p=ALLOW j=DENY l=DENY a=DENY
-verbvcasecomment-npmpub p=ALLOW j=DENY l=DENY a=DENY
 verbvcasecomment-railup p=ALLOW j=DENY l=DENY a=DENY
 verbvcaseparen-easbld p=ALLOW j=DENY l=DENY a=DENY
 verbvcaseparen-easupd p=ALLOW j=DENY l=DENY a=DENY
 verbvcaseparen-ghapi p=ALLOW j=DENY l=DENY a=DENY
 verbvcaseparen-ghcomment p=ALLOW j=DENY l=DENY a=DENY
 verbvcaseparen-ghmerge p=ALLOW j=DENY l=DENY a=DENY
-verbvcaseparen-npmpub p=ALLOW j=DENY l=DENY a=DENY
 verbvcaseparen-railup p=ALLOW j=DENY l=DENY a=DENY
 vft-app p=ALLOW j=DENY l=DENY a=DENY
 vft-bang p=ALLOW j=DENY l=DENY a=DENY
@@ -4480,8 +4481,8 @@ r4dig-tool-npmpub  : command-position 'npm publish' pushes a package to the regi
 r4dig-verb-npmpub  : command-position 'npm publish' pushes a package to the registry.
 r4ansic-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
 r4ansic-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
-r4brange-verb-npmpub : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brlist-verb-npmpub : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brange-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4brlist-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
 r4spec-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 r4spec-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 r4dig-tool-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
@@ -4514,6 +4515,8 @@ r4ansic-tool-ghapi : command-position 'gh api' with a method flag (-X/--method) 
 r4ansic-verb-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 r4brange-verb-ghapi : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brlist-verb-ghapi : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brlist-nested-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4brlist-nested-list-npmpub : command-position 'npm publish' pushes a package to the registry.
 r4brange-verb-decoy-after-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-decoy-before-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-decoy-after-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
@@ -4530,14 +4533,14 @@ r4brange-verb-decoy-after-easbld-2 : an outward-facing CLI's verb or binary is g
 r4brange-verb-decoy-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-decoy-after-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-decoy-before-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-0 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-decoy-before-npmpub-0 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-decoy-after-npmpub-1 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-decoy-before-npmpub-1 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-decoy-after-npmpub-2 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-decoy-before-npmpub-2 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-decoy-after-npmpub-3 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-decoy-before-npmpub-3 : command-position 'npm publish' pushes a package to the registry.
 r4brange-verb-decoy-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-decoy-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-decoy-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
@@ -4582,12 +4585,12 @@ r4brange-verb-genuine-after-easbld-1 : an outward-facing CLI's verb or binary is
 r4brange-verb-genuine-before-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-genuine-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-genuine-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-npmpub-0 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-genuine-before-npmpub-0 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-genuine-after-npmpub-1 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-genuine-before-npmpub-1 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-genuine-after-npmpub-2 : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-genuine-before-npmpub-2 : command-position 'npm publish' pushes a package to the registry.
 r4brange-verb-genuine-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-genuine-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-genuine-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
@@ -4626,6 +4629,8 @@ verbvbareparen-npmpub : command-position 'npm publish' pushes a package to the r
 verbvcasearm-npmpub : command-position 'npm publish' pushes a package to the registry.
 verbvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
 verbvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcasecomment-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcaseparen-npmpub : command-position 'npm publish' pushes a package to the registry.
 verbvcasebrace-npmpub : command-position 'npm publish' pushes a package to the registry.
 verbvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 verbvcasearm-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/

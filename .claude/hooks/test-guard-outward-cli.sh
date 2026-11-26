@@ -2920,7 +2920,7 @@ assert_deny "eas with a brace-range-split verb denies (todo's illustrative const
 assert_deny "gh pr comment with a brace-range-split verb denies" \
   "$(jsonc 'gh pr com{m..m}ent 5 --body hi --repo other/org')" "glued to a brace RANGE"
 assert_deny "npm with a brace-range-split verb denies" \
-  "$(json 'npm pub{l..l}ish')" "glued to a brace RANGE"
+  "$(json 'npm p{u..u}blish')" "glued to a brace RANGE"
 assert_deny "railway with a brace-range-split verb denies (no argument after it)" \
   "$(json 'railway u{p..p}')" "glued to a brace RANGE"
 assert_deny "gh api with a brace-range-split verb denies" \
@@ -2971,7 +2971,7 @@ assert_deny "a three-field increment brace range glued to a verb denies (gh)" \
 assert_deny "a three-field increment brace range glued to a verb denies (eas)" \
   "$(json 'eas up{d..d..3}ate --branch preview')" "glued to a brace RANGE"
 assert_deny "a three-field increment range with a signed step denies" \
-  "$(json 'npm pub{l..l..-1}ish')" "glued to a brace RANGE"
+  "$(json 'npm p{u..u..-1}blish')" "glued to a brace RANGE"
 # CONTROLS for the widening -- the increment clause is OPTIONAL, so every ordinary
 # brace range and every benign use must be untouched. Without these, the three pins
 # above would pass just as happily on a pattern that denied any command with braces.
@@ -3043,7 +3043,7 @@ assert_deny "a genuine, independently-allowed gh pr create{X..Y} (no --repo) els
 assert_deny "a genuine, independently-allowed gh pr comment{X..Y} elsewhere does not suppress an unrelated genuine railway glued construction" \
   "$(json 'railway u{p..p} && gh pr comment{1..3}')" "glued to a brace RANGE"
 assert_deny "a genuine, independently-allowed gh api{X..Y} elsewhere does not suppress an unrelated genuine npm glued construction" \
-  "$(json 'npm pub{l..l}ish && gh api{1..3}')" "glued to a brace RANGE"
+  "$(json 'npm p{u..u}blish && gh api{1..3}')" "glued to a brace RANGE"
 # Sanity control: the co-occurring gh construction really is independently
 # benign on its own (not itself a hidden deny riding along) -- if this ever
 # starts denying, the assertions above stop proving what they claim to.
@@ -3082,7 +3082,7 @@ assert_deny "eas with a brace-list-split verb denies (todo's illustrative constr
 assert_deny "gh pr merge with a brace-list-split verb denies (todo's illustrative construction)" \
   "$(json 'gh pr me{r,r}ge 42')" "glued to a brace LIST"
 assert_deny "npm with a brace-list-split verb denies (todo's illustrative construction)" \
-  "$(json 'npm pub{l,z}ish')" "glued to a brace LIST"
+  "$(json 'npm p{u,z}blish')" "glued to a brace LIST"
 assert_deny "gh pr comment with a brace-list-split verb denies" \
   "$(jsonc 'gh pr com{m,m}ent 5 --body hi --repo other/org')" "glued to a brace LIST"
 assert_deny "railway with a brace-list-split verb denies (no argument after it)" \
@@ -7150,6 +7150,8 @@ npm -s view eas-cli version
 npm exec eas-cli --yes -- whoami
 NFROWS
 # NF2 (security review of NF, on `main` too): npm 11 accepts its command abbreviations,
+# (Four brace rows above used to split `npm pub{l..l}ish`; `pub` is now itself a publish, so
+# they split `p{u..u}blish` instead, where only the brace checks can see the verb.)
 # `npm pu`/`pub`/`publ`/`publi`/`publis` all run publish (measured with npm's own deref and a
 # dry-run publish); and an unquoted variable in npm's flag slot (`npm exec eas-cli $F update`
 # runs `eas update` whether F is empty or holds an npm flag). Controls: a value word is taken
@@ -7167,7 +7169,7 @@ npm -s pu --dry-run|command-position 'npm publish'
 npm --loglevel silent pub|command-position 'npm publish'
 npm exec npm --yes pub|'npm publish' $NF_L
 npm exec eas-cli \$F update|'eas update/publish/submit' $NF_L
-npm exec railway \$F up|'railway up/deploy
+npm exec railway \$F up|named in command position but the verb
 NFROWS
 while IFS= read -r nf_cmd; do
   [ -n "$nf_cmd" ] || continue
