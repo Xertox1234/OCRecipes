@@ -56,6 +56,9 @@ export interface CoachQuestion {
   readonly question: string;
 }
 
+/** Within this many points of the end counts as "at the bottom". */
+const AT_BOTTOM_SLOP = 48;
+
 interface CoachOverlayContentProps {
   question: CoachQuestion;
   screenContext: string;
@@ -84,6 +87,9 @@ export function CoachOverlayContent({
   );
 
   const scrollRef = useRef<ScrollViewInstance>(null);
+  // Whether the list is scrolled to (near) the bottom: a streamed tick only
+  // follows the reply while it is.
+  const atBottomRef = useRef(true);
   const titleRef = useRef<ViewInstance>(null);
 
   // Load disclaimer dismissal state from AsyncStorage on mount.
@@ -344,10 +350,20 @@ export function CoachOverlayContent({
       : []),
   ];
 
-  // Auto-scroll on new content
+  // A new message scrolls into view (animated unless motion is reduced).
+  // A streamed tick only keeps the growing reply in view, with no animation,
+  // and only while the user is at the bottom: an animated scroll per tick
+  // fought the user's own scrolling (coach chat audit 2026-11-24, L37).
+  const messageCount = displayMessages.length;
   useEffect(() => {
+    atBottomRef.current = true;
     scrollRef.current?.scrollToEnd({ animated: !reducedMotion });
-  }, [streamingContent, messages, reducedMotion]);
+  }, [messageCount, reducedMotion]);
+  useEffect(() => {
+    if (streamingContent && atBottomRef.current) {
+      scrollRef.current?.scrollToEnd({ animated: false });
+    }
+  }, [streamingContent]);
 
   // Accessibility: move focus to title on mount
   useEffect(() => {
@@ -493,6 +509,12 @@ export function CoachOverlayContent({
             { paddingBottom: Spacing.xl },
           ]}
           keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={100}
+          onScroll={({ nativeEvent: e }) => {
+            atBottomRef.current =
+              e.contentOffset.y + e.layoutMeasurement.height >=
+              e.contentSize.height - AT_BOTTOM_SLOP;
+          }}
         >
           {disclaimerVisible === true && (
             // The wrapper is intentionally NOT `accessible` — collapsing
