@@ -37,6 +37,7 @@ import { GroceryWriteCard } from "./GroceryWriteCard";
 import { PantryWriteCard } from "./PantryWriteCard";
 import { PlanWriteCard } from "./PlanWriteCard";
 import {
+  atOnceUndoShown,
   cardUiState,
   mealChipLabel,
   saveErrorMessage,
@@ -49,6 +50,11 @@ interface Props {
   onEdit: (edits: WriteCardEdits) => void;
   /** A chat reply is on its way: the user sent the next message. */
   replyInFlight?: boolean;
+  /**
+   * The card is in the newest reply (false for an older one; unset for the
+   * reply still coming in). Undo on a log applied at once shows only there.
+   */
+  isActive?: boolean;
 }
 
 function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
@@ -112,7 +118,8 @@ function lockedSummary(block: WriteCardBlock): string {
 /**
  * A Coach write card (spec 2026-11-09): the controls for its kind inside the
  * shared shell, with Save, then Undo. Nothing is written until the user taps
- * Save. Undo has no timer (WCAG 2.2.1): it stays until the user sends the
+ * Save, except a small food log the Coach applied at once (Coach roadmap
+ * T2), which arrives saved with Undo. Undo has no timer (WCAG 2.2.1): it stays until the user sends the
  * next message or leaves the screen (the server still refuses it after 60 s).
  */
 export default function WriteCard({
@@ -120,6 +127,7 @@ export default function WriteCard({
   edits,
   onEdit,
   replyInFlight = false,
+  isActive,
 }: Props) {
   const haptics = useHaptics();
   const { save, undo } = useWriteCard(block.cardId, block.kind);
@@ -132,13 +140,24 @@ export default function WriteCard({
   const [error, setError] = useState<string | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
+  // Undo on a log applied at once (T2) was tapped, came back too late, or
+  // the user sent the next message.
+  const [atOnceClosed, setAtOnceClosed] = useState(false);
+  // A card that mounts already saved (a log applied at once, the saved copy
+  // taking over from the streamed one, a reopened chat) does not fade in:
+  // only a save made on this card does.
+  const [mountedSaved] = useState(block.status === "saved");
   const busyRef = useRef(false);
   // Sending the next message ends Undo. Adjusted during render when the
   // prop flips (React's "adjust state when a prop changes" pattern).
   const [prevReplyInFlight, setPrevReplyInFlight] = useState(replyInFlight);
   if (prevReplyInFlight !== replyInFlight) {
     setPrevReplyInFlight(replyInFlight);
-    if (replyInFlight) setUndoVisible(false);
+    if (replyInFlight) {
+      setUndoVisible(false);
+      // Also for a log applied at once: a failed send does not bring it back.
+      setAtOnceClosed(true);
+    }
   }
 
   const handleSave = async () => {
@@ -169,6 +188,7 @@ export default function WriteCard({
     if (busyRef.current) return;
     busyRef.current = true;
     setUndoVisible(false);
+    setAtOnceClosed(true);
     setUndoError(null);
     try {
       const result = await undo();
@@ -193,11 +213,23 @@ export default function WriteCard({
       : (localStatus ?? block.status);
   const receipt = localReceipt ?? block.receipt;
   const state = cardUiState(status, { saving, error });
+  // A food log the Coach applied at once (T2) arrives saved: Undo with no
+  // Save tap, on the newest reply only.
+  const showUndo =
+    undoVisible ||
+    atOnceUndoShown({
+      loggedAtOnce: block.loggedAtOnce,
+      status,
+      isActive,
+      replyInFlight,
+      closed: atOnceClosed,
+    });
   return (
     <WriteCardShell
       state={state}
       receipt={receipt}
-      undoVisible={undoVisible}
+      undoVisible={showUndo}
+      fadeInSaved={!mountedSaved}
       buttonLabel={writeCardButtonLabel(block.kind, block.payload, edits)}
       canSave={canSave(block, edits)}
       error={status === "saved" ? null : error}

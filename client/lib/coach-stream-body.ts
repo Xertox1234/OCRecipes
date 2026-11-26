@@ -17,9 +17,17 @@ export interface CoachStreamExtras {
 /**
  * Card kinds this build can draw beyond the first three (spec 2026-11-16).
  * The server gives Coach a card's tool only when its kind is listed, so a
- * build without the card is never told one is on screen.
+ * build without the card is never told one is on screen. "quick_log" (Coach
+ * roadmap T2): this build shows a food card that arrives already logged,
+ * with Undo, so a small typed log is applied at once.
  */
-const EXTRA_CARD_KINDS = ["pantry", "goals", "allergy", "plan_shop"] as const;
+const EXTRA_CARD_KINDS = [
+  "pantry",
+  "goals",
+  "allergy",
+  "plan_shop",
+  "quick_log",
+] as const;
 
 /** The POST body for a coach message; unset extras are left out. */
 export function buildCoachStreamBody(

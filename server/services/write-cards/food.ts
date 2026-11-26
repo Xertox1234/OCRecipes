@@ -151,6 +151,45 @@ export async function buildFoodPayload(
   };
 }
 
+/**
+ * A food log small enough to apply at once, with Undo, rather than wait on
+ * the card's Save (Coach roadmap T2): up to three foods and 1000 kcal in all.
+ * Anything bigger (a whole day's eating, a feast), or an item whose macros
+ * do not add up to its calories, keeps the card the user checks first. Only a log the user typed in the chat is applied at once; a
+ * photo, label or barcode read always waits on Save, so the user can check
+ * the numbers against the food.
+ */
+const SMALL_LOG_MAX_ITEMS = 3;
+const SMALL_LOG_MAX_CALORIES = 1000;
+
+export function isSmallFoodLog(payload: FoodCardPayload): boolean {
+  if (payload.items.length > SMALL_LOG_MAX_ITEMS) return false;
+  // The cap is in calories, so an item whose macros do not match them (a
+  // "0 kcal" item with 1000 g of carbs) could hide a large log under it.
+  if (!payload.items.every((it) => macrosMatchCalories(it.perUnit))) {
+    return false;
+  }
+  const total = payload.items.reduce(
+    (sum, it) => sum + it.count * it.perUnit.calories,
+    0,
+  );
+  return total <= SMALL_LOG_MAX_CALORIES;
+}
+
+/**
+ * The same 0.5x to 1.5x band the lookup check uses; below
+ * ENERGY_CHECK_MIN_CALORIES (black coffee, water) rounding breaks the
+ * ratio, so the macros may hold at most twice that in calories.
+ */
+function macrosMatchCalories(v: PerUnit): boolean {
+  const fromMacros = macroCalories(v);
+  if (v.calories < ENERGY_CHECK_MIN_CALORIES) {
+    return fromMacros <= 2 * ENERGY_CHECK_MIN_CALORIES;
+  }
+  const ratio = fromMacros / v.calories;
+  return ratio >= 0.5 && ratio <= 1.5;
+}
+
 function parseFoodEdits(p: FoodCardPayload, raw: unknown): FoodCardEdits {
   const parsed = foodEditsSchema.safeParse(raw ?? {});
   if (!parsed.success) {

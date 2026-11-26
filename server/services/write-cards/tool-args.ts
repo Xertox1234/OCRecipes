@@ -192,6 +192,7 @@ export type WriteCardOutcome =
       dropped?: number;
       groceryList?: "on_card" | "not_on_card";
     }
-  | { kind: "food"; shown: boolean }
+  /** food: `loggedAtOnce` when the turn logs this card at once (T2). */
+  | { kind: "food"; shown: boolean; loggedAtOnce?: true }
   /** A grocery call in a turn whose plan card already holds the shopping. */
   | { kind: "grocery_on_plan_card" };

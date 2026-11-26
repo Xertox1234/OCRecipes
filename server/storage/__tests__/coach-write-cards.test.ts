@@ -33,6 +33,10 @@ const {
   saveWriteCard,
   undoWriteCard,
   getWriteCardsByIds,
+  undoWindowOpen,
+  createLoggedWriteCard,
+  withdrawLoggedWriteCard,
+  getLatestLoggedFoodCard,
 } = await import("../coach-write-cards");
 
 const foodPayload: FoodCardPayload = {
@@ -98,6 +102,100 @@ describe("coach-write-cards storage", () => {
       kind,
       payload: kind === "food" ? foodPayload : groceryPayload,
     });
+
+  // Coach roadmap T2: a small food log the Coach applies at once.
+  describe("a card logged at once", () => {
+    const logNow = (perform = async () => ({ scannedItemIds: [5] })) =>
+      createLoggedWriteCard(
+        { userId: user.id, conversationId, kind: "food", payload: foodPayload },
+        perform,
+      );
+
+    it("is created saved, in one step, and marked for the longer Undo", async () => {
+      const { card } = await logNow();
+      expect(card.status).toBe("saved");
+      expect(card.savedAt).toBeInstanceOf(Date);
+      expect(card.savedRefs).toEqual({
+        scannedItemIds: [5],
+        loggedAtOnce: true,
+      });
+      expect(card.edits).toEqual({});
+      expect(await liveCount()).toBe(0);
+    });
+
+    it("replaces a live food card (the user changing it), and leaves another kind live", async () => {
+      const food = await create("food");
+      const { previous } = await logNow();
+      expect(previous).toEqual({ id: food.card.id, status: "replaced" });
+      expect((await getWriteCard(food.card.id, user.id))?.status).toBe(
+        "replaced",
+      );
+
+      const grocery = await create("grocery");
+      const second = await logNow();
+      expect(second.previous).toBeNull();
+      expect((await getWriteCard(grocery.card.id, user.id))?.status).toBe(
+        "live",
+      );
+    });
+
+    it("leaves nothing behind when the save fails", async () => {
+      const food = await create("food");
+      await expect(
+        logNow(async () => {
+          throw new Error("db down");
+        }),
+      ).rejects.toThrow("db down");
+      // The live card it would have replaced is untouched, and no row added.
+      expect((await getWriteCard(food.card.id, user.id))?.status).toBe("live");
+      const rows = await tx
+        .select()
+        .from(schema.coachWriteCards)
+        .where(eq(schema.coachWriteCards.conversationId, conversationId));
+      expect(rows).toHaveLength(1);
+    });
+
+    it("can be withdrawn: the log is reverted and the card closed, never live", async () => {
+      const { card } = await logNow();
+      const revert = vi.fn(async () => {});
+      expect(await withdrawLoggedWriteCard(card.id, user.id, revert)).toBe(
+        true,
+      );
+      expect(revert).toHaveBeenCalledTimes(1);
+      const after = await getWriteCard(card.id, user.id);
+      expect(after?.status).toBe("expired");
+      expect(after?.savedRefs).toBeNull();
+      expect(await liveCount()).toBe(0);
+      // Only once, and never another user's card.
+      expect(await withdrawLoggedWriteCard(card.id, user.id, revert)).toBe(
+        false,
+      );
+      const other = await logNow();
+      const stranger = await createTestUser(tx);
+      expect(
+        await withdrawLoggedWriteCard(other.card.id, stranger.id, revert),
+      ).toBe(false);
+      expect(revert).toHaveBeenCalledTimes(1);
+    });
+
+    it("finds the newest food log applied at once in the conversation", async () => {
+      expect(await getLatestLoggedFoodCard(conversationId, user.id)).toBe(
+        undefined,
+      );
+      await logNow();
+      const { card: newest } = await logNow();
+      // A tapped save is not one.
+      const tapped = await create("food");
+      await saveWriteCard(tapped.card.id, user.id, async () => ({}));
+      expect((await getLatestLoggedFoodCard(conversationId, user.id))?.id).toBe(
+        newest.id,
+      );
+      const stranger = await createTestUser(tx);
+      expect(await getLatestLoggedFoodCard(conversationId, stranger.id)).toBe(
+        undefined,
+      );
+    });
+  });
 
   it("createWriteCard replaces a same-kind live card", async () => {
     const first = await create();
@@ -364,6 +462,38 @@ describe("coach-write-cards storage", () => {
     );
     expect(result.status).toBe("too_late");
     expect(revert).not.toHaveBeenCalled();
+  });
+
+  // Coach roadmap T2: a log applied at once was never tapped, so the user
+  // may only notice it a while later. It keeps Undo for 5 minutes.
+  it("a log applied at once can be undone for 5 minutes, then too_late", async () => {
+    const { card } = await create();
+    await saveWriteCard(card.id, user.id, async () => ({
+      scannedItemIds: [],
+      loggedAtOnce: true,
+    }));
+    const saved = await getWriteCard(card.id, user.id);
+    const at = (ms: number) => new Date(saved!.savedAt!.getTime() + ms);
+    expect(undoWindowOpen(saved!, at(4 * 60_000))).toBe(true);
+    expect(undoWindowOpen(saved!, at(5 * 60_000 + 1))).toBe(false);
+    const revert = vi.fn(async () => {});
+    expect(
+      (await undoWriteCard(card.id, user.id, revert, at(6 * 60_000))).status,
+    ).toBe("too_late");
+    expect(revert).not.toHaveBeenCalled();
+    expect(
+      (await undoWriteCard(card.id, user.id, revert, at(4 * 60_000))).status,
+    ).toBe("undone");
+    expect(revert).toHaveBeenCalledTimes(1);
+  });
+
+  it("a tapped save keeps the 60 s window", async () => {
+    const { card } = await create();
+    await saveWriteCard(card.id, user.id, async () => ({}));
+    const saved = await getWriteCard(card.id, user.id);
+    const at = (ms: number) => new Date(saved!.savedAt!.getTime() + ms);
+    expect(undoWindowOpen(saved!, at(59_000))).toBe(true);
+    expect(undoWindowOpen(saved!, at(61_000))).toBe(false);
   });
 
   it("undo of a live card is not_saved", async () => {
