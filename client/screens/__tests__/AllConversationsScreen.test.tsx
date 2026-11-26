@@ -144,7 +144,13 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
       "Main",
       {
         screen: "CoachTab",
-        params: { screen: "CoachPro", params: { selectedConversationId: 7 } },
+        // L119: the same route as openCoachConversation, nested pop included,
+        // so the Coach stack returns to its CoachPro instead of pushing one.
+        params: {
+          screen: "CoachPro",
+          params: { selectedConversationId: 7 },
+          pop: true,
+        },
       },
       { pop: true },
     );
@@ -194,6 +200,7 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
         params: {
           screen: "CoachPro",
           params: { selectedConversationId: 10 },
+          pop: true,
         },
       },
       { pop: true },
