@@ -60,7 +60,7 @@ export function register(app: Express): void {
             id: r.id,
             weekStart: r.weekStart,
             weekEnd: r.weekEnd,
-            headline: r.content.headline,
+            headline: r.headline,
             seen: r.seenAt !== null,
           })),
           trends: rows
@@ -68,9 +68,9 @@ export function register(app: Express): void {
             .reverse()
             .map((r) => ({
               weekStart: r.weekStart,
-              proteinDaysMet: r.facts.proteinDaysMet,
-              daysActive: r.facts.daysActive,
-              recipesAdded: r.facts.recipesAdded,
+              proteinDaysMet: r.proteinDaysMet,
+              daysActive: r.daysActive,
+              recipesAdded: r.recipesAdded,
             })),
         };
         res.json(body);

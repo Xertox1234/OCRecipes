@@ -11,19 +11,20 @@ import {
   mealPlanItems,
   mealPlanRecipes,
   pantryItems,
-  recipeGenerationLog,
   savedItems,
   scannedItems,
   users,
   type CoachWeeklyReport,
 } from "@shared/schema";
-import type {
-  FeatureTipId,
-  WeeklyFacts,
-  WeeklyInputs,
-  WeeklyRecipe,
-  WeeklyReportContent,
-  WeeklyReportSettings,
+import {
+  weeklyFactsSchema,
+  weeklyReportContentSchema,
+  type FeatureTipId,
+  type WeeklyFacts,
+  type WeeklyInputs,
+  type WeeklyRecipe,
+  type WeeklyReportContent,
+  type WeeklyReportSettings,
 } from "@shared/schemas/coach-weekly-report";
 import {
   and,
@@ -35,10 +36,33 @@ import {
   isNull,
   lt,
   lte,
+  or,
   sql,
 } from "drizzle-orm";
 import { db } from "../db";
+import { logger } from "../lib/logger";
 import { logNutrientSql } from "./nutrition";
+
+/**
+ * Stored facts and content are jsonb typed only at compile time. Read them
+ * back through their schemas, so a row of another shape (a future facts
+ * version, a hand-edited or backfilled row) is skipped here instead of
+ * reaching the screens or the scheduler (coach audit 2026-11-24, L71).
+ */
+function storedReport(row: CoachWeeklyReport): CoachWeeklyReport | null {
+  if (
+    weeklyFactsSchema.safeParse(row.facts).success &&
+    weeklyReportContentSchema.safeParse(row.content).success
+  ) {
+    return row;
+  }
+  // Ids only: never the report's text or numbers.
+  logger.warn(
+    { userId: row.userId, reportId: row.id },
+    "weekly report: stored row does not fit the schema, skipped",
+  );
+  return null;
+}
 
 /**
  * Storage for the Coach weekly report
@@ -241,7 +265,18 @@ async function getWeeklyRecipes(
         imageUrl: communityRecipes.imageUrl,
       })
       .from(communityRecipes)
-      .where(inArray(communityRecipes.id, communityIds));
+      .where(
+        and(
+          inArray(communityRecipes.id, communityIds),
+          // A recipe the author made private after the user saved it is no
+          // longer theirs to show (coach audit 2026-11-24, L97), as on the
+          // favourite insert.
+          or(
+            eq(communityRecipes.isPublic, true),
+            eq(communityRecipes.authorId, userId),
+          ),
+        ),
+      );
     for (const r of rows) details.set(`community:${r.id}`, r);
   }
 
@@ -302,9 +337,12 @@ export async function getFeatureUsage(
       mealPlan: exists(
         sql`SELECT 1 FROM ${mealPlanItems} WHERE ${mealPlanItems.userId} = ${userId}`,
       ),
-      voice: exists(
-        sql`SELECT 1 FROM ${recipeGenerationLog} WHERE ${recipeGenerationLog.userId} = ${userId} AND ${recipeGenerationLog.kind} = 'voiceTranscription'`,
-      ),
+      // Dictation runs on the device and records nothing here, and the
+      // server transcription route is off with no app caller, so voice use
+      // cannot be seen. Treat it as used: never pick the voice tip as a
+      // thing "you haven't used yet" (coach audit 2026-11-24, L70). It still
+      // comes round by recency like any used feature.
+      voice: sql<boolean>`true`,
       cookbooks: exists(
         sql`SELECT 1 FROM ${cookbooks} WHERE ${cookbooks.userId} = ${userId}`,
       ),
@@ -368,16 +406,74 @@ export async function weeklyReportExists(
   return !!row;
 }
 
+export interface WeeklyReportListRow {
+  id: number;
+  weekStart: string;
+  weekEnd: string;
+  headline: string;
+  seenAt: Date | null;
+  proteinDaysMet: number | null;
+  daysActive: number;
+  recipesAdded: number;
+}
+
+/**
+ * The list screen's fields only, read out of the JSON in SQL: a full row
+ * carries every day, recipe and pattern, about 60 times what the list needs
+ * (coach audit 2026-11-24, L111). A row whose fields are not the expected
+ * types is skipped, as storedReport does for a whole row (L71).
+ */
 export async function listWeeklyReports(
   userId: string,
   limit = 60,
-): Promise<CoachWeeklyReport[]> {
-  return db
-    .select()
+): Promise<WeeklyReportListRow[]> {
+  const rows = await db
+    .select({
+      id: coachWeeklyReports.id,
+      weekStart: coachWeeklyReports.weekStart,
+      weekEnd: coachWeeklyReports.weekEnd,
+      seenAt: coachWeeklyReports.seenAt,
+      headline: sql<unknown>`${coachWeeklyReports.content} -> 'headline'`,
+      proteinDaysMet: sql<unknown>`${coachWeeklyReports.facts} -> 'proteinDaysMet'`,
+      daysActive: sql<unknown>`${coachWeeklyReports.facts} -> 'daysActive'`,
+      recipesAdded: sql<unknown>`${coachWeeklyReports.facts} -> 'recipesAdded'`,
+      version: sql<unknown>`${coachWeeklyReports.facts} -> 'version'`,
+    })
     .from(coachWeeklyReports)
     .where(eq(coachWeeklyReports.userId, userId))
     .orderBy(desc(coachWeeklyReports.weekStart))
     .limit(limit);
+  return rows.flatMap((r) => {
+    const count = (v: unknown) =>
+      typeof v === "number" && Number.isInteger(v) && v >= 0;
+    if (
+      // A version the schema does not know would open to "not found"
+      // (getWeeklyReport skips it), so the list skips it too.
+      r.version !== 1 ||
+      typeof r.headline !== "string" ||
+      !count(r.daysActive) ||
+      !count(r.recipesAdded) ||
+      (r.proteinDaysMet !== null && !count(r.proteinDaysMet))
+    ) {
+      logger.warn(
+        { userId, reportId: r.id },
+        "weekly report: stored row does not fit the list shape, skipped",
+      );
+      return [];
+    }
+    return [
+      {
+        id: r.id,
+        weekStart: r.weekStart,
+        weekEnd: r.weekEnd,
+        headline: r.headline,
+        seenAt: r.seenAt,
+        proteinDaysMet: r.proteinDaysMet as number | null,
+        daysActive: r.daysActive as number,
+        recipesAdded: r.recipesAdded as number,
+      },
+    ];
+  });
 }
 
 export async function getWeeklyReport(
@@ -391,7 +487,7 @@ export async function getWeeklyReport(
       and(eq(coachWeeklyReports.id, id), eq(coachWeeklyReports.userId, userId)),
     )
     .limit(1);
-  return row ?? null;
+  return row ? storedReport(row) : null;
 }
 
 /** Facts of the reports before `beforeWeekStart`, newest first. */
@@ -411,7 +507,11 @@ export async function getRecentWeeklyFacts(
     )
     .orderBy(desc(coachWeeklyReports.weekStart))
     .limit(n);
-  return rows.map((r) => r.facts);
+  // Skipped like storedReport: these feed the next report's comparisons.
+  return rows.flatMap((r) => {
+    const parsed = weeklyFactsSchema.safeParse(r.facts);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 async function setOnce(
@@ -620,7 +720,7 @@ export async function getPendingPopup(
     )
     .orderBy(desc(coachWeeklyReports.weekStart))
     .limit(1);
-  return row ?? null;
+  return row ? storedReport(row) : null;
 }
 
 // ── Settings ────────────────────────────────────────────────────────────

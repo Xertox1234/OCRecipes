@@ -50,6 +50,20 @@ function report(id: number, weekStart: string, seen = false) {
   });
 }
 
+/** A list row as listWeeklyReports returns it (list-screen fields only). */
+function listRow(id: number, weekStart: string, seen = false) {
+  return {
+    id,
+    weekStart,
+    weekEnd: weekStart,
+    headline: `Headline ${id}`,
+    seenAt: seen ? new Date("2026-11-15T19:00:00Z") : null,
+    proteinDaysMet: id,
+    daysActive: 5,
+    recipesAdded: 1,
+  };
+}
+
 describe("Weekly report routes", () => {
   let app: express.Express;
 
@@ -62,9 +76,9 @@ describe("Weekly report routes", () => {
     it("lists reports newest first with oldest-first trends, for a free user too", async () => {
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       vi.mocked(storage.listWeeklyReports).mockResolvedValue([
-        report(3, "2026-11-08"),
-        report(2, "2026-11-01", true),
-        report(1, "2026-10-25", true),
+        listRow(3, "2026-11-08"),
+        listRow(2, "2026-11-01", true),
+        listRow(1, "2026-10-25", true),
       ]);
       const res = await request(app).get("/api/weekly-reports");
       expect(res.status).toBe(200);
@@ -94,6 +108,12 @@ describe("Weekly report routes", () => {
       expect(
         res.body.trends.map((t: { weekStart: string }) => t.weekStart),
       ).toEqual(["2026-10-25", "2026-11-01", "2026-11-08"]);
+      expect(res.body.trends[0]).toEqual({
+        weekStart: "2026-10-25",
+        proteinDaysMet: 1,
+        daysActive: 5,
+        recipesAdded: 1,
+      });
       expect(storage.listWeeklyReports).toHaveBeenCalledWith("1");
     });
   });

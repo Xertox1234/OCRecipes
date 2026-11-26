@@ -26,6 +26,12 @@ const RANGE_TOLERANCE = 0.1;
 const LOW_CALORIE_RATIO = 0.7;
 const LATE_DINNER_HOUR = 21;
 const MIN_PATTERN_COUNT = 2;
+/**
+ * Recipes kept in the facts. The list goes into the AI prompt, the stored row
+ * and every report response, so a week of bulk saves must not grow them
+ * without end (coach audit 2026-11-24, L69). recipesAdded keeps the true count.
+ */
+const MAX_RECIPES = 12;
 
 function sumOrNull(values: (number | null)[]): number | null {
   const present = values.filter((v): v is number => v !== null);
@@ -210,7 +216,7 @@ export function buildWeeklyFacts(
       ((proteinDaysMet ?? 0) >= 5 || daysActive === 7),
     lowCalorieGuard,
     safetySignal,
-    recipes: inputs.recipes,
+    recipes: inputs.recipes.slice(0, MAX_RECIPES),
     patterns: buildPatterns(days, inputs.logs, tz),
     lastWeek,
     best,
