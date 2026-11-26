@@ -18,7 +18,9 @@ const {
   refreshControlProps,
   conversations,
   useChatConversationsOpts,
+  capturedPressables,
 } = vi.hoisted(() => ({
+  capturedPressables: {} as Record<string, Record<string, unknown>>,
   // Lets a test's mocked refetch() change what useChatConversations returns
   // (and re-render the screen), the way a real refetch writes new data into
   // the query cache. `setData` is captured from the mock hook's own useState.
@@ -112,7 +114,19 @@ vi.mock("react-native", async (importOriginal) => {
       ),
     );
   FlatList.displayName = "FlatList";
-  return { ...actual, RefreshControl, FlatList };
+  // Raw Pressable props by accessibilityLabel: the shared mock drops style.
+  const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
+    (props, ref) => {
+      const label = props.accessibilityLabel as string | undefined;
+      if (label) capturedPressables[label] = props;
+      return React.createElement(
+        actual.Pressable as React.ComponentType<Record<string, unknown>>,
+        { ...props, ref },
+      );
+    },
+  );
+  Pressable.displayName = "Pressable";
+  return { ...actual, RefreshControl, FlatList, Pressable };
 });
 
 vi.mock("@react-navigation/bottom-tabs", () => ({
@@ -354,5 +368,20 @@ describe("ChatListScreen — opening brief draft", () => {
     const { rerender } = renderComponent(<ChatListScreen />);
     rerender(<ChatListScreen />);
     expect(draftState.navigate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Coach chat audit 2026-11-24 M5: the segment tabs were about 34pt; the twin
+// control on All Conversations was already given minHeight 44.
+describe("ChatListScreen — segment tab size", () => {
+  it.each(["Coach chats", "Recipe chats"])("%s is a 44pt target", (label) => {
+    renderComponent(<ChatListScreen />);
+    const props = capturedPressables[label];
+    expect(props).toBeDefined();
+    const style = Object.assign(
+      {},
+      ...[props.style].flat(4).filter(Boolean),
+    ) as Record<string, unknown>;
+    expect(style.minHeight as number).toBeGreaterThanOrEqual(44);
   });
 });

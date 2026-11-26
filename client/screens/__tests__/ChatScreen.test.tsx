@@ -18,6 +18,7 @@ import {
   noteCoachReplyFinished,
 } from "@/hooks/useCoachUnreadReplies";
 import ChatScreen from "../ChatScreen";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { CHAT_LIMIT_ERROR } from "@/lib/chat-error-copy";
 
 const {
@@ -89,6 +90,14 @@ const {
   mockToastSuccess: vi.fn(),
   mockToastInfo: vi.fn(),
 }));
+
+// The real hook, wrapped so a test can see ChatScreen hand it the
+// reduced-motion setting (audit 2026-11-24 M7).
+vi.mock("@/hooks/useStickToBottom", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/hooks/useStickToBottom")>();
+  return { ...actual, useStickToBottom: vi.fn(actual.useStickToBottom) };
+});
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
@@ -1287,5 +1296,97 @@ describe("ChatScreen — brief Not today", () => {
     fireEvent.click(screen.getByLabelText("Not today, Want to log lunch?"));
     expect(mockAcknowledge).toHaveBeenCalledWith("meal-log");
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+});
+
+// Coach chat audit 2026-11-24, bundle E: the plain Coach chat for screen
+// readers and for reading back while a reply streams.
+describe("ChatScreen — screen reader and scroll position", () => {
+  const idle = {
+    streamingContent: "",
+    isStreaming: false,
+    streamError: null,
+    requestError: null,
+    requestErrorCode: null,
+  };
+
+  beforeEach(() => {
+    mockUseChatMessages.mockReturnValue({
+      data: [
+        {
+          id: 1,
+          conversationId: 42,
+          role: "user",
+          content: "Snack ideas?",
+          metadata: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      isLoading: false,
+    });
+  });
+
+  async function spyAnnounce() {
+    const RN = await import("react-native");
+    return vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  }
+
+  // L14: after sending, a screen-reader user heard nothing until the end.
+  it("announces once that Coach is thinking when a reply starts", async () => {
+    const announce = await spyAnnounce();
+    const { rerender } = renderComponent(<ChatScreen />);
+    mockSendMessageState.value = { ...idle, isStreaming: true };
+    rerender(<ChatScreen />);
+    mockSendMessageState.value = {
+      ...idle,
+      isStreaming: true,
+      streamingContent: "Try",
+    };
+    rerender(<ChatScreen />);
+    expect(
+      announce.mock.calls.filter(([m]) => m === "Coach is thinking..."),
+    ).toHaveLength(1);
+    announce.mockRestore();
+  });
+
+  // M6: a dropped stream was announced as "Coach response received".
+  it("does not announce a reply when the stream failed", async () => {
+    const announce = await spyAnnounce();
+    const { rerender } = renderComponent(<ChatScreen />);
+    mockSendMessageState.value = {
+      ...idle,
+      isStreaming: true,
+      streamingContent: "Try Greek",
+    };
+    rerender(<ChatScreen />);
+    mockSendMessageState.value = { ...idle, streamError: true };
+    rerender(<ChatScreen />);
+    expect(announce).not.toHaveBeenCalledWith("Coach response received");
+    announce.mockRestore();
+  });
+
+  it("still announces a reply that arrived", async () => {
+    const announce = await spyAnnounce();
+    const { rerender } = renderComponent(<ChatScreen />);
+    mockSendMessageState.value = {
+      ...idle,
+      isStreaming: true,
+      streamingContent: "Try Greek yogurt.",
+    };
+    rerender(<ChatScreen />);
+    mockSendMessageState.value = idle;
+    rerender(<ChatScreen />);
+    expect(announce).toHaveBeenCalledWith("Coach response received");
+    announce.mockRestore();
+  });
+
+  // M7: every growth tick pulled the list to the end, animated, whatever
+  // Reduced Motion said. The shared hook only follows a reader at the end.
+  it("follows the latest message through the shared stick-to-bottom hook", () => {
+    vi.mocked(useStickToBottom).mockClear();
+    renderComponent(<ChatScreen />);
+    expect(useStickToBottom).toHaveBeenCalledWith(expect.any(Function), {
+      reducedMotion: expect.any(Boolean),
+    });
   });
 });

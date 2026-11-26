@@ -103,10 +103,9 @@ export const AskCoachSection = React.memo(function AskCoachSection({
               color={theme.link}
               importantForAccessibility="no"
             />
-            <ThemedText
-              style={[styles.questionText, { color: theme.text }]}
-              numberOfLines={1}
-            >
+            {/* Wraps: at the large text sizes one line cut the question
+                off before the user could read it. */}
+            <ThemedText style={[styles.questionText, { color: theme.text }]}>
               {q.text}
             </ThemedText>
             <Ionicons

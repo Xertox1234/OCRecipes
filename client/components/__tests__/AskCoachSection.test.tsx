@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import { AskCoachSection } from "../AskCoachSection";
 import type { CoachQuestion } from "../CoachOverlayContent";
 import { impactAsync as rawImpactAsync } from "expo-haptics";
@@ -83,6 +84,17 @@ describe("AskCoachSection", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockRefreshSubscription).toHaveBeenCalledTimes(1);
     expect(mockToastInfo).toHaveBeenCalledTimes(1);
+  });
+
+  // Audit 2026-11-24 L1: one line, so at the large text sizes a sighted
+  // user could not read the suggested question before tapping it.
+  it("lets a question wrap instead of cutting it to one line", () => {
+    renderComponent(
+      <AskCoachSection questions={questions} screenContext="home" />,
+    );
+    expect(
+      reactProps(screen.getByText("How much protein today?")).numberOfLines,
+    ).toBeUndefined();
   });
 
   it("renders each question", () => {

@@ -458,9 +458,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     padding: 3,
   },
+  // 44pt, like the twin control on All Conversations.
   segmentTab: {
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.xs,
   },

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
+import { reactProps } from "../../../test/utils/react-props";
 import { renderComponent } from "../../../test/utils/render-component";
 import ChatStackNavigator from "../ChatStackNavigator";
 import { getChatRouteId } from "../chatRouteId";
@@ -29,7 +30,10 @@ const {
   premiumContextState,
   registeredScreenNames,
   registeredGetIds,
+  captured,
 } = vi.hoisted(() => ({
+  // Raw Pressable props by accessibilityLabel: the shared mock drops style.
+  captured: {} as Record<string, Record<string, unknown>>,
   mockUsePremiumFeature: vi.fn(),
   premiumContextState: {
     isPremiumResolved: true,
@@ -118,6 +122,23 @@ vi.mock("@/hooks/useTheme", () => ({
     },
   }),
 }));
+
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const ReactMod = await import("react");
+  const Capturing = ReactMod.forwardRef<unknown, Record<string, unknown>>(
+    (props, ref) => {
+      const label = props.accessibilityLabel as string | undefined;
+      if (label) captured[label] = props;
+      return ReactMod.createElement(
+        actual.Pressable as React.ComponentType<Record<string, unknown>>,
+        { ...props, ref },
+      );
+    },
+  );
+  Capturing.displayName = "Pressable";
+  return { ...actual, Pressable: Capturing };
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -225,5 +246,46 @@ describe("ChatStackNavigator — Chat gets one route instance per conversation",
 
     expect(registeredGetIds.get("Chat")).toBe(getChatRouteId);
     expect([...registeredGetIds.keys()]).toEqual(["Chat"]);
+  });
+});
+
+// Coach chat audit 2026-11-24 L12: the error replaced the screen silently,
+// its retry was about 36pt, and the spinner had no name.
+describe("ChatStackNavigator — loading and error states for screen readers", () => {
+  it("announces the subscription error", async () => {
+    const RN = await import("react-native");
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    premiumContextState.isPremiumResolved = false;
+    premiumContextState.isPremiumStatusError = true;
+    mockUsePremiumFeature.mockReturnValue(false);
+    renderComponent(<ChatStackNavigator />);
+    expect(announce).toHaveBeenCalledWith(
+      "Could not load your subscription status.",
+    );
+    announce.mockRestore();
+  });
+
+  it("the retry is a real 44pt target", () => {
+    premiumContextState.isPremiumResolved = false;
+    premiumContextState.isPremiumStatusError = true;
+    mockUsePremiumFeature.mockReturnValue(false);
+    renderComponent(<ChatStackNavigator />);
+    const props = captured["Retry loading Coach"];
+    expect(props).toBeDefined();
+    expect(props.hitSlop).toBeUndefined();
+    const style = Object.assign(
+      {},
+      ...[props.style].flat(3).filter(Boolean),
+    ) as Record<string, unknown>;
+    expect(style.minHeight as number).toBeGreaterThanOrEqual(44);
+  });
+
+  it("names the loading spinner", () => {
+    premiumContextState.isPremiumResolved = false;
+    mockUsePremiumFeature.mockReturnValue(false);
+    renderComponent(<ChatStackNavigator />);
+    expect(reactProps(screen.getByRole("progressbar")).accessibilityLabel).toBe(
+      "Loading Coach",
+    );
   });
 });

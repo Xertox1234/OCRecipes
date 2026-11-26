@@ -235,6 +235,14 @@ export function CoachOverlayContent({
     },
   });
 
+  // The failure view replaces the loading text with no live region, and the
+  // input bar is hidden, so a screen reader hears nothing unless told (both
+  // platforms; announced where the failure happens, once per failure).
+  const failCreate = useCallback(() => {
+    setCreateError(true);
+    AccessibilityInfo.announceForAccessibility(CREATE_FAILED_TEXT);
+  }, []);
+
   // Create conversation on mount
   const didCreateRef = useRef(false);
   useEffect(() => {
@@ -247,7 +255,7 @@ export function CoachOverlayContent({
         setConversationId(conv.id);
       })
       .catch(() => {
-        setCreateError(true);
+        failCreate();
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -389,7 +397,7 @@ export function CoachOverlayContent({
       .then((conv) => {
         setConversationId(conv.id);
       })
-      .catch(() => setCreateError(true));
+      .catch(() => failCreate());
   }, [createConversation, question]);
 
   const canSend =
@@ -465,7 +473,7 @@ export function CoachOverlayContent({
           <ThemedText
             style={[styles.loadingText, { color: theme.textSecondary }]}
           >
-            Could not start conversation
+            {CREATE_FAILED_TEXT}
           </ThemedText>
           <Pressable
             onPress={handleRetry}
@@ -519,7 +527,6 @@ export function CoachOverlayContent({
                 onPress={handleDismissDisclaimer}
                 accessibilityLabel="Dismiss disclaimer"
                 accessibilityRole="button"
-                hitSlop={12}
                 style={styles.disclaimerDismiss}
               >
                 <Feather
@@ -606,6 +613,8 @@ export function CoachOverlayContent({
   );
 }
 
+const CREATE_FAILED_TEXT = "Could not start conversation";
+
 const styles = StyleSheet.create({
   fullReplyLink: {
     flexDirection: "row",
@@ -643,6 +652,8 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
   },
   retryButton: {
+    minHeight: 44,
+    justifyContent: "center",
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderWidth: 1,
@@ -679,7 +690,15 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
     lineHeight: 18,
   },
+  // A real 44pt box: Android clips hitSlop to the banner. The negative
+  // margins keep it inside the banner's own padding, so the banner does not
+  // grow.
   disclaimerDismiss: {
-    marginTop: -2,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -Spacing.sm,
+    marginRight: -Spacing.sm,
   },
 });

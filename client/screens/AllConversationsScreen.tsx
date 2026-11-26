@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
+  AccessibilityInfo,
   View,
   ScrollView,
   Pressable,
@@ -122,7 +123,7 @@ export default function AllConversationsScreen() {
   );
 
   const handleTogglePin = useCallback(
-    async (conv: ChatConversation) => {
+    async (conv: ChatConversation, title: string) => {
       const pinnedCount = conversations.filter((c) => c.isPinned).length;
       if (!conv.isPinned && pinnedCount >= MAX_PINNED) {
         Alert.alert(
@@ -131,11 +132,16 @@ export default function AllConversationsScreen() {
         );
         return;
       }
+      // Worked out before the try: React Compiler does not compile a
+      // conditional inside a try block.
+      const done = `${conv.isPinned ? "Unpinned" : "Pinned"} ${title}`;
       try {
         await pinConversation.mutateAsync({
           id: conv.id,
           isPinned: !conv.isPinned,
         });
+        // The row moves between sections with no other sign of the change.
+        AccessibilityInfo.announceForAccessibility(done);
       } catch {
         toast.error(
           conv.isPinned
@@ -228,12 +234,10 @@ export default function AllConversationsScreen() {
           </Pressable>
           <View style={styles.rowActions}>
             <Pressable
-              onPress={() => handleTogglePin(conv)}
+              onPress={() => handleTogglePin(conv, displayTitle)}
               style={styles.rowAction}
               accessibilityRole="button"
-              accessibilityLabel={
-                conv.isPinned ? "Unpin conversation" : "Pin conversation"
-              }
+              accessibilityLabel={`${conv.isPinned ? "Unpin" : "Pin"} ${displayTitle}`}
             >
               <Feather
                 name="bookmark"
@@ -246,7 +250,7 @@ export default function AllConversationsScreen() {
               onPress={() => handleDelete(conv)}
               style={styles.rowAction}
               accessibilityRole="button"
-              accessibilityLabel="Delete conversation"
+              accessibilityLabel={`Delete ${displayTitle}`}
             >
               <Feather
                 name="trash-2"

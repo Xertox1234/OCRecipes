@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Pressable,
   StyleSheet,
@@ -67,6 +68,16 @@ export default function ChatStackNavigator() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // The error replaces the whole screen with no live region, so say it
+  // (both platforms), once each time the error state is entered.
+  const wasErrorRef = useRef(false);
+  useEffect(() => {
+    if (isPremiumStatusError && !wasErrorRef.current) {
+      AccessibilityInfo.announceForAccessibility(SUBSCRIPTION_ERROR_TEXT);
+    }
+    wasErrorRef.current = isPremiumStatusError;
+  }, [isPremiumStatusError]);
+
   const safeAreaStyle = {
     backgroundColor: theme.backgroundDefault,
     paddingTop: insets.top,
@@ -89,11 +100,11 @@ export default function ChatStackNavigator() {
     return (
       <View style={[styles.loadingContainer, safeAreaStyle]}>
         <Text style={[styles.errorText, { color: theme.textSecondary }]}>
-          Could not load your subscription status.
+          {SUBSCRIPTION_ERROR_TEXT}
         </Text>
         <Pressable
           onPress={refreshSubscription}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.retryButton}
           accessibilityRole="button"
           accessibilityLabel="Retry loading Coach"
         >
@@ -108,7 +119,11 @@ export default function ChatStackNavigator() {
   if (!isPremiumResolved) {
     return (
       <View style={[styles.loadingContainer, safeAreaStyle]}>
-        <ActivityIndicator size="large" color={theme.textSecondary} />
+        <ActivityIndicator
+          size="large"
+          color={theme.textSecondary}
+          accessibilityLabel="Loading Coach"
+        />
       </View>
     );
   }
@@ -187,7 +202,15 @@ export default function ChatStackNavigator() {
   );
 }
 
+const SUBSCRIPTION_ERROR_TEXT = "Could not load your subscription status.";
+
 const styles = StyleSheet.create({
+  // A real 44pt box, not hitSlop around the text.
+  retryButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
