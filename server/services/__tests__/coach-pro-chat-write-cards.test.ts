@@ -13,6 +13,7 @@ import { getBlocksSystemPrompt, parseBlocksFromContent } from "../coach-blocks";
 import {
   buildGoalsPayload,
   buildWriteCardPayload,
+  performWriteCardSave,
   planGroceryCard,
   planPantryCard,
 } from "../write-cards";
@@ -46,6 +47,7 @@ vi.mock("../../storage", () => ({
     getLiveWriteCard: vi.fn(),
     setWriteCardEdits: vi.fn(),
     createWriteCard: vi.fn(),
+    saveWriteCard: vi.fn(),
   },
 }));
 
@@ -62,8 +64,13 @@ vi.mock("../coach-prompt", () => ({
 vi.mock("../coach-blocks", () => ({
   parseBlocksFromContent: vi.fn(),
   BLOCKS_SYSTEM_PROMPT: "[BLOCKS]",
-  getBlocksSystemPrompt: vi.fn((_f: boolean, o?: { writeCards?: boolean }) =>
-    o?.writeCards ? "[BLOCKS+WRITE]" : "[BLOCKS]",
+  getBlocksSystemPrompt: vi.fn(
+    (_f: boolean, o?: { writeCards?: boolean; quickLog?: boolean }) =>
+      o?.writeCards
+        ? o.quickLog
+          ? "[BLOCKS+WRITE+QUICK]"
+          : "[BLOCKS+WRITE]"
+        : "[BLOCKS]",
   ),
   // The real rule: a user without the health consent gets no commitment card.
   dropCommitmentCards: (blocks: { type: string }[]) =>
@@ -76,6 +83,7 @@ vi.mock("../write-cards", async (orig) => ({
   planGroceryCard: vi.fn(),
   planPantryCard: vi.fn(),
   buildGoalsPayload: vi.fn(),
+  performWriteCardSave: vi.fn(),
 }));
 
 vi.mock("../notebook-extraction", () => ({
@@ -1088,5 +1096,176 @@ describe("handleCoachChat with write cards", () => {
       ),
     );
     expect(storage.createWriteCard).not.toHaveBeenCalled();
+  });
+
+  // Coach roadmap T2: a small food log the user typed is applied at once,
+  // with Undo, for an app that can show that ("quick_log").
+  describe("a small food log applied at once", () => {
+    const savedCard = () =>
+      createMockCoachWriteCard({
+        id: CARD_ID,
+        kind: "food",
+        payload: foodPayload,
+        status: "saved",
+        savedAt: new Date(),
+        savedRefs: { scannedItemIds: [9], loggedAtOnce: true },
+      });
+
+    beforeEach(() => {
+      vi.mocked(storage.saveWriteCard).mockResolvedValue({
+        status: "saved",
+        card: savedCard(),
+      });
+    });
+
+    const proposeOnce = (p: WriteCardProposal, seen: unknown[]) =>
+      async function* (
+        ...args: Parameters<typeof generateCoachProResponse>
+      ): AsyncGenerator<CoachProChunk> {
+        seen.push(await args[7]?.onWriteCardProposal?.(p));
+        const chunk: CoachProChunk = { type: "content", content: "Logged." };
+        yield chunk;
+      };
+
+    it("the tool hears it is logged, and the card arrives saved, with its receipt", async () => {
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, seen),
+      );
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+      );
+
+      expect(seen).toEqual([{ kind: "food", shown: true, loggedAtOnce: true }]);
+      expect(storage.saveWriteCard).toHaveBeenCalledWith(
+        CARD_ID,
+        "user-42",
+        expect.any(Function),
+        {},
+      );
+      const block = {
+        type: "write_card",
+        cardId: CARD_ID,
+        kind: "food",
+        payload: foodPayload,
+        status: "saved",
+        receipt: "✓ Logged to Breakfast · 144 cal",
+        loggedAtOnce: true,
+      };
+      expect(blocksEvent(events)?.blocks).toEqual([block]);
+      expect(vi.mocked(storage.createChatMessage).mock.calls[0][4]).toEqual({
+        blocks: [block],
+      });
+      // The prompt carries the rule for logs applied at once.
+      const context = vi.mocked(generateCoachProResponse).mock
+        .calls[0][1] as CoachContext;
+      expect(context.blocksPrompt).toBe("[BLOCKS+WRITE+QUICK]");
+    });
+
+    it("saves with the card's own contents and marks the save as applied at once", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, []),
+      );
+      vi.mocked(performWriteCardSave).mockResolvedValue({
+        scannedItemIds: [9],
+      });
+      await collect(
+        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+      );
+      const perform = vi.mocked(storage.saveWriteCard).mock.calls[0][2];
+      const tx = {} as Parameters<typeof perform>[0];
+      const card = createMockCoachWriteCard({ id: CARD_ID, kind: "food" });
+      await expect(perform(tx, card)).resolves.toEqual({
+        scannedItemIds: [9],
+        loggedAtOnce: true,
+      });
+      expect(performWriteCardSave).toHaveBeenCalledWith(
+        tx,
+        card,
+        {},
+        expect.objectContaining({ userId: "user-42", tz: "UTC" }),
+      );
+    });
+
+    it("a large log keeps the card for the user to save", async () => {
+      const big = {
+        ...foodPayload,
+        items: [{ ...foodPayload.items[0], count: 20 }],
+      };
+      vi.mocked(buildWriteCardPayload).mockResolvedValue(big);
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, seen),
+      );
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+      );
+      expect(seen).toEqual([{ kind: "food", shown: true }]);
+      expect(storage.saveWriteCard).not.toHaveBeenCalled();
+      expect(blocksEvent(events)?.blocks[0]).toMatchObject({ status: "live" });
+    });
+
+    it("an app that did not declare it keeps the card for the user to save", async () => {
+      const seen: unknown[] = [];
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, seen),
+      );
+      await collect(handleCoachChat(makeParams({ writeCards: true })));
+      expect(seen).toEqual([{ kind: "food", shown: true }]);
+      expect(storage.saveWriteCard).not.toHaveBeenCalled();
+      const context = vi.mocked(generateCoachProResponse).mock
+        .calls[0][1] as CoachContext;
+      expect(context.blocksPrompt).toBe("[BLOCKS+WRITE]");
+    });
+
+    it("only food: other cards still wait on Save", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposing({ kind: "grocery", args: groceryArgs }),
+      );
+      vi.mocked(storage.createWriteCard).mockResolvedValue({
+        card: createMockCoachWriteCard({
+          id: CARD_ID,
+          kind: "grocery",
+          payload: groceryPayload,
+        }),
+        previous: null,
+      });
+      await collect(
+        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+      );
+      expect(storage.saveWriteCard).not.toHaveBeenCalled();
+    });
+
+    it("a food card built only at the end of the turn waits on Save", async () => {
+      // The tool was told nothing about logging, so the reply never said so.
+      vi.mocked(buildWriteCardPayload)
+        .mockRejectedValueOnce(new Error("db down"))
+        .mockResolvedValueOnce(foodPayload);
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, []),
+      );
+      await collect(
+        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+      );
+      expect(storage.createWriteCard).toHaveBeenCalled();
+      expect(storage.saveWriteCard).not.toHaveBeenCalled();
+    });
+
+    it("a save that fails leaves the card for the user to save, and is logged", async () => {
+      vi.mocked(storage.saveWriteCard).mockRejectedValue(new Error("db down"));
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        proposeOnce({ kind: "food", args: foodArgs }, []),
+      );
+      const events = await collect(
+        handleCoachChat(makeParams({ writeCards: true, quickLog: true })),
+      );
+      const block = blocksEvent(events)?.blocks[0];
+      expect(block).toMatchObject({ status: "live" });
+      expect(block).not.toHaveProperty("loggedAtOnce");
+      expect(svcLog.error).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "food" }),
+        expect.stringMatching(/logged at once/),
+      );
+    });
   });
 });

@@ -395,6 +395,22 @@ describe("write-card prompt rules", () => {
     );
   });
 
+  // Coach roadmap T2: for an app that can show a log applied at once.
+  it("quickLog lets the reply say a small log was logged, and warns against logging it twice", () => {
+    const quick = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      quickLog: true,
+    });
+    expect(quick).toMatch(
+      /log_food_item result says the food is already logged/,
+    );
+    expect(quick).toMatch(/would log it twice/);
+    // Without it, never: the card waits on the user's tap.
+    const plain = getBlocksSystemPrompt(false, { writeCards: true });
+    expect(plain).not.toMatch(/already logged/);
+    expect(plain).toMatch(/never say something was logged or added/);
+  });
+
   it("is today's prompt without writeCards", () => {
     expect(getBlocksSystemPrompt(false)).toBe(BLOCKS_SYSTEM_PROMPT);
     expect(getBlocksSystemPrompt(false, { writeCards: false })).toBe(

@@ -151,6 +151,26 @@ export async function buildFoodPayload(
   };
 }
 
+/**
+ * A food log small enough to apply at once, with Undo, rather than wait on
+ * the card's Save (Coach roadmap T2): up to three foods and 1000 kcal in all.
+ * Anything bigger (a whole day's eating, a feast) keeps the card the user
+ * checks first. Only a log the user typed in the chat is applied at once; a
+ * photo, label or barcode read always waits on Save, so the user can check
+ * the numbers against the food.
+ */
+const SMALL_LOG_MAX_ITEMS = 3;
+const SMALL_LOG_MAX_CALORIES = 1000;
+
+export function isSmallFoodLog(payload: FoodCardPayload): boolean {
+  if (payload.items.length > SMALL_LOG_MAX_ITEMS) return false;
+  const total = payload.items.reduce(
+    (sum, it) => sum + it.count * it.perUnit.calories,
+    0,
+  );
+  return total <= SMALL_LOG_MAX_CALORIES;
+}
+
 function parseFoodEdits(p: FoodCardPayload, raw: unknown): FoodCardEdits {
   const parsed = foodEditsSchema.safeParse(raw ?? {});
   if (!parsed.success) {

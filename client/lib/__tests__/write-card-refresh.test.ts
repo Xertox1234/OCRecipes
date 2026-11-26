@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { writeCardRefreshKeys } from "../write-card-refresh";
+import {
+  arrivedSavedRefreshKeys,
+  writeCardRefreshKeys,
+} from "../write-card-refresh";
 
 describe("writeCardRefreshKeys", () => {
   it("a food card refreshes the diary and the day's totals", () => {
@@ -49,5 +52,32 @@ describe("writeCardRefreshKeys", () => {
 
   it("an unknown kind refreshes nothing extra", () => {
     expect(writeCardRefreshKeys(undefined)).toEqual([]);
+  });
+});
+
+// Coach roadmap T2: a reply can arrive with a food log already applied.
+describe("arrivedSavedRefreshKeys", () => {
+  const card = (over: Record<string, unknown>) =>
+    ({
+      type: "write_card",
+      cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+      kind: "food",
+      payload: { items: [], mealType: "breakfast", day: "today" },
+      status: "saved",
+      ...over,
+    }) as Parameters<typeof arrivedSavedRefreshKeys>[0][number];
+
+  it("refreshes the diary and totals for a log applied at once", () => {
+    expect(arrivedSavedRefreshKeys([card({ loggedAtOnce: true })])).toEqual(
+      writeCardRefreshKeys("food"),
+    );
+  });
+
+  it("nothing for a card still waiting on Save, or other blocks", () => {
+    expect(arrivedSavedRefreshKeys([card({ status: "live" })])).toEqual([]);
+    expect(
+      arrivedSavedRefreshKeys([{ type: "quick_replies", options: [] }]),
+    ).toEqual([]);
+    expect(arrivedSavedRefreshKeys([])).toEqual([]);
   });
 });

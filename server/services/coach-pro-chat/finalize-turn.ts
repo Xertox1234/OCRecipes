@@ -7,7 +7,9 @@ import { filterAllergyCards } from "../allergy-cards";
 import { dropCommitmentCards, parseBlocksFromContent } from "../coach-blocks";
 import { buildTrail } from "../coach-step-labels";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
-import { createWriteCardBlock } from "./write-card-context";
+import { createWriteCardBlock, logCardAtOnce } from "./write-card-context";
+import { isSmallFoodLog } from "../write-cards/food";
+import type { FoodCardPayload } from "@shared/schemas/coach-write-cards";
 import { deliverOfferToolCall, persistCoachReply } from "./offer-delivery";
 import { extractAndStoreNotebook } from "./notebook";
 import type { TurnContext } from "./load-turn-context";
@@ -77,7 +79,22 @@ async function proReplyBlocks(
       reply.writeCardPrepared,
     );
     if (card) {
-      blocks = [...blocks, card];
+      // Coach roadmap T2: a small food log the user typed is applied at
+      // once, with Undo. Only a card worked out during the tool call: that
+      // tool result told the model it was logged, so the reply says so.
+      const prepared = reply.writeCardPrepared;
+      const logNow =
+        params.quickLog &&
+        card.type === "write_card" &&
+        card.kind === "food" &&
+        prepared !== null &&
+        isSmallFoodLog(prepared as FoodCardPayload);
+      blocks = [
+        ...blocks,
+        logNow && card.type === "write_card"
+          ? await logCardAtOnce(card, { userId, tz: turn.tz })
+          : card,
+      ];
       wroteCard = true;
     }
   }

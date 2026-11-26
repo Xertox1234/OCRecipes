@@ -31,6 +31,7 @@ const {
   performFoodSave,
   revertFoodSave,
   logFoodCardArgsSchema,
+  isSmallFoodLog,
 } = await import("../food");
 const { WriteCardEditError } = await import("../errors");
 
@@ -421,5 +422,52 @@ describe("performFoodSave / revertFoodSave", () => {
       }),
     );
     expect(await logsFor()).toHaveLength(0);
+  });
+});
+
+// Coach roadmap T2: a small log is applied at once, with Undo, instead of
+// waiting on the card's Save.
+describe("isSmallFoodLog", () => {
+  const item = (calories: number, count = 1) => ({
+    name: "Large eggs",
+    unitLabel: "egg",
+    perUnit: { calories, protein: 6, carbs: 0, fat: 5 },
+    count,
+    source: "estimate" as const,
+  });
+  const payload = (items: FoodCardPayload["items"]): FoodCardPayload => ({
+    items,
+    mealType: "breakfast",
+    day: "today",
+  });
+
+  it("is small for a few foods with a modest total", () => {
+    expect(isSmallFoodLog(payload([item(72, 2)]))).toBe(true);
+    expect(isSmallFoodLog(payload([item(300), item(200), item(100)]))).toBe(
+      true,
+    );
+  });
+
+  it("counts every unit toward the total", () => {
+    // 6 x 200 = 1200 kcal: a large log, even as one line.
+    expect(isSmallFoodLog(payload([item(200, 6)]))).toBe(false);
+    expect(isSmallFoodLog(payload([item(200, 5)]))).toBe(true);
+  });
+
+  it("is not small past three foods", () => {
+    expect(
+      isSmallFoodLog(payload([item(50), item(50), item(50), item(50)])),
+    ).toBe(false);
+  });
+
+  it("is not small past 1000 kcal", () => {
+    expect(isSmallFoodLog(payload([item(600), item(401)]))).toBe(false);
+    expect(isSmallFoodLog(payload([item(600), item(400)]))).toBe(true);
+  });
+
+  it("logs for yesterday too", () => {
+    expect(
+      isSmallFoodLog({ ...payload([item(72, 2)]), day: "yesterday" }),
+    ).toBe(true);
   });
 });

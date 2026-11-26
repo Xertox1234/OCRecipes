@@ -45,6 +45,22 @@ export async function expireAllergyCards(
 /** Server undo window — the UI shows Undo for 6 s; this absorbs latency. */
 export const WRITE_CARD_UNDO_WINDOW_MS = 60_000;
 
+/**
+ * A small food log applied at once (Coach roadmap T2) was never tapped: the
+ * user may only see its card once they read the reply. Longer, so Undo is
+ * still there when they do.
+ */
+export const LOGGED_AT_ONCE_UNDO_WINDOW_MS = 5 * 60_000;
+
+/** Whether a saved card can still be undone at `now`. */
+export function undoWindowOpen(card: CoachWriteCard, now: Date): boolean {
+  if (card.status !== "saved" || !card.savedAt) return false;
+  const window = card.savedRefs?.loggedAtOnce
+    ? LOGGED_AT_ONCE_UNDO_WINDOW_MS
+    : WRITE_CARD_UNDO_WINDOW_MS;
+  return now.getTime() - card.savedAt.getTime() <= window;
+}
+
 export async function createWriteCard(input: {
   userId: string;
   conversationId: number;
@@ -215,9 +231,7 @@ export async function undoWriteCard(
     if (!card) return { status: "not_found" };
     if (card.status !== "saved" || !card.savedAt)
       return { status: "not_saved" };
-    if (now.getTime() - card.savedAt.getTime() > WRITE_CARD_UNDO_WINDOW_MS) {
-      return { status: "too_late" };
-    }
+    if (!undoWindowOpen(card, now)) return { status: "too_late" };
 
     await revert(tx, card);
 

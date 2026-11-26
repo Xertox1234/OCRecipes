@@ -78,6 +78,7 @@ import {
   useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
+import { arrivedSavedRefreshKeys } from "@/lib/write-card-refresh";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -460,6 +461,11 @@ export default function CoachChat({
       const liveBlocks = (blocks ?? []).filter(
         (b) => !isFinderBlockType(b.type),
       );
+      // A small food log the Coach applied at once (T2): the day's totals
+      // and the diary change with no Save tap to refresh them.
+      for (const queryKey of arrivedSavedRefreshKeys(liveBlocks)) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
       if (liveBlocks.length > 0) {
         setStreamBlocksBaseline(lastAssistantIdRef.current);
         setStreamBlocks(liveBlocks);

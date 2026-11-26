@@ -33,6 +33,7 @@ const {
   saveWriteCard,
   undoWriteCard,
   getWriteCardsByIds,
+  undoWindowOpen,
 } = await import("../coach-write-cards");
 
 const foodPayload: FoodCardPayload = {
@@ -364,6 +365,38 @@ describe("coach-write-cards storage", () => {
     );
     expect(result.status).toBe("too_late");
     expect(revert).not.toHaveBeenCalled();
+  });
+
+  // Coach roadmap T2: a log applied at once was never tapped, so the user
+  // may only notice it a while later. It keeps Undo for 5 minutes.
+  it("a log applied at once can be undone for 5 minutes, then too_late", async () => {
+    const { card } = await create();
+    await saveWriteCard(card.id, user.id, async () => ({
+      scannedItemIds: [],
+      loggedAtOnce: true,
+    }));
+    const saved = await getWriteCard(card.id, user.id);
+    const at = (ms: number) => new Date(saved!.savedAt!.getTime() + ms);
+    expect(undoWindowOpen(saved!, at(4 * 60_000))).toBe(true);
+    expect(undoWindowOpen(saved!, at(5 * 60_000 + 1))).toBe(false);
+    const revert = vi.fn(async () => {});
+    expect(
+      (await undoWriteCard(card.id, user.id, revert, at(6 * 60_000))).status,
+    ).toBe("too_late");
+    expect(revert).not.toHaveBeenCalled();
+    expect(
+      (await undoWriteCard(card.id, user.id, revert, at(4 * 60_000))).status,
+    ).toBe("undone");
+    expect(revert).toHaveBeenCalledTimes(1);
+  });
+
+  it("a tapped save keeps the 60 s window", async () => {
+    const { card } = await create();
+    await saveWriteCard(card.id, user.id, async () => ({}));
+    const saved = await getWriteCard(card.id, user.id);
+    const at = (ms: number) => new Date(saved!.savedAt!.getTime() + ms);
+    expect(undoWindowOpen(saved!, at(59_000))).toBe(true);
+    expect(undoWindowOpen(saved!, at(61_000))).toBe(false);
   });
 
   it("undo of a live card is not_saved", async () => {

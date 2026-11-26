@@ -7,6 +7,8 @@ import type { CoachContext } from "../coach-prompt";
 import {
   buildWriteCardPayload,
   describeLiveCard,
+  performWriteCardSave,
+  writeCardReceiptFor,
   WriteCardEditError,
   type WriteCardProposal,
 } from "../write-cards";
@@ -30,11 +32,13 @@ export async function applyWriteCardContext(
     conversationId: number;
     userId: string;
     liveCard?: { cardId: string; edits: Record<string, unknown> };
+    quickLog?: boolean;
   },
 ): Promise<void> {
   context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled(), {
     writeCards: true,
     notesPaused: context.notesPaused,
+    ...(a.quickLog && { quickLog: true }),
   });
   if (a.liveCard) {
     const card = await storage.getWriteCard(a.liveCard.cardId, a.userId);
@@ -95,5 +99,59 @@ export async function createWriteCardBlock(
       log.error(fields, "coach write card not built");
     }
     return null;
+  }
+}
+
+/**
+ * Coach roadmap T2: saves a small food card at once, as the user's Save tap
+ * would (the card's own contents, no edits), and marks the save so Undo
+ * stays open longer. Returns the block as saved, with its receipt, or the
+ * live block unchanged (logged) when the save fails: the user can still tap
+ * Save.
+ */
+export async function logCardAtOnce(
+  block: Extract<CoachBlock, { type: "write_card" }>,
+  a: { userId: string; tz: string },
+): Promise<CoachBlock> {
+  try {
+    const result = await storage.saveWriteCard(
+      block.cardId,
+      a.userId,
+      async (tx, card) => ({
+        ...(await performWriteCardSave(
+          tx,
+          card,
+          {},
+          {
+            userId: a.userId,
+            tz: a.tz,
+            now: new Date(),
+          },
+        )),
+        loggedAtOnce: true,
+      }),
+      {},
+    );
+    if (result.status !== "saved") {
+      log.warn(
+        { kind: block.kind, status: result.status },
+        "coach write card not logged at once",
+      );
+      return block;
+    }
+    return {
+      ...block,
+      status: "saved",
+      receipt: writeCardReceiptFor(result.card),
+      loggedAtOnce: true,
+    };
+  } catch (err) {
+    // The reply says the food was logged, and it was not: Sentry should see
+    // it. The card still offers Save. Never log the payload.
+    log.error(
+      { err: toError(err), kind: block.kind },
+      "coach write card not logged at once",
+    );
+    return block;
   }
 }

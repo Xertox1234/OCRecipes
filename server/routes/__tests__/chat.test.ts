@@ -18,6 +18,7 @@ import {
 import { generateRecipeChatResponse } from "../../services/recipe-chat";
 import { STANDARD_SAFETY_MESSAGE } from "../../services/coach-pro-chat";
 import { register } from "../chat";
+import { getBlocksSystemPrompt } from "../../services/coach-blocks";
 import { findCommunity } from "../../services/recipe-finder/find-community";
 import { findInspired } from "../../services/recipe-finder/find-inspired";
 import { classifyTurn } from "../../services/recipe-finder/classify-turn";
@@ -795,6 +796,13 @@ describe("Chat Routes", () => {
       mockStreamingSetup();
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
       expect((await send({ cardKinds: ["plan_shop"] })).status).toBe(200);
+      // 'quick_log' (T2): a small typed food log is applied at once.
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect((await send({ cardKinds: ["quick_log"] })).status).toBe(200);
+      expect(vi.mocked(getBlocksSystemPrompt).mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({ writeCards: true, quickLog: true }),
+      );
     });
 
     it("rejects a card kind it does not know (400)", async () => {

@@ -53,6 +53,11 @@ export interface CoachChatParams {
   planShopCard?: boolean;
   /** Allergy card (Coach roadmap T1): the app declared it can draw the card. */
   allergyCard?: boolean;
+  /**
+   * Coach roadmap T2: the app can show a food card that arrives already
+   * logged, with Undo. A small typed food log is then applied at once.
+   */
+  quickLog?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {

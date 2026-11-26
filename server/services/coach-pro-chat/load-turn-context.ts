@@ -51,6 +51,8 @@ export async function loadTurnContext(
   params: CoachChatParams,
   a: {
     writeCards: boolean;
+    /** A small typed food log is applied at once (T2). */
+    quickLog?: boolean;
     intent: CoachIntent;
     /** History the finder gate already read, if any. */
     finderHistory?: ChatMessage[];
@@ -121,7 +123,12 @@ export async function loadTurnContext(
   });
 
   if (a.writeCards) {
-    await applyWriteCardContext(context, { conversationId, userId, liveCard });
+    await applyWriteCardContext(context, {
+      conversationId,
+      userId,
+      liveCard,
+      quickLog: a.quickLog,
+    });
   }
 
   let messageHistory: PromptMessage[] = history.map((m) => ({

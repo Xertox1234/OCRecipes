@@ -1,6 +1,7 @@
 import { GOALS_QUERY_KEY } from "@/hooks/useCalorieGoal";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import type { WriteCardKind } from "@shared/schemas/coach-write-cards";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const GROCERY_LISTS = ["/api/meal-plan/grocery-lists"] as const;
 
@@ -44,4 +45,18 @@ export function writeCardRefreshKeys(
     default:
       return [];
   }
+}
+
+/**
+ * Coach roadmap T2: a reply's blocks can carry a food log the Coach already
+ * applied (no Save tap ran its refresh). The queries to refresh when such a
+ * reply arrives; none otherwise.
+ */
+export function arrivedSavedRefreshKeys(
+  blocks: readonly CoachBlock[],
+): readonly (readonly string[])[] {
+  const logged = blocks.some(
+    (b) => b.type === "write_card" && b.loggedAtOnce && b.status === "saved",
+  );
+  return logged ? writeCardRefreshKeys("food") : [];
 }

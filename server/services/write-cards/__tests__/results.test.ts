@@ -68,4 +68,20 @@ describe("foodCardResult", () => {
   it("falls back to the plain message when the card is built later", () => {
     expect(foodCardResult(undefined)).toMatchObject({ card_shown: true });
   });
+
+  // Coach roadmap T2: a small log is applied at once, with Undo.
+  it("says a small log was logged at once and can be undone", () => {
+    const result = foodCardResult({
+      kind: "food",
+      shown: true,
+      loggedAtOnce: true,
+    });
+    expect(result.card_shown).toBe(true);
+    expect(result.message).toMatch(/already logged/);
+    expect(result.message).toMatch(/Undo/);
+    // Never the "nothing has been saved" wording of a card waiting on Save.
+    expect(result.message).not.toMatch(/Nothing has been saved/);
+    // A second call would log the food twice.
+    expect(result.message).toMatch(/twice/);
+  });
 });

@@ -131,6 +131,13 @@ const WRITE_CARDS_RULES = [
   "- Food can be logged for today or yesterday only; for an earlier day, tell the user to use Quick Log on the Home screen.",
 ].join("\n");
 
+/**
+ * Coach roadmap T2: an app that shows a food log applied at once. The rule
+ * above still holds for every other card; this one names the exception.
+ */
+const QUICK_LOG_RULE =
+  "- When a log_food_item result says the food is already logged, say it was logged and that the user can tap Undo on its card. To change a food that is already logged, ask the user to tap Undo on its card first, or to edit it in their log: calling log_food_item again would log it twice.";
+
 const COMMITMENT_CARD_LINE =
   '- commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }';
 const NOTES_PAUSED_RULE =
@@ -148,7 +155,13 @@ export function dropCommitmentCards(blocks: CoachBlock[]): CoachBlock[] {
  */
 export function getBlocksSystemPrompt(
   finderEnabled: boolean,
-  opts: { offer?: boolean; writeCards?: boolean; notesPaused?: boolean } = {},
+  opts: {
+    offer?: boolean;
+    writeCards?: boolean;
+    notesPaused?: boolean;
+    /** The app shows a small food log applied at once (T2). */
+    quickLog?: boolean;
+  } = {},
 ): string {
   const withCards = blocksPromptFor(finderEnabled, opts);
   if (!opts.notesPaused) return withCards;
@@ -164,7 +177,7 @@ export function getBlocksSystemPrompt(
 
 function blocksPromptFor(
   finderEnabled: boolean,
-  opts: { offer?: boolean; writeCards?: boolean },
+  opts: { offer?: boolean; writeCards?: boolean; quickLog?: boolean },
 ): string {
   const base = !finderEnabled
     ? BLOCKS_SYSTEM_PROMPT
@@ -175,8 +188,8 @@ function blocksPromptFor(
       ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
   if (!opts.writeCards) return base;
   // Appended to the Rules list (before the example), never replacing a rule.
-  return base.replace(
-    "\n\nExample response",
-    `\n${WRITE_CARDS_RULES}\n\nExample response`,
-  );
+  const rules = opts.quickLog
+    ? `${WRITE_CARDS_RULES}\n${QUICK_LOG_RULE}`
+    : WRITE_CARDS_RULES;
+  return base.replace("\n\nExample response", `\n${rules}\n\nExample response`);
 }

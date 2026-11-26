@@ -29,7 +29,11 @@ import {
   type WriteCardOutcome,
   type WriteCardProposal,
 } from "../write-cards";
-import type { WriteCardPayload } from "@shared/schemas/coach-write-cards";
+import type {
+  FoodCardPayload,
+  WriteCardPayload,
+} from "@shared/schemas/coach-write-cards";
+import { isSmallFoodLog } from "../write-cards/food";
 import { createServiceLogger, toError } from "../../lib/logger";
 import type { TurnContext } from "./load-turn-context";
 import type { CoachChatEvent, CoachChatParams } from "./types";
@@ -59,6 +63,8 @@ interface StreamArgs {
   goalsCard: boolean;
   /** The app can draw the plan card's shopping section (A1). */
   planShopCard: boolean;
+  /** A small typed food log is applied at once, with Undo (T2). */
+  quickLog?: boolean;
 }
 
 function emptyReply(): ReplyResult {
@@ -172,7 +178,12 @@ async function* streamProReply(
               });
               reply.writeCardProposal = proposal;
               reply.writeCardPrepared = payload;
-              if (p.kind === "food") return { kind: "food", shown: true };
+              if (p.kind === "food") {
+                // The same test finalizeTurn makes before it logs the card.
+                return a.quickLog && isSmallFoodLog(payload as FoodCardPayload)
+                  ? { kind: "food", shown: true, loggedAtOnce: true }
+                  : { kind: "food", shown: true };
+              }
               const rows = "rows" in payload ? payload.rows : [];
               return {
                 kind: "plan",

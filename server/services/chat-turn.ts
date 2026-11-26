@@ -61,7 +61,7 @@ export interface TurnInput {
     /** Coach write cards (spec 2026-11-09). */
     writeCards?: true;
     /** Card kinds beyond the first three that this app can draw. */
-    cardKinds?: ("pantry" | "goals" | "allergy" | "plan_shop")[];
+    cardKinds?: ("pantry" | "goals" | "allergy" | "plan_shop" | "quick_log")[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
   userMessage: ChatMessage;
@@ -480,6 +480,8 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     goalsCard: !!ctx.body.cardKinds?.includes("goals"),
     allergyCard: !!ctx.body.cardKinds?.includes("allergy"),
     planShopCard: !!ctx.body.cardKinds?.includes("plan_shop"),
+    // Coach roadmap T2: the app shows a food log applied at once, with Undo.
+    quickLog: !!ctx.body.cardKinds?.includes("quick_log"),
     liveCard: ctx.body.liveCard,
     turnKey: coachTurnKey,
     isCoachPro: !!features.coachPro,
