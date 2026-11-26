@@ -58,15 +58,47 @@ vi.mock("@/hooks/useCoachStream", async () => {
   };
 });
 
-const { messagesHolder, mockOpenCoachConversation } = vi.hoisted(() => ({
+const {
+  messagesHolder,
+  mockOpenCoachConversation,
+  mockCreate,
+  mockDisclaimerDismissed,
+  captured,
+} = vi.hoisted(() => ({
   messagesHolder: { messages: [] as unknown[] },
   mockOpenCoachConversation: vi.fn(),
+  mockCreate: vi.fn(),
+  mockDisclaimerDismissed: vi.fn(),
+  // Raw Pressable props by accessibilityLabel: the shared mock drops style.
+  captured: {} as Record<string, Record<string, unknown>>,
 }));
 
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const ReactMod = await import("react");
+  const Capturing = ReactMod.forwardRef<unknown, Record<string, unknown>>(
+    (props, ref) => {
+      const label = props.accessibilityLabel as string | undefined;
+      if (label) captured[label] = props;
+      return ReactMod.createElement(
+        actual.Pressable as React.ComponentType<Record<string, unknown>>,
+        { ...props, ref },
+      );
+    },
+  );
+  Capturing.displayName = "Pressable";
+  return { ...actual, Pressable: Capturing };
+});
+
+beforeEach(() => {
+  mockCreate.mockReset();
+  mockCreate.mockResolvedValue({ id: 9 });
+  mockDisclaimerDismissed.mockReset();
+  mockDisclaimerDismissed.mockResolvedValue(true);
+});
+
 vi.mock("@/hooks/useChat", () => ({
-  useCreateConversation: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({ id: 9 }),
-  }),
+  useCreateConversation: () => ({ mutateAsync: mockCreate }),
   useChatMessages: () => ({ data: messagesHolder.messages }),
 }));
 
@@ -88,7 +120,7 @@ vi.mock("@/hooks/useAcknowledgeReminders", () => ({
 }));
 
 vi.mock("@/lib/coach-disclaimer-storage", () => ({
-  isCoachDisclaimerDismissed: vi.fn().mockResolvedValue(true),
+  isCoachDisclaimerDismissed: () => mockDisclaimerDismissed(),
   setCoachDisclaimerDismissed: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -542,5 +574,66 @@ describe("CoachOverlayContent — the reply and the question are not lost", () =
     });
     const input = await screen.findByLabelText("Type a follow-up question");
     expect(reactProps(input).value).toBe("");
+  });
+});
+
+function boxOf(label: string): Record<string, unknown> {
+  const props = captured[label];
+  expect(props, `no Pressable captured for "${label}"`).toBeDefined();
+  const style = props.style;
+  const list = Array.isArray(style) ? style.flat(3) : [style];
+  return Object.assign({}, ...list.filter(Boolean));
+}
+
+// Coach chat audit 2026-11-24 L7 and L8.
+describe("CoachOverlayContent — failure and dismiss controls", () => {
+  const renderIt = () =>
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+
+  // L7: the screen swapped to an error with no announcement; a screen-reader
+  // user heard "Starting conversation..." and then nothing.
+  it("announces a failed start, and its Retry is a 44pt target", async () => {
+    mockCreate.mockRejectedValueOnce(new Error("offline"));
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderIt();
+    await screen.findByText("Could not start conversation");
+    expect(announce).toHaveBeenCalledWith("Could not start conversation");
+    expect(
+      boxOf("Retry starting conversation").minHeight as number,
+    ).toBeGreaterThanOrEqual(44);
+    announce.mockRestore();
+  });
+
+  it("announces a failed retry too", async () => {
+    mockCreate
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockRejectedValueOnce(new Error("still offline"));
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderIt();
+    await screen.findByText("Could not start conversation");
+    announce.mockClear();
+    fireEvent.click(screen.getByLabelText("Retry starting conversation"));
+    await waitFor(() =>
+      expect(announce).toHaveBeenCalledWith("Could not start conversation"),
+    );
+    announce.mockRestore();
+  });
+
+  // L8: a 16pt icon with hitSlop 12, which Android clips to the banner.
+  it("the disclaimer's dismiss is a real 44pt box", async () => {
+    mockDisclaimerDismissed.mockResolvedValue(false);
+    renderIt();
+    await screen.findByLabelText("Dismiss disclaimer");
+    const props = captured["Dismiss disclaimer"];
+    expect(props.hitSlop).toBeUndefined();
+    const box = boxOf("Dismiss disclaimer");
+    expect(box.minWidth as number).toBeGreaterThanOrEqual(44);
+    expect(box.minHeight as number).toBeGreaterThanOrEqual(44);
   });
 });

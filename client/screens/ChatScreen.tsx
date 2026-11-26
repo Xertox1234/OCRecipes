@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   AccessibilityInfo,
+  type ScrollView,
   type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
@@ -59,6 +60,8 @@ import {
   useCreateConversation,
 } from "@/hooks/useChat";
 import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
+import { JumpToLatestButton } from "@/components/coach/JumpToLatestButton";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { viewCoachConversation } from "@/hooks/useCoachUnreadReplies";
 import { useShowsCoachPro } from "@/hooks/useShowsCoachPro";
@@ -373,6 +376,15 @@ function ChatSkeleton() {
  * — on a cold link, where the Coach stack holds only this Chat — replaces
  * Chat with it.
  */
+/** FlatList's native scroll ref is typed as a View or a ScrollView. */
+function isScrollView(ref: unknown): ref is ScrollView {
+  return (
+    typeof ref === "object" &&
+    ref !== null &&
+    typeof (ref as { scrollToEnd?: unknown }).scrollToEnd === "function"
+  );
+}
+
 export default function ChatScreen() {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
@@ -502,6 +514,18 @@ function PlainChatScreen() {
 
   const [inputText, setInputText] = useState("");
   const flatListRef = useRef<FlatList>(null);
+  const { reducedMotion } = useAccessibility();
+  // Follow the newest message only while the reader is at the end, so
+  // scrolling up to reread is not undone by every streamed token, and no
+  // animated scroll for Reduced Motion (the same hook as CoachChat).
+  const stickToBottom = useStickToBottom(
+    () => {
+      const scrollView = flatListRef.current?.getNativeScrollRef();
+      return isScrollView(scrollView) ? scrollView : null;
+    },
+    { reducedMotion },
+  );
+  const { followLatest } = stickToBottom;
   const inputRef = useRef<TextInputInstance>(null);
   const composerFocus = useFieldFocus();
 
@@ -530,8 +554,20 @@ function PlainChatScreen() {
     assistantMessageCount: (messages || []).filter(
       (m) => m.role === "assistant",
     ).length,
-    announce: { message: "Coach response received", always: true },
+    // Success only: a dropped stream has no reply to announce, and its
+    // error toast must not be talked over.
+    announce: { message: "Coach response received" },
   });
+
+  // Say the send was taken and Coach is working, once per reply (the
+  // footer's "thinking" row is not a live region).
+  const wasStreamingRef = useRef(false);
+  useEffect(() => {
+    if (isStreaming && !wasStreamingRef.current) {
+      AccessibilityInfo.announceForAccessibility("Coach is thinking...");
+    }
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
   useEffect(() => {
     if (streamError && !shownStreamErrorRef.current) {
@@ -560,12 +596,16 @@ function PlainChatScreen() {
     }
   }, [requestError, requestErrorCode, isPremium, toast]);
 
+  // This screen stays mounted when the Coach tab re-points it at another
+  // conversation: that one opens at its newest message.
   useEffect(() => {
-    if (!isStreaming) return;
-    requestAnimationFrame(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    });
-  }, [isStreaming]);
+    followLatest();
+  }, [validConversationId, followLatest]);
+
+  // A new reply is the user's own send: bring them to the end for it.
+  useEffect(() => {
+    if (isStreaming) followLatest();
+  }, [isStreaming, followLatest]);
 
   // The messages query isn't refetched until the reply finishes, so the
   // text just sent is held locally until the saved copy lands. Keyed on the
@@ -911,37 +951,47 @@ function PlainChatScreen() {
           }
         />
       ) : (
-        <FlatList
-          ref={flatListRef}
-          data={displayMessages}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={
-            shownBrief && !messages?.length ? (
-              <OpeningBrief
-                brief={shownBrief}
-                onSend={handlePromptSelect}
-                onQuickLog={handleBriefQuickLog}
-                onDismiss={(type) => {
-                  acknowledgeType(type).catch(() => undefined);
-                }}
-              />
-            ) : undefined
-          }
-          ListFooterComponent={streamingFooter ?? undefined}
-          contentContainerStyle={[
-            styles.messagesContent,
-            { paddingTop: headerInset },
-          ]}
-          keyboardDismissMode="interactive"
-          {...FLATLIST_DEFAULTS}
-          onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }}
-          onLayout={() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }}
-        />
+        // The jump control floats over the list's own bottom edge, not the
+        // input bar, so the list gets a box of its own.
+        <View style={styles.listArea}>
+          <FlatList
+            ref={flatListRef}
+            data={displayMessages}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={
+              shownBrief && !messages?.length ? (
+                <OpeningBrief
+                  brief={shownBrief}
+                  onSend={handlePromptSelect}
+                  onQuickLog={handleBriefQuickLog}
+                  onDismiss={(type) => {
+                    acknowledgeType(type).catch(() => undefined);
+                  }}
+                />
+              ) : undefined
+            }
+            ListFooterComponent={streamingFooter ?? undefined}
+            contentContainerStyle={[
+              styles.messagesContent,
+              { paddingTop: headerInset },
+            ]}
+            keyboardDismissMode="interactive"
+            {...FLATLIST_DEFAULTS}
+            onContentSizeChange={stickToBottom.onContentSizeChange}
+            onScroll={stickToBottom.onScroll}
+            onScrollBeginDrag={stickToBottom.onScrollBeginDrag}
+            onScrollEndDrag={stickToBottom.onScrollEndDrag}
+            onMomentumScrollBegin={stickToBottom.onMomentumScrollBegin}
+            onMomentumScrollEnd={stickToBottom.onMomentumScrollEnd}
+            onLayout={stickToBottom.onLayout}
+            scrollEventThrottle={32}
+          />
+          <JumpToLatestButton
+            visible={stickToBottom.showJumpToLatest}
+            onPress={stickToBottom.jumpToLatest}
+          />
+        </View>
       )}
 
       {/* Input bar */}
@@ -1020,6 +1070,7 @@ function PlainChatScreen() {
 }
 
 const styles = StyleSheet.create({
+  listArea: { flex: 1 },
   proBadge: {
     marginLeft: Spacing.xs,
     paddingHorizontal: Spacing.xs,

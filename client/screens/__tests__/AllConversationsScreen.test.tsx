@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, screen, fireEvent } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import AllConversationsScreen from "../AllConversationsScreen";
 import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
@@ -258,12 +258,39 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
     renderComponent(<AllConversationsScreen />);
     const open = screen.getByLabelText("Open conversation: Meal prep");
 
-    expect(open.contains(screen.getByLabelText("Pin conversation"))).toBe(
+    expect(open.contains(screen.getByLabelText("Pin Meal prep"))).toBe(false);
+    expect(open.contains(screen.getByLabelText("Delete Meal prep"))).toBe(
       false,
     );
-    expect(open.contains(screen.getByLabelText("Delete conversation"))).toBe(
-      false,
+  });
+
+  // Audit 2026-11-24 L13: every row's buttons were "Pin conversation" and
+  // "Delete conversation", so a screen-reader user could not tell which row
+  // a destructive control belonged to; a pin moved the row silently.
+  it("names the conversation on its pin and delete buttons", () => {
+    mockUseChatConversations.mockReturnValue({
+      data: [conv(9, "Meal prep"), { ...conv(10, "Snacks"), isPinned: true }],
+      isLoading: false,
+    });
+    renderComponent(<AllConversationsScreen />);
+    expect(screen.getByLabelText("Delete Meal prep")).toBeTruthy();
+    expect(screen.getByLabelText("Delete Snacks")).toBeTruthy();
+    expect(screen.getByLabelText("Unpin Snacks")).toBeTruthy();
+  });
+
+  it("says a pin happened", async () => {
+    const RN = await import("react-native");
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    mockUseChatConversations.mockReturnValue({
+      data: [conv(9, "Meal prep")],
+      isLoading: false,
+    });
+    renderComponent(<AllConversationsScreen />);
+    fireEvent.click(screen.getByLabelText("Pin Meal prep"));
+    await waitFor(() =>
+      expect(announce).toHaveBeenCalledWith("Pinned Meal prep"),
     );
+    announce.mockRestore();
   });
 });
 
