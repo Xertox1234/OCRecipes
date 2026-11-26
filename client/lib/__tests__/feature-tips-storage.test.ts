@@ -8,6 +8,10 @@ import {
   clearFeatureTipsState,
   isFeatureTipsReady,
   onFeatureTipsReady,
+  getExampleViewCount,
+  incrementExampleViewCount,
+  shouldShowExampleCard,
+  EXAMPLE_CARD_SHOWS,
 } from "../feature-tips-storage";
 
 const store = vi.hoisted(() => new Map<string, string>());
@@ -109,5 +113,96 @@ describe("feature-tips-storage", () => {
     expect(JSON.parse(store.get("@ocrecipes_feature_tips")!).seen).toContain(
       "home-scan",
     );
+  });
+  describe("scan example cards", () => {
+    it("getExampleViewCount is 0 for an unseen key", () => {
+      expect(getExampleViewCount("barcode")).toBe(0);
+    });
+
+    it("incrementExampleViewCount persists and returns the new count", async () => {
+      expect(await incrementExampleViewCount("barcode")).toBe(1);
+      expect(await incrementExampleViewCount("barcode")).toBe(2);
+      expect(getExampleViewCount("barcode")).toBe(2);
+      expect(getExampleViewCount("barcode-front")).toBe(0);
+      expect(
+        JSON.parse(store.get("@ocrecipes_feature_tips")!).exampleViews,
+      ).toEqual({ barcode: 2 });
+
+      await initFeatureTipsCache("1");
+      expect(getExampleViewCount("barcode")).toBe(2);
+    });
+
+    it("shouldShowExampleCard is true for counts 0-2 and false at 3", async () => {
+      expect(EXAMPLE_CARD_SHOWS).toBe(3);
+      for (let i = 0; i < 3; i++) {
+        expect(shouldShowExampleCard("barcode-nutrition")).toBe(true);
+        await incrementExampleViewCount("barcode-nutrition");
+      }
+      expect(shouldShowExampleCard("barcode-nutrition")).toBe(false);
+    });
+
+    it("shouldShowExampleCard is null before the cache is ready", async () => {
+      await clearFeatureTipsState();
+      expect(shouldShowExampleCard("barcode")).toBeNull();
+    });
+
+    it("an old saved blob without exampleViews loads with {}", async () => {
+      store.set(
+        "@ocrecipes_feature_tips",
+        JSON.stringify({
+          owner: "1",
+          seen: ["home-scan"],
+          used: [],
+          typedLogs: 1,
+        }),
+      );
+      await initFeatureTipsCache("1");
+      expect(hasSeenTip("home-scan")).toBe(true);
+      expect(getExampleViewCount("barcode")).toBe(0);
+      await incrementExampleViewCount("barcode");
+      expect(
+        JSON.parse(store.get("@ocrecipes_feature_tips")!).exampleViews,
+      ).toEqual({ barcode: 1 });
+    });
+
+    it("clearFeatureTipsState resets exampleViews", async () => {
+      await incrementExampleViewCount("barcode");
+      await clearFeatureTipsState();
+      await initFeatureTipsCache("1");
+      expect(getExampleViewCount("barcode")).toBe(0);
+    });
+
+    it("a second account on the same phone does not inherit exampleViews", async () => {
+      await incrementExampleViewCount("barcode");
+      await initFeatureTipsCache("2");
+      expect(getExampleViewCount("barcode")).toBe(0);
+      expect(shouldShowExampleCard("barcode")).toBe(true);
+    });
+
+    it("a count taken while loading is added to the saved count", async () => {
+      await clearFeatureTipsState();
+      store.set(
+        "@ocrecipes_feature_tips",
+        JSON.stringify({
+          owner: "1",
+          seen: [],
+          used: [],
+          typedLogs: 0,
+          exampleViews: { barcode: 2 },
+        }),
+      );
+      const loading = initFeatureTipsCache("1");
+      await incrementExampleViewCount("barcode");
+      await loading;
+      expect(getExampleViewCount("barcode")).toBe(3);
+      expect(
+        JSON.parse(store.get("@ocrecipes_feature_tips")!).exampleViews,
+      ).toEqual({ barcode: 3 });
+    });
+
+    it("the carousel flag is a normal tip id", async () => {
+      await markTipSeen("scan-tips-carousel");
+      expect(hasSeenTip("scan-tips-carousel")).toBe(true);
+    });
   });
 });
