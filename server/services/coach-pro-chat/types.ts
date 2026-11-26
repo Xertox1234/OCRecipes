@@ -64,6 +64,11 @@ export interface CoachChatParams {
    * logged, with Undo. A small typed food log is then applied at once.
    */
   quickLog?: boolean;
+  /**
+   * Coach roadmap T3: the app can draw a day progress card, which names a
+   * day and re-reads its numbers.
+   */
+  dayProgressCard?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {
