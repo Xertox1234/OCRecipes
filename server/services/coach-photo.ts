@@ -31,12 +31,10 @@ import {
   loadBarcodeScanContext,
 } from "./barcode-scan-context";
 import { buildScanResponseFlags } from "./scan-flags";
-import { parseServingGrams, type BarcodeLookupResult } from "./barcode-lookup";
-import { UpstreamUnavailableError } from "./usda-lookup";
+import type { BarcodeLookupResult } from "./barcode-lookup";
 import type { ProfileOutcome } from "./scan-flags";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
 import { logger, toError } from "../lib/logger";
-import { sanitizeContextField } from "../lib/ai-safety";
 import { batchNutritionLookup, type NutritionData } from "./nutrition-lookup";
 import { portionNutrition } from "./portion-nutrition";
 import { inferMealTimeHint } from "../lib/meal-time-hint";
@@ -63,10 +61,10 @@ export {
 const MAX_CARD_ITEMS = 8;
 const MAX_LOOKUP_FOODS = 12;
 const MAX_NAME = 200;
-const MAX_UNIT_LABEL = 60;
+export const MAX_UNIT_LABEL = 60;
 
 type PhotoFood = Pick<FoodItem, "name" | "quantity" | "lookupName" | "grams">;
-type CardItem = FoodCardPayload["items"][number];
+export type CardItem = FoodCardPayload["items"][number];
 
 const lookupKey = (f: PhotoFood) => f.lookupName ?? f.name;
 
@@ -210,10 +208,10 @@ const LABEL_UNSURE_TEXT =
 // A label photo shows no ingredients list the Coach can check. Said only to
 // a user who has allergies on their profile, or whose profile could not be
 // read (fail-dangerous, as on a scan).
-const LABEL_ALLERGY_TEXT =
+export const LABEL_ALLERGY_TEXT =
   " I can't check ingredients from a label photo, so read the pack for your allergies.";
 /** A row the food card's rules refuse: numbers out of range, or text it screens out. */
-const ROW_REFUSED_TEXT =
+export const ROW_REFUSED_TEXT =
   "I couldn't turn that into something I can log. Tell me what it was and how much you had, and I'll log it for you.";
 const BARCODE_UNREAD_TEXT =
   "I can see a barcode but couldn't read its number. Try again closer and straight on, or send a photo of the nutrition label.";
@@ -237,7 +235,7 @@ const LOOKUP_PLACEHOLDER_NAME = "Unknown Product";
 // is the outcome of the check for this user (a match, or no check possible).
 const ALLERGEN_MATCH_TEXT =
   " Allergy check: this product may contain something on your allergy list. Read the pack before you eat it.";
-const ALLERGEN_UNCHECKED_TEXT =
+export const ALLERGEN_UNCHECKED_TEXT =
   " I couldn't check this product against your allergies, so read the pack.";
 
 /**
@@ -257,10 +255,10 @@ export function hasValidCheckDigit(code: string): boolean {
   return (10 - (sum % 10)) % 10 === check;
 }
 
-const round1 = (n: number) => Math.round(n * 10) / 10;
+export const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** One card row for a packaged food, or null when the card's rules refuse it. */
-function packagedFoodRow(
+export function packagedFoodRow(
   rawName: string,
   rawUnitLabel: string,
   perUnit: CardItem["perUnit"],
@@ -272,7 +270,7 @@ function packagedFoodRow(
   return { name, unitLabel, perUnit, count: 1, source: "lookup" };
 }
 
-function onePackagedFood(
+export function onePackagedFood(
   item: CardItem,
   ctx: { tz: string; now: Date },
 ): FoodCardPayload {
@@ -334,82 +332,8 @@ export function labelPhotoReply(
   };
 }
 
-const PHONE_LABEL_TEXT =
-  "I read that label on your phone, per serving. Check it against the pack, set how many servings you had, then log it.";
-
-/** The numbers the app's text reader took from a nutrition label (Coach roadmap V5). */
-export interface PhoneLabelRead {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  servingSize: string;
-}
-
-// A barcode scanned with its label read on the phone (the scanner's label
-// step): the name is the product's, the numbers are the pack's own.
-const BARCODE_LABEL_TEXT =
-  "I found this product from its barcode and used the numbers from your label. Check it's the right one, set how many servings you had, then log it.";
-const BARCODE_UNKNOWN_LABEL_TEXT =
-  "I couldn't find that product from its barcode, so I used the numbers from your label. Check them against the pack, set how many servings you had, then log it.";
-// The label is far from what the barcode's product makes: likely another
-// pack, so the card keeps the label's numbers but not the product's name.
-const BARCODE_MISMATCH_LABEL_TEXT =
-  "Your label's numbers don't match what I have for this barcode, so I left the product's name off. Check you scanned the right pack, set how many servings you had, then log it.";
-const BARCODE_DOWN_LABEL_TEXT =
-  "I couldn't look that product up just now, so I used the numbers from your label. Check them against the pack, set how many servings you had, then log it.";
-
-/** The one-serving row a label read on the phone makes, under `name`. */
-function phoneLabelRow(read: PhoneLabelRead, name: string): CardItem | null {
-  const serving = sanitizeContextField(read.servingSize, 200)
-    .replace(/\s+/g, " ")
-    .trim();
-  const withServing = serving ? `1 serving (${serving})` : "1 serving";
-  return packagedFoodRow(
-    name,
-    withServing.length <= MAX_UNIT_LABEL ? withServing : serving,
-    {
-      calories: round1(read.calories),
-      protein: round1(read.protein),
-      carbs: round1(read.carbs),
-      fat: round1(read.fat),
-    },
-  );
-}
-
-/**
- * A nutrition label the phone read itself, as a one-serving card. No model
- * reads anything: the numbers are the user's own phone's reading, as trusted
- * as numbers the user types, and the card's own limits still apply. The
- * panel shows no product name, so the row is "Packaged food".
- */
-export function phoneLabelReply(
-  read: PhoneLabelRead,
-  profileOutcome: ProfileOutcome,
-  ctx: { tz: string; now: Date },
-  /** What the reply opens with; the plain label wording by default. */
-  lead: string = PHONE_LABEL_TEXT,
-): PhotoReply {
-  const item = phoneLabelRow(read, "");
-  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
-  const allergyCheckOwed =
-    !profileOutcome.ok || profileOutcome.allergies.length > 0;
-  return {
-    payload: onePackagedFood(item, ctx),
-    text: lead + (allergyCheckOwed ? LABEL_ALLERGY_TEXT : ""),
-  };
-}
-
-/** The Coach's answer to a label the phone read, with the allergy reminder a label photo gets. */
-export async function scannedLabelReply(
-  read: PhoneLabelRead,
-  ctx: { tz: string; now: Date; userId: string },
-): Promise<PhotoReply> {
-  return phoneLabelReply(read, await loadAllergyProfile(ctx.userId), ctx);
-}
-
 /** The product's allergy line for a barcode reply, or "". */
-function barcodeAllergyText(
+export function barcodeAllergyText(
   product: BarcodeLookupResult,
   profileOutcome: ProfileOutcome,
 ): string {
@@ -429,73 +353,10 @@ function barcodeAllergyText(
       : "";
 }
 
-function productDisplayName(product: BarcodeLookupResult): string {
+export function productDisplayName(product: BarcodeLookupResult): string {
   const productName =
     product.productName === LOOKUP_PLACEHOLDER_NAME ? "" : product.productName;
   return [product.brandName, productName].filter(Boolean).join(" ");
-}
-
-// How far the label's calories per 100 g may sit from the product's before
-// the label is taken to be another pack's: a ratio band, plus a floor in
-// kcal so near-zero foods (diet drinks, broth) are not flagged on rounding.
-const FIT_RATIO_MIN = 0.7;
-const FIT_RATIO_MAX = 1.4;
-const FIT_KCAL_100G_FLOOR = 25;
-
-/**
- * Whether the label read plausibly belongs to the barcode's product. Compared
- * per 100 g, since the label's serving and the database's need not match;
- * true when either side gives nothing to compare.
- */
-function labelFitsProduct(
-  read: PhoneLabelRead,
-  product: BarcodeLookupResult,
-): boolean {
-  const grams = parseServingGrams(read.servingSize);
-  const known = product.per100g.calories;
-  if (!grams || known === undefined) return true;
-  const label = (read.calories / grams) * 100;
-  if (Math.abs(label - known) <= FIT_KCAL_100G_FLOOR) return true;
-  if (known <= 0) return false;
-  const ratio = label / known;
-  return ratio >= FIT_RATIO_MIN && ratio <= FIT_RATIO_MAX;
-}
-
-/**
- * A barcode scanned together with its nutrition label read on the phone: the
- * card is named from the product and carries the label's numbers, which are
- * the pack in the user's hand. An unknown product still gets a card, from the
- * label alone.
- */
-export function barcodeWithLabelReply(
-  product: BarcodeLookupResult | null,
-  profileOutcome: ProfileOutcome,
-  read: PhoneLabelRead,
-  ctx: { tz: string; now: Date },
-): PhotoReply {
-  if (!product) {
-    return phoneLabelReply(
-      read,
-      profileOutcome,
-      ctx,
-      BARCODE_UNKNOWN_LABEL_TEXT,
-    );
-  }
-  if (!labelFitsProduct(read, product)) {
-    // Neither the name nor its allergen data is trusted for this pack.
-    return phoneLabelReply(
-      read,
-      profileOutcome,
-      ctx,
-      BARCODE_MISMATCH_LABEL_TEXT,
-    );
-  }
-  const item = phoneLabelRow(read, productDisplayName(product));
-  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
-  return {
-    payload: onePackagedFood(item, ctx),
-    text: BARCODE_LABEL_TEXT + barcodeAllergyText(product, profileOutcome),
-  };
 }
 
 /** A product found by its barcode, as a one-serving card. */
@@ -597,40 +458,4 @@ export async function buildPhotoReply(
     if (menu) return menu;
   }
   return mealPhotoReply(imageBase64, ctx);
-}
-
-/**
- * The Coach's answer to a barcode the app's camera read: the same lookup,
- * card and allergy check as a barcode in a photo, with no model in the way.
- * A lookup outage is answered in words; any other failure rejects.
- */
-export async function scannedBarcodeReply(
-  code: string,
-  ctx: { tz: string; now: Date; userId: string },
-  /** The pack's nutrition label, read on the phone in the scanner's label step. */
-  label?: PhoneLabelRead,
-): Promise<PhotoReply> {
-  try {
-    const { result, profileOutcome } = await loadBarcodeScanContext(
-      code,
-      ctx.userId,
-    );
-    return label
-      ? barcodeWithLabelReply(result, profileOutcome, label, ctx)
-      : barcodePhotoReply(result, profileOutcome, ctx);
-  } catch (err) {
-    // Every source errored: an outage, not an unknown product.
-    if (err instanceof UpstreamUnavailableError) {
-      if (label) {
-        return phoneLabelReply(
-          label,
-          await loadAllergyProfile(ctx.userId),
-          ctx,
-          BARCODE_DOWN_LABEL_TEXT,
-        );
-      }
-      return { payload: null, text: BARCODE_LOOKUP_DOWN_TEXT };
-    }
-    throw err;
-  }
 }

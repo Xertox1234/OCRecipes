@@ -8,6 +8,7 @@ import {
   loadAllergyProfile,
   loadBarcodeScanContext,
 } from "../barcode-scan-context";
+import { analyzeFrontLabel } from "../front-label-analysis";
 import type { BarcodeLookupResult } from "../barcode-lookup";
 import { UpstreamUnavailableError } from "../usda-lookup";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
@@ -20,12 +21,15 @@ import {
   buildPhotoReply,
   hasValidCheckDigit,
   photoFoodsToCardItems,
-  scannedBarcodeReply,
-  phoneLabelReply,
-  scannedLabelReply,
   photoReplyText,
   COACH_PHOTO_USER_TEXT,
 } from "../coach-photo";
+import {
+  scannedBarcodeReply,
+  scannedBarcodeFrontReply,
+  phoneLabelReply,
+  scannedLabelReply,
+} from "../coach-scan-reply";
 import { foodCardPayloadSchema } from "@shared/schemas/coach-write-cards";
 
 vi.mock("../photo-analysis", () => ({
@@ -38,6 +42,7 @@ vi.mock("../barcode-scan-context", () => ({
   loadAllergyProfile: vi.fn(),
 }));
 vi.mock("../nutrition-lookup", () => ({ batchNutritionLookup: vi.fn() }));
+vi.mock("../front-label-analysis", () => ({ analyzeFrontLabel: vi.fn() }));
 vi.mock("../coach-receipt-photo", () => ({ receiptPhotoReply: vi.fn() }));
 vi.mock("../coach-menu-photo", () => ({ menuPhotoReply: vi.fn() }));
 
@@ -926,6 +931,188 @@ describe("scannedBarcodeReply with the label read on the phone", () => {
     });
     expect(reply.text).toMatch(/couldn't look/i);
     expect(reply.text).not.toMatch(/try again/i);
+  });
+});
+
+describe("scannedBarcodeReply with the label and the front of the pack", () => {
+  const read = {
+    calories: 120,
+    protein: 3,
+    carbs: 16,
+    fat: 5,
+    servingSize: "1 cup (240 ml)",
+  };
+  const front = (over: Record<string, unknown> = {}) => ({
+    brand: "Kind",
+    productName: "Dark Chocolate Nuts",
+    netWeight: "40g",
+    claims: [],
+    allergenStatements: [] as string[],
+    confidence: 0.9,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("names an unknown product from the front", async () => {
+    scanContext(null);
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front(),
+    );
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Kind Dark Chocolate Nuts",
+      perUnit: { calories: 120, protein: 3, carbs: 16, fat: 5 },
+    });
+    expect(reply.text).toMatch(/front of the pack/i);
+  });
+
+  it("warns when the front's allergy statement names an allergy on the list", async () => {
+    scanContext(null, [{ name: "peanuts", severity: "severe" }]);
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front({ allergenStatements: ["Contains: peanuts, soy"] }),
+    );
+    expect(reply.text).toMatch(/allergy check/i);
+    // The allergen itself is never named in the stored reply.
+    expect(reply.text).not.toMatch(/peanut/i);
+  });
+
+  it("never calls an unmatched or missing statement safe", async () => {
+    scanContext(null, [{ name: "milk", severity: "severe" }]);
+    const none = await scannedBarcodeReply("4006381333931", ctx, read, front());
+    expect(none.text).toMatch(/read the (full )?ingredients/i);
+    expect(none.text).not.toMatch(/allergy check/i);
+    const other = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front({ allergenStatements: ["Contains: soy"] }),
+    );
+    expect(other.text).toMatch(/read the (full )?ingredients/i);
+    expect(other.text).not.toMatch(/safe|free of/i);
+  });
+
+  it("says nothing about allergies to a user who has none", async () => {
+    scanContext(null);
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front({ allergenStatements: ["Contains: milk"] }),
+    );
+    expect(reply.text).not.toMatch(/allerg|ingredients/i);
+  });
+
+  it("names a mismatched label from the front", async () => {
+    scanContext(product());
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      { ...read, calories: 360, carbs: 60, fat: 9 },
+      front(),
+    );
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Kind Dark Chocolate Nuts",
+    });
+  });
+
+  it("names the card from the front when the lookup is down", async () => {
+    vi.mocked(loadBarcodeScanContext).mockRejectedValue(
+      new UpstreamUnavailableError(),
+    );
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: [],
+    });
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front(),
+    );
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Kind Dark Chocolate Nuts",
+    });
+  });
+
+  it("keeps the product's own name and allergy data when it was found and fits", async () => {
+    scanContext(product());
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front(),
+    );
+    expect(reply.payload?.items[0]).toMatchObject({ name: "Oatly Oat Drink" });
+  });
+
+  it("falls back to Packaged food when the front shows no name", async () => {
+    scanContext(null);
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front({ brand: null, productName: null }),
+    );
+    expect(reply.payload?.items[0]).toMatchObject({ name: "Packaged food" });
+  });
+});
+
+describe("scannedBarcodeFrontReply (the front photo sent with the scan)", () => {
+  const read = {
+    calories: 120,
+    protein: 3,
+    carbs: 16,
+    fat: 5,
+    servingSize: "1 cup (240 ml)",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reads the front with its allergen lines and names the card from it", async () => {
+    scanContext(null);
+    vi.mocked(analyzeFrontLabel).mockResolvedValue({
+      brand: "Kind",
+      productName: "Dark Chocolate Nuts",
+      netWeight: "40g",
+      claims: [],
+      allergenStatements: [],
+      confidence: 0.9,
+    });
+    const reply = await scannedBarcodeFrontReply(
+      "4006381333931",
+      "base64front",
+      ctx,
+      read,
+    );
+    expect(analyzeFrontLabel).toHaveBeenCalledWith("base64front", {
+      allergens: true,
+    });
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Kind Dark Chocolate Nuts",
+    });
+  });
+
+  it("still answers from the label, and says so, when the front can't be read", async () => {
+    scanContext(null);
+    vi.mocked(analyzeFrontLabel).mockRejectedValue(new Error("model down"));
+    const reply = await scannedBarcodeFrontReply(
+      "4006381333931",
+      "base64front",
+      ctx,
+      read,
+    );
+    expect(reply.payload?.items[0]).toMatchObject({ name: "Packaged food" });
+    expect(reply.text).toMatch(/couldn't read the front/i);
   });
 });
 

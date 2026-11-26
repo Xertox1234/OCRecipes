@@ -41,6 +41,8 @@ import { isRecipeOfferEnabled } from "../services/recipe-finder";
 import {
   scannedBarcodeReply,
   scannedLabelReply,
+} from "../services/coach-scan-reply";
+import {
   photoCardProposal,
   BARCODE_LOOKUP_DOWN_TEXT,
   COACH_BARCODE_USER_TEXT,

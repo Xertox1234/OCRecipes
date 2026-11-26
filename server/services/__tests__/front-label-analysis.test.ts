@@ -163,6 +163,84 @@ describe("front-label-analysis", () => {
       expect(result.claims).toEqual(["Valid Claim", "Another Valid"]);
     });
 
+    describe("with allergens (the Coach's front-of-pack step)", () => {
+      it("asks for the printed allergen statements, at high detail", async () => {
+        mockVisionResponse({
+          brand: "Kind",
+          productName: "Dark Chocolate Nuts",
+          netWeight: "40g",
+          claims: [],
+          allergenStatements: ["Contains: peanuts, almonds, soy"],
+          confidence: 0.9,
+        });
+        const result = await analyzeFrontLabel("base64data", {
+          allergens: true,
+        });
+        expect(result.allergenStatements).toEqual([
+          "Contains: peanuts, almonds, soy",
+        ]);
+        const body = mockCreate.mock.calls[0][1];
+        expect(body.messages[0].content).toMatch(/allergenStatements/);
+        expect(body.messages[0].content).toMatch(/exactly as printed/i);
+        expect(body.messages[0].content).toMatch(/do not infer/i);
+        const image = body.messages[1].content.find(
+          (c: { type: string }) => c.type === "image_url",
+        );
+        // Allergen lines are small print.
+        expect(image.image_url.detail).toBe("high");
+      });
+
+      it("reads a missing allergen list as none printed", async () => {
+        mockVisionResponse({
+          brand: "Kind",
+          productName: null,
+          netWeight: null,
+          claims: [],
+          confidence: 0.6,
+        });
+        const result = await analyzeFrontLabel("base64data", {
+          allergens: true,
+        });
+        expect(result.allergenStatements).toEqual([]);
+      });
+
+      it("caps and trims the statements", async () => {
+        mockVisionResponse({
+          brand: null,
+          productName: null,
+          netWeight: null,
+          claims: [],
+          allergenStatements: [
+            "  ",
+            "x".repeat(500),
+            ...Array.from({ length: 30 }, (_, i) => `May contain ${i}`),
+          ],
+          confidence: 0.6,
+        });
+        const result = await analyzeFrontLabel("base64data", {
+          allergens: true,
+        });
+        expect(result.allergenStatements?.length).toBeLessThanOrEqual(10);
+        expect(result.allergenStatements?.[0]).toHaveLength(200);
+      });
+
+      it("leaves the default read without them", async () => {
+        mockVisionResponse({
+          brand: null,
+          productName: null,
+          netWeight: null,
+          claims: [],
+          allergenStatements: ["Contains: milk"],
+          confidence: 0.6,
+        });
+        const result = await analyzeFrontLabel("base64data");
+        expect(result.allergenStatements).toBeUndefined();
+        expect(mockCreate.mock.calls[0][1].messages[0].content).not.toMatch(
+          /allergenStatements/,
+        );
+      });
+    });
+
     it("uses detail: low for cost efficiency", async () => {
       mockVisionResponse({
         brand: "Test",
