@@ -511,6 +511,19 @@ export function sanitizeContextField(text: string, maxLen = 1500): string {
   return s.trim();
 }
 
+/**
+ * sanitizeContextField for a value the prompt writes on one line (a name, a
+ * diet type, a goal). Line breaks become a space first: with them, a food
+ * dislike could open what looked like a new system-prompt section (audit
+ * 2026-11-24, L88). Multi-line fields keep using sanitizeContextField.
+ */
+export function sanitizeSingleLineField(text: string, maxLen = 200): string {
+  return sanitizeContextField(
+    text.replace(/[\r\n\u000B\u000C\u0085\u2028\u2029]+/g, " "),
+    maxLen,
+  );
+}
+
 /** System prompt boundary instruction to append to AI system prompts. */
 export const SYSTEM_PROMPT_BOUNDARY =
   "IMPORTANT SAFETY RULES:\n" +

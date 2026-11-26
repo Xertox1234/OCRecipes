@@ -133,7 +133,7 @@ const DISORDERED_EATING_RE = new RegExp(
  * some keyboards put inside words. One inside "suicide" broke every match
  * (audit 2026-11-24, L17).
  */
-const INVISIBLE_CHARS_RE = /[­᠎​-‏⁠-⁤﻿]/g;
+const INVISIBLE_CHARS_RE = /[\u00AD\u180E\u200B-\u200F\u2060-\u2064\uFEFF]/g;
 
 /**
  * The text the safety patterns read: NFKC (full-width letters become plain

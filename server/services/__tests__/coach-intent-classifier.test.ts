@@ -779,7 +779,7 @@ describe("matchesSelfHarm", () => {
 // Coach chat audit 2026-11-24 L17: a zero-width character or soft hyphen
 // inside a keyword (pasted text, some keyboards) broke every safety match.
 describe("safety matching ignores invisible and look-alike characters", () => {
-  const ZW = ["​", "‌", "‍", "⁠", "­", "﻿"];
+  const ZW = ["\u200B", "\u200C", "\u200D", "\u2060", "\u00AD", "\uFEFF"];
   it.each(ZW)(
     "routes suicide split by U+%s to safety and the crisis message",
     (ch) => {
@@ -801,9 +801,9 @@ describe("safety matching ignores invisible and look-alike characters", () => {
   });
 
   it("leaves an ordinary message with a zero-width character ordinary", () => {
-    expect(classifyIntent("is oat​ milk ok for breakfast").intent).not.toBe(
-      "safety_refusal",
-    );
+    expect(
+      classifyIntent("is oat\u200B milk ok for breakfast").intent,
+    ).not.toBe("safety_refusal");
   });
 });
 
