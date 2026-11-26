@@ -9,26 +9,15 @@ import {
 } from "@shared/schema";
 import type { ChatMessageReportReason } from "@shared/constants/chat-message-report";
 import { db } from "../db";
-import {
-  eq,
-  desc,
-  and,
-  gte,
-  lt,
-  sql,
-  inArray,
-  ilike,
-  isNull,
-} from "drizzle-orm";
+import { eq, desc, and, gte, sql, inArray, ilike, isNull } from "drizzle-orm";
 import { escapeLike } from "./helpers";
 import {
   ConversationLimitError,
   MAX_CONVERSATIONS_PER_USER,
 } from "./chat-errors";
-import { quotaDayBounds } from "./quota-day";
 import { fireAndForget } from "../lib/fire-and-forget";
 import {
-  countCoachClaimsToday,
+  countCoachMessagesToday,
   countMessageClaimsToday,
   countRecipeGenerationsToday,
   lockUser,
@@ -502,8 +491,6 @@ export async function createChatMessageWithLimitCheck(
       return null;
     }
 
-    const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
-
     // The claim this message records once it is inserted.
     let claimKind: MessageClaimKind;
 
@@ -551,39 +538,10 @@ export async function createChatMessageWithLimitCheck(
       }
       claimKind = "recipe_message";
     } else {
-      // Coach type — per-message counting
-      const conditions = [
-        eq(chatConversations.userId, userId),
-        eq(chatMessages.role, "user"),
-        gte(chatMessages.createdAt, startOfDay),
-        lt(chatMessages.createdAt, endOfDay),
-      ];
-      if (conversationType) {
-        conditions.push(eq(chatConversations.type, conversationType));
-      }
-      if (opts?.excludeFinderTaps) {
-        conditions.push(
-          sql`coalesce(${chatMessages.metadata}->>'finderInput', 'false') <> 'true'`,
-        );
-      }
-
-      const countResult = await tx
-        .select({ count: sql<number>`count(*)` })
-        .from(chatMessages)
-        .innerJoin(
-          chatConversations,
-          eq(chatMessages.conversationId, chatConversations.id),
-        )
-        .where(and(...conditions));
-
-      // Never below today's claims: deleting a message or its conversation
-      // does not hand the slot back (audit 2026-11-24, H4).
-      const currentCount = Math.max(
-        Number(countResult[0]?.count ?? 0),
-        await countCoachClaimsToday(tx, userId, {
-          includeTaps: !opts?.excludeFinderTaps,
-        }),
-      );
+      // Coach: the same count as a finder tap (chat-quota.ts).
+      const currentCount = await countCoachMessagesToday(tx, userId, {
+        excludeFinderTaps: opts?.excludeFinderTaps === true,
+      });
       if (currentCount >= dailyLimit) {
         return null;
       }

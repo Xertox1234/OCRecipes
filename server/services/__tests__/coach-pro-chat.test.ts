@@ -2642,6 +2642,36 @@ describe("handleCoachChat — recipe finder (Coach Pro, flag on)", () => {
     );
   });
 
+  // L133: the opening brief saved before the turn is not an earlier turn.
+  it("auto-titles a new chat whose first message goes to the finder after the brief", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        content: "Good afternoon.",
+        metadata: { kind: "opening_brief" },
+      }),
+      createMockChatMessage({
+        role: "user",
+        content: "Find me a chicken recipe",
+      }),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          finder,
+          turnKey: "11111111-2222-4333-8444-555555555556",
+        }),
+      ),
+    );
+    expect(generateCoachProResponse).not.toHaveBeenCalled();
+    expect(storage.updateChatConversationTitle).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "Find me a chicken recipe",
+    );
+  });
+
   it("flag off (no finder param): a recipe_request keeps its legacy prompt intent", async () => {
     await collectEvents(handleCoachChat(makeParams({ content: "meal ideas" })));
     // 6th arg of generateCoachProResponse is the intent.

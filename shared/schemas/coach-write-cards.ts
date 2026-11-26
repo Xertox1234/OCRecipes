@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mealTypeSchema } from "../constants/meal-types";
 import {
   allergenIdSchema,
   allergySeveritySchema,
@@ -33,12 +34,7 @@ export const WRITE_CARD_STATUSES = [
 ] as const;
 export type WriteCardStatus = (typeof WRITE_CARD_STATUSES)[number];
 
-export const writeCardMealTypeSchema = z.enum([
-  "breakfast",
-  "lunch",
-  "dinner",
-  "snack",
-]);
+export const writeCardMealTypeSchema = mealTypeSchema;
 export type WriteCardMealType = z.infer<typeof writeCardMealTypeSchema>;
 
 export const writeCardDaySchema = z.enum(["today", "yesterday"]);

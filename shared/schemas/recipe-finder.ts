@@ -3,6 +3,7 @@
 // RecipeChef (message metadata `finder`) and Coach Pro (a `blocks[]` entry).
 import { z } from "zod";
 import { COOKING_TIME_IDS } from "../constants/cooking-times";
+import { mealTypeSchema } from "../constants/meal-types";
 import { SUGGESTION_DESCRIPTION_MAX } from "./inspired-recipes";
 
 /** Max rows in one finder list (D3: 3–5 close matches). */
@@ -20,7 +21,7 @@ export const recipeQuerySchema = z.object({
   cuisine: z.string().trim().min(1).max(50).optional(),
   diet: z.string().trim().min(1).max(50).optional(),
   maxPrepTime: z.number().int().positive().max(1440).optional(),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
+  mealType: mealTypeSchema.optional(),
 });
 export type RecipeQuery = z.infer<typeof recipeQuerySchema>;
 

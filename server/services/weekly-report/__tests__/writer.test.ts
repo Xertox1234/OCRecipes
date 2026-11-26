@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { aiChat } from "../../../lib/ai-client";
 import { buildWeeklyReportMessages, writeWeeklyReport } from "../writer";
 import { buildWeeklyFacts } from "../facts";
-import { isBestWeek, templateContent } from "../text-guard";
+import { BANNED_WORDS, isBestWeek, templateContent } from "../text-guard";
 import { logger } from "../../../lib/logger";
 import type { WeeklyFacts } from "@shared/schemas/coach-weekly-report";
 
@@ -214,6 +214,17 @@ describe("writeWeeklyReport", () => {
 });
 
 describe("buildWeeklyReportMessages", () => {
+  // L135: one list for the prompt and the guard, so they cannot drift.
+  it("tells the model every word the guard bans", () => {
+    const system = String(buildWeeklyReportMessages(facts())[0].content);
+    const line = system
+      .split("\n")
+      .find((l) => l.startsWith("- Never use these words"));
+    for (const word of BANNED_WORDS) {
+      expect(line).toContain(word.includes(" ") ? `"${word}"` : word);
+    }
+  });
+
   it("passes the facts as JSON, never the coach messages, with titles sanitised", () => {
     const msgs = buildWeeklyReportMessages(facts());
     const all = msgs.map((m) => String(m.content)).join("\n");
