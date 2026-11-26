@@ -92,7 +92,11 @@ describe("weekly-reports storage", () => {
     });
 
     it("claims delivery once", async () => {
-      const r = await wr.insertWeeklyReport(user.id, row("2026-11-01"));
+      // A push claim needs a waiting push, as every sender claim has.
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-08T18:00:00Z") }),
+      );
       expect(await wr.claimWeeklyReportDelivery(user.id, r!.id, "push")).toBe(
         true,
       );
@@ -159,8 +163,92 @@ describe("weekly-reports storage", () => {
       const list = await wr.getDuePushes(new Date("2026-11-08T19:00:00Z"));
       const mine = list.filter((p) => p.userId === user.id);
       expect(mine).toEqual([
-        { userId: user.id, id: due!.id, headline: content.headline },
+        {
+          userId: user.id,
+          id: due!.id,
+          headline: content.headline,
+          pushEnabled: true,
+        },
       ]);
+    });
+
+    // Audit 2026-11-24 L95: a push can be waiting on a row inserted after the
+    // user turned pushes off; the sender must see the current setting.
+    it("a due push carries the user's current push setting", async () => {
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-08T18:00:00Z") }),
+      );
+      const at = new Date("2026-11-08T19:00:00Z");
+      const find = async () =>
+        (await wr.getDuePushes(at)).find((p) => p.id === r!.id);
+      // No settings row: pushes are on by default (control).
+      expect((await find())?.pushEnabled).toBe(true);
+      await tx.insert(schema.coachWeeklyReportSettings).values({
+        userId: user.id,
+        reportEnabled: true,
+        pushEnabled: false,
+      });
+      expect((await find())?.pushEnabled).toBe(false);
+    });
+
+    it("cancelling a waiting push hands the report to the popup", async () => {
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-08T18:00:00Z") }),
+      );
+      expect(await wr.getPendingPopup(user.id)).toBeNull();
+      await wr.cancelWeeklyReportPush(user.id, r!.id);
+      expect((await wr.getPendingPopup(user.id))?.id).toBe(r!.id);
+    });
+
+    // Audit 2026-11-24 L112: after the newest report is delivered, an older
+    // undelivered one must not pop up or be pushed as "Your week is ready".
+    it("only the newest report can pop up or be pushed", async () => {
+      const older = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-10-25", { pushDueAt: new Date("2026-11-01T18:00:00Z") }),
+      );
+      const newer = await wr.insertWeeklyReport(user.id, row("2026-11-01"));
+      expect((await wr.getPendingPopup(user.id))?.id).toBe(newer!.id);
+      await wr.claimWeeklyReportDelivery(user.id, newer!.id, "popup");
+      expect(await wr.getPendingPopup(user.id)).toBeNull();
+      const due = await wr.getDuePushes(new Date("2026-11-09T00:00:00Z"));
+      expect(due.find((p) => p.id === older!.id)).toBeUndefined();
+    });
+
+    it("an older report still pops up while it is the newest (control)", async () => {
+      const only = await wr.insertWeeklyReport(user.id, row("2026-10-25"));
+      expect((await wr.getPendingPopup(user.id))?.id).toBe(only!.id);
+    });
+
+    // Audit 2026-11-24 L65: a push claim with no send recorded is stranded if
+    // the process died between the claim and the push. The next tick hands it
+    // to the popup; a push that was sent keeps its claim.
+    it("releases a stale push claim with no send recorded, and keeps a sent one", async () => {
+      const due = new Date("2026-11-08T18:00:00Z");
+      const stranded = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: due }),
+      );
+      const other = await createTestUser(tx);
+      const sent = await wr.insertWeeklyReport(
+        other.id,
+        row("2026-11-01", { pushDueAt: due }),
+      );
+      await wr.claimWeeklyReportDelivery(user.id, stranded!.id, "push");
+      await wr.claimWeeklyReportDelivery(other.id, sent!.id, "push");
+      await wr.markWeeklyReportPushSent(other.id, sent!.id);
+
+      // A claim younger than the cutoff is left alone.
+      expect(
+        await wr.releaseStrandedPushClaims(new Date("2026-11-08T17:00:00Z")),
+      ).toBe(0);
+      expect(
+        await wr.releaseStrandedPushClaims(new Date("2026-11-08T19:00:00Z")),
+      ).toBe(1);
+      expect((await wr.getPendingPopup(user.id))?.id).toBe(stranded!.id);
+      expect(await wr.getPendingPopup(other.id)).toBeNull();
     });
   });
 
@@ -175,6 +263,37 @@ describe("weekly-reports storage", () => {
         await wr.getDuePushes(new Date("2026-11-10T00:00:00Z")),
       ).not.toContainEqual(expect.objectContaining({ id: r!.id }));
       expect((await wr.getPendingPopup(user.id))?.id).toBe(r!.id);
+    });
+
+    // L95, the window inside one send run: the batch was read while pushes
+    // were on, then the user turned them off before the loop reached the row.
+    it("a push cancelled after the batch was read can no longer be claimed", async () => {
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-08T18:00:00Z") }),
+      );
+      await wr.setWeeklyReportSettings(user.id, { pushEnabled: false });
+      expect(await wr.claimWeeklyReportDelivery(user.id, r!.id, "push")).toBe(
+        false,
+      );
+      // The popup can still claim it (control).
+      expect(await wr.claimWeeklyReportDelivery(user.id, r!.id, "popup")).toBe(
+        true,
+      );
+    });
+
+    it("turning the push off never cancels a push already claimed", async () => {
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-08T18:00:00Z") }),
+      );
+      await wr.claimWeeklyReportDelivery(user.id, r!.id, "push");
+      await wr.setWeeklyReportSettings(user.id, { pushEnabled: false });
+      const [after] = await tx
+        .select({ pushDueAt: schema.coachWeeklyReports.pushDueAt })
+        .from(schema.coachWeeklyReports)
+        .where(eq(schema.coachWeeklyReports.id, r!.id));
+      expect(after.pushDueAt).not.toBeNull();
     });
 
     it("defaults to both on, and upserts a partial change", async () => {
