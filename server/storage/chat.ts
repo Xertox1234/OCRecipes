@@ -5,10 +5,21 @@ import {
   chatMessageReports,
   chatMessages,
   coachResponseCache,
+  pendingReminders,
 } from "@shared/schema";
 import type { ChatMessageReportReason } from "@shared/constants/chat-message-report";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql, inArray, ilike } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  gte,
+  lt,
+  sql,
+  inArray,
+  ilike,
+  isNull,
+} from "drizzle-orm";
 import { escapeLike } from "./helpers";
 import { quotaDayBounds } from "./quota-day";
 import { fireAndForget } from "../lib/fire-and-forget";
@@ -383,7 +394,17 @@ export async function createChatMessageWithLimitCheck(
    * Coach only: leave recipe-finder tap rows (`metadata.finderInput`) out of
    * the count — only typed messages count. The caller decides (offer flag).
    */
-  opts?: { excludeFinderTaps?: boolean },
+  opts?: {
+    excludeFinderTaps?: boolean;
+    /**
+     * Coach: the opening brief the user is answering. Saved here, first, only
+     * when the limit passes and the conversation is still empty, and the
+     * user's reminders are cleared with it. Outside this transaction a 429
+     * left the brief saved and the reminders gone, and two first sends could
+     * both add one (audit 2026-11-24, L98).
+     */
+    openingBrief?: { content: string; metadata: Record<string, unknown> };
+  },
 ): Promise<ChatMessage | null> {
   return db.transaction(async (tx) => {
     // Advisory lock per user to serialize concurrent generation attempts.
@@ -494,6 +515,35 @@ export async function createChatMessageWithLimitCheck(
         return null;
       }
       claimKind = "coach_message";
+    }
+
+    if (opts?.openingBrief) {
+      // lockUser above serializes this user's sends, so the empty check holds.
+      const [existing] = await tx
+        .select({ id: chatMessages.id })
+        .from(chatMessages)
+        .where(eq(chatMessages.conversationId, conversationId))
+        .limit(1);
+      if (!existing) {
+        await tx.insert(chatMessages).values({
+          conversationId,
+          role: "assistant",
+          content: opts.openingBrief.content,
+          metadata: opts.openingBrief.metadata,
+          // Both rows would get the transaction's start time; a sort on
+          // createdAt alone (the data export) must still put the brief first.
+          createdAt: sql`CURRENT_TIMESTAMP - interval '1 millisecond'`,
+        });
+        await tx
+          .update(pendingReminders)
+          .set({ acknowledgedAt: new Date() })
+          .where(
+            and(
+              eq(pendingReminders.userId, userId),
+              isNull(pendingReminders.acknowledgedAt),
+            ),
+          );
+      }
     }
 
     const [message] = await tx

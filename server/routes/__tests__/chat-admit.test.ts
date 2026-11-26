@@ -315,31 +315,21 @@ describe("admitTurn — opening brief", () => {
     suggestions: [],
     text: "Good afternoon.\n\nNothing logged yet today.",
   };
-  const order: string[] = [];
-
   beforeEach(() => {
-    order.length = 0;
     vi.mocked(isRecipeFinderEnabled).mockReturnValue(false);
     vi.mocked(buildCoachBrief).mockResolvedValue(brief);
-    vi.mocked(storage.createChatMessage).mockImplementation(async () => {
-      order.push("brief");
-      return { id: 500 } as unknown as ChatMessage;
-    });
-    vi.mocked(storage.createChatMessageWithLimitCheck).mockImplementation(
-      async () => {
-        order.push("user");
-        return userMessage;
-      },
+    vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+      userMessage,
     );
-    // The brief is rendered and saved BEFORE reminders clear: clearing first
-    // would drop the reminder the user just answered from the saved brief.
-    vi.mocked(storage.acknowledgeReminders).mockImplementation(async () => {
-      order.push("ack");
-      return [];
-    });
   });
 
-  it("saves the server-rendered brief before the first user message", async () => {
+  const briefOpt = (call = 0) =>
+    vi.mocked(storage.createChatMessageWithLimitCheck).mock.calls[call][5]
+      ?.openingBrief;
+
+  // L98: the limit check saves the brief (and clears reminders) in its own
+  // transaction, so a 429 leaves neither behind.
+  it("hands the server-rendered brief to the limit check", async () => {
     const a = args({
       openingBrief: "full",
       req: {
@@ -354,14 +344,19 @@ describe("admitTurn — opening brief", () => {
       "America/Los_Angeles",
       "full",
     );
-    expect(storage.createChatMessage).toHaveBeenCalledWith(
-      7,
-      "u1",
-      "assistant",
-      brief.text,
-      { kind: "opening_brief" },
-    );
-    expect(order).toEqual(["brief", "ack", "user"]);
+    expect(briefOpt()).toEqual({
+      content: brief.text,
+      metadata: { kind: "opening_brief" },
+    });
+    expect(storage.createChatMessage).not.toHaveBeenCalled();
+    expect(storage.acknowledgeReminders).not.toHaveBeenCalled();
+  });
+
+  it("saves nothing itself when the limit is reached", async () => {
+    vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(null);
+    expect(await admitTurn(args({ openingBrief: "full" }))).toBeNull();
+    expect(storage.createChatMessage).not.toHaveBeenCalled();
+    expect(storage.acknowledgeReminders).not.toHaveBeenCalled();
   });
 
   it("adds no brief once the conversation has messages", async () => {
@@ -369,8 +364,8 @@ describe("admitTurn — opening brief", () => {
       { id: 1 } as unknown as ChatMessage,
     ]);
     await admitTurn(args({ openingBrief: "full" }));
-    expect(storage.createChatMessage).not.toHaveBeenCalled();
-    expect(order).toEqual(["user"]);
+    expect(buildCoachBrief).not.toHaveBeenCalled();
+    expect(briefOpt()).toBeUndefined();
   });
 
   it("adds no brief without the flag", async () => {
@@ -390,6 +385,6 @@ describe("admitTurn — opening brief", () => {
     vi.mocked(buildCoachBrief).mockRejectedValue(new Error("db down"));
     const admitted = await admitTurn(args({ openingBrief: "short" }));
     expect(admitted?.userMessage).toBe(userMessage);
-    expect(storage.createChatMessage).not.toHaveBeenCalled();
+    expect(briefOpt()).toBeUndefined();
   });
 });

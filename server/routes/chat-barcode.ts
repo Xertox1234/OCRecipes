@@ -33,7 +33,7 @@ import {
   parsePositiveIntParam,
   formatZodError,
 } from "./_helpers";
-import { saveOpeningBrief } from "./chat-admit";
+import { limitCheckOptions, prepareOpeningBrief } from "./chat-admit";
 import { ipKeyGenerator, resolveRateLimitMax } from "./_rate-limiters";
 import { CONVERSATION_CONFIG } from "../services/chat-turn";
 import { isRecipeOfferEnabled } from "../services/recipe-finder";
@@ -145,27 +145,22 @@ async function answerPhoneRead(
   );
   if (!features) return;
 
-  if (brief) await saveOpeningBrief(req, id, features, brief);
+  // Saved by the limit check, with the user's turn (audit L98).
+  const openingBrief = brief
+    ? await prepareOpeningBrief(req, id, features, brief)
+    : undefined;
 
   // A Coach turn: it counts toward the daily message limit, checked and
   // stored atomically like a typed message (chat-admit.ts).
   const dailyLimit = CONVERSATION_CONFIG.coach.dailyLimit(features);
-  const userMessage = isRecipeOfferEnabled()
-    ? await storage.createChatMessageWithLimitCheck(
-        id,
-        req.userId,
-        turn.userText,
-        dailyLimit,
-        "coach",
-        { excludeFinderTaps: true },
-      )
-    : await storage.createChatMessageWithLimitCheck(
-        id,
-        req.userId,
-        turn.userText,
-        dailyLimit,
-        "coach",
-      );
+  const userMessage = await storage.createChatMessageWithLimitCheck(
+    id,
+    req.userId,
+    turn.userText,
+    dailyLimit,
+    "coach",
+    ...limitCheckOptions(isRecipeOfferEnabled(), openingBrief),
+  );
   if (!userMessage)
     return sendError(
       res,
