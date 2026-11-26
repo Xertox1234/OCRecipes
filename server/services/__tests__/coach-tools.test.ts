@@ -7,6 +7,7 @@ import {
 import { storage } from "../../storage";
 import { actionCardSchema } from "@shared/schemas/coach-blocks";
 import { findCommunity } from "../recipe-finder/find-community";
+import { CommunitySearchUnavailableError } from "../recipe-finder/community-unavailable";
 import { searchCatalogRecipes } from "../recipe-catalog";
 import {
   createMockMealPlanItem,
@@ -1492,6 +1493,21 @@ describe("write-card mode (spec 2026-11-09)", () => {
       expect(text).not.toMatch(/do not re-check|already safe/i);
       expect(text).toMatch(/saved in the profile/i);
       expect(text).toMatch(/mentioned in this conversation/i);
+    }
+  });
+
+  it("search tools fail when the community search is unavailable (not an empty list)", async () => {
+    // The coach loop turns a thrown tool into SERVICE_UNAVAILABLE for the
+    // model (nutrition-coach.ts), so the model never hears "nothing matches".
+    for (const name of ["search_recipes", "find_plan_recipes"]) {
+      vi.mocked(findCommunity).mockRejectedValueOnce(
+        new CommunitySearchUnavailableError(),
+      );
+      await expect(
+        executeToolCall(name, { query: "dinner" }, "user-1", null, "UTC", {
+          writeCards: true,
+        }),
+      ).rejects.toBeInstanceOf(CommunitySearchUnavailableError);
     }
   });
 

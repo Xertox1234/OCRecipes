@@ -598,6 +598,38 @@ describe("planFinderStep — offer on (H1: every direct-generate path → build_
     );
     expect(out.kind).toBe("build_adjust");
   });
+
+  it.each([
+    ["offer off", { offer: false }],
+    ["offer on", ON],
+  ])(
+    "round-1 search unavailable (%s) → the results card, never generate",
+    (_label, opts) => {
+      const step = {
+        kind: "search_community",
+        request: "x",
+        round: 1,
+        excludeIds: [],
+        priorShownIds: [],
+      } as FinderStep;
+      const out = finderOutcome(
+        step,
+        {
+          kind: "community",
+          query: { q: "x" },
+          items: [],
+          unavailable: true,
+        },
+        ctx,
+        opts,
+      );
+      if (out.kind !== "message" || out.block.type !== "recipe_results") {
+        throw new Error(`expected results, got ${out.kind}`);
+      }
+      expect(out.block.items).toEqual([]);
+      expect(out.block.notice).toBe("no_matches");
+    },
+  );
 });
 
 describe("offer/adjust actions", () => {

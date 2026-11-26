@@ -5,7 +5,9 @@ import {
   selectCloseMatches,
   communityQueryText,
   toFinderItem,
+  isFilterOnlyRequest,
 } from "../find-community";
+import { CommunitySearchUnavailableError } from "../community-unavailable";
 import { searchRecipes, initSearchIndex } from "../../recipe-search";
 import { isIndexInitialized } from "../../../lib/search-index";
 
@@ -250,15 +252,42 @@ describe("findCommunity", () => {
     expect(items.map((i) => i.id)).toEqual([2]);
   });
 
-  it("treats a not-ready index as 0 matches and starts the build (§6)", async () => {
+  it("reports a not-ready index as unavailable and starts the build", async () => {
     vi.mocked(isIndexInitialized).mockReturnValue(false);
-    await expect(findCommunity({ q: "a" }, "u1", [])).resolves.toEqual([]);
+    await expect(findCommunity({ q: "a" }, "u1", [])).rejects.toBeInstanceOf(
+      CommunitySearchUnavailableError,
+    );
     expect(searchRecipes).not.toHaveBeenCalled();
     expect(initSearchIndex).toHaveBeenCalled();
   });
 
-  it("returns [] when the search throws", async () => {
+  it("reports a search that throws as unavailable, not as 0 matches", async () => {
     vi.mocked(searchRecipes).mockRejectedValueOnce(new Error("db down"));
-    await expect(findCommunity({ q: "a" }, "u1", [])).resolves.toEqual([]);
+    await expect(findCommunity({ q: "a" }, "u1", [])).rejects.toBeInstanceOf(
+      CommunitySearchUnavailableError,
+    );
+  });
+});
+
+describe("isFilterOnlyRequest", () => {
+  it("is true for diet plus filler words", () => {
+    expect(isFilterOnlyRequest({ q: "keto dinner ideas", diet: "keto" })).toBe(
+      true,
+    );
+  });
+  it("still browses when the only extra word is a count", () => {
+    expect(
+      isFilterOnlyRequest({ q: "3 keto dinner ideas", diet: "keto" }),
+    ).toBe(true);
+  });
+  it("keeps a dish named in another script", () => {
+    expect(isFilterOnlyRequest({ q: "ラーメン", diet: "vegan" })).toBe(false);
+    expect(isFilterOnlyRequest({ q: "борщ", diet: "vegetarian" })).toBe(false);
+  });
+  it("keeps accented Latin words", () => {
+    expect(isFilterOnlyRequest({ q: "crème brûlée", diet: "keto" })).toBe(
+      false,
+    );
+    expect(isFilterOnlyRequest({ q: "7 layer dip", diet: "keto" })).toBe(false);
   });
 });

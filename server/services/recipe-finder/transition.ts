@@ -77,7 +77,13 @@ export type FinderStep =
     };
 
 export type FinderStepResult =
-  | { kind: "community"; query: RecipeQuery; items: FinderItem[] }
+  | {
+      kind: "community";
+      query: RecipeQuery;
+      items: FinderItem[];
+      /** The search could not run; `items` is empty but not "no matches". */
+      unavailable?: true;
+    }
   | { kind: "online"; result: FindOnlineResult }
   | { kind: "questions"; questions: ClarifyingQuestion[] }
   | { kind: "none" };
@@ -409,7 +415,14 @@ export function finderOutcome(
         ...(step.dish !== undefined ? { dish: step.dish } : {}),
         ...(step.details !== undefined ? { details: step.details } : {}),
       };
-      if (result.items.length === 0 && step.round === 1) {
+      // A search outage shows the card and its buttons (spec §6), never the
+      // round-1 fallback: generating would spend the user's daily claim on
+      // an outage (audit 2026-11-24, L50).
+      if (
+        result.items.length === 0 &&
+        step.round === 1 &&
+        !result.unavailable
+      ) {
         if (opts.offer) return { kind: "build_adjust", flow };
         return { kind: "generate", request: step.request, flow };
       }
