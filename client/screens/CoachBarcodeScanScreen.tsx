@@ -61,6 +61,25 @@ const PRODUCT_BARCODE_TYPES: ExpoBarcodeType[] = [
 ];
 
 /**
+ * Take the label photo, read it on the phone and delete it. Null when there
+ * is no photo or it can't be read. Outside the component: React Compiler
+ * does not lower a `finally`.
+ */
+async function readLabelPhoto(
+  camera: CameraRef | null,
+): Promise<PhoneLabelRead | null> {
+  let uri: string | undefined;
+  try {
+    uri = (await camera?.takePicture())?.uri;
+    return uri ? await preReadLabel(uri, recognizeTextFromPhoto) : null;
+  } catch {
+    return null;
+  } finally {
+    if (uri) deleteAsync(uri, { idempotent: true }).catch(() => {});
+  }
+}
+
+/**
  * Announce once the controls that appear with this step have mounted: iOS
  * does not queue announcements, so one made as focus moves can be dropped.
  */
@@ -207,17 +226,8 @@ export default function CoachBarcodeScanScreen() {
     shooting.current = true;
     dispatch({ type: "shutter" });
     hapticsRef.current.impact(Haptics.ImpactFeedbackStyle.Light);
-    let label: PhoneLabelRead | null = null;
-    let uri: string | undefined;
-    try {
-      uri = (await cameraRef.current?.takePicture())?.uri;
-      if (uri) label = await preReadLabel(uri, recognizeTextFromPhoto);
-    } catch {
-      label = null;
-    } finally {
-      if (uri) deleteAsync(uri, { idempotent: true }).catch(() => {});
-      shooting.current = false;
-    }
+    const label = await readLabelPhoto(cameraRef.current);
+    shooting.current = false;
     dispatch({ type: "labelRead", label });
   }, []);
 
