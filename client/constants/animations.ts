@@ -235,3 +235,26 @@ export const successPopConfig: WithSpringConfig = {
   stiffness: 200,
   overshootClamping: false,
 };
+
+/** The "?" help sheet sliding up and dropping away: critically damped, so no
+ *  bounce (apple duration=0.45 bounce=0 via crafting-ui springs.mjs). */
+export const helpSheetSpringConfig: WithSpringConfig = {
+  damping: 27.93,
+  mass: 1,
+  stiffness: 195,
+  overshootClamping: true,
+};
+
+/** Tips carousel page swipe: the page settles from the finger's release
+ *  velocity, critically damped (apple duration=0.5 bounce=0 via springs.mjs).
+ *  Calm: it is a welcome screen seen once. */
+export const tipsPageSpringConfig: WithSpringConfig = {
+  damping: 25.13,
+  mass: 1,
+  stiffness: 157.9,
+};
+
+/** Tips carousel pages crossfading under reduced motion */
+export const tipsPageFadeTimingConfig: WithTimingConfig = {
+  duration: 200,
+};

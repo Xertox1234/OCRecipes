@@ -365,6 +365,12 @@ export const CameraColors = {
   exampleArtBowl: "#FFF3DC",
   /** White border for camera UI elements */
   border: "#FFFFFF",
+  /** Surface of the "?" help sheet over the camera (warm dark, a step above the scrim) */
+  helpSheetSurface: "#2C2420",
+  /** Hairline between the step help and the general tips in the "?" sheet */
+  helpSheetDivider: "#3C302A",
+  /** Drag handle of the "?" help sheet */
+  helpSheetHandle: "#5A4A40",
 };
 
 export const Shadows = {
