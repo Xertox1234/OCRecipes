@@ -20,6 +20,7 @@ export { ScanSonarRing } from "./components/ScanSonarRing";
 export { StepPill } from "./components/StepPill";
 export { ScanReticle } from "./components/ScanReticle";
 export { ProductChip } from "./components/ProductChip";
+export { StepTabs } from "./shell/StepTabs";
 
 // Reducers
 export { scanPhaseReducer } from "./reducers/scan-phase-reducer";

@@ -351,6 +351,8 @@ export const CameraColors = {
   textShadow: "rgba(0,0,0,0.5)",
   /** Light text shadow variant */
   textShadowLight: "rgba(0,0,0,0.3)",
+  /** Muted warm text for upcoming step tabs over the dark camera overlay */
+  textMuted: "#B8A898",
   /** White border for camera UI elements */
   border: "#FFFFFF",
 };
