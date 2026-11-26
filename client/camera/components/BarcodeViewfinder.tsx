@@ -54,6 +54,8 @@ export function BarcodeViewfinder({
   const presence = useSharedValue(0.35);
   const sweep = useSharedValue(0);
 
+  // The short fades below stay under Reduce Motion on purpose; only the
+  // sweep, the one moving element, is swapped for a still tint.
   useEffect(() => {
     conf.set(withTiming(confidence, { duration: 120 }));
   }, [conf, confidence]);

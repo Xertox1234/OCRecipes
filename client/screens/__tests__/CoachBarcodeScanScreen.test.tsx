@@ -2,7 +2,9 @@
 import React from "react";
 import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { AccessibilityInfo } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
+import type { MockInstance } from "vitest";
 import { settleCoachBarcode } from "@/lib/coach-barcode-scan";
 import CoachBarcodeScanScreen from "../CoachBarcodeScanScreen";
 import {
@@ -86,16 +88,22 @@ function hold(code: string) {
   for (let i = 0; i < LOCK_THRESHOLD_FRAMES; i++) read(code);
 }
 
+let announce: MockInstance<typeof AccessibilityInfo.announceForAccessibility>;
+
 describe("CoachBarcodeScanScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
     cameraProps.current = null;
     permissionState.current = { status: "granted", canAskAgain: false };
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    announce.mockRestore();
   });
 
   it("looks for product barcodes only and says what to do", () => {
@@ -132,6 +140,8 @@ describe("CoachBarcodeScanScreen", () => {
     // The lookup starts now, while the scan still plays.
     expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith("4006381333931");
     expect(mockImpact).toHaveBeenCalledOnce();
+    // Short, so the chat's own "Looking up that barcode" follows cleanly.
+    expect(announce).toHaveBeenCalledExactlyOnceWith("Barcode found");
     expect(screen.getByText("Reading the barcode…")).toBeDefined();
     expect(screen.getByTestId("barcode-viewfinder-sweep")).toBeDefined();
     expect(mockGoBack).not.toHaveBeenCalled();
@@ -140,6 +150,8 @@ describe("CoachBarcodeScanScreen", () => {
     advance(SWEEP_MS);
     expect(screen.getByText("Got it")).toBeDefined();
     expect(screen.getByText("4006381333931")).toBeDefined();
+    // VoiceOver reads the digits one by one, not as one number.
+    expect(screen.getByLabelText("4 0 0 6 3 8 1 3 3 3 9 3 1")).toBeDefined();
     expect(mockNotification).toHaveBeenCalledOnce();
     expect(mockGoBack).not.toHaveBeenCalled();
 

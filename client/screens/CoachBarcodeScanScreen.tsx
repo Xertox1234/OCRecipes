@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useReducer, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+} from "react";
 import {
   AccessibilityInfo,
   View,
@@ -87,7 +93,21 @@ export default function CoachBarcodeScanScreen() {
     [],
   );
 
+  // Read at frame time: past the lock, frames are dropped before any timer.
+  const phaseRef = useRef(pacing.phase);
+  // One-shot side effects read these through refs, so a new haptics object
+  // (Reduce Motion toggled mid-scan) cannot replay a haptic or a timer.
+  const hapticsRef = useRef(haptics);
+  const navigationRef = useRef(navigation);
+  useLayoutEffect(() => {
+    phaseRef.current = pacing.phase;
+    hapticsRef.current = haptics;
+    navigationRef.current = navigation;
+  });
+
   const onBarcodeScanned = useCallback((result: BarcodeResult) => {
+    const p = phaseRef.current;
+    if (p !== "arming" && p !== "hunting" && p !== "tracking") return;
     const code = scannedProductCode(result.data);
     if (!code) return;
     dispatch({ type: "read", code });
@@ -100,22 +120,23 @@ export default function CoachBarcodeScanScreen() {
   useEffect(() => {
     if (phase === "scanning" && code) {
       if (lostTimer.current) clearTimeout(lostTimer.current);
-      // The chat starts the lookup now, while the sweep plays.
+      // The chat starts the lookup now, while the sweep plays. From here a
+      // Close tap no longer cancels: the turn is already sent, and its food
+      // card still waits for the user to confirm the log.
       settleCoachBarcode(code);
-      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      AccessibilityInfo.announceForAccessibility(
-        "Barcode found. Looking it up.",
-      );
+      hapticsRef.current.impact(Haptics.ImpactFeedbackStyle.Medium);
+      // Kept short: the chat follows with its own "Looking up that barcode".
+      AccessibilityInfo.announceForAccessibility("Barcode found");
       const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
       return () => clearTimeout(timer);
     }
     if (phase === "found") {
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      hapticsRef.current.notification(Haptics.NotificationFeedbackType.Success);
       const timer = setTimeout(() => dispatch({ type: "revealed" }), REVEAL_MS);
       return () => clearTimeout(timer);
     }
-    if (phase === "done") navigation.goBack();
-  }, [phase, code, haptics, navigation]);
+    if (phase === "done") navigationRef.current.goBack();
+  }, [phase, code]);
 
   // However the screen goes away (close button, back gesture), the chat
   // stops waiting. A no-op after a read.
@@ -231,6 +252,10 @@ export default function CoachBarcodeScanScreen() {
             code && phase !== "tracking" && styles.hintDigits,
             { color: theme.text },
           ]}
+          // Digits one by one, not as one huge number.
+          accessibilityLabel={
+            code && phase !== "tracking" ? code.split("").join(" ") : undefined
+          }
         >
           {hint.body}
         </Text>
