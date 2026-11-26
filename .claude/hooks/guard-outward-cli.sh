@@ -295,9 +295,9 @@
 #     `gh pr merge` (the `--auto` carve-out cannot be seen on another line), the
 #     safe direction.
 #   * `bash -c "…"` / `sh -c '…'` / `eval "…"` / any interpreter `-c` wrapper
-#     (also: `timeout 30 eas update`, `sudo railway up`) hides or shifts the
-#     outward command out of command position — the wrapper-word case is the
-#     same documented arg-taking-wrapper residual as above; the quoted-`-c`
+#     hides the outward command inside a quoted string (`sudo railway up` and
+#     the argument-taking wrappers -- `timeout 30 eas update`, `nice`, `xargs`,
+#     `caffeinate` and the rest -- are CLOSED: see _OUT_PRIV_WORD); the quoted-`-c`
 #     case blanks via `cmd_bare` (the same primitive that stops `git commit
 #     -m "mentions eas update"` from a false-positive deny) — same accepted
 #     residual class as git-safety.sh's own sudo/env/command/xargs/subshell/
@@ -2629,7 +2629,17 @@ _OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:s
 #      all paired count+extractor or boolean sites.
 # `corepack` is here rather than in the launcher list because it is a SHIM in front of a
 # launcher (`corepack npx ...`), not a launcher that takes a package argument itself.
-_OUT_PRIV_WORD='(sudo|doas|corepack)'"$_OUT_FLAG_RUN"
+# ARGUMENT-TAKING WRAPPERS (2026-11-26). Each of these runs its operands as a command, so the
+# word after its flags is in command position: `nice`, `ionice`, `stdbuf`, `unbuffer`,
+# `caffeinate` (macOS), `chronic`, `xargs` (stdin's words are appended), `watch` (through
+# `sh -c`) and zsh's `nocorrect`/`noglob`. `timeout`/`gtimeout`, `chrt`, `taskset` and `flock`
+# first take ONE positional word (a duration, priority, CPU mask or lock file). All were
+# ALLOWED (`nice eas update`, `timeout 60 npm publish`); the header listed `timeout 30 eas
+# update` as a residual. They share the privilege words' flag run, so they share its
+# over-read: a flag's optional value word can swallow a non-gated command
+# (`xargs -n1 echo eas update` denies, as `sudo -E echo eas update` already did) -- the safe
+# direction. `time` stays in _OUT_WRAPPER_WORD (`time -p` already denied through it).
+_OUT_PRIV_WORD='((sudo|doas|corepack|nice|ionice|stdbuf|unbuffer|caffeinate|chronic|xargs|watch|nocorrect|noglob)'"$_OUT_FLAG_RUN"'|(timeout|gtimeout|chrt|taskset|flock)'"$_OUT_FLAG_RUN"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*'"$_OUT_FLAG_RUN"')'
 
 # LAUNCHER/PATH AXIS (todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md).
 # Defined HERE, after `_OUT_SEP`, not beside `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`

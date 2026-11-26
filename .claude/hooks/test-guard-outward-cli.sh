@@ -7212,6 +7212,68 @@ npm --fetch-retries 3 run publish
 npx npm -s run publish
 NFROWS
 
+# WR (2026-11-26): an argument-taking wrapper in front of the outward command. Each runs its
+# operands as a command: `nice`, `ionice`, `stdbuf`, `unbuffer`, `caffeinate` (macOS),
+# `chronic`, `xargs` (with stdin's words appended), `watch` (through `sh -c`), and the zsh
+# precommand modifiers `nocorrect`/`noglob`; `timeout`/`gtimeout`, `chrt`, `taskset` and
+# `flock` take one positional word (a duration, priority, CPU mask or lock file) first. All
+# were ALLOWED on `main`; the header has listed `timeout 30 eas update` as a residual since
+# 2026-08.
+while IFS='|' read -r wr_cmd wr_reason; do
+  [ -n "$wr_cmd" ] || continue
+  assert_deny "WR '$wr_cmd' denies" "$(jsonc "$wr_cmd")" "$wr_reason"
+done <<'WRROWS'
+nice eas update --branch production|eas update/publish/submit
+nice -n 10 eas update|eas update/publish/submit
+nice -10 npm publish|npm publish
+nice --adjustment=5 railway up|railway up/deploy
+timeout 60 npm publish|npm publish
+timeout 30 eas update|eas update/publish/submit
+timeout -s KILL 60 eas update|eas update/publish/submit
+timeout --foreground 5m railway up|railway up/deploy
+gtimeout 60 eas update|eas update/publish/submit
+ionice -c 3 eas update|eas update/publish/submit
+chrt -b 0 eas update|eas update/publish/submit
+taskset -c 0 eas update|eas update/publish/submit
+taskset 0x1 npm publish|npm publish
+stdbuf -oL eas update|eas update/publish/submit
+unbuffer eas update|eas update/publish/submit
+caffeinate eas update|eas update/publish/submit
+caffeinate -i npm run update:production|update:preview/update:production
+chronic eas update|eas update/publish/submit
+xargs eas update|eas update/publish/submit
+xargs -I{} railway up|railway up/deploy
+flock /tmp/x.lock eas update|eas update/publish/submit
+flock -w 5 /tmp/x.lock npm publish|npm publish
+watch -n 60 railway up|railway up/deploy
+noglob eas update|eas update/publish/submit
+nice timeout 60 npx eas-cli update|reached through a launcher
+timeout 60 npm exec eas-cli --yes update|reached through a launcher
+cd app && nice eas update|eas update/publish/submit
+nice gh pr merge 42 --squash|gh pr merge
+timeout 60 gh api -X PUT repos/o/r/pulls/1/merge|guard-outward-cli
+sudo nice eas update|eas update/publish/submit
+nice sudo -E railway up|railway up/deploy
+/usr/bin/nice eas update|eas update/publish/submit
+env FOO=1 timeout 60 eas update|eas update/publish/submit
+WRROWS
+while IFS= read -r wr_cmd; do
+  [ -n "$wr_cmd" ] || continue
+  assert_allow "WR control '$wr_cmd' stays allowed" "$(jsonc "$wr_cmd")"
+done <<'WRROWS'
+nice npm test
+timeout 60 npm run build
+timeout 600 npx vitest run
+caffeinate -i npm run test
+ionice -c 3 git status
+xargs -n 1 echo eas update
+echo nice eas update
+git commit -m "nice eas update"
+timeout 60 echo eas update
+stdbuf -oL npm run lint
+flock /tmp/l npm ci
+WRROWS
+
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
 # 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
@@ -7227,7 +7289,9 @@ NFROWS
 # and 9 allow controls (five of them RED after NF, before the bare-npm value-flag list).
 # 1473 -> 1485 (confirmation review of NF2): +12 = NF3, 8 deny rows (all ALLOWED before) and
 # 4 allow controls.
-EXPECTED_TOTAL=1485
+# 1485 -> 1529 (2026-11-26, argument-taking wrappers): +44 = WR, 33 deny rows (all ALLOWED
+# before) and 11 allow controls.
+EXPECTED_TOTAL=1529
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

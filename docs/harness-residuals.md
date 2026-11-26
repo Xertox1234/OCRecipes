@@ -848,8 +848,7 @@ knowing that they publish. Still open, on `main` too, all measured ALLOW:
   (`npx npm -s publish`, `bunx npm --tag latest pub`; allowed on `main`). Still open: a
   value-taking flag a later npm adds, with a separate value before `publish`, is read as a
   boolean and allowed. Also open, on `main` too and outside this change
-  (measured ALLOW by the same review): `nice`/`timeout 60` before `npm`, `bash -c`/`sh -c`/
-  `eval` wrappers, `node .../npm-cli.js exec`, and glued `-yc "eas update"`/`-c'eas update'`.
+  (measured ALLOW by the same review): `bash -c`/`sh -c`/`eval` wrappers, `node .../npm-cli.js exec`, and glued `-yc "eas update"`/`-c'eas update'`.
 - any other flag in that slot (`eas --json update`, `npx eas-cli --non-interactive update`,
   `railway --verbose up`; whether the real CLIs accept a flag there was not measured; the
   hook's header lists "a global flag before the verb" as a known gap), and `npx eas-cli --yes update`.
@@ -937,3 +936,18 @@ Found alongside, also fixed on that branch: `test-git-safety.sh`'s "unenterable 
 row asserted a deny that cannot happen for root, and cloud sessions run as root, so
 `scripts/run-hook-tests.sh` failed there and `preflight:fast` could not stamp any hook change. The
 row now asserts the verdict that is true for the running user (allow for root, deny otherwise).
+
+`guard-outward-cli.sh` ARGUMENT-TAKING WRAPPERS, FIXED 2026-11-26 (rows `WR` in
+`test-guard-outward-cli.sh`): a wrapper that runs its operands as a command hid the outward
+command from every check, on `main` since the hook was written (the header listed
+`timeout 30 eas update`). Measured ALLOW before: `nice eas update`, `timeout 60 npm publish`,
+`caffeinate -i npm run update:production`, `xargs eas update`, `flock /tmp/x.lock eas update`,
+`watch -n 60 railway up`, `nice gh pr merge 42 --squash` and 21 more. `_OUT_PRIV_WORD` now also
+takes `nice`, `ionice`, `stdbuf`, `unbuffer`, `caffeinate`, `chronic`, `xargs`, `watch`,
+`nocorrect` and `noglob` with their flags, and `timeout`/`gtimeout`, `chrt`, `taskset` and
+`flock` with their flags and one positional word. They share the privilege words' flag run and
+its over-read: a flag's optional value word can swallow a command that is not gated
+(`xargs -n1 echo eas update` denies, as `sudo -E echo eas update` already did). Still open: a
+wrapper not on the list (`strace`, `ltrace`, `valgrind`, `firejail`, `systemd-run`,
+`xvfb-run`, `parallel`), a positional wrapper given two positional words, and the `-c` string
+wrappers (`bash -c`, `sh -c`, `eval`, `su -c`, `script -c`).
