@@ -86,7 +86,7 @@ Then re-rank.
       store health data).
 - [x] **T2. Undo for small writes.** Apply a low-risk log at once and offer
       undo; keep confirm cards for large changes. Value: medium. Size: M.
-      Done (PR #PRNUM): a food log the user types in the chat, up to three
+      Done (PR #2058): a food log the user types in the chat, up to three
       foods and 1000 kcal with macros that match the calories, is logged
       during the Coach's tool call and arrives saved, with Undo (open for 5
       minutes). Bigger logs, photo, label and barcode reads, and every other
