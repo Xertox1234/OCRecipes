@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   coachWriteCards,
@@ -45,6 +45,22 @@ export async function expireAllergyCards(
 /** Server undo window — the UI shows Undo for 6 s; this absorbs latency. */
 export const WRITE_CARD_UNDO_WINDOW_MS = 60_000;
 
+/**
+ * A small food log applied at once (Coach roadmap T2) was never tapped: the
+ * user may only see its card once they read the reply. Longer, so Undo is
+ * still there when they do.
+ */
+export const LOGGED_AT_ONCE_UNDO_WINDOW_MS = 5 * 60_000;
+
+/** Whether a saved card can still be undone at `now`. */
+export function undoWindowOpen(card: CoachWriteCard, now: Date): boolean {
+  if (card.status !== "saved" || !card.savedAt) return false;
+  const window = card.savedRefs?.loggedAtOnce
+    ? LOGGED_AT_ONCE_UNDO_WINDOW_MS
+    : WRITE_CARD_UNDO_WINDOW_MS;
+  return now.getTime() - card.savedAt.getTime() <= window;
+}
+
 export async function createWriteCard(input: {
   userId: string;
   conversationId: number;
@@ -88,6 +104,129 @@ export async function createWriteCard(input: {
       .returning();
     return { card, previous };
   });
+}
+
+/**
+ * Coach roadmap T2: a small food log the Coach applies at once. One
+ * transaction creates the card and saves it, so a failed save leaves nothing
+ * behind. A live food card is replaced (the user is changing it); a live
+ * card of another kind stays live, since this card never is.
+ */
+export async function createLoggedWriteCard(
+  input: {
+    userId: string;
+    conversationId: number;
+    kind: "food";
+    payload: Record<string, unknown>;
+  },
+  perform: (
+    tx: WriteCardTx,
+    card: CoachWriteCard,
+  ) => Promise<CoachWriteCardSavedRefs>,
+): Promise<{
+  card: CoachWriteCard;
+  previous: { id: string; status: "replaced" } | null;
+}> {
+  return db.transaction(async (tx) => {
+    const [live] = await tx
+      .select()
+      .from(coachWriteCards)
+      .where(
+        and(
+          eq(coachWriteCards.conversationId, input.conversationId),
+          eq(coachWriteCards.userId, input.userId),
+          eq(coachWriteCards.status, "live"),
+        ),
+      )
+      .for("update");
+    let previous: { id: string; status: "replaced" } | null = null;
+    if (live?.kind === "food") {
+      await tx
+        .update(coachWriteCards)
+        .set({ status: "replaced" })
+        .where(eq(coachWriteCards.id, live.id));
+      previous = { id: live.id, status: "replaced" };
+    }
+    // Inserted as saved: never live, so never a second live card.
+    const [inserted] = await tx
+      .insert(coachWriteCards)
+      .values({
+        userId: input.userId,
+        conversationId: input.conversationId,
+        kind: input.kind,
+        payload: input.payload,
+        status: "saved",
+        edits: {},
+      })
+      .returning();
+    const refs = await perform(tx, inserted);
+    const [card] = await tx
+      .update(coachWriteCards)
+      .set({
+        savedRefs: { ...refs, loggedAtOnce: true },
+        // JS time, not now(): see saveWriteCard.
+        savedAt: new Date(),
+      })
+      .where(eq(coachWriteCards.id, inserted.id))
+      .returning();
+    return { card, previous };
+  });
+}
+
+/**
+ * Takes back a log applied at once that the user never got to see (the turn
+ * was abandoned, replaced by the safety message, or came back empty). The
+ * log is reverted and the card closed, never live: no reply shows it.
+ * False when there is nothing to withdraw.
+ */
+export async function withdrawLoggedWriteCard(
+  id: string,
+  userId: string,
+  revert: (tx: WriteCardTx, card: CoachWriteCard) => Promise<void>,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [card] = await tx
+      .select()
+      .from(coachWriteCards)
+      .where(
+        and(eq(coachWriteCards.id, id), eq(coachWriteCards.userId, userId)),
+      )
+      .for("update");
+    if (!card || card.status !== "saved" || !card.savedRefs?.loggedAtOnce) {
+      return false;
+    }
+    await revert(tx, card);
+    await tx
+      .update(coachWriteCards)
+      .set({ status: "expired", savedRefs: null, savedAt: null })
+      .where(eq(coachWriteCards.id, id));
+    return true;
+  });
+}
+
+/**
+ * The newest food log applied at once in a conversation, still logged. The
+ * Coach is told of it, so "make it three" is not logged a second time.
+ */
+export async function getLatestLoggedFoodCard(
+  conversationId: number,
+  userId: string,
+): Promise<CoachWriteCard | undefined> {
+  const [card] = await db
+    .select()
+    .from(coachWriteCards)
+    .where(
+      and(
+        eq(coachWriteCards.conversationId, conversationId),
+        eq(coachWriteCards.userId, userId),
+        eq(coachWriteCards.kind, "food"),
+        eq(coachWriteCards.status, "saved"),
+        sql`${coachWriteCards.savedRefs}->>'loggedAtOnce' = 'true'`,
+      ),
+    )
+    .orderBy(desc(coachWriteCards.savedAt))
+    .limit(1);
+  return card;
 }
 
 /**
@@ -263,9 +402,7 @@ export async function undoWriteCard(
     if (!card) return { status: "not_found" };
     if (card.status !== "saved" || !card.savedAt)
       return { status: "not_saved" };
-    if (now.getTime() - card.savedAt.getTime() > WRITE_CARD_UNDO_WINDOW_MS) {
-      return { status: "too_late" };
-    }
+    if (!undoWindowOpen(card, now)) return { status: "too_late" };
 
     await revert(tx, card);
 

@@ -15,6 +15,8 @@ interface Props {
   receipt?: string;
   /** Show Undo next to the receipt (only just after this device saved). */
   undoVisible: boolean;
+  /** Fade the receipt in: a save made on this card, not one it mounted with. */
+  fadeInSaved?: boolean;
   buttonLabel: string;
   /** False when the edits leave nothing to save (every count 0). */
   canSave: boolean;
@@ -75,7 +77,9 @@ export function WriteCardShell(props: Props) {
   if (state === "saved") {
     return (
       <Animated.View
-        entering={reducedMotion ? undefined : FadeIn}
+        entering={
+          reducedMotion || props.fadeInSaved === false ? undefined : FadeIn
+        }
         style={frame}
       >
         <View style={[styles.savedRow, stacked && styles.savedRowStacked]}>

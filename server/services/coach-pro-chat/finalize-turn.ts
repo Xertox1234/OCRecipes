@@ -7,7 +7,10 @@ import { filterAllergyCards } from "../allergy-cards";
 import { dropCommitmentCards, parseBlocksFromContent } from "../coach-blocks";
 import { buildTrail } from "../coach-step-labels";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
-import { createWriteCardBlock } from "./write-card-context";
+import {
+  createWriteCardBlock,
+  withdrawFoodLoggedAtOnce,
+} from "./write-card-context";
 import { deliverOfferToolCall, persistCoachReply } from "./offer-delivery";
 import { extractAndStoreNotebook } from "./notebook";
 import type { TurnContext } from "./load-turn-context";
@@ -65,6 +68,17 @@ async function proReplyBlocks(
   // not do. A reply the safety check replaced carries no card either: the
   // card would sit under the safety message, offering what it withdrew.
   let wroteCard = false;
+  // Coach roadmap T2: a food logged at once during the turn leads its cards.
+  // A reply that will never show it (the client left, the safety message
+  // replaced it, it came back empty) has it withdrawn instead.
+  if (reply.loggedAtOnce) {
+    if (fullResponse && !reply.safetyOverridden && !isAborted()) {
+      blocks = [...blocks, reply.loggedAtOnce];
+      wroteCard = true;
+    } else {
+      await withdrawFoodLoggedAtOnce(reply.loggedAtOnce, userId);
+    }
+  }
   if (
     reply.writeCardProposal &&
     fullResponse &&

@@ -29,7 +29,14 @@ import {
   type WriteCardOutcome,
   type WriteCardProposal,
 } from "../write-cards";
-import type { WriteCardPayload } from "@shared/schemas/coach-write-cards";
+import type {
+  FoodCardPayload,
+  WriteCardBlock,
+  WriteCardPayload,
+} from "@shared/schemas/coach-write-cards";
+import { isSmallFoodLog } from "../write-cards/food";
+import { storage } from "../../storage";
+import { logFoodAtOnce } from "./write-card-context";
 import { createServiceLogger, toError } from "../../lib/logger";
 import type { TurnContext } from "./load-turn-context";
 import type { CoachChatEvent, CoachChatParams } from "./types";
@@ -45,6 +52,11 @@ export interface ReplyResult {
   writeCardProposal: WriteCardProposal | null;
   /** The grocery/pantry card's payload, worked out during its tool call. */
   writeCardPrepared: WriteCardPayload | null;
+  /**
+   * Coach roadmap T2: the food logged at once during a tool call (at most one
+   * a turn). It stays logged whatever card the turn ends on.
+   */
+  loggedAtOnce: WriteCardBlock | null;
   /** Show-the-work: what this turn looked up, for the "Checked:" trail. */
   trailEntries: (string | null)[];
 }
@@ -59,6 +71,8 @@ interface StreamArgs {
   goalsCard: boolean;
   /** The app can draw the plan card's shopping section (A1). */
   planShopCard: boolean;
+  /** A small typed food log is applied at once, with Undo (T2). */
+  quickLog?: boolean;
 }
 
 function emptyReply(): ReplyResult {
@@ -68,6 +82,7 @@ function emptyReply(): ReplyResult {
     offerToolArgs: null,
     writeCardProposal: null,
     writeCardPrepared: null,
+    loggedAtOnce: null,
     trailEntries: [],
   };
 }
@@ -105,6 +120,26 @@ async function* streamProReply(
   const reply = emptyReply();
   /** Characters of visible text already sent to the client. */
   let sent = 0;
+
+  /**
+   * Coach roadmap T2: whether this food card is logged at once. An app that
+   * shows it, a small log, one a turn, not on a turn the safety rules
+   * refuse, a client still here, and a turn not already answered (a replayed
+   * turn key would log the food twice).
+   */
+  const mayLogAtOnce = async (payload: FoodCardPayload) =>
+    !!a.quickLog &&
+    intent !== "safety_refusal" &&
+    reply.loggedAtOnce === null &&
+    isSmallFoodLog(payload) &&
+    !isAborted() &&
+    !(
+      params.turnKey &&
+      (await storage.getChatMessageByTurnKey(
+        params.conversationId,
+        params.turnKey,
+      ))
+    );
 
   for await (const chunk of generateCoachProResponse(
     turn.messageHistory,
@@ -170,6 +205,23 @@ async function* streamProReply(
                 tz: turn.tz,
                 now: new Date(),
               });
+              if (
+                p.kind === "food" &&
+                (await mayLogAtOnce(payload as FoodCardPayload))
+              ) {
+                // Coach roadmap T2: logged now, so the tool result says
+                // only what has happened. An earlier proposal stays the
+                // turn's card waiting on Save.
+                const logged = await logFoodAtOnce(payload as FoodCardPayload, {
+                  conversationId: params.conversationId,
+                  userId,
+                  tz: turn.tz,
+                });
+                if (logged) {
+                  reply.loggedAtOnce = logged;
+                  return { kind: "food", shown: true, loggedAtOnce: true };
+                }
+              }
               reply.writeCardProposal = proposal;
               reply.writeCardPrepared = payload;
               if (p.kind === "food") return { kind: "food", shown: true };

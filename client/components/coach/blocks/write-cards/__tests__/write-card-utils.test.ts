@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
 import {
+  atOnceUndoShown,
   cardUiState,
   dayChipLabel,
   mealChipLabel,
@@ -74,5 +75,37 @@ describe("saveErrorMessage", () => {
     expect(saveErrorMessage(new TypeError("Network request failed"))).toBe(
       "Couldn't save. Check your connection and try again.",
     );
+  });
+});
+
+// Coach roadmap T2: a food log the Coach applied at once arrives saved, and
+// offers Undo with no Save tap.
+describe("atOnceUndoShown", () => {
+  const shown = {
+    loggedAtOnce: true as const,
+    status: "saved" as const,
+    isActive: true as boolean | undefined,
+    replyInFlight: false,
+    closed: false,
+  };
+
+  it("shows Undo on the newest reply's card", () => {
+    expect(atOnceUndoShown(shown)).toBe(true);
+    // The reply still on its way in (the footer copy) has no isActive.
+    expect(atOnceUndoShown({ ...shown, isActive: undefined })).toBe(true);
+  });
+
+  it("not for a card the user saves with a tap", () => {
+    expect(atOnceUndoShown({ ...shown, loggedAtOnce: undefined })).toBe(false);
+  });
+
+  it("ends when the user sends the next message", () => {
+    expect(atOnceUndoShown({ ...shown, replyInFlight: true })).toBe(false);
+    expect(atOnceUndoShown({ ...shown, isActive: false })).toBe(false);
+  });
+
+  it("ends once undone, or once the server said it is too late", () => {
+    expect(atOnceUndoShown({ ...shown, status: "live" })).toBe(false);
+    expect(atOnceUndoShown({ ...shown, closed: true })).toBe(false);
   });
 });

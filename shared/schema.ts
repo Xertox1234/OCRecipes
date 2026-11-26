@@ -1584,6 +1584,8 @@ export const coachWriteCards = pgTable(
 
 /** The rows a write-card save wrote — Undo removes exactly these. */
 export interface CoachWriteCardSavedRefs {
+  /** Applied at once by the Coach, not by a tap (T2): the longer Undo. */
+  loggedAtOnce?: true;
   scannedItemIds?: number[];
   groceryItemIds?: number[];
   createdListId?: number;

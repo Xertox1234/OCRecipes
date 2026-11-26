@@ -1,12 +1,14 @@
 import type { ChatMessage } from "@shared/schema";
 import { storage } from "../../storage";
+import { undoWindowOpen } from "../../storage/coach-write-cards";
 import { storedEdits, writeCardReceiptFor } from "./index";
 
 /**
  * A saved message's write_card block is a snapshot from when Coach replied.
  * When messages are read back, each block takes the card row's current state
  * — status (saved / replaced / expired), stored edits, and the receipt once
- * saved — so a reopened chat shows a locked or saved card as it is now.
+ * saved — so a reopened chat shows a locked or saved card as it is now. A
+ * log applied at once keeps its `loggedAtOnce` mark only while Undo is open.
  * One batch read, and none at all when no message carries a card.
  */
 export async function enrichWriteCardBlocks(
@@ -21,6 +23,7 @@ export async function enrichWriteCardBlocks(
   }
   if (ids.length === 0) return messages;
 
+  const now = new Date();
   const rows = new Map(
     (await storage.getWriteCardsByIds(userId, ids)).map((r) => [r.id, r]),
   );
@@ -35,8 +38,16 @@ export async function enrichWriteCardBlocks(
           if (!isWriteCardBlock(b)) return b;
           const row = rows.get(b.cardId);
           if (!row) return b;
+          // A log the Coach applied at once (T2) offers Undo only while the
+          // server would still take it: not once undone, nor once too late.
+          const { loggedAtOnce: _mark, ...rest } = b as typeof b & {
+            loggedAtOnce?: true;
+          };
+          const stillUndoable =
+            !!row.savedRefs?.loggedAtOnce && undoWindowOpen(row, now);
           return {
-            ...b,
+            ...rest,
+            ...(stillUndoable && { loggedAtOnce: true as const }),
             payload: row.payload,
             edits: storedEdits(row),
             status: row.status,

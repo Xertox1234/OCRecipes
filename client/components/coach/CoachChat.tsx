@@ -78,6 +78,10 @@ import {
   useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
+import {
+  arrivedSavedRefreshKeys,
+  loggedAtOnceReceipt,
+} from "@/lib/write-card-refresh";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -319,6 +323,10 @@ export default function CoachChat({
   // The finished reply's display text, so the finish announcement can speak
   // the last sentence (the per-sentence announcer never reaches it).
   const finishedTextRef = useRef("");
+  // A food log the Coach applied at once (T2): its card mounts saved, so on
+  // iOS the reply's finish announcement says it (Android's live region on
+  // the receipt already does).
+  const finishedReceiptRef = useRef<string | null>(null);
   const activeConvIdRef = useRef<number | null>(null);
   const usedQuickRepliesRef = useRef<Set<string>>(new Set());
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
@@ -460,6 +468,13 @@ export default function CoachChat({
       const liveBlocks = (blocks ?? []).filter(
         (b) => !isFinderBlockType(b.type),
       );
+      // A small food log the Coach applied at once (T2): the day's totals
+      // and the diary change with no Save tap to refresh them.
+      for (const queryKey of arrivedSavedRefreshKeys(liveBlocks)) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+      finishedReceiptRef.current =
+        Platform.OS === "ios" ? loggedAtOnceReceipt(liveBlocks) : null;
       if (liveBlocks.length > 0) {
         setStreamBlocksBaseline(lastAssistantIdRef.current);
         setStreamBlocks(liveBlocks);
@@ -544,17 +559,22 @@ export default function CoachChat({
       announcedTextRef.current = "";
       replyArrivedRef.current = false;
       finishedTextRef.current = "";
+      finishedReceiptRef.current = null;
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
     } else if (!isStreaming && wasStreaming && replyArrivedRef.current) {
       // Streaming just finished with a reply. onDone runs in the same tick
       // that clears isStreaming, so the ref is already set when this runs.
       replyArrivedRef.current = false;
+      // One announcement: VoiceOver cuts off a second one made at once.
+      const finished = getStreamFinishAnnouncement(
+        finishedTextRef.current,
+        announcedTextRef.current,
+        Platform.OS,
+      );
+      const receipt = finishedReceiptRef.current;
+      finishedReceiptRef.current = null;
       AccessibilityInfo.announceForAccessibility(
-        getStreamFinishAnnouncement(
-          finishedTextRef.current,
-          announcedTextRef.current,
-          Platform.OS,
-        ),
+        receipt ? `${finished} ${receipt}` : finished,
       );
     }
   }, [isStreaming]);

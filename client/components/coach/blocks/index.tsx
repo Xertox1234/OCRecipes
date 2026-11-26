@@ -148,6 +148,7 @@ function renderBlock(
           edits={writeCardEdits ?? block.edits ?? {}}
           onEdit={(e) => onWriteCardEdit?.(block.cardId, e)}
           replyInFlight={replyInFlight}
+          isActive={isActive}
         />
       );
     case "checked_trail":

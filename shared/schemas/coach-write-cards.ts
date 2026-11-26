@@ -330,6 +330,11 @@ export const writeCardBlockObjectSchema = z.object({
   status: z.enum(WRITE_CARD_STATUSES),
   replacesCardId: z.string().uuid().optional(),
   receipt: z.string().max(200).optional(),
+  /**
+   * Coach roadmap T2: the Coach logged this card at once, so the app offers
+   * Undo without a Save tap. Dropped on read-back once Undo has closed.
+   */
+  loggedAtOnce: z.literal(true).optional(),
   /** The stored edits, added when messages are read back (reopened chat). */
   edits: z.record(z.string(), z.unknown()).optional(),
 });

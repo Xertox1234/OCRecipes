@@ -95,8 +95,18 @@ export function foodCardResult(outcome: void | WriteCardOutcome) {
         "No food card was made, and nothing has been logged: there was nothing in the request that could be logged. Do not tell the user to tap a card.",
     };
   }
+  if (outcome?.kind === "food" && outcome.loggedAtOnce) {
+    return { card_shown: true, message: LOGGED_AT_ONCE_MESSAGE };
+  }
   return { card_shown: true, message: CARD_SHOWN_MESSAGE };
 }
+
+/**
+ * A small food log applied at once (Coach roadmap T2), already saved when
+ * this result is sent. The prompt's quick-log rule says what to do with it.
+ */
+const LOGGED_AT_ONCE_MESSAGE =
+  "This food is already logged; its card shows Undo. Do not call log_food_item again for it, even to change it: that would log it twice.";
 
 /**
  * The pantry card's result. The row lines carry pantry item names, which the

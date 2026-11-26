@@ -414,6 +414,12 @@ describe("write cards in the chat (spec 2026-11-09)", () => {
     expect(latestLiveWriteCard([[food(A)], [food(B, "saved")]])).toBeNull();
     expect(latestLiveWriteCard([[food(A, "replaced")]])).toBeNull();
     expect(latestLiveWriteCard([])).toBeNull();
+    // Coach roadmap T2: a food logged at once leaves an older card live.
+    const logged = { ...food(B, "saved"), loggedAtOnce: true } as CoachBlock;
+    expect(latestLiveWriteCard([[food(A)], [logged]])).toEqual({
+      cardId: A,
+      kind: "food",
+    });
   });
 
   it("applyReplacements marks the named card replaced and others expired", () => {
@@ -430,6 +436,23 @@ describe("write cards in the chat (spec 2026-11-09)", () => {
     expect(status(out[1])).toEqual(["replaced"]);
     expect(status(out[2])).toEqual(["live"]);
     expect(out[2][0]).toBe(reply);
+  });
+
+  // Coach roadmap T2: a food logged at once is never live, so it locks only
+  // the food card it replaced, not an older card of another kind.
+  it("a food logged at once locks only the card it replaced", () => {
+    const logged = {
+      ...food(C, "saved", A),
+      loggedAtOnce: true,
+    } as CoachBlock;
+    const out = lockOlderWriteCards([[food(A)], [food(B)], [logged]]);
+    expect(out[0][0]).toMatchObject({ status: "replaced" });
+    expect(out[1][0]).toMatchObject({ status: "live" });
+    expect(out[2][0]).toMatchObject({ status: "saved" });
+    // A newer card still locks older ones, the logged one aside.
+    const later = lockOlderWriteCards([[food(B)], [logged], [food(A)]]);
+    expect(later[0][0]).toMatchObject({ status: "expired" });
+    expect(later[1][0]).toMatchObject({ status: "saved" });
   });
 
   it("the same card shown twice (footer + saved message) stays live", () => {

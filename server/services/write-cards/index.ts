@@ -238,6 +238,19 @@ function describePlan(p: PlanCardPayload, e: PlanCardEdits): string {
   }`;
 }
 
+/**
+ * Coach roadmap T2: the prompt line for the conversation's latest food log
+ * applied at once. It is saved, so a change must go through Undo or the log,
+ * never a second log_food_item call.
+ */
+export function describeLoggedFood(card: CoachWriteCard): string {
+  const body = describeFood(
+    card.payload as FoodCardPayload,
+    storedEdits(card) as FoodCardEdits,
+  );
+  return `Already logged in this chat, at once, with no tap: ${body}. To change it, the user taps Undo on its card (open for 5 minutes after it was logged) or edits it in their food log. Call log_food_item only for food not logged yet.`;
+}
+
 const KIND_LABEL: Record<WriteCardKind, string> = {
   food: "food",
   grocery: "grocery list",

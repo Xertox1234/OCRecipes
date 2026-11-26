@@ -1,6 +1,7 @@
 import { GOALS_QUERY_KEY } from "@/hooks/useCalorieGoal";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import type { WriteCardKind } from "@shared/schemas/coach-write-cards";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const GROCERY_LISTS = ["/api/meal-plan/grocery-lists"] as const;
 
@@ -44,4 +45,35 @@ export function writeCardRefreshKeys(
     default:
       return [];
   }
+}
+
+/**
+ * Coach roadmap T2: a reply's blocks can carry a food log the Coach already
+ * applied (no Save tap ran its refresh). The queries to refresh when such a
+ * reply arrives; none otherwise.
+ */
+export function arrivedSavedRefreshKeys(
+  blocks: readonly CoachBlock[],
+): readonly (readonly string[])[] {
+  const logged = blocks.some(
+    (b) => b.type === "write_card" && b.loggedAtOnce && b.status === "saved",
+  );
+  return logged ? writeCardRefreshKeys("food") : [];
+}
+
+/**
+ * What a screen reader should hear for a food log the Coach applied at once:
+ * the card mounts already saved, so no Save tap announces its receipt. Null
+ * when the reply carries none.
+ */
+export function loggedAtOnceReceipt(
+  blocks: readonly CoachBlock[],
+): string | null {
+  for (const b of blocks) {
+    if (b.type === "write_card" && b.loggedAtOnce && b.status === "saved") {
+      const receipt = (b.receipt ?? "Logged").replace(/^✓\s*/, "");
+      return `${receipt}. Undo is on the card.`;
+    }
+  }
+  return null;
 }
