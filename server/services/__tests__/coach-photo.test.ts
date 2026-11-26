@@ -470,6 +470,34 @@ describe("buildPhotoReply", () => {
       expect(reply.text).toMatch(/tell me what it was/i);
     });
 
+    // Owner report 2026-11-26: a full label logged as 10 cal. Calories that
+    // do not match the label's own macros are a misread: no card, and the
+    // reply says why.
+    it("offers no card when the calories do not match the macros", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(label({ calories: 10 }));
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload).toBeNull();
+      expect(reply.text).toMatch(/don't add up/i);
+      expect(reply.text).toMatch(/10 calories/);
+      expect(reply.text).toMatch(/about 232/);
+      expect(reply.text).toMatch(/barcode/i);
+    });
+
+    it("catches it with a macro unread when the rest already exceed the calories", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(
+        label({ calories: 10, protein: null }),
+      );
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload).toBeNull();
+      expect(reply.text).toMatch(/don't add up/i);
+    });
+
+    it("keeps the card when the label's rounding drifts a little", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(label({ calories: 200 }));
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload?.items[0].perUnit.calories).toBe(200);
+    });
+
     it("asks for a check of every number when the label was hard to read", async () => {
       vi.mocked(analyzeLabelPhoto).mockResolvedValue(
         label({ confidence: 0.4 }),

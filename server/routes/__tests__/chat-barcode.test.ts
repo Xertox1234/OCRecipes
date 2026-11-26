@@ -460,6 +460,12 @@ describe("POST /api/chat/conversations/:id/label (a label read on the phone)", (
     ],
     ["an unknown field in the label", { label: { ...label, sodium: 10 } }],
     ["an unknown field", { label, photo: "BASE64" }],
+    // The same rule the phone checks before sending: calories its own
+    // macros do not make are a misread (owner report 2026-11-26).
+    [
+      "calories that do not match the macros",
+      { label: { ...label, calories: 10 } },
+    ],
   ])("400s on %s, storing nothing", async (_what, body) => {
     const res = await postLabel(body);
     expect(res.status).toBe(400);
