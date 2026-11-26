@@ -663,6 +663,21 @@ describe("Coach Tools Service", () => {
     },
   );
 
+  // Coach chat audit 2026-11-24 L89: each row carried the account id and
+  // its timestamps to the AI provider.
+  it("get_pantry_items sends only what the model reads, not the account id", async () => {
+    vi.mocked(storage.getPantryItems).mockResolvedValueOnce([
+      createMockPantryItem({ id: 9, userId: "acct-secret-id", name: "Rice" }),
+    ]);
+    const out = (await executeToolCall("get_pantry_items", {}, "user-1")) as {
+      items: Record<string, unknown>[];
+    };
+    expect(Object.keys(out.items[0]).sort()).toEqual(
+      ["category", "expiresAt", "id", "name", "quantity", "unit"].sort(),
+    );
+    expect(JSON.stringify(out)).not.toContain("acct-secret-id");
+  });
+
   const openList = (
     over: Partial<
       Awaited<ReturnType<typeof storage.getGroceryListsWithOpenItems>>[number]

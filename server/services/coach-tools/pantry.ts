@@ -18,8 +18,13 @@ const getPantryItemsSchema = z.object({
 function sanitizePantryItems(
   items: Awaited<ReturnType<typeof storage.getPantryItems>>,
 ) {
+  // Named fields, not the row: the row also carries the account id and its
+  // timestamps, which the model never needs (audit 2026-11-24, L89). The id
+  // stays: pantry card edits name items by it.
   return items.map((item) => ({
-    ...item,
+    id: item.id,
+    quantity: item.quantity,
+    expiresAt: item.expiresAt,
     name: sanitizeUserInput(item.name),
     unit: item.unit === null ? null : sanitizeUserInput(item.unit),
     category: item.category === null ? null : sanitizeUserInput(item.category),
