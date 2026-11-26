@@ -10,6 +10,7 @@ import { useWeeklyReport, useWeeklyReports } from "@/hooks/useWeeklyReports";
 import type { ProfileScreenNavigationProp } from "@/types/navigation";
 import {
   chartSeries,
+  dataBarColor,
   formatWeekRange,
   shouldShowYourWeek,
 } from "./weekly-report-utils";
@@ -66,7 +67,7 @@ export function YourWeekCard({
               styles.sparkBar,
               {
                 height: Math.max(3, (x.v / max) * SPARK_HEIGHT),
-                backgroundColor: x.on ? theme.link : theme.backgroundTertiary,
+                backgroundColor: dataBarColor(theme, x.on),
               },
             ]}
           />

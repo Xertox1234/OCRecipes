@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
@@ -10,6 +11,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -56,64 +58,106 @@ function SettingsCard() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { data } = useWeeklyReportSettings();
-  const { mutate, isPending } = useUpdateWeeklyReportSettings();
+  const { data, isError, refetch } = useWeeklyReportSettings();
+  const { mutate, isPending, variables } = useUpdateWeeklyReportSettings();
+
+  // No switches until the settings are known: before, both read ON while
+  // loading, and stayed ON and disabled for good when the load failed.
+  if (!data) {
+    return (
+      <View
+        style={[
+          styles.settings,
+          styles.settingsState,
+          { backgroundColor: theme.backgroundSecondary },
+        ]}
+      >
+        {isError ? (
+          <>
+            <InlineError message="Couldn't load your report settings." />
+            <Pressable
+              onPress={() => void refetch()}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading report settings"
+              style={styles.link}
+            >
+              <ThemedText style={[styles.linkText, { color: theme.link }]}>
+                Retry
+              </ThemedText>
+            </Pressable>
+          </>
+        ) : (
+          <ActivityIndicator
+            color={theme.textSecondary}
+            accessibilityLabel="Loading report settings"
+          />
+        )}
+      </View>
+    );
+  }
+
+  // A change being saved shows its new value until the save settles.
+  const shown = { ...data, ...(isPending ? variables : undefined) };
   return (
     <View
       style={[styles.settings, { backgroundColor: theme.backgroundSecondary }]}
     >
-      {SETTINGS.map((s, i) => (
-        <View key={s.key}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingText}>
-              <ThemedText style={styles.settingLabel}>{s.label}</ThemedText>
-              <ThemedText
-                style={[styles.small, { color: theme.textSecondary }]}
-              >
-                {s.description}
-              </ThemedText>
+      {SETTINGS.map((s, i) => {
+        // Push follows the report: say so, rather than a dimmed switch with
+        // no reason.
+        const blocked = s.key === "pushEnabled" && !shown.reportEnabled;
+        const description = blocked ? PUSH_BLOCKED_TEXT : s.description;
+        return (
+          <View key={s.key}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingText}>
+                <ThemedText style={styles.settingLabel}>{s.label}</ThemedText>
+                <ThemedText
+                  style={[styles.small, { color: theme.textSecondary }]}
+                >
+                  {description}
+                </ThemedText>
+              </View>
+              <Switch
+                accessibilityLabel={s.label}
+                accessibilityHint={description}
+                value={shown[s.key]}
+                disabled={isPending || blocked}
+                onValueChange={(v) => {
+                  haptics.selection();
+                  mutate(
+                    { [s.key]: v },
+                    {
+                      onError: () =>
+                        toast.error("Couldn't change that. Please try again."),
+                    },
+                  );
+                }}
+                trackColor={{
+                  false: withOpacity(theme.textSecondary, 0.3),
+                  true: theme.link,
+                }}
+                thumbColor={
+                  Platform.OS === "android" ? theme.buttonText : undefined
+                }
+              />
             </View>
-            <Switch
-              accessibilityLabel={s.label}
-              accessibilityHint={s.description}
-              value={data?.[s.key] ?? true}
-              disabled={
-                !data ||
-                isPending ||
-                (s.key === "pushEnabled" && data.reportEnabled === false)
-              }
-              onValueChange={(v) => {
-                haptics.selection();
-                mutate(
-                  { [s.key]: v },
-                  {
-                    onError: () =>
-                      toast.error("Couldn't change that. Please try again."),
-                  },
-                );
-              }}
-              trackColor={{
-                false: withOpacity(theme.textSecondary, 0.3),
-                true: theme.link,
-              }}
-              thumbColor={
-                Platform.OS === "android" ? theme.buttonText : undefined
-              }
-            />
+            {i < SETTINGS.length - 1 && (
+              <View
+                style={[
+                  styles.divider,
+                  { backgroundColor: withOpacity(theme.textSecondary, 0.12) },
+                ]}
+              />
+            )}
           </View>
-          {i < SETTINGS.length - 1 && (
-            <View
-              style={[
-                styles.divider,
-                { backgroundColor: withOpacity(theme.textSecondary, 0.12) },
-              ]}
-            />
-          )}
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
+
+const PUSH_BLOCKED_TEXT = "Turn on the weekly report first.";
 
 export default function WeeklyReportsScreen() {
   const { theme } = useTheme();
@@ -265,5 +309,6 @@ const styles = StyleSheet.create({
   small: { fontSize: 12, lineHeight: 17 },
   divider: { height: 1, marginLeft: Spacing.md },
   link: { minHeight: 44, minWidth: 44, justifyContent: "center" },
+  settingsState: { alignItems: "center", gap: Spacing.sm },
   linkText: { fontFamily: FontFamily.semiBold, fontSize: 14 },
 });
