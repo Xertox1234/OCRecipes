@@ -15,13 +15,21 @@ vi.mock("@/lib/timezone", () => ({
   getDeviceTimezone: () => "America/Toronto",
 }));
 
+const LABEL = {
+  calories: 120,
+  protein: 3,
+  carbs: 16,
+  fat: 5,
+  servingSize: "1 cup (240 ml)",
+};
+
 describe("awaitCoachBarcode / settleCoachBarcode", () => {
   beforeEach(() => settleCoachBarcode(null));
 
   it("resolves with the code the scanner read", async () => {
     const scanned = awaitCoachBarcode();
-    settleCoachBarcode("4006381333931");
-    await expect(scanned).resolves.toBe("4006381333931");
+    settleCoachBarcode({ code: "4006381333931" });
+    await expect(scanned).resolves.toEqual({ code: "4006381333931" });
   });
 
   it("resolves null when the scanner closes without a read", async () => {
@@ -32,21 +40,30 @@ describe("awaitCoachBarcode / settleCoachBarcode", () => {
 
   it("settles once: a close after a read changes nothing", async () => {
     const scanned = awaitCoachBarcode();
-    settleCoachBarcode("4006381333931");
+    settleCoachBarcode({ code: "4006381333931" });
     settleCoachBarcode(null);
-    await expect(scanned).resolves.toBe("4006381333931");
+    await expect(scanned).resolves.toEqual({ code: "4006381333931" });
   });
 
   it("gives up an older wait when a new one starts", async () => {
     const first = awaitCoachBarcode();
     const second = awaitCoachBarcode();
     await expect(first).resolves.toBeNull();
-    settleCoachBarcode("12345678");
-    await expect(second).resolves.toBe("12345678");
+    settleCoachBarcode({ code: "12345678" });
+    await expect(second).resolves.toEqual({ code: "12345678" });
   });
 
   it("ignores a read nobody is waiting for", () => {
-    expect(() => settleCoachBarcode("4006381333931")).not.toThrow();
+    expect(() => settleCoachBarcode({ code: "4006381333931" })).not.toThrow();
+  });
+
+  it("carries the label read in the scanner's label step", async () => {
+    const scanned = awaitCoachBarcode();
+    settleCoachBarcode({ code: "4006381333931", label: LABEL });
+    await expect(scanned).resolves.toEqual({
+      code: "4006381333931",
+      label: LABEL,
+    });
   });
 });
 
@@ -89,6 +106,15 @@ describe("sendBarcodeToCoach", () => {
       { headers: { "X-Timezone": "America/Toronto" } },
     );
     expect(text).toBe("I found it.");
+  });
+
+  it("sends the label's numbers with the code when the label step read them", async () => {
+    mockApiRequest.mockResolvedValue({ json: () => Promise.resolve({}) });
+    await sendBarcodeToCoach("4006381333931", 7, undefined, LABEL);
+    expect(mockApiRequest.mock.calls[0][2]).toEqual({
+      barcode: "4006381333931",
+      label: LABEL,
+    });
   });
 
   it("sends no brief field when no brief was shown", async () => {

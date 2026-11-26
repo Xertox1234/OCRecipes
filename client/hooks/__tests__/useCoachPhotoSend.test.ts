@@ -10,6 +10,7 @@ import {
   sendBarcodeToCoach,
   settleCoachBarcode,
 } from "@/lib/coach-barcode-scan";
+import type { CoachBarcodeScan } from "@/lib/coach-barcode-scan";
 import { preReadLabel, sendLabelToCoach } from "@/lib/coach-label-pre-read";
 import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
 import { useCoachPhotoSend } from "../useCoachPhotoSend";
@@ -332,7 +333,7 @@ describe("useCoachPhotoSend", () => {
     });
 
     it("opens the scanner, then sends the code it read", async () => {
-      vi.mocked(awaitCoachBarcode).mockResolvedValue("4006381333931");
+      vi.mocked(awaitCoachBarcode).mockResolvedValue({ code: "4006381333931" });
       vi.mocked(sendBarcodeToCoach).mockResolvedValue("I found it.");
       const openScanner = vi.fn();
       const { result, args } = setup({
@@ -354,10 +355,37 @@ describe("useCoachPhotoSend", () => {
         "4006381333931",
         7,
         "full",
+        undefined,
       );
       expect(uploadPhotoToCoach).not.toHaveBeenCalled();
       expect(args.onSettled).toHaveBeenCalledWith(7, null, true, "I found it.");
       expect(result.current.isSendingPhoto).toBe(false);
+    });
+
+    it("sends the label read in the scanner's label step with the code", async () => {
+      const label = {
+        calories: 120,
+        protein: 3,
+        carbs: 16,
+        fat: 5,
+        servingSize: "1 cup (240 ml)",
+      };
+      vi.mocked(awaitCoachBarcode).mockResolvedValue({
+        code: "4006381333931",
+        label,
+      });
+      vi.mocked(sendBarcodeToCoach).mockResolvedValue("I found it.");
+      const { result } = setup({ openScanner: vi.fn() });
+      await choose(result, "Scan a Barcode");
+      expect(sendBarcodeToCoach).toHaveBeenCalledWith(
+        "4006381333931",
+        7,
+        undefined,
+        label,
+      );
+      // Read on the phone in the scanner: nothing is read or uploaded here.
+      expect(preReadLabel).not.toHaveBeenCalled();
+      expect(uploadPhotoToCoach).not.toHaveBeenCalled();
     });
 
     it("does nothing when the scanner is closed without a read", async () => {
@@ -371,11 +399,11 @@ describe("useCoachPhotoSend", () => {
 
     it("stops waiting when the scanner could not be opened", async () => {
       // As the real module: the wait ends when it is settled.
-      let settle!: (code: string | null) => void;
+      let settle!: (scan: CoachBarcodeScan | null) => void;
       vi.mocked(awaitCoachBarcode).mockReturnValue(
         new Promise((resolve) => (settle = resolve)),
       );
-      vi.mocked(settleCoachBarcode).mockImplementation((code) => settle(code));
+      vi.mocked(settleCoachBarcode).mockImplementation((scan) => settle(scan));
       const { result, args } = setup({
         openScanner: () => {
           throw new Error("navigator not ready");
@@ -395,7 +423,7 @@ describe("useCoachPhotoSend", () => {
     });
 
     it("words a refused scan as a scan, not a photo", async () => {
-      vi.mocked(awaitCoachBarcode).mockResolvedValue("4006381333931");
+      vi.mocked(awaitCoachBarcode).mockResolvedValue({ code: "4006381333931" });
       vi.mocked(sendBarcodeToCoach).mockRejectedValue(new Error("offline"));
       const { result, args } = setup({ openScanner: vi.fn() });
       await choose(result, "Scan a Barcode");

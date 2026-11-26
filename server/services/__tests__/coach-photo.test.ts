@@ -763,6 +763,172 @@ describe("scannedBarcodeReply (a barcode read by the camera)", () => {
   });
 });
 
+describe("scannedBarcodeReply with the label read on the phone", () => {
+  const read = {
+    calories: 120,
+    protein: 3,
+    carbs: 16,
+    fat: 5,
+    servingSize: "1 cup (240 ml)",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("names the card from the barcode and takes the numbers from the label", async () => {
+    scanContext(product());
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items).toEqual([
+      {
+        name: "Oatly Oat Drink",
+        unitLabel: "1 serving (1 cup (240 ml))",
+        perUnit: { calories: 120, protein: 3, carbs: 16, fat: 5 },
+        count: 1,
+        source: "lookup",
+      },
+    ]);
+    expect(foodCardPayloadSchema.safeParse(reply.payload).success).toBe(true);
+    expect(reply.text).toMatch(/barcode/i);
+    expect(reply.text).toMatch(/your label/i);
+  });
+
+  it("uses the label when the product has no nutrition data", async () => {
+    scanContext(product({ perServing: {} }));
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Oatly Oat Drink",
+      perUnit: { calories: 120 },
+    });
+  });
+
+  it("leaves the name off when the label is far from the product's figures", async () => {
+    // 360 kcal a cup is 150 kcal per 100 ml; the oat drink is 46.
+    scanContext(product());
+    const reply = await scannedBarcodeReply("4006381333931", ctx, {
+      ...read,
+      calories: 360,
+      carbs: 60,
+      fat: 9,
+    });
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Packaged food",
+      perUnit: { calories: 360 },
+    });
+    expect(reply.text).toMatch(/don't match/i);
+    expect(reply.text).toMatch(/right pack/i);
+  });
+
+  it("keeps the name when the label's serving gives no weight to compare", async () => {
+    scanContext(product());
+    const reply = await scannedBarcodeReply("4006381333931", ctx, {
+      ...read,
+      calories: 360,
+      carbs: 60,
+      fat: 9,
+      servingSize: "1 bar",
+    });
+    expect(reply.payload?.items[0]).toMatchObject({ name: "Oatly Oat Drink" });
+  });
+
+  it("tolerates small foods whose figures are close in calories", async () => {
+    // 5 kcal per 100 ml against 2: a big ratio, a tiny difference.
+    scanContext(
+      product({ per100g: { calories: 2, protein: 0, carbs: 0.5, fat: 0 } }),
+    );
+    const reply = await scannedBarcodeReply("4006381333931", ctx, {
+      calories: 12,
+      protein: 0,
+      carbs: 3,
+      fat: 0,
+      servingSize: "1 cup (240 ml)",
+    });
+    expect(reply.payload?.items[0]).toMatchObject({ name: "Oatly Oat Drink" });
+  });
+
+  it("refuses a row past the card's limits", async () => {
+    scanContext(product());
+    const reply = await scannedBarcodeReply("4006381333931", ctx, {
+      ...read,
+      calories: 9000,
+      carbs: 1500,
+      fat: 330,
+      servingSize: "1 tub (1000 g)",
+    });
+    expect(reply.payload).toBeNull();
+  });
+
+  it("says the product's allergies could not be checked when the profile could not be read", async () => {
+    vi.mocked(loadBarcodeScanContext).mockResolvedValue({
+      result: product(),
+      verification: undefined,
+      profileOutcome: { ok: false },
+    } as unknown as Awaited<ReturnType<typeof loadBarcodeScanContext>>);
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload).not.toBeNull();
+    expect(reply.text).toMatch(
+      /couldn't check this product against your allergies/i,
+    );
+  });
+
+  it("reminds a user with allergies to read the pack when the lookup is down", async () => {
+    vi.mocked(loadBarcodeScanContext).mockRejectedValue(
+      new UpstreamUnavailableError(),
+    );
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: [{ name: "milk", severity: "severe" }],
+    });
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.text).toMatch(/read the pack/i);
+  });
+
+  it("rejects on any other failure, label or not", async () => {
+    vi.mocked(loadBarcodeScanContext).mockRejectedValue(new Error("db down"));
+    await expect(
+      scannedBarcodeReply("4006381333931", ctx, read),
+    ).rejects.toThrow("db down");
+  });
+
+  it("still gives the product's allergy warning", async () => {
+    scanContext(product({ allergenTags: ["en:milk"] }), [
+      { name: "milk", severity: "severe" },
+    ]);
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload).not.toBeNull();
+    expect(reply.text).toMatch(/allergy check/i);
+  });
+
+  it("makes the card from the label alone when the product is unknown", async () => {
+    scanContext(null, [{ name: "milk", severity: "severe" }]);
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Packaged food",
+      perUnit: { calories: 120, protein: 3, carbs: 16, fat: 5 },
+    });
+    expect(reply.text).toMatch(/couldn't find/i);
+    expect(reply.text).not.toMatch(/send a photo/i);
+    // No ingredients to check: the label photo's reminder.
+    expect(reply.text).toMatch(/read the pack/i);
+  });
+
+  it("makes the card from the label when every lookup source is down", async () => {
+    vi.mocked(loadBarcodeScanContext).mockRejectedValue(
+      new UpstreamUnavailableError(),
+    );
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: [],
+    });
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items[0]).toMatchObject({
+      perUnit: { calories: 120 },
+    });
+    expect(reply.text).toMatch(/couldn't look/i);
+    expect(reply.text).not.toMatch(/try again/i);
+  });
+});
+
 describe("phoneLabelReply (a label read on the phone)", () => {
   const read = {
     calories: 250,

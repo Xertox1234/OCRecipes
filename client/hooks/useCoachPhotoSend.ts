@@ -6,7 +6,11 @@ import {
 } from "@/lib/coach-photo-picker";
 import { uploadPhotoToCoach } from "@/lib/photo-upload";
 import { ApiError } from "@/lib/api-error";
-import { preReadLabel, sendLabelToCoach } from "@/lib/coach-label-pre-read";
+import {
+  preReadLabel,
+  sendLabelToCoach,
+  type PhoneLabelRead,
+} from "@/lib/coach-label-pre-read";
 import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
 import {
   awaitCoachBarcode,
@@ -22,8 +26,11 @@ import {
 /** Where the turn comes from: a photo source, or the live barcode scanner. */
 type CoachSendSource = CoachPhotoSource | "scan";
 
-/** What the user picked: a photo's local uri, or a scanned barcode's digits. */
-type Picked = { kind: CoachSendKind; value: string };
+/**
+ * What the user picked: a photo's local uri, or a scanned barcode's digits
+ * with the label its scanner step read, if any.
+ */
+type Picked = { kind: CoachSendKind; value: string; label?: PhoneLabelRead };
 
 interface Args {
   /** A reply is streaming or the mic is on: the chooser stays shut. */
@@ -82,8 +89,10 @@ async function pick(
       // No screen opened, so nothing would ever answer the wait.
       settleCoachBarcode(null);
     }
-    const code = await scanned;
-    return code ? { kind: "barcode", value: code } : null;
+    const scan = await scanned;
+    return scan
+      ? { kind: "barcode", value: scan.code, label: scan.label }
+      : null;
   }
   const uri = await pickCoachPhoto(source, (message) =>
     latest().onPickFailure(message),
@@ -113,6 +122,7 @@ async function runPhotoSend(
         picked.value,
         conversationId,
         a.openingBriefForm,
+        picked.label,
       );
     } else {
       // A nutrition label the phone can read itself goes as numbers, and the

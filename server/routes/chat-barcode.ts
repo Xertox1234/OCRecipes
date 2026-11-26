@@ -62,41 +62,46 @@ const LABEL_CARD_FAILED_TEXT =
 // Which opening brief the new chat showed, as on a typed first message.
 const openingBrief = z.enum(["full", "short"]).optional();
 
+// The app's label parser reads no value above 10,000; the food card's own,
+// tighter limits are applied when the card is made.
+const amount = z.number().finite().min(0).max(10000);
+const labelReadSchema = z
+  .object({
+    calories: amount,
+    protein: amount,
+    carbs: amount,
+    fat: amount,
+    servingSize: z.string().trim().min(1).max(100),
+  })
+  .strict()
+  // The phone checks this before it sends; checked again here, so a
+  // misread figure never reaches a card. A 400 makes the app send the
+  // photo instead.
+  .refine(
+    (l) =>
+      labelEnergyAgrees(l.calories, {
+        protein: l.protein,
+        carbs: l.carbs,
+        fat: l.fat,
+      }),
+    { message: "These label numbers don't add up." },
+  );
+
 const barcodeBodySchema = z
   .object({
     // The shapes the app's scanner sends (UPC-E, EAN-8, UPC-A, EAN-13). The
     // phone's decoder has already checked the symbol's own checksum.
     barcode: z.string().refine(isValidBarcode, "Invalid barcode"),
+    // The pack's nutrition label, read on the phone in the scanner's label
+    // step: the card carries these numbers under the product's name.
+    label: labelReadSchema.optional(),
     openingBrief,
   })
   .strict();
 
-// The app's label parser reads no value above 10,000; the food card's own,
-// tighter limits are applied when the card is made.
-const amount = z.number().finite().min(0).max(10000);
 const labelBodySchema = z
   .object({
-    label: z
-      .object({
-        calories: amount,
-        protein: amount,
-        carbs: amount,
-        fat: amount,
-        servingSize: z.string().trim().min(1).max(100),
-      })
-      .strict()
-      // The phone checks this before it sends; checked again here, so a
-      // misread figure never reaches a card. A 400 makes the app send the
-      // photo instead.
-      .refine(
-        (l) =>
-          labelEnergyAgrees(l.calories, {
-            protein: l.protein,
-            carbs: l.carbs,
-            fat: l.fat,
-          }),
-        { message: "These label numbers don't add up." },
-      ),
+    label: labelReadSchema,
     openingBrief,
   })
   .strict();
@@ -258,7 +263,7 @@ export function register(app: Express): void {
             formatZodError(body.error),
             ErrorCode.VALIDATION_ERROR,
           );
-        const { barcode } = body.data;
+        const { barcode, label } = body.data;
         await answerPhoneRead(req, res, body.data.openingBrief, {
           userText: COACH_BARCODE_USER_TEXT,
           capKind: "coachBarcodeScan",
@@ -267,7 +272,7 @@ export function register(app: Express): void {
           cardFailedText: CARD_FAILED_TEXT,
           noun: "Barcodes",
           logLabel: "barcode lookup",
-          reply: (ctx) => scannedBarcodeReply(barcode, ctx),
+          reply: (ctx) => scannedBarcodeReply(barcode, ctx, label),
         });
       } catch (error) {
         handleRouteError(res, error, "send coach barcode");

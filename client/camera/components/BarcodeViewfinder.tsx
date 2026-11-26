@@ -11,7 +11,11 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { AbsoluteFill } from "@/constants/theme";
-import { BARCODE_RETICLE, CONFIDENCE_COLORS } from "./ScanReticle-utils";
+import {
+  BARCODE_RETICLE,
+  CONFIDENCE_COLORS,
+  LABEL_RETICLE,
+} from "./ScanReticle-utils";
 
 const CORNER_LEN = 26;
 const STROKE = 3;
@@ -22,13 +26,20 @@ const SCAN_LINE = "#22c55e"; // hardcoded — live-camera overlay, not theme-abl
 const SCAN_TINT = "rgba(34, 197, 94, 0.18)"; // hardcoded — live-camera overlay
 
 interface Props {
+  /**
+   * What the frame is for: a wide barcode (the line sweeps across it), or a
+   * tall nutrition label (the line sweeps down it). Barcode by default.
+   */
+  shape?: "barcode" | "label";
+  /** Space kept clear at the bottom (controls): the frame centres above it. */
+  bottomInset?: number;
   /** 0 while looking, rising while a code holds, 1 from the lock on. */
   confidence: number;
   /** False while the viewfinder settles: drawn dim, not yet listening. */
   armed: boolean;
-  /** The lock is in: the scan line sweeps across the code. */
+  /** The lock is in, or the label is being read: the scan line sweeps. */
   sweeping: boolean;
-  /** The code is read: the frame fills green. */
+  /** The read is in: the frame fills green. */
   found: boolean;
   /** How long one sweep across and back takes. */
   sweepMs: number;
@@ -36,12 +47,15 @@ interface Props {
 }
 
 /**
- * The barcode-shaped viewfinder for the Coach's scanner. Its corners fill
- * white → amber → green while the same code holds, a scan line sweeps across
- * it once the code locks, and it fills green when the read is in. With
- * Reduce Motion the sweep becomes a still tint; the pacing stays the same.
+ * The viewfinder for the Coach's scanner, barcode- or label-shaped. Its
+ * corners fill white → amber → green while the same code holds, a scan line
+ * sweeps once the code locks (or while the label is read), and it fills
+ * green when the read is in. With Reduce Motion the sweep becomes a still
+ * tint; the pacing stays the same.
  */
 export function BarcodeViewfinder({
+  shape = "barcode",
+  bottomInset = 0,
   confidence,
   armed,
   sweeping,
@@ -49,7 +63,8 @@ export function BarcodeViewfinder({
   sweepMs,
   reducedMotion,
 }: Props) {
-  const { width, height } = BARCODE_RETICLE;
+  const isLabel = shape === "label";
+  const { width, height } = isLabel ? LABEL_RETICLE : BARCODE_RETICLE;
   const conf = useSharedValue(0);
   const presence = useSharedValue(0.35);
   const sweep = useSharedValue(0);
@@ -93,7 +108,9 @@ export function BarcodeViewfinder({
     ),
   }));
   const lineStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: sweep.value * (width - LINE_WIDTH) }],
+    transform: isLabel
+      ? [{ translateY: sweep.value * (height - LINE_WIDTH) }]
+      : [{ translateX: sweep.value * (width - LINE_WIDTH) }],
   }));
 
   const tinted = found || (sweeping && reducedMotion);
@@ -105,7 +122,7 @@ export function BarcodeViewfinder({
       importantForAccessibility="no-hide-descendants"
       style={StyleSheet.absoluteFill}
     >
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingBottom: bottomInset }]}>
         <Animated.View style={[{ width, height }, frameStyle]}>
           {tinted && (
             <View
@@ -113,15 +130,17 @@ export function BarcodeViewfinder({
               style={[StyleSheet.absoluteFill, styles.tint]}
             />
           )}
-          <View style={styles.bars}>
-            {BAR_WIDTHS.map((w, i) => (
-              <View key={i} style={[styles.bar, { width: w }]} />
-            ))}
-          </View>
+          {!isLabel && (
+            <View style={styles.bars}>
+              {BAR_WIDTHS.map((w, i) => (
+                <View key={i} style={[styles.bar, { width: w }]} />
+              ))}
+            </View>
+          )}
           {animateSweep && (
             <Animated.View
               testID="barcode-viewfinder-sweep"
-              style={[styles.line, lineStyle]}
+              style={[isLabel ? styles.labelLine : styles.line, lineStyle]}
             />
           )}
           <Animated.View style={[styles.corner, styles.tl, cornerStyle]} />
@@ -162,6 +181,19 @@ const styles = StyleSheet.create({
     bottom: 10,
     left: 0,
     width: LINE_WIDTH,
+    borderRadius: LINE_WIDTH,
+    backgroundColor: SCAN_LINE,
+    shadowColor: SCAN_LINE,
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  labelLine: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: 0,
+    height: LINE_WIDTH,
     borderRadius: LINE_WIDTH,
     backgroundColor: SCAN_LINE,
     shadowColor: SCAN_LINE,
