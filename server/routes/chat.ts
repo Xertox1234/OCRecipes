@@ -35,6 +35,16 @@ import {
   type ConversationType,
 } from "../services/chat-turn";
 
+/** GET /api/chat/conversations query: no type lists every kind. */
+const listQuerySchema = z.object({
+  type: z.enum(["coach", "recipe", "remix"]).optional(),
+  // Cut, not refused: the app's search box has no length limit.
+  search: z
+    .string()
+    .transform((s) => s.slice(0, 200))
+    .optional(),
+});
+
 export function register(app: Express): void {
   // GET /api/chat/conversations - List conversations
   app.get(
@@ -49,17 +59,21 @@ export function register(app: Express): void {
           min: 1,
           max: 100,
         });
-        const typeParam = req.query.type as string | undefined;
-        const type =
-          typeParam === "coach" ||
-          typeParam === "recipe" ||
-          typeParam === "remix"
-            ? typeParam
-            : undefined;
-        const search =
-          typeof req.query.search === "string"
-            ? req.query.search.trim()
-            : undefined;
+        // Parsed, not cast: a mistyped type listed every kind, and the search
+        // text had no limit (audit 2026-11-24, L42).
+        const parsed = listQuerySchema.safeParse({
+          type: req.query.type,
+          search: req.query.search,
+        });
+        if (!parsed.success)
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const { type } = parsed.data;
+        const search = parsed.data.search?.trim();
         const conversations = await storage.getChatConversations(
           req.userId,
           limit,
@@ -120,7 +134,7 @@ export function register(app: Express): void {
         const schema = z.object({
           title: z.string().max(200).optional(),
           type: z.enum(["coach", "recipe", "remix"]).default("coach"),
-          sourceRecipeId: z.number().int().positive().optional(),
+          sourceRecipeId: z.int32().positive().optional(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
@@ -289,7 +303,13 @@ export function register(app: Express): void {
 
         const schema = z.object({
           content: z.string().min(1).max(2000),
-          screenContext: z.string().max(1500).optional(),
+          // Cut, not refused: the recipe screen sends every ingredient name
+          // uncapped, and a 400 lost the whole question (audit 2026-11-24,
+          // L41). Downstream trims it further per use.
+          screenContext: z
+            .string()
+            .transform((s) => s.slice(0, 1500))
+            .optional(),
           warmUpId: z.string().max(100).optional(),
           turnKey: z.string().uuid().optional(),
           // Recipe finder button taps (R2): structured, never parsed from

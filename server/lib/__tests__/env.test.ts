@@ -463,3 +463,33 @@ describe("validateEnv AI route warnings (reliability audit M-rel-3)", () => {
     expect(warned("Vertex route is off")).toBe(true);
   });
 });
+
+// Coach chat audit 2026-11-24 L94: a mistyped cap ("5 per day", "0.5")
+// silently became 10 searches a day with nothing in the logs.
+describe("validateEnv Spoonacular daily cap", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE };
+    delete process.env.RECEIPT_VALIDATION_STUB;
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it.each(["5 per day", "0.5", "-3", "lots"])(
+    "refuses to start with RECIPE_FINDER_SPOONACULAR_DAILY_CAP=%s",
+    async (value) => {
+      process.env.RECIPE_FINDER_SPOONACULAR_DAILY_CAP = value;
+      const { validateEnv } = await load();
+      expect(() => validateEnv()).toThrow(
+        /RECIPE_FINDER_SPOONACULAR_DAILY_CAP/,
+      );
+    },
+  );
+
+  it.each(["", "0", "25"])("starts with the cap set to '%s'", async (value) => {
+    process.env.RECIPE_FINDER_SPOONACULAR_DAILY_CAP = value;
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+  });
+});

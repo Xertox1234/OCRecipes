@@ -16,7 +16,7 @@ import {
 } from "./types";
 
 const lookupNutritionSchema = z.object({
-  query: z.string().min(1),
+  query: z.string().min(1).max(200),
 });
 
 const getDailyLogDetailsSchema = z.object({
@@ -34,7 +34,14 @@ const logFoodItemSchema = z.object({
 
 const getSubstitutionsSchema = z.object({
   ingredients: z
-    .array(z.object({ name: z.string(), unit: z.string().optional() }))
+    // Bounded: this list becomes a second, paid model prompt.
+    .array(
+      z.object({
+        name: z.string().max(200),
+        unit: z.string().max(50).optional(),
+      }),
+    )
+    .max(30)
     .optional(),
 });
 

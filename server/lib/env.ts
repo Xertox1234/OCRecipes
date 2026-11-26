@@ -146,6 +146,13 @@ const envSchema = z.object({
   // value (empty Railway variable) still reads as off, so it is accepted.
   RECIPE_FINDER_ENABLED: z.enum(["true", "false", ""]).optional(),
   RECIPE_OFFER_ENABLED: z.enum(["true", "false", ""]).optional(),
+  // A whole number of searches a day, or empty for the default. Checked here
+  // because the reader falls back to 10 on anything else, silently (audit
+  // 2026-11-24, L94).
+  RECIPE_FINDER_SPOONACULAR_DAILY_CAP: z
+    .string()
+    .regex(/^\s*\d*\s*$/, "must be a whole number of searches a day")
+    .optional(),
   RETENTION_CLEANUP_ENABLED: z.enum(["true", "false", ""]).optional(),
 
   // Admin

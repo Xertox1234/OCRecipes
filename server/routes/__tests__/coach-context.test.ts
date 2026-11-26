@@ -267,6 +267,21 @@ describe("Coach Context Routes", () => {
       expect(typeof res.body.warmUpId).toBe("string");
     });
 
+    // Audit 2026-11-24 L100: a bare z.number() let 1.5, -3 and 1e10 reach
+    // the integer id column, which threw and answered 500.
+    it.each([1.5, -3, 1e10])(
+      "returns 400 for conversationId %s",
+      async (conversationId) => {
+        setupPremiumMock();
+        const res = await request(app)
+          .post("/api/coach/warm-up")
+          .set("Authorization", "Bearer token")
+          .send({ conversationId, interimTranscript: "Hello" });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("VALIDATION_ERROR");
+      },
+    );
+
     it("returns 400 for missing conversationId", async () => {
       setupPremiumMock();
 

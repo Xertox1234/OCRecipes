@@ -25,7 +25,8 @@ import { refusedNoteText } from "./_note-text";
 
 /** Ids the save popup / "What Coach knows" page acts on (visible memory). */
 const idsSchema = z.object({
-  ids: z.array(z.number().int().positive()).min(1).max(20),
+  // int32: the id column is serial; a larger id threw and answered 500.
+  ids: z.array(z.int32().positive()).min(1).max(20),
 });
 
 const createEntrySchema = z.object({

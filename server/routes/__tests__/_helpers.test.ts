@@ -164,6 +164,14 @@ describe("Route Helpers", () => {
       expect(parsePositiveIntParam("0")).toBeNull();
     });
 
+    // Audit 2026-11-24 L101: ids are Postgres `integer` (serial). A larger
+    // value made the query throw "out of range" and the route answer 500.
+    it("accepts the largest Postgres integer and refuses one past it", () => {
+      expect(parsePositiveIntParam("2147483647")).toBe(2147483647);
+      expect(parsePositiveIntParam("2147483648")).toBeNull();
+      expect(parsePositiveIntParam("99999999999999")).toBeNull();
+    });
+
     it("returns null for negative numbers", () => {
       expect(parsePositiveIntParam("-5")).toBeNull();
     });
