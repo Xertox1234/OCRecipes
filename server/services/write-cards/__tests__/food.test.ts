@@ -321,6 +321,50 @@ describe("performFoodSave / revertFoodSave", () => {
         ),
       );
 
+  // Audit 2026-11-24, L107: "today" means the day the card was shown.
+  it("refuses a card shown on an earlier day in the user's timezone", async () => {
+    const shown = createMockCoachWriteCard({
+      userId: user.id,
+      kind: "food",
+      payload,
+      createdAt: new Date("2026-11-24T23:50:00Z"),
+    });
+    await expect(
+      performFoodSave(
+        tx,
+        shown,
+        {},
+        {
+          userId: user.id,
+          tz: "UTC",
+          now: new Date("2026-11-25T00:05:00Z"),
+        },
+      ),
+    ).rejects.toThrow(/earlier day/);
+    expect(await logsFor()).toHaveLength(0);
+  });
+
+  it("saves a card shown earlier the same local day, past UTC midnight", async () => {
+    // 15:50 and 16:30 in Los Angeles; the second is already the 25th in UTC.
+    const shown = createMockCoachWriteCard({
+      userId: user.id,
+      kind: "food",
+      payload,
+      createdAt: new Date("2026-11-24T23:50:00Z"),
+    });
+    const refs = await performFoodSave(
+      tx,
+      shown,
+      {},
+      {
+        userId: user.id,
+        tz: "America/Los_Angeles",
+        now: new Date("2026-11-25T00:30:00Z"),
+      },
+    );
+    expect(refs.scannedItemIds).toHaveLength(2);
+  });
+
   it("save writes one entry per kept item with servings = count", async () => {
     const refs = await performFoodSave(
       tx,
@@ -362,7 +406,7 @@ describe("performFoodSave / revertFoodSave", () => {
     const now = new Date("2027-03-15T07:30:00Z");
     await performFoodSave(
       tx,
-      card(),
+      { ...card(), createdAt: now },
       { day: "yesterday" },
       { userId: user.id, tz: "America/Los_Angeles", now },
     );

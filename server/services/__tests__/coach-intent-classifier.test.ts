@@ -775,3 +775,70 @@ describe("matchesSelfHarm", () => {
     expect(matchesSelfHarm(text)).toBe(false);
   });
 });
+
+// Coach chat audit 2026-11-24 L17: a zero-width character or soft hyphen
+// inside a keyword (pasted text, some keyboards) broke every safety match.
+describe("safety matching ignores invisible and look-alike characters", () => {
+  const ZW = ["\u200B", "\u200C", "\u200D", "\u2060", "\u00AD", "\uFEFF"];
+  it.each(ZW)(
+    "routes suicide split by U+%s to safety and the crisis message",
+    (ch) => {
+      const text = `I keep thinking about sui${ch}cide`;
+      expect(classifyIntent(text).intent).toBe("safety_refusal");
+      expect(matchesSelfHarm(text)).toBe(true);
+    },
+  );
+
+  it.each(ZW)("routes purging split by U+%s to disordered eating", (ch) => {
+    const text = `I make myself throw u${ch}p after dinner`;
+    expect(classifyIntent(text).intent).toBe("safety_refusal");
+    expect(matchesDisorderedEating(text)).toBe(true);
+  });
+
+  it("reads full-width letters as plain ones", () => {
+    // NFKC: "ｓｕｉｃｉｄｅ" is "suicide".
+    expect(matchesSelfHarm("thinking about ｓｕｉｃｉｄｅ")).toBe(true);
+  });
+
+  it("leaves an ordinary message with a zero-width character ordinary", () => {
+    expect(
+      classifyIntent("is oat\u200B milk ok for breakfast").intent,
+    ).not.toBe("safety_refusal");
+  });
+});
+
+// Coach chat audit 2026-11-24 L46 (owner 2026-11-25: route them): a user
+// naming an eating disorder or bingeing about themselves gets the
+// disordered-eating reply. Talk about the topic stays ordinary.
+describe("self-stated eating disorders route to disordered eating", () => {
+  it.each([
+    "I think I have anorexia",
+    "I have bulimia and want to eat better",
+    "I'm anorexic, what should I eat",
+    "I’m bulimic",
+    "I've been bingeing and want to fix it",
+    "I have been binge eating every night",
+    "I keep bingeing after work",
+    "I was diagnosed with binge eating disorder",
+    "I think I might have an eating disorder",
+    "I'm recovering from anorexia",
+  ])("routes: %s", (text) => {
+    expect(classifyIntent(text).intent).toBe("safety_refusal");
+    expect(classifyIntent(text).matchedRule).toBe("disordered_eating");
+    expect(matchesDisorderedEating(text)).toBe(true);
+    // Not the crisis message: that is for suicide and self-harm.
+    expect(matchesSelfHarm(text)).toBe(false);
+  });
+
+  it.each([
+    "what is anorexia",
+    "my friend has bulimia, how can I help her eat",
+    "I've been binge watching cooking shows",
+    "I've been bingeing on Netflix all weekend",
+    "I keep binge-watching baking videos",
+    "is anorexia hereditary",
+    "I have a recipe for anorexia recovery meals from my dietitian",
+  ])("stays ordinary: %s", (text) => {
+    expect(matchesDisorderedEating(text)).toBe(false);
+  });
+});

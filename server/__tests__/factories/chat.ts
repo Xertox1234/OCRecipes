@@ -77,5 +77,7 @@ const coachWriteCardDefaults: CoachWriteCard = {
 export function createMockCoachWriteCard(
   overrides: Partial<CoachWriteCard> = {},
 ): CoachWriteCard {
-  return { ...coachWriteCardDefaults, ...overrides };
+  // Shown now unless a test says otherwise: a food card from an earlier day
+  // can no longer be saved (audit 2026-11-24, L107).
+  return { ...coachWriteCardDefaults, createdAt: new Date(), ...overrides };
 }

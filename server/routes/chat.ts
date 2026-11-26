@@ -32,6 +32,7 @@ import {
   ConversationLimitError,
   MAX_CONVERSATIONS_PER_USER,
 } from "../storage/chat-errors";
+import { parseTimezone } from "../lib/civil-date";
 import { admitTurn } from "./chat-admit";
 import {
   CONVERSATION_CONFIG,
@@ -272,9 +273,15 @@ export function register(app: Express): void {
             ErrorCode.NOT_FOUND,
           );
 
+        // The saved timezone decides when a food card's day is over (audit
+        // 2026-11-24, L107); this request carries none.
         const messages = await enrichWriteCardBlocks(
           await storage.getChatMessages(id, 100, req.userId),
           req.userId,
+          async () => {
+            const savedTz = (await storage.getUser(req.userId))?.timezone;
+            return savedTz ? parseTimezone(savedTz) : null;
+          },
         );
         fireAndForget(
           "coach-notebook-archival",

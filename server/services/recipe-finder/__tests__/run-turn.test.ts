@@ -17,6 +17,7 @@ import { findCommunity } from "../find-community";
 import { findInspired } from "../find-inspired";
 import { askClarifying } from "../ask-clarifying";
 import { askDishFollowUps } from "../ask-follow-ups";
+import { STANDARD_SAFETY_MESSAGE } from "../../../lib/ai-safety";
 
 vi.mock("../../../storage", () => ({
   storage: {
@@ -494,5 +495,80 @@ describe("executeFinderStep: offer steps", () => {
       ctx({ offer: true }),
     );
     expect(out.kind === "message" && out.block.type).toBe("recipe_offer");
+  });
+});
+
+// Coach chat audit 2026-11-24 L93: model-written finder text (clarifying
+// questions, dish follow-ups, inspired ideas) was saved and shown without
+// the output screen every other model-written surface passes.
+describe("executeFinderStep — output screen on model-written cards", () => {
+  it("answers with the standard message when a clarifying question is unsafe", async () => {
+    vi.mocked(askClarifying).mockResolvedValue([
+      {
+        question: "Eat only 500 calories per day?",
+        options: ["yes", "no"],
+      },
+    ]);
+    const out = await executeFinderStep(
+      { kind: "ask_clarifying", flow },
+      ctx(),
+    );
+    expect(out).toEqual({ kind: "plain", content: STANDARD_SAFETY_MESSAGE });
+  });
+
+  it("answers with the standard message when an inspired idea is unsafe", async () => {
+    vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(false);
+    vi.mocked(findInspired).mockResolvedValue({
+      status: "ok",
+      items: [
+        {
+          id: 44,
+          source: "inspired",
+          title: "Crash bowl",
+          description: "Eat only 500 calories per day with this bowl",
+          imageUrl: null,
+          readyInMinutes: null,
+          calories: 300,
+        },
+      ],
+    } as Awaited<ReturnType<typeof findInspired>>);
+    const out = await executeFinderStep({ kind: "search_online", flow }, ctx());
+    expect(out).toEqual({ kind: "plain", content: STANDARD_SAFETY_MESSAGE });
+  });
+
+  it("keeps an ordinary clarifying question", async () => {
+    vi.mocked(askClarifying).mockResolvedValue([
+      { question: "How much time do you have?", options: ["15 min", "1 hour"] },
+    ]);
+    const out = await executeFinderStep(
+      { kind: "ask_clarifying", flow },
+      ctx(),
+    );
+    expect(out.kind).toBe("message");
+  });
+
+  it("does not screen stored community recipes", async () => {
+    vi.mocked(extractQuery).mockResolvedValue({ q: "soup" });
+    vi.mocked(findCommunity).mockResolvedValue([
+      {
+        id: 12,
+        source: "community",
+        title: "Eat only 500 calories per day soup",
+        imageUrl: null,
+        readyInMinutes: null,
+        calories: 200,
+      },
+    ]);
+    const out = await executeFinderStep(
+      {
+        kind: "search_community",
+        request: "soup",
+        round: 0,
+        excludeIds: [],
+        priorShownIds: [],
+      },
+      ctx(),
+    );
+    expect(out.kind).toBe("message");
   });
 });
