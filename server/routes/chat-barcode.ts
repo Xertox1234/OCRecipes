@@ -180,7 +180,9 @@ async function answerPhoneRead(
   let text = turn.failedText;
   let blocks: CoachBlock[] = [];
   try {
-    // Claimed last: a turn refused above (message limit) spends none.
+    // Claimed last: a turn refused above (message limit) spends none. A
+    // spent count still stores the turn and its reply
+    // (todos/P3-2026-11-26-coach-scan-cap-still-stores-turns.md).
     const claimed = await storage.claimDailyAiCall(
       req.userId,
       turn.capKind,
@@ -273,7 +275,7 @@ export function register(app: Express): void {
       windowMs: 60 * 1000,
       max: resolveRateLimitMax(10, process.env),
       message: {
-        error: "Too many photo uploads. Please wait.",
+        error: "Too many photos. Please wait.",
         code: ErrorCode.RATE_LIMITED,
       },
       standardHeaders: true,

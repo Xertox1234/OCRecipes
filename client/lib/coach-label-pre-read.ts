@@ -67,6 +67,8 @@ export function labelFromOCRText(text: string): PhoneLabelRead | null {
   ) {
     return null;
   }
+  if (!fitsFoodCard(calories, protein, totalCarbs, totalFat)) return null;
+  if (!addsUp(calories, protein, totalCarbs, totalFat)) return null;
   return {
     calories,
     protein,
@@ -77,19 +79,57 @@ export function labelFromOCRText(text: string): PhoneLabelRead | null {
 }
 
 /**
+ * The food card's own limits (logFoodCardArgsSchema's estimate). A read
+ * past them would be refused on every resend of the same photo.
+ */
+function fitsFoodCard(
+  kcal: number,
+  protein: number,
+  carbs: number,
+  fat: number,
+) {
+  return kcal <= 5000 && protein <= 500 && carbs <= 1000 && fat <= 500;
+}
+
+/**
+ * The calories agree with the macros (4 kcal a gram of protein or carbs, 9 of
+ * fat). A direct read can still have a digit misread or dropped ("230" read
+ * as "20"); this catches it. The band is wide, because fibre, sugar alcohols
+ * and the label's own rounding make real panels drift.
+ */
+function addsUp(kcal: number, protein: number, carbs: number, fat: number) {
+  const fromMacros = 4 * protein + 4 * carbs + 9 * fat;
+  return Math.abs(fromMacros - kcal) <= Math.max(30, 0.25 * kcal);
+}
+
+/**
+ * How long the phone's reader may take. It is only a shortcut: past this the
+ * photo uploads as before, rather than a native call that never settles
+ * holding the chat's photo button.
+ */
+const READ_DEADLINE_MS = 4000;
+
+/**
  * Read the photo's text on the phone and check it. Null when the photo is
- * not a clear label or the phone could not read it; never rejects.
+ * not a clear label, or the phone could not read it in time; never rejects.
  */
 export async function preReadLabel(
   uri: string,
   recognize: (uri: string) => Promise<LocalOCRResult>,
 ): Promise<PhoneLabelRead | null> {
-  try {
-    const { text } = await recognize(uri);
-    return text ? labelFromOCRText(text) : null;
-  } catch {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), READ_DEADLINE_MS);
+  });
+  const read = recognize(uri).then(
+    ({ text }) => (text ? labelFromOCRText(text) : null),
     // No reader in this build, or it failed on this photo: send the photo.
-    return null;
+    () => null,
+  );
+  try {
+    return await Promise.race([read, deadline]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

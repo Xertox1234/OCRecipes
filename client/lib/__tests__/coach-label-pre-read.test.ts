@@ -74,6 +74,44 @@ Protein / Protéines 2g`;
     ).toBeNull();
   });
 
+  it("refuses numbers that do not add up (a digit misread or dropped)", () => {
+    // 5 g protein, 31 g carbs and 12 g fat make about 250 kcal, not 20.
+    expect(
+      labelFromOCRText(LABEL.replace("Calories 250", "Calories 20")),
+    ).toBeNull();
+    expect(
+      labelFromOCRText(LABEL.replace("Total Fat 12g", "Total Fat 2g")),
+    ).toBeNull();
+  });
+
+  it("allows the drift fibre and rounding give a real label", () => {
+    // 4×5 + 4×31 + 9×12 = 252 against a printed 230.
+    expect(
+      labelFromOCRText(LABEL.replace("Calories 250", "Calories 230"))?.calories,
+    ).toBe(230);
+  });
+
+  it("reads a zero-calorie drink", () => {
+    const text = `Nutrition Facts
+Serving Size 1 can (355 mL)
+Calories 0
+Total Fat 0g
+Sodium 40mg
+Total Carbohydrate 0g
+Protein 0g`;
+    expect(labelFromOCRText(text)).toMatchObject({ calories: 0, fat: 0 });
+  });
+
+  it("refuses a number the food card could not hold", () => {
+    const text = `Nutrition Facts
+Serving Size 1 tub (1000g)
+Calories 5600
+Total Fat 600g
+Total Carbohydrate 10g
+Protein 50g`;
+    expect(labelFromOCRText(text)).toBeNull();
+  });
+
   it("refuses empty text", () => {
     expect(labelFromOCRText("")).toBeNull();
   });
@@ -90,6 +128,18 @@ describe("preReadLabel", () => {
   it("gives null when the phone cannot read text (no reader in this build)", async () => {
     const recognize = vi.fn().mockRejectedValue(new Error("no native module"));
     expect(await preReadLabel("file:///p.jpg", recognize)).toBeNull();
+  });
+
+  it("gives null, so the photo uploads, when the reader never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      const recognize = vi.fn().mockReturnValue(new Promise(() => {}));
+      const read = preReadLabel("file:///p.jpg", recognize);
+      await vi.advanceTimersByTimeAsync(5000);
+      await expect(read).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("gives null for a photo that is not a label", async () => {

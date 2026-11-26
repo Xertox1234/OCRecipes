@@ -143,6 +143,30 @@ describe("useCoachPhotoSend", () => {
       expect(failure).not.toBeNull();
     });
 
+    it("uploads the photo when the server turns the numbers away unread", async () => {
+      vi.mocked(pickCoachPhoto).mockResolvedValue("file:///label.jpg");
+      vi.mocked(preReadLabel).mockResolvedValue(read);
+      const refused = new ApiError("400: bad", ErrorCode.VALIDATION_ERROR);
+      refused.status = 400;
+      vi.mocked(sendLabelToCoach).mockRejectedValue(refused);
+      vi.mocked(uploadPhotoToCoach).mockResolvedValue("I read that label.");
+      const { result, args } = setup();
+
+      await choose(result, "Take Photo");
+
+      expect(uploadPhotoToCoach).toHaveBeenCalledWith(
+        "file:///label.jpg",
+        7,
+        undefined,
+      );
+      expect(args.onSettled).toHaveBeenCalledWith(
+        7,
+        null,
+        false,
+        "I read that label.",
+      );
+    });
+
     it("uploads the photo when the phone cannot read it as a label", async () => {
       vi.mocked(pickCoachPhoto).mockResolvedValue("file:///meal.jpg");
       vi.mocked(preReadLabel).mockResolvedValue(null);

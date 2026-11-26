@@ -5,6 +5,7 @@ import {
   type CoachPhotoSource,
 } from "@/lib/coach-photo-picker";
 import { uploadPhotoToCoach } from "@/lib/photo-upload";
+import { ApiError } from "@/lib/api-error";
 import { preReadLabel, sendLabelToCoach } from "@/lib/coach-label-pre-read";
 import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
 import {
@@ -116,10 +117,25 @@ async function runPhotoSend(
     } else {
       // A nutrition label the phone can read itself goes as numbers, and the
       // photo stays on the phone (Coach roadmap V5); anything else uploads.
-      // No upload after a refused label send: the turn may be stored.
       const label = await preReadLabel(picked.value, recognizeTextFromPhoto);
-      replyText = label
-        ? await sendLabelToCoach(label, conversationId, a.openingBriefForm)
+      const sentAsNumbers = label
+        ? await sendLabelToCoach(
+            label,
+            conversationId,
+            a.openingBriefForm,
+          ).then(
+            (text) => ({ text }),
+            (err: unknown) => {
+              // Turned away unread (nothing stored): the photo goes instead,
+              // or the same numbers would be refused on every resend. Any
+              // other refusal may have stored the turn, so nothing is resent.
+              if (err instanceof ApiError && err.status === 400) return null;
+              throw err;
+            },
+          )
+        : null;
+      replyText = sentAsNumbers
+        ? sentAsNumbers.text
         : await uploadPhotoToCoach(
             picked.value,
             conversationId,
