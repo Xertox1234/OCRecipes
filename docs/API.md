@@ -606,6 +606,38 @@ Authorization: Bearer <token>
 
 ---
 
+#### Get Week Calories
+
+The calories of a day and the six days before it, oldest first, each read as
+Get Daily Summary reads its day. The Coach's week card uses it. Has its own
+rate limit (30 a minute), apart from the one logging food shares.
+
+```http
+GET /api/daily-summary/week?end=2026-11-20
+Authorization: Bearer <token>
+X-Timezone: America/Los_Angeles
+```
+
+**Query Parameters**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| end | `YYYY-MM-DD` | today in `X-Timezone` | The last of the seven days |
+
+**Response** `200 OK`
+
+```json
+{
+  "endDate": "2026-11-20",
+  "calories": [1800, 2100, 0, 1950, 2400, 1700, 1420]
+}
+```
+
+| Status | Description                  |
+| ------ | ---------------------------- |
+| 400    | `end` is not a calendar date |
+
+---
+
 ### AI Suggestions
 
 #### Generate Suggestions

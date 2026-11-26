@@ -1,8 +1,8 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "@/hooks/useTheme";
-import { dailySummaryQuery } from "@/hooks/useDailySummary";
+import { useWeekCalories } from "@/hooks/useWeekCalories";
 import { GOALS_QUERY_KEY } from "@/hooks/useCalorieGoal";
 import { toLocalDateString } from "@shared/lib/date";
 import type { WeekProgressBlock } from "@shared/schemas/coach-blocks";
@@ -25,21 +25,19 @@ const CHART_HEIGHT = 72;
 
 /**
  * Seven days of calories against the calorie goal, kept current (Coach
- * roadmap T3). Each day is the same read as Home and the day card, so a log
- * anywhere in the app (each one refreshes those reads) shows here too. The
- * block's snapshot stands in until all seven load, or when one can't.
+ * roadmap T3). The week is one read, kept with the day summaries, so a log
+ * anywhere in the app (each one refreshes those) shows here too. The block's
+ * snapshot stands in until it loads, or when it can't.
  */
 const WeekProgress = React.memo(function WeekProgress({ block }: Props) {
   const { theme } = useTheme();
   const dates = useMemo(() => weekDates(block.endDate), [block.endDate]);
-  const reads = useQueries({
-    queries: dates.map((date) => dailySummaryQuery(date)),
-  });
+  const week = useWeekCalories(block.endDate);
   const goalsQuery = useQuery<GoalsResponse>({ queryKey: GOALS_QUERY_KEY });
 
-  const liveCalories = liveWeek(reads);
+  const liveCalories = liveWeek(week.data, week.isError, block.endDate);
   const liveGoal = liveGoals(goalsQuery.data)?.calories;
-  // Live only when every read came back and the latest of each worked;
+  // Live only when both reads came back and the latest of each worked;
   // otherwise the reply's week, all of it, so the caption is true.
   const live = !!liveCalories && !!liveGoal && !goalsQuery.isError;
   const calories =
@@ -48,7 +46,7 @@ const WeekProgress = React.memo(function WeekProgress({ block }: Props) {
 
   const today = toLocalDateString(new Date());
   const bars = weekBars(calories, goal, dates, today);
-  const summary = weekSummary(calories, goal);
+  const summary = weekSummary(calories, goal, block.endDate === today);
   const title = weekTitle(block.endDate, today);
 
   return (
@@ -89,10 +87,19 @@ const WeekProgress = React.memo(function WeekProgress({ block }: Props) {
       <View style={styles.labels}>
         {bars.map((bar) => (
           <View key={bar.date} style={styles.column}>
-            <Text style={[styles.value, { color: theme.text }]}>
+            <Text
+              style={[styles.value, { color: theme.text }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={1.2}
+            >
               {bar.text}
             </Text>
-            <Text style={[styles.day, { color: theme.textSecondary }]}>
+            <Text
+              style={[styles.day, { color: theme.textSecondary }]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.2}
+            >
               {bar.label}
             </Text>
           </View>

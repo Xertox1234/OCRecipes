@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { DailySummaryResponse } from "@/types/api";
+import type { WeekCaloriesResponse } from "@/hooks/useWeekCalories";
 import {
   liveWeek,
   weekBars,
@@ -8,18 +8,6 @@ import {
   weekSummary,
   weekTitle,
 } from "../week-progress-utils";
-
-// A sum can arrive as a string, so the data is cast from what the wire sends.
-const day = (totalCalories: unknown) => ({
-  data: {
-    totalCalories,
-    totalProtein: 0,
-    totalCarbs: 0,
-    totalFat: 0,
-    itemCount: 1,
-  } as Record<string, unknown> as unknown as DailySummaryResponse,
-  isError: false,
-});
 
 describe("weekDates", () => {
   it("is the last day and the six before it, oldest first", () => {
@@ -55,24 +43,31 @@ describe("weekDates", () => {
 });
 
 describe("liveWeek", () => {
-  it("is each day's calories once all seven reads are in", () => {
-    const reads = [1, 2, 3, 4, 5, 6, 7].map((n) => day(n * 100));
-    expect(liveWeek(reads)).toEqual([100, 200, 300, 400, 500, 600, 700]);
+  const read = (calories: unknown[], endDate = "2026-11-20") => ({
+    data: { endDate, calories } as unknown as WeekCaloriesResponse,
+    isError: false,
+  });
+
+  it("is the week's calories once its read is in", () => {
+    const r = read([100, 200, 300, 400, 500, 600, 700]);
+    expect(liveWeek(r.data, r.isError, "2026-11-20")).toEqual([
+      100, 200, 300, 400, 500, 600, 700,
+    ]);
   });
 
   it("reads a sum that came back as a string, and a bad one as 0", () => {
-    const reads = ["1420.5", null, "abc", -5, 0, 1800, "2000"].map(day);
-    expect(liveWeek(reads)).toEqual([1420.5, 0, 0, 0, 0, 1800, 2000]);
+    const r = read(["1420.5", null, "abc", -5, 0, 1800, "2000"]);
+    expect(liveWeek(r.data, false, "2026-11-20")).toEqual([
+      1420.5, 0, 0, 0, 0, 1800, 2000,
+    ]);
   });
 
-  it("is nothing while a day is loading or its latest read failed", () => {
-    const reads = [1, 2, 3, 4, 5, 6, 7].map((n) => day(n));
-    expect(
-      liveWeek([...reads.slice(0, 6), { data: undefined, isError: false }]),
-    ).toBeUndefined();
-    expect(
-      liveWeek([...reads.slice(0, 6), { ...reads[6], isError: true }]),
-    ).toBeUndefined();
+  it("is nothing while loading, after a failed read, or for another week", () => {
+    const r = read([1, 2, 3, 4, 5, 6, 7]);
+    expect(liveWeek(undefined, false, "2026-11-20")).toBeUndefined();
+    expect(liveWeek(r.data, true, "2026-11-20")).toBeUndefined();
+    expect(liveWeek(r.data, false, "2026-11-21")).toBeUndefined();
+    expect(liveWeek(read([1, 2, 3]).data, false, "2026-11-20")).toBeUndefined();
   });
 });
 
@@ -125,20 +120,30 @@ describe("weekBars", () => {
 
 describe("goal line and summary", () => {
   it("averages only the days with something logged", () => {
-    const s = weekSummary([1800, 2200, 0, 0, 2000, 0, 0], 2000);
+    const s = weekSummary([1800, 2200, 0, 0, 2000, 0, 0], 2000, false);
     expect(s.text).toBe("Average 2,000 cal over 3 days logged · goal 2,000");
     expect(s.goalAt).toBe(2000 / 2200);
   });
 
+  it("leaves today out of the average while the week ends today", () => {
+    // A breakfast-only today would pull the average down.
+    expect(weekSummary([1800, 2200, 0, 0, 2000, 0, 400], 2000, true).text).toBe(
+      "Average 2,000 cal over 3 days logged, not counting today · goal 2,000",
+    );
+    expect(weekSummary([0, 0, 0, 0, 0, 0, 400], 2000, true).text).toBe(
+      "Nothing logged before today · goal 2,000",
+    );
+  });
+
   it("puts the goal line at the top when no day passes it", () => {
-    expect(weekSummary([1000, 0, 0, 0, 0, 0, 0], 2000).goalAt).toBe(1);
+    expect(weekSummary([1000, 0, 0, 0, 0, 0, 0], 2000, false).goalAt).toBe(1);
   });
 
   it("says one day, and says when nothing was logged", () => {
-    expect(weekSummary([1500, 0, 0, 0, 0, 0, 0], 2000).text).toBe(
+    expect(weekSummary([1500, 0, 0, 0, 0, 0, 0], 2000, false).text).toBe(
       "Average 1,500 cal over 1 day logged · goal 2,000",
     );
-    expect(weekSummary([0, 0, 0, 0, 0, 0, 0], 2000).text).toBe(
+    expect(weekSummary([0, 0, 0, 0, 0, 0, 0], 2000, false).text).toBe(
       "Nothing logged these seven days · goal 2,000",
     );
   });
@@ -154,7 +159,7 @@ describe("weekTitle and weekSpoken", () => {
     const dates = weekDates("2026-11-26");
     const calories = [1800, 2100, 0, 1950, 2400, 1700, 1420];
     const bars = weekBars(calories, 2000, dates, "2026-11-26");
-    const summary = weekSummary(calories, 2000);
+    const summary = weekSummary(calories, 2000, true);
     const live = weekSpoken("Last 7 days", bars, summary.text, true);
     expect(live).toContain("Last 7 days. ");
     expect(live).toContain("Friday: 1,800 calories");

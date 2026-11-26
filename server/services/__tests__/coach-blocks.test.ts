@@ -582,6 +582,10 @@ describe("week_progress requests", () => {
     expect(on).toContain('- week_progress: { type: "week_progress" }');
     expect(on).toMatch(/use one week_progress block, not an inline_chart/);
     expect(on).toMatch(/say in words how the week went/);
+    // It is the last seven days, and the model never saw the card's numbers.
+    expect(on).toMatch(/call it the last seven days, not this week/);
+    expect(on).toMatch(/only from the days your tools or context showed you/);
+    expect(on).toMatch(/rather than guessing how the week went/);
     expect(on).not.toContain("day_progress");
     expect(
       getBlocksSystemPrompt(false, { writeCards: true, dayProgress: true }),
@@ -597,6 +601,7 @@ describe("week_progress requests", () => {
     expect(both).toContain("- day_progress:");
     expect(both).toContain("- week_progress:");
     expect(both).not.toMatch(/such as a week or a trend/);
+    expect(both).toMatch(/such as a longer trend/);
     // Without the week card the day rule is as it was.
     expect(
       getBlocksSystemPrompt(false, { writeCards: true, dayProgress: true }),

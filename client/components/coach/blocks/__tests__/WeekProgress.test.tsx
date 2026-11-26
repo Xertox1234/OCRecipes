@@ -5,19 +5,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import WeekProgress from "../WeekProgress";
 import type { WeekProgressBlock } from "@shared/schemas/coach-blocks";
+import { useWeekCalories } from "@/hooks/useWeekCalories";
 
-const { reads, goalsResult, queriesAsked } = vi.hoisted(() => ({
-  reads: { current: [] as unknown[] },
+vi.mock("@/hooks/useWeekCalories", () => ({ useWeekCalories: vi.fn() }));
+
+const { goalsResult } = vi.hoisted(() => ({
   goalsResult: { current: { data: undefined, isError: false } as unknown },
-  queriesAsked: { current: [] as { queryKey: readonly unknown[] }[] },
 }));
 vi.mock("@tanstack/react-query", async (orig) => ({
   ...(await orig<typeof import("@tanstack/react-query")>()),
   useQuery: () => goalsResult.current,
-  useQueries: ({ queries }: { queries: { queryKey: unknown[] }[] }) => {
-    queriesAsked.current = queries;
-    return reads.current;
-  },
 }));
 
 const block: WeekProgressBlock = {
@@ -29,19 +26,11 @@ const block: WeekProgressBlock = {
   },
 };
 
-const loading = () =>
-  Array.from({ length: 7 }, () => ({ data: undefined, isError: false }));
+const weekRead = (data: unknown, isError = false) =>
+  ({ data, isError }) as unknown as ReturnType<typeof useWeekCalories>;
 const loaded = (calories: number[]) =>
-  calories.map((totalCalories) => ({
-    data: {
-      totalCalories,
-      totalProtein: 0,
-      totalCarbs: 0,
-      totalFat: 0,
-      itemCount: 1,
-    },
-    isError: false,
-  }));
+  weekRead({ endDate: "2026-11-20", calories });
+
 const GOALS = {
   dailyCalorieGoal: 2200,
   dailyProteinGoal: 150,
@@ -52,18 +41,13 @@ const GOALS = {
 
 describe("WeekProgress", () => {
   beforeEach(() => {
-    reads.current = loading();
+    vi.mocked(useWeekCalories).mockReturnValue(weekRead(undefined));
     goalsResult.current = { data: undefined, isError: false };
   });
 
   it("reads the block's seven days, and shows the reply's numbers until they load", () => {
     renderComponent(<WeekProgress block={block} />);
-    expect(queriesAsked.current.map((q) => q.queryKey)).toEqual(
-      [14, 15, 16, 17, 18, 19, 20].map((d) => [
-        "/api/daily-summary",
-        `2026-11-${d}`,
-      ]),
-    );
+    expect(useWeekCalories).toHaveBeenCalledWith("2026-11-20");
     expect(screen.getByText("1,800")).toBeTruthy();
     expect(
       screen.getByText("Average 1,895 cal over 6 days logged · goal 2,000"),
@@ -72,7 +56,9 @@ describe("WeekProgress", () => {
   });
 
   it("shows the week as it is now once every read arrives", () => {
-    reads.current = loaded([2000, 2000, 2000, 2000, 2000, 2000, 2300]);
+    vi.mocked(useWeekCalories).mockReturnValue(
+      loaded([2000, 2000, 2000, 2000, 2000, 2000, 2300]),
+    );
     goalsResult.current = { data: GOALS, isError: false };
     renderComponent(<WeekProgress block={block} />);
     expect(screen.getByText("2,300")).toBeTruthy();
@@ -82,11 +68,14 @@ describe("WeekProgress", () => {
     expect(screen.getByText("Updates as you log")).toBeTruthy();
   });
 
-  it("keeps the reply's week while one day is still loading or failed", () => {
-    reads.current = [
-      ...loaded([1, 1, 1, 1, 1, 1]),
-      { data: undefined, isError: true },
-    ];
+  it("keeps the reply's week when the latest read failed", () => {
+    // A refetch that failed keeps older data: not shown as if it were live.
+    vi.mocked(useWeekCalories).mockReturnValue(
+      weekRead(
+        { endDate: "2026-11-20", calories: [1, 1, 1, 1, 1, 1, 1] },
+        true,
+      ),
+    );
     goalsResult.current = { data: GOALS, isError: false };
     renderComponent(<WeekProgress block={block} />);
     expect(screen.getByText("1,800")).toBeTruthy();
@@ -94,7 +83,7 @@ describe("WeekProgress", () => {
   });
 
   it("keeps the reply's week when the goals can't be read", () => {
-    reads.current = loaded([1, 1, 1, 1, 1, 1, 1]);
+    vi.mocked(useWeekCalories).mockReturnValue(loaded([1, 1, 1, 1, 1, 1, 1]));
     goalsResult.current = { data: GOALS, isError: true };
     renderComponent(<WeekProgress block={block} />);
     expect(screen.getByText("As of the Coach's reply")).toBeTruthy();

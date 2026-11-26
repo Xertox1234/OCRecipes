@@ -21,6 +21,30 @@ function total(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * The calories of `endDate` and the six days before it, oldest first, in the
+ * user's zone: each day is the same read as /api/daily-summary, so the card
+ * and Home add a day up the same way. One day at a time, so a card holds one
+ * database connection, not seven of the pool's ten.
+ */
+export async function readWeekCalories(
+  userId: string,
+  endDate: string,
+  tz: string,
+): Promise<number[]> {
+  const calories: number[] = [];
+  for (const back of [6, 5, 4, 3, 2, 1, 0]) {
+    const date = addCivilDays(endDate, -back);
+    const summary = await storage.getDailySummary(
+      userId,
+      civilDateToInstant(date, tz),
+      tz,
+    );
+    calories.push(total(summary.totalCalories));
+  }
+  return calories;
+}
+
 export async function buildWeekProgressBlock(ctx: {
   userId: string;
   tz: string;
@@ -28,25 +52,11 @@ export async function buildWeekProgressBlock(ctx: {
   user: { dailyCalorieGoal: number | null };
 }): Promise<WeekProgressBlock> {
   const endDate = civilDateString(ctx.now ?? new Date(), ctx.tz);
-  // Oldest first. One read per day, the same read Home and the app's card
-  // make, so the snapshot and the live card add a day up the same way.
-  const days = [6, 5, 4, 3, 2, 1, 0].map((back) =>
-    addCivilDays(endDate, -back),
-  );
-  const summaries = await Promise.all(
-    days.map((date) =>
-      storage.getDailySummary(
-        ctx.userId,
-        civilDateToInstant(date, ctx.tz),
-        ctx.tz,
-      ),
-    ),
-  );
   return {
     type: "week_progress",
     endDate,
     snapshot: {
-      calories: summaries.map((s) => total(s.totalCalories)),
+      calories: await readWeekCalories(ctx.userId, endDate, ctx.tz),
       // An unset calorie goal is the app's default, as the day card reads it.
       calorieGoal:
         ctx.user.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories,

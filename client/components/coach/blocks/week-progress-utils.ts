@@ -2,12 +2,12 @@
 /**
  * The week progress card (Coach roadmap T3, living blocks): the block names
  * its last day, and the card shows the calories of that day and the six
- * before it against the calorie goal as they are now, from the same day
- * reads Home and the day card make. The block's snapshot stands in until all
- * seven load, or when one can't.
+ * before it against the calorie goal as they are now, read in one request
+ * that adds each day up as Home does. The block's snapshot stands in until the
+ * week loads, or when it can't.
  */
 import { toLocalDateString } from "@shared/lib/date";
-import type { DailySummaryResponse } from "@/types/api";
+import type { WeekCaloriesResponse } from "@/hooks/useWeekCalories";
 
 export interface WeekBar {
   date: string;
@@ -52,15 +52,20 @@ function num(value: unknown): number {
 }
 
 /**
- * Each day's calories, once all seven reads have come back and the latest of
- * each worked; otherwise nothing, so the card shows the reply's seven days
- * rather than a mix of the two.
+ * The week's calories, once its read has come back and the latest one
+ * worked, for the card's own week; otherwise nothing, so the card shows the
+ * reply's seven days rather than a mix of the two.
  */
 export function liveWeek(
-  reads: { data?: DailySummaryResponse; isError: boolean }[],
+  week: WeekCaloriesResponse | undefined,
+  isError: boolean,
+  endDate: string,
 ): number[] | undefined {
-  if (reads.some((r) => !r.data || r.isError)) return undefined;
-  return reads.map((r) => num(r.data?.totalCalories));
+  if (!week || isError || week.endDate !== endDate) return undefined;
+  if (!Array.isArray(week.calories) || week.calories.length !== 7) {
+    return undefined;
+  }
+  return week.calories.map(num);
 }
 
 function scaleOf(calories: number[], goal: number): number {
@@ -101,21 +106,31 @@ export function weekBars(
   });
 }
 
-/** The line under the chart, and where the goal line sits (0 to 1). */
+/**
+ * The line under the chart, and where the goal line sits (0 to 1). While the
+ * week ends today, today is left out of the average: a day still being
+ * logged would pull it down.
+ */
 export function weekSummary(
   calories: number[],
   goal: number,
+  endsToday: boolean,
 ): { text: string; goalAt: number } {
   const goalAt = goal / scaleOf(calories, goal);
-  const logged = calories.filter((c) => c > 0);
+  const counted = endsToday ? calories.slice(0, -1) : calories;
+  const logged = counted.filter((c) => c > 0);
   const goalText = `goal ${whole(goal)}`;
   if (logged.length === 0) {
-    return { text: `Nothing logged these seven days · ${goalText}`, goalAt };
+    const nothing = endsToday
+      ? "Nothing logged before today"
+      : "Nothing logged these seven days";
+    return { text: `${nothing} · ${goalText}`, goalAt };
   }
   const average = logged.reduce((a, b) => a + b, 0) / logged.length;
   const days = logged.length === 1 ? "1 day" : `${logged.length} days`;
+  const today = endsToday ? ", not counting today" : "";
   return {
-    text: `Average ${whole(average)} cal over ${days} logged · ${goalText}`,
+    text: `Average ${whole(average)} cal over ${days} logged${today} · ${goalText}`,
     goalAt,
   };
 }

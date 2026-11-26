@@ -176,12 +176,12 @@ const DAY_PROGRESS_RULE =
 /** The day rule's last sentence once the week card is offered too. */
 const DAY_RULE_WEEK_TAIL = [
   "such as a week or a trend",
-  "such as a trend",
+  "such as a longer trend",
 ] as const;
 const WEEK_PROGRESS_LINE =
-  '- week_progress: { type: "week_progress" } (the app fills in the calories of the last seven days, today included, against the calorie goal, and keeps them up to date)';
+  '- week_progress: { type: "week_progress" } (the app fills in the calories of the last seven days, today included, against the calorie goal, and keeps them up to date; it is not the calendar week)';
 const WEEK_PROGRESS_RULE =
-  "- For how the last seven days went for calories, use one week_progress block, not an inline_chart: its numbers stay current, so say in words how the week went rather than repeating its numbers. It shows calories only; keep inline_chart for protein or other numbers over a week";
+  "- For how the last seven days went for calories, use one week_progress block, not an inline_chart, and call it the last seven days, not this week. Its numbers stay current, so say in words how the week went rather than repeating its numbers, and only from the days your tools or context showed you; if you have not looked at those days, say the card shows them rather than guessing how the week went. It shows calories only; keep inline_chart for protein or other numbers over a week";
 const COMMITMENT_CARD_LINE =
   '- commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }';
 const NOTES_PAUSED_RULE =

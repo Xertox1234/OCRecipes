@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { storage } from "../../storage";
-import { buildWeekProgressBlock } from "../week-progress";
+import { buildWeekProgressBlock, readWeekCalories } from "../week-progress";
 import { isWeekProgressRequest } from "../day-progress-request";
 import { coachBlockSchema } from "@shared/schemas/coach-blocks";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
@@ -107,5 +107,36 @@ describe("buildWeekProgressBlock", () => {
         user: { dailyCalorieGoal: 2100 },
       }),
     ).rejects.toThrow("db down");
+  });
+});
+
+describe("readWeekCalories", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reads the seven days ending on the date given, oldest first", async () => {
+    vi.mocked(storage.getDailySummary).mockImplementation(async (_u, at, tz) =>
+      summary(Number(civilDateString(at, tz).slice(8))),
+    );
+    // Across the US clock change on 2026-11-01: seven distinct days.
+    await expect(readWeekCalories("1", "2026-11-04", TZ)).resolves.toEqual([
+      29, 30, 31, 1, 2, 3, 4,
+    ]);
+  });
+
+  it("reads one day at a time, so a card holds one database connection", async () => {
+    let open = 0;
+    let most = 0;
+    vi.mocked(storage.getDailySummary).mockImplementation(async () => {
+      open++;
+      most = Math.max(most, open);
+      await new Promise((r) => setTimeout(r, 1));
+      open--;
+      return summary(100);
+    });
+    await readWeekCalories("1", "2026-11-26", TZ);
+    expect(most).toBe(1);
+    expect(storage.getDailySummary).toHaveBeenCalledTimes(7);
   });
 });
