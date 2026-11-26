@@ -9,12 +9,63 @@ import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { isValidBarcode } from "@shared/constants/classification";
 import type { PhoneLabelRead } from "@/lib/coach-label-pre-read";
+import { ApiError } from "@/lib/api-error";
+import { labelFitsProduct } from "@shared/lib/label-fit";
 
 /** What the scanner hands back: the code, and the label if its step read one. */
 export interface CoachBarcodeScan {
   code: string;
   /** The pack's nutrition label, read on the phone in the label step. */
   label?: PhoneLabelRead;
+  /**
+   * A photo of the front of the pack (the optional third step), for a
+   * product the barcode gives no usable name for. Only with a label.
+   */
+  frontUri?: string;
+}
+
+/** What the lookup started at the scanner's lock found. */
+export type CoachBarcodeLookup =
+  | { status: "found"; per100gCalories?: number }
+  | { status: "unknown" }
+  /** An outage, or no answer: the name is as unknown as for "unknown". */
+  | { status: "failed" };
+
+/**
+ * Look the product up while the scanner plays its sweep, to learn whether
+ * the front-of-pack step is needed. The chat's turn looks it up again on the
+ * server; this read only steers the scanner. Never rejects.
+ */
+export async function lookupCoachBarcode(
+  code: string,
+): Promise<CoachBarcodeLookup> {
+  try {
+    const res = await apiRequest("GET", `/api/nutrition/barcode/${code}`);
+    const body = (await res.json()) as { per100g?: { calories?: unknown } };
+    const calories = body?.per100g?.calories;
+    return typeof calories === "number"
+      ? { status: "found", per100gCalories: calories }
+      : { status: "found" };
+  } catch (err) {
+    return err instanceof ApiError && err.status === 404
+      ? { status: "unknown" }
+      : { status: "failed" };
+  }
+}
+
+/**
+ * Whether to offer the front-of-pack step: there is a label to log, and the
+ * barcode gives no usable name for it (unknown, lookup failed, or the label
+ * doesn't fit the product it found). Null while the lookup is still out:
+ * the scanner does not wait on it.
+ */
+export function needsFrontOfPack(
+  lookup: CoachBarcodeLookup | null,
+  label: PhoneLabelRead | undefined,
+): boolean {
+  if (!label || !lookup) return false;
+  if (lookup.status !== "found") return true;
+  return !labelFitsProduct(label, lookup.per100gCalories);
 }
 
 let pending: ((scan: CoachBarcodeScan | null) => void) | null = null;

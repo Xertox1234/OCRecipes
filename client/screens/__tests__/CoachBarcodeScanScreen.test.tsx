@@ -5,7 +5,10 @@ import { renderComponent } from "../../../test/utils/render-component";
 import { AccessibilityInfo } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import type { MockInstance } from "vitest";
-import { settleCoachBarcode } from "@/lib/coach-barcode-scan";
+import {
+  lookupCoachBarcode,
+  settleCoachBarcode,
+} from "@/lib/coach-barcode-scan";
 import CoachBarcodeScanScreen from "../CoachBarcodeScanScreen";
 import {
   ARM_MS,
@@ -22,6 +25,7 @@ const {
   mockTakePicture,
   mockPreReadLabel,
   mockDelete,
+  aiSharing,
   cameraProps,
   permissionState,
 } = vi.hoisted(() => ({
@@ -31,6 +35,7 @@ const {
   mockTakePicture: vi.fn(),
   mockPreReadLabel: vi.fn(),
   mockDelete: vi.fn(() => Promise.resolve()),
+  aiSharing: { current: { allowed: true } as { allowed: boolean } | undefined },
   cameraProps: {
     current: null as {
       barcodeTypes: string[];
@@ -88,8 +93,16 @@ vi.mock("expo-file-system/legacy", () => ({ deleteAsync: mockDelete }));
 
 vi.mock("@/lib/coach-barcode-scan", async (orig) => {
   const actual = await orig<typeof import("@/lib/coach-barcode-scan")>();
-  return { ...actual, settleCoachBarcode: vi.fn() };
+  return {
+    ...actual,
+    settleCoachBarcode: vi.fn(),
+    lookupCoachBarcode: vi.fn(),
+  };
 });
+
+vi.mock("@/hooks/useAiSharing", () => ({
+  useAiSharing: () => ({ status: aiSharing.current, loading: false }),
+}));
 
 const read = (data: string) =>
   act(() => cameraProps.current?.onBarcodeScanned?.({ data, type: "ean13" }));
@@ -141,6 +154,12 @@ describe("CoachBarcodeScanScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    aiSharing.current = { allowed: true };
+    // Found, and the test label (50 kcal/100 ml) fits it: no front step.
+    vi.mocked(lookupCoachBarcode).mockResolvedValue({
+      status: "found",
+      per100gCalories: 46,
+    });
     announce = vi
       .spyOn(AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(() => {});
@@ -196,14 +215,14 @@ describe("CoachBarcodeScanScreen", () => {
     // VoiceOver reads the digits one by one, not as one number.
     expect(
       screen.getByLabelText(
-        "Step 1 of 2: barcode. Got it. 4 0 0 6 3 8 1 3 3 3 9 3 1",
+        "Step 1: barcode. Got it. 4 0 0 6 3 8 1 3 3 3 9 3 1",
       ),
     ).toBeDefined();
     expect(mockNotification).toHaveBeenCalledOnce();
 
     advance(REVEAL_MS);
     expect(screen.getByText("Now the nutrition label")).toBeDefined();
-    expect(screen.getByText("Step 2 of 2: label")).toBeDefined();
+    expect(screen.getByText("Step 2: nutrition label")).toBeDefined();
     expect(
       screen.getByLabelText("Take a photo of the nutrition label"),
     ).toBeDefined();
@@ -253,6 +272,87 @@ describe("CoachBarcodeScanScreen", () => {
     });
     expect(mockGoBack).toHaveBeenCalledOnce();
     expect(cameraProps.current?.isActive).toBe(false);
+  });
+
+  it("looks the product up at the lock, while the sweep plays", () => {
+    openArmed();
+    hold("4006381333931");
+    expect(lookupCoachBarcode).toHaveBeenCalledExactlyOnceWith("4006381333931");
+  });
+
+  describe("the front of the pack", () => {
+    async function toLabelRead() {
+      mockTakePicture.mockResolvedValue({ uri: "file:///label.jpg" });
+      mockPreReadLabel.mockResolvedValue(LABEL);
+      toLabelStep("4006381333931");
+      await shoot();
+      advance(SWEEP_MS);
+      advance(REVEAL_MS);
+    }
+
+    it("is offered when the barcode found nothing, and its photo is handed over", async () => {
+      vi.mocked(lookupCoachBarcode).mockResolvedValue({ status: "unknown" });
+      await toLabelRead();
+      expect(screen.getByText("Add the front of the pack?")).toBeDefined();
+      expect(
+        screen.getByText("Step 3: front of pack (optional)"),
+      ).toBeDefined();
+      expect(settleCoachBarcode).not.toHaveBeenCalled();
+
+      mockTakePicture.mockResolvedValue({ uri: "file:///front.jpg" });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByLabelText("Take a photo of the front of the pack"),
+        );
+      });
+      expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
+        code: "4006381333931",
+        label: LABEL,
+        frontUri: "file:///front.jpg",
+      });
+      // Handed to the chat to upload: not deleted here.
+      expect(mockDelete).not.toHaveBeenCalledWith(
+        "file:///front.jpg",
+        expect.anything(),
+      );
+      expect(mockGoBack).toHaveBeenCalledOnce();
+    });
+
+    it("is offered when the label doesn't fit the product found", async () => {
+      vi.mocked(lookupCoachBarcode).mockResolvedValue({
+        status: "found",
+        per100gCalories: 400,
+      });
+      await toLabelRead();
+      expect(screen.getByText("Add the front of the pack?")).toBeDefined();
+    });
+
+    it("can be skipped, sending the code and label alone", async () => {
+      vi.mocked(lookupCoachBarcode).mockResolvedValue({ status: "unknown" });
+      await toLabelRead();
+      fireEvent.click(screen.getByLabelText("Skip the front of the pack"));
+      expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
+        code: "4006381333931",
+        label: LABEL,
+      });
+    });
+
+    it("isn't offered when the product was found and the label fits", async () => {
+      await toLabelRead();
+      expect(screen.queryByText("Add the front of the pack?")).toBeNull();
+      expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
+        code: "4006381333931",
+        label: LABEL,
+      });
+    });
+
+    it("isn't offered with AI sharing off: an AI model reads it", async () => {
+      vi.mocked(lookupCoachBarcode).mockResolvedValue({ status: "unknown" });
+      aiSharing.current = { allowed: false };
+      await toLabelRead();
+      expect(screen.queryByText("Add the front of the pack?")).toBeNull();
+      expect(settleCoachBarcode).toHaveBeenCalledOnce();
+    });
   });
 
   it("offers a retake or a skip when the label can't be read", async () => {
