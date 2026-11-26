@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { StyleProp, ViewStyle } from "react-native";
 
@@ -30,10 +30,12 @@ vi.mock("@/hooks/useAccessibility", () => ({
 
 vi.mock("@react-navigation/native", () => ({ useIsFocused: () => true }));
 
-const success = vi.fn();
+const selection = vi.fn();
 vi.mock("@/hooks/useHaptics", () => ({
-  useHaptics: () => ({ selection: vi.fn(), notification: success }),
+  useHaptics: () => ({ selection }),
 }));
+
+beforeEach(() => selection.mockClear());
 
 function renderSheet() {
   const props = {
@@ -58,6 +60,13 @@ describe("ManualBarcodeSheet", () => {
     ).toBe("false");
   });
 
+  it("shows the valid-length hint", () => {
+    renderSheet();
+    expect(
+      screen.getByText("The 8, 12, 13 or 14 digits under the barcode"),
+    ).toBeTruthy();
+  });
+
   it("submit is disabled for a short number", () => {
     const props = renderSheet();
     fireEvent.change(input(), { target: { value: "123" } });
@@ -77,5 +86,6 @@ describe("ManualBarcodeSheet", () => {
     expect(submit().getAttribute("aria-disabled")).not.toBe("true");
     fireEvent.click(submit());
     expect(props.onSubmit).toHaveBeenCalledWith("032601031053");
+    expect(selection).toHaveBeenCalledTimes(1);
   });
 });

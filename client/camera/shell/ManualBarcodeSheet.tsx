@@ -117,7 +117,7 @@ export function ManualBarcodeSheet({
           style={styles.hint}
           maxFontSizeMultiplier={MAX_FONT_SCALE_CONSTRAINED}
         >
-          The digits under the barcode, 8 to 14 of them
+          The 8, 12, 13 or 14 digits under the barcode
         </Text>
         <FocusBottomSheetTextInput
           value={text}
