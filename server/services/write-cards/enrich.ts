@@ -15,12 +15,13 @@ import { foodCardDayOver } from "./food";
  * A live food card whose day is over in the user's timezone is served as
  * expired, so the app stops offering Save (audit 2026-11-24, L107; the save
  * refuses it too). With no known timezone it stays live: a UTC guess would
- * lock a card during a western user's evening.
+ * lock a card during a western user's evening. The timezone is looked up
+ * only when a live food card is among the rows.
  */
 export async function enrichWriteCardBlocks(
   messages: ChatMessage[],
   userId: string,
-  tz: string | null = null,
+  resolveTz: () => Promise<string | null> = () => Promise.resolve(null),
 ): Promise<ChatMessage[]> {
   const ids: string[] = [];
   for (const m of messages) {
@@ -34,6 +35,11 @@ export async function enrichWriteCardBlocks(
   const rows = new Map(
     (await storage.getWriteCardsByIds(userId, ids)).map((r) => [r.id, r]),
   );
+  const tz = [...rows.values()].some(
+    (r) => r.kind === "food" && r.status === "live",
+  )
+    ? await resolveTz()
+    : null;
   return messages.map((m) => {
     const blocks = blocksOf(m);
     if (!blocks.some(isWriteCardBlock)) return m;

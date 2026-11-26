@@ -124,7 +124,11 @@ describe("enrichWriteCardBlocks and a food card from an earlier day", () => {
       liveFood(yesterday()),
     ]);
     const block = blockOf(
-      await enrichWriteCardBlocks([messageWithCard()], "user-42", "UTC"),
+      await enrichWriteCardBlocks(
+        [messageWithCard()],
+        "user-42",
+        async () => "UTC",
+      ),
     );
     expect(block.status).toBe("expired");
   });
@@ -134,7 +138,11 @@ describe("enrichWriteCardBlocks and a food card from an earlier day", () => {
       liveFood(new Date()),
     ]);
     const block = blockOf(
-      await enrichWriteCardBlocks([messageWithCard()], "user-42", "UTC"),
+      await enrichWriteCardBlocks(
+        [messageWithCard()],
+        "user-42",
+        async () => "UTC",
+      ),
     );
     expect(block.status).toBe("live");
   });
@@ -144,18 +152,24 @@ describe("enrichWriteCardBlocks and a food card from an earlier day", () => {
       liveFood(yesterday()),
     ]);
     const block = blockOf(
-      await enrichWriteCardBlocks([messageWithCard()], "user-42", null),
+      await enrichWriteCardBlocks(
+        [messageWithCard()],
+        "user-42",
+        async () => null,
+      ),
     );
     expect(block.status).toBe("live");
   });
 
-  it("does not expire other kinds of card", async () => {
+  it("does not expire other kinds of card, nor look up the timezone", async () => {
     vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
       liveFood(yesterday(), "goals"),
     ]);
+    const resolveTz = vi.fn(async () => "UTC");
     const block = blockOf(
-      await enrichWriteCardBlocks([messageWithCard()], "user-42", "UTC"),
+      await enrichWriteCardBlocks([messageWithCard()], "user-42", resolveTz),
     );
     expect(block.status).toBe("live");
+    expect(resolveTz).not.toHaveBeenCalled();
   });
 });
