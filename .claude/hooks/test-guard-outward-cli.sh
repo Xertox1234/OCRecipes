@@ -7100,6 +7100,56 @@ git diff main -- eas-cli update
 npm test -- eas -- update
 DDROWS
 
+# NF (2026-11-26): npm's OWN flags between the package and the verb, no `--` needed.
+# `npm exec <pkg>` / `npm x <pkg>` consume every dash-word after the package, and a flag npm
+# knows takes its value too (measured with a local stub package, npm 11.19.1:
+# `npm exec stub --yes x`, `-s x`, `--loglevel error x`, `--prefix . x` and
+# `--registry https://r.example x` each gave the bin ["x"]). So these are `eas update` and
+# friends, and they were ALLOWED on `main`. Bare `npm` reads its flags before `publish` the
+# same way. `npx` passes such flags ON to the bin (`npx stub --yes x` gave ["--yes","x"]), so
+# `npx eas-cli --yes update` depends on eas and stays in the residual list.
+NF_L='reached through a launcher'
+while IFS='|' read -r nf_cmd nf_reason; do
+  [ -n "$nf_cmd" ] || continue
+  assert_deny "NF '$nf_cmd' denies" "$(jsonc "$nf_cmd")" "$nf_reason"
+done <<NFROWS
+npm exec eas-cli --yes update --branch production|'eas update/publish/submit' $NF_L
+npm exec eas-cli -y update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --silent update|'eas update/publish/submit' $NF_L
+npm exec eas-cli -s update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --loglevel=error update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --loglevel error update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --loglevel error -- update|'eas update/publish/submit' $NF_L
+npm x eas-cli --yes submit|'eas update/publish/submit' $NF_L
+npm exec --yes eas-cli@latest -s update|'eas update/publish/submit' $NF_L
+npm exec eas-cli -y update:republish|'eas update:delete/edit/republish
+npm exec eas-cli --yes channel:create x|'eas channel:/branch: create
+npm exec railway --silent up|'railway up/deploy
+npm exec railway --loglevel warn -- up|'railway up/deploy
+npm exec railway --yes variable set A=b|'railway variable/vars/var set/delete'
+npm exec @railway/cli@latest -s service delete|'railway service/environment delete'
+npm exec npm --yes publish|'npm publish' $NF_L
+npm -s publish|command-position 'npm publish'
+npm --registry=https://r.example publish|command-position 'npm publish'
+npm --prefix . -- publish|command-position 'npm publish'
+NFROWS
+while IFS= read -r nf_cmd; do
+  [ -n "$nf_cmd" ] || continue
+  assert_allow "NF control '$nf_cmd' stays allowed" "$(jsonc "$nf_cmd")"
+done <<'NFROWS'
+npm exec eas-cli --yes whoami
+npm exec eas-cli --loglevel error -- whoami
+npm exec eas-cli --yes update:list
+npm exec eas-cli -y build:list
+npm -s run build
+npm --prefix . test
+npm --loglevel silent run lint
+npm exec railway --silent status
+npm exec vitest --run update
+npm -s view eas-cli version
+npm exec eas-cli --yes -- whoami
+NFROWS
+
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
 # 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
@@ -7109,7 +7159,9 @@ DDROWS
 # 1421 -> 1422 (same change): +1 = ND5b at 250 KB, RED while the size cap was 300000.
 # 1422 -> 1425 (security review of that change): +3 = ND5d, a deny row RED before the line
 # cap and two controls.
-EXPECTED_TOTAL=1425
+# 1425 -> 1455 (2026-11-26, npm's own flags between the package and the verb): +30 = NF, 19
+# deny rows (all ALLOWED before) and 11 allow controls.
+EXPECTED_TOTAL=1455
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -3107,6 +3107,19 @@ _OUT_PKGDIR_RAILWAYCLI='[^[:space:];&|()`{}<>]*@railway/cli/[^[:space:];&|()`{}<
 # was invisible to the 10 checks below without this optional suffix.
 # Measured pre-fix: `npx @railway/cli@latest up` ALLOWed.
 _OUT_PKG_VERSION_PIN='(@[^[:space:];&|()`{}<>]*)?'
+# npm's OWN flags between a package (or bare `npm`) and the verb (2026-11-26). `npm exec
+# <pkg>` and `npm x <pkg>` consume every dash-word after the package, and a flag npm knows
+# takes its value with it, so `npm exec eas-cli --yes update` and `npm exec eas-cli
+# --loglevel error -- update` run `eas update` (measured with a local stub package, npm
+# 11.19.1: `--yes x`, `-s x`, `--loglevel error x`, `--prefix . x` and `--registry <url> x`
+# each reached the bin as ["x"]). Bare `npm` reads its flags before `publish` the same way.
+# Each flag may take ONE following word as its value, the same shape as _OUT_FLAG_RUN. That
+# over-reads an unknown boolean flag (`npm exec eas-cli --branch production update` hands
+# eas `production update`, and this denies it), which is the safe direction. NOT used for
+# `npx`, `bunx`, `pnpm dlx` or `yarn dlx`: `npx <pkg> --yes x` passes `--yes` ON to the bin
+# (measured), so what those spellings run depends on the CLI (docs/harness-residuals.md).
+_OUT_NPM_FLAGS='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?)*'
+_OUT_NPMX_PREFIX="${_OUT_POS_PREFIX_W}(${_OUT_LAUNCH_STEP})*(${_OUT_PATH_PREFIX})?npm${_OUT_FLAG_RUN}(exec?|x)${_OUT_FLAG_RUN}${_OUT_LAUNCH_INTER}(${_OUT_PATH_PREFIX})?"
 
 # _OUT_GH_GLOBALS — the ROOT-POSITION flag slot, between `gh` and its namespace.
 #
@@ -3959,7 +3972,7 @@ if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_DD}${_OUT_SEP}(service|environme
 fi
 
 # --- npm publish -------------------------------------------------------------
-if grep -Eqi "${_OUT_POS_PREFIX_W}npm${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}npm${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
@@ -5561,29 +5574,37 @@ fi
 # over-denial has no reachable cost. Pinned as a deliberate choice, not a
 # residual: `gh pr merge --auto` reached via `npx`/`npm exec`/a path DENIES,
 # where the bare-position form ALLOWS.
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas update/publish/submit' reached through a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) or a path-qualified invocation (incl. the 'eas-cli' package spelling) — npm's own resolution for 'npm exec'/'npx' never consults PATH, so a PATH-only wrapper cannot stop this. Same OTA-publish incident class as the bare-command check above. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas channel:/branch: create/edit/delete/rename' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if { grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+     || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; } \
    && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
   deny "guard-outward-cli: 'eas build --auto-submit' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached through a launcher or a path-qualified invocation (incl. the '@railway/cli' package spelling). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(variable|variables|vars|var)${_OUT_DD}${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(variable|variables|vars|var)${_OUT_DD}${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}(variable|variables|vars|var)${_OUT_DD}${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway variable/vars/var set/delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(service|environment)${_OUT_DD}${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}(service|environment)${_OUT_DD}${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}(service|environment)${_OUT_DD}${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}npm${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
