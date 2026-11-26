@@ -19,6 +19,12 @@ export interface FrontLabelExtractionResult {
   productName: string | null;
   netWeight: string | null;
   claims: string[];
+  /**
+   * Allergen statements printed on the pack, exactly as printed. Read only
+   * when asked for (the Coach's front-of-pack step); an empty list means
+   * none was printed in the photo, never that the product is free of them.
+   */
+  allergenStatements?: string[];
   confidence: number;
 }
 

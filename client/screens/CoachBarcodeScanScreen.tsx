@@ -30,9 +30,13 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { BarcodeViewfinder } from "@/camera/components/BarcodeViewfinder";
 import {
+  lookupCoachBarcode,
+  needsFrontOfPack,
   scannedProductCode,
   settleCoachBarcode,
+  type CoachBarcodeLookup,
 } from "@/lib/coach-barcode-scan";
+import { useAiSharing } from "@/hooks/useAiSharing";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
@@ -76,6 +80,17 @@ async function readLabelPhoto(
     return null;
   } finally {
     if (uri) deleteAsync(uri, { idempotent: true }).catch(() => {});
+  }
+}
+
+/** Take the front-of-pack photo; null when it can't be taken. */
+async function takeFrontPhoto(
+  camera: CameraRef | null,
+): Promise<string | null> {
+  try {
+    return (await camera?.takePicture())?.uri ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -135,6 +150,10 @@ export default function CoachBarcodeScanScreen() {
   // Read at frame time: past the lock, frames are dropped before any timer.
   const phaseRef = useRef(pacing.phase);
   const pacingRef = useRef(pacing);
+  // What the lookup started at the lock found; null while it is out.
+  const lookupRef = useRef<CoachBarcodeLookup | null>(null);
+  const { status: aiSharing } = useAiSharing();
+  const aiAllowedRef = useRef(false);
   // One-shot side effects read these through refs, so a new haptics object
   // (Reduce Motion toggled mid-scan) cannot replay a haptic or a timer.
   const hapticsRef = useRef(haptics);
@@ -142,6 +161,7 @@ export default function CoachBarcodeScanScreen() {
   useLayoutEffect(() => {
     phaseRef.current = pacing.phase;
     pacingRef.current = pacing;
+    aiAllowedRef.current = aiSharing?.allowed === true;
     hapticsRef.current = haptics;
     navigationRef.current = navigation;
   });
@@ -165,6 +185,20 @@ export default function CoachBarcodeScanScreen() {
         if (lostTimer.current) clearTimeout(lostTimer.current);
         haptic.impact(Haptics.ImpactFeedbackStyle.Medium);
         AccessibilityInfo.announceForAccessibility("Barcode found");
+        // Looked up now, while the sweep plays: by the end of the label step
+        // the scanner knows whether the front of the pack is needed.
+        // Not looked up when the front step can't be offered (AI sharing
+        // off or not yet known): its answer would steer nothing.
+        const scanned = pacingRef.current;
+        lookupRef.current = null;
+        if (scanned.phase === "scanning" && aiAllowedRef.current) {
+          void lookupCoachBarcode(scanned.code).then((found) => {
+            const now = pacingRef.current;
+            if ("code" in now && now.code === scanned.code) {
+              lookupRef.current = found;
+            }
+          });
+        }
         const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
         return () => clearTimeout(timer);
       }
@@ -198,20 +232,41 @@ export default function CoachBarcodeScanScreen() {
             ? `Label read. ${labelSpoken(found.label)}`
             : "Label read",
         );
-        const timer = setTimeout(
-          () => dispatch({ type: "revealed" }),
-          REVEAL_MS,
-        );
+        const timer = setTimeout(() => {
+          // An AI model reads the front: offered only with AI sharing on,
+          // and only when the barcode gives no usable name for the label.
+          const shown = pacingRef.current;
+          const front =
+            aiAllowedRef.current &&
+            shown.phase === "labelFound" &&
+            needsFrontOfPack(lookupRef.current, shown.label);
+          dispatch({ type: "revealed", front });
+        }, REVEAL_MS);
         return () => clearTimeout(timer);
       }
+      case "front": {
+        const front = pacingRef.current;
+        if (front.phase === "front" && front.retry) {
+          haptic.notification(Haptics.NotificationFeedbackType.Warning);
+          return announceLater(
+            "I couldn't take that photo. Try again, or skip it.",
+          );
+        }
+        return announceLater(
+          "Optional: take a photo of the front of the pack so I can name it and check its allergy statement, or skip it.",
+        );
+      }
+      case "frontShot":
+        AccessibilityInfo.announceForAccessibility("Taking the photo");
+        return;
       case "done": {
         const done = pacingRef.current;
         if (done.phase !== "done") return;
-        settleCoachBarcode(
-          done.label
-            ? { code: done.code, label: done.label }
-            : { code: done.code },
-        );
+        settleCoachBarcode({
+          code: done.code,
+          ...(done.label && { label: done.label }),
+          ...(done.frontUri && { frontUri: done.frontUri }),
+        });
         navigationRef.current.goBack();
         return;
       }
@@ -231,9 +286,32 @@ export default function CoachBarcodeScanScreen() {
     dispatch({ type: "labelRead", label });
   }, []);
 
+  // False once the screen is gone: a photo taken after that is deleted.
+  const mountedRef = useRef(true);
+
+  // The front photo is handed to the chat, which uploads and deletes it.
+  const onFrontShutter = useCallback(async () => {
+    if (shooting.current || phaseRef.current !== "front") return;
+    shooting.current = true;
+    dispatch({ type: "shutter" });
+    hapticsRef.current.impact(Haptics.ImpactFeedbackStyle.Light);
+    const uri = await takeFrontPhoto(cameraRef.current);
+    shooting.current = false;
+    if (!mountedRef.current) {
+      // Closed while the photo was taken: nothing will send it.
+      if (uri) deleteAsync(uri, { idempotent: true }).catch(() => {});
+      return;
+    }
+    dispatch({ type: "frontTaken", uri });
+  }, []);
+
   const onSkip = useCallback(() => {
     const p = phaseRef.current;
-    if (shooting.current || (p !== "label" && p !== "unreadable")) return;
+    if (
+      shooting.current ||
+      (p !== "label" && p !== "unreadable" && p !== "front")
+    )
+      return;
     // Closed at once: a shutter tap in the same frame cannot start a photo.
     phaseRef.current = "done";
     dispatch({ type: "skip" });
@@ -245,7 +323,15 @@ export default function CoachBarcodeScanScreen() {
 
   // However the screen goes away (close button, back gesture), the chat
   // stops waiting. A no-op after a read.
-  useEffect(() => () => settleCoachBarcode(null), []);
+  useEffect(() => {
+    // Set again on mount: a remount (Fast Refresh, StrictMode) runs the
+    // cleanup first.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      settleCoachBarcode(null);
+    };
+  }, []);
 
   // Auto-request only the re-askable state (see BatchScanScreen).
   const permissionStatus = permission?.status;
@@ -302,14 +388,24 @@ export default function CoachBarcodeScanScreen() {
   }
 
   const hint = pacingHint(pacing);
-  const reading = phase === "reading";
+  const frontStep =
+    phase === "front" ||
+    phase === "frontShot" ||
+    (phase === "done" && "frontUri" in pacing);
+  // Controls stay mounted, disabled, while a photo is read or taken.
+  const busy = phase === "reading" || phase === "frontShot";
   const labelStep =
+    frontStep ||
     phase === "label" ||
     phase === "reading" ||
     phase === "unreadable" ||
     phase === "labelFound" ||
     (phase === "done" && "label" in pacing);
-  const stepText = labelStep ? "Step 2 of 2: label" : "Step 1 of 2: barcode";
+  const stepText = frontStep
+    ? "Step 3: front of pack (optional)"
+    : labelStep
+      ? "Step 2: nutrition label"
+      : "Step 1: barcode";
   return (
     <View style={styles.container} accessibilityViewIsModal>
       {/* accessible={false} keeps VoiceOver off the camera preview */}
@@ -392,34 +488,49 @@ export default function CoachBarcodeScanScreen() {
         </View>
 
         {/* Kept mounted while the photo is read, so VoiceOver focus stays. */}
-        {(phase === "label" || phase === "unreadable" || reading) && (
+        {(phase === "label" ||
+          phase === "unreadable" ||
+          phase === "front" ||
+          busy) && (
           <View style={styles.controls}>
             <Pressable
               onPress={onSkip}
-              disabled={reading}
-              accessibilityState={{ disabled: reading }}
+              disabled={busy}
+              accessibilityState={{ disabled: busy }}
               style={[
                 styles.skipButton,
                 { backgroundColor: withOpacity(theme.backgroundRoot, 0.85) },
-                reading && styles.disabled,
+                busy && styles.disabled,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Skip the label"
-              accessibilityHint="Uses the product's own numbers"
+              accessibilityLabel={
+                frontStep ? "Skip the front of the pack" : "Skip the label"
+              }
+              accessibilityHint={
+                frontStep
+                  ? "Logs it from the label alone"
+                  : "Uses the product's own numbers"
+              }
             >
               <Text style={[styles.skipText, { color: theme.text }]}>Skip</Text>
             </Pressable>
             <Pressable
-              onPress={() => void onShutter()}
-              disabled={reading}
-              accessibilityState={{ disabled: reading, busy: reading }}
-              style={[styles.shutter, reading && styles.disabled]}
+              onPress={() => void (frontStep ? onFrontShutter() : onShutter())}
+              disabled={busy}
+              accessibilityState={{ disabled: busy, busy }}
+              style={[styles.shutter, busy && styles.disabled]}
               accessibilityRole="button"
-              accessibilityHint="Reads the label on your phone. The photo isn't sent."
+              accessibilityHint={
+                frontStep
+                  ? "The AI reads the product's name and allergy statement from it."
+                  : "Reads the label on your phone. The photo isn't sent."
+              }
               accessibilityLabel={
-                phase === "unreadable"
-                  ? "Retake the label photo"
-                  : "Take a photo of the nutrition label"
+                frontStep
+                  ? "Take a photo of the front of the pack"
+                  : phase === "unreadable"
+                    ? "Retake the label photo"
+                    : "Take a photo of the nutrition label"
               }
             >
               <View style={styles.shutterInner} />
