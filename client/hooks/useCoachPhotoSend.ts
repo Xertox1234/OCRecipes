@@ -130,15 +130,25 @@ async function runPhotoSend(
 ): Promise<void> {
   const picked = await pick(source, latest);
   if (!picked) return;
+  try {
+    await sendPicked(picked, latest, setSending);
+  } finally {
+    discardFront(picked);
+  }
+}
+
+/** Send what was picked and settle the turn. */
+async function sendPicked(
+  picked: Picked,
+  latest: () => Args,
+  setSending: (sending: boolean) => void,
+): Promise<void> {
   // Latched now: creating the conversation changes what the host passes.
   const a = latest();
   setSending(true);
   a.onStart(picked.kind);
   const conversationId = await a.ensureConversation();
-  if (conversationId === null) {
-    discardFront(picked);
-    return;
-  }
+  if (conversationId === null) return;
   let failure: CoachPhotoFailure | null = null;
   let replyText: string | null = null;
   try {
@@ -190,8 +200,6 @@ async function runPhotoSend(
     }
   } catch (err) {
     failure = coachPhotoFailure(err, picked.kind);
-  } finally {
-    discardFront(picked);
   }
   await latest().onSettled(
     conversationId,

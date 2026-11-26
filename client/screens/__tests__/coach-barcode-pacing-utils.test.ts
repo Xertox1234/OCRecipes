@@ -200,9 +200,10 @@ describe("pacingReducer: the front-of-pack step", () => {
 
   it("goes back to the front step when the photo could not be taken", () => {
     const shooting = pacingReducer(atFront, { type: "shutter" });
-    expect(pacingReducer(shooting, { type: "frontTaken", uri: null })).toEqual(
-      atFront,
-    );
+    expect(pacingReducer(shooting, { type: "frontTaken", uri: null })).toEqual({
+      ...atFront,
+      retry: true,
+    });
   });
 
   it("sends the code and label alone when the front is skipped", () => {
@@ -221,7 +222,12 @@ describe("pacingReducer: the front-of-pack step", () => {
 
   it("says what the front step is for", () => {
     expect(pacingHint(atFront).title).toBe("Add the front of the pack?");
-    expect(pacingHint(atFront).body).toMatch(/name it/i);
+    expect(pacingHint(atFront).body).toMatch(/name/i);
+    // Also offered when the product was found but the label didn't fit it.
+    expect(pacingHint(atFront).body).not.toMatch(/don't have a name/i);
+    expect(pacingHint({ ...atFront, retry: true }).title).toBe(
+      "I couldn't take that photo",
+    );
     expect(pacingHint(atFront).body).toMatch(/allerg/i);
   });
 });

@@ -10,7 +10,10 @@ const log = createServiceLogger("front-label-analysis");
 
 const MAX_FIELD_LENGTH = 200;
 const MAX_CLAIMS = 20;
-const MAX_ALLERGEN_STATEMENTS = 10;
+const MAX_ALLERGEN_STATEMENTS = 20;
+// Longer than a name: an EU or multilingual "Contains: …" line runs long,
+// and an allergen cut off its end would go unwarned.
+const MAX_STATEMENT_LENGTH = 500;
 
 // The Coach's front-of-pack step also reads the printed allergen lines, for
 // the allergy check on a product the barcode did not find. Only ever read as
@@ -58,9 +61,13 @@ const frontLabelExtractionSchema = z.object({
 });
 
 /** Truncate, trim and cap a list of printed strings. */
-function sanitizeList(values: string[], max: number): string[] {
+function sanitizeList(
+  values: string[],
+  max: number,
+  maxLength: number,
+): string[] {
   return values
-    .map((c) => c.slice(0, MAX_FIELD_LENGTH).trim())
+    .map((c) => c.slice(0, maxLength).trim())
     .filter((c) => c.length > 0)
     .slice(0, max);
 }
@@ -109,7 +116,9 @@ export async function analyzeFrontLabel(
                 image_url: {
                   url: `data:image/jpeg;base64,${imageBase64}`,
                   // Allergen lines are small print; the plain read needs
-                  // only the large brand and name.
+                  // only the large brand and name. High detail costs more
+                  // tokens: one call per optional front step, behind the
+                  // photo cap.
                   detail: allergens ? "high" : "low",
                 },
               },
@@ -151,6 +160,7 @@ export async function analyzeFrontLabel(
       allergenStatements: sanitizeList(
         parsed.allergenStatements ?? [],
         MAX_ALLERGEN_STATEMENTS,
+        MAX_STATEMENT_LENGTH,
       ),
     }),
     confidence: parsed.confidence,

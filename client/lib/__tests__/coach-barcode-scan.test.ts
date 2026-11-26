@@ -14,6 +14,10 @@ const { mockApiRequest } = vi.hoisted(() => ({ mockApiRequest: vi.fn() }));
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
+const { mockDelete } = vi.hoisted(() => ({
+  mockDelete: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("expo-file-system/legacy", () => ({ deleteAsync: mockDelete }));
 vi.mock("@/lib/timezone", () => ({
   getDeviceTimezone: () => "America/Toronto",
 }));
@@ -54,6 +58,17 @@ describe("awaitCoachBarcode / settleCoachBarcode", () => {
     await expect(first).resolves.toBeNull();
     settleCoachBarcode({ code: "12345678" });
     await expect(second).resolves.toEqual({ code: "12345678" });
+  });
+
+  it("deletes a front photo nobody is waiting for", () => {
+    settleCoachBarcode({
+      code: "4006381333931",
+      label: LABEL,
+      frontUri: "file:///front.jpg",
+    });
+    expect(mockDelete).toHaveBeenCalledWith("file:///front.jpg", {
+      idempotent: true,
+    });
   });
 
   it("ignores a read nobody is waiting for", () => {
@@ -169,6 +184,23 @@ describe("lookupCoachBarcode (started at the scanner's lock)", () => {
     await expect(lookupCoachBarcode("4006381333931")).resolves.toEqual({
       status: "failed",
     });
+    mockApiRequest.mockRejectedValueOnce(
+      Object.assign(new ApiError("down"), { status: 503 }),
+    );
+    await expect(lookupCoachBarcode("4006381333931")).resolves.toEqual({
+      status: "failed",
+    });
+  });
+
+  it("offers nothing when the lookup was refused (rate limit, signed out)", async () => {
+    for (const status of [429, 401]) {
+      mockApiRequest.mockRejectedValueOnce(
+        Object.assign(new ApiError("no"), { status }),
+      );
+      const found = await lookupCoachBarcode("4006381333931");
+      expect(found).toEqual({ status: "refused" });
+      expect(needsFrontOfPack(found, LABEL)).toBe(false);
+    }
   });
 });
 

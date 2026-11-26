@@ -999,6 +999,59 @@ describe("scannedBarcodeReply with the label and the front of the pack", () => {
     expect(other.text).not.toMatch(/safe|free of/i);
   });
 
+  it.each([
+    ["Contains:milk", "milk"],
+    ["May contain traces of peanuts", "peanuts"],
+    ["Free from milk", "milk"],
+    [
+      "Ingredients: wheat flour, sugar. Contains: wheat, soy, " +
+        "x".repeat(150) +
+        ", milk",
+      "milk",
+    ],
+  ])(
+    "warns on %j for a %s allergy (a warning can be over-cautious, never silent)",
+    async (statement, allergy) => {
+      scanContext(null, [{ name: allergy, severity: "severe" }]);
+      const reply = await scannedBarcodeReply(
+        "4006381333931",
+        ctx,
+        read,
+        front({ allergenStatements: [statement] }),
+      );
+      expect(reply.text).toMatch(/allergy check/i);
+    },
+  );
+
+  it("can't check the front's statement when the profile could not be read", async () => {
+    vi.mocked(loadBarcodeScanContext).mockResolvedValue({
+      result: null,
+      verification: undefined,
+      profileOutcome: { ok: false },
+    } as unknown as Awaited<ReturnType<typeof loadBarcodeScanContext>>);
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front({ allergenStatements: ["Contains: milk"] }),
+    );
+    expect(reply.text).toMatch(
+      /couldn't check this product against your allergies/i,
+    );
+  });
+
+  it("doesn't name the card from a front it was unsure of", async () => {
+    scanContext(null);
+    const reply = await scannedBarcodeReply(
+      "4006381333931",
+      ctx,
+      read,
+      front({ confidence: 0.3 }),
+    );
+    expect(reply.payload?.items[0]).toMatchObject({ name: "Packaged food" });
+    expect(reply.text).not.toMatch(/front of the pack/i);
+  });
+
   it("says nothing about allergies to a user who has none", async () => {
     scanContext(null);
     const reply = await scannedBarcodeReply(
@@ -1100,6 +1153,19 @@ describe("scannedBarcodeFrontReply (the front photo sent with the scan)", () => 
     expect(reply.payload?.items[0]).toMatchObject({
       name: "Kind Dark Chocolate Nuts",
     });
+  });
+
+  it("says nothing about the front when the product was found and the label fits", async () => {
+    scanContext(product());
+    vi.mocked(analyzeFrontLabel).mockRejectedValue(new Error("model down"));
+    const reply = await scannedBarcodeFrontReply(
+      "4006381333931",
+      "base64front",
+      ctx,
+      read,
+    );
+    expect(reply.payload?.items[0]).toMatchObject({ name: "Oatly Oat Drink" });
+    expect(reply.text).not.toMatch(/front/i);
   });
 
   it("still answers from the label, and says so, when the front can't be read", async () => {

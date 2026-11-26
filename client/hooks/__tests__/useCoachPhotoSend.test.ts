@@ -487,6 +487,29 @@ describe("useCoachPhotoSend", () => {
       expect(failure?.message).toMatch(/barcode/i);
     });
 
+    it("deletes the front photo when no chat could be made for it", async () => {
+      vi.mocked(awaitCoachBarcode).mockResolvedValue({
+        code: "4006381333931",
+        label: {
+          calories: 120,
+          protein: 3,
+          carbs: 16,
+          fat: 5,
+          servingSize: "1 cup",
+        },
+        frontUri: "file:///front.jpg",
+      });
+      const { result } = setup({
+        openScanner: vi.fn(),
+        ensureConversation: vi.fn().mockRejectedValue(new Error("offline")),
+      });
+      await choose(result, "Scan a Barcode").catch(() => {});
+      expect(deleteAsync).toHaveBeenCalledWith("file:///front.jpg", {
+        idempotent: true,
+      });
+      expect(uploadBarcodeFrontToCoach).not.toHaveBeenCalled();
+    });
+
     it("words a refused scan as a scan, not a photo", async () => {
       vi.mocked(awaitCoachBarcode).mockResolvedValue({ code: "4006381333931" });
       vi.mocked(sendBarcodeToCoach).mockRejectedValue(new Error("offline"));

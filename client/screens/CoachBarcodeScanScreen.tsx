@@ -187,11 +187,16 @@ export default function CoachBarcodeScanScreen() {
         AccessibilityInfo.announceForAccessibility("Barcode found");
         // Looked up now, while the sweep plays: by the end of the label step
         // the scanner knows whether the front of the pack is needed.
+        // Not looked up when the front step can't be offered (AI sharing
+        // off or not yet known): its answer would steer nothing.
         const scanned = pacingRef.current;
         lookupRef.current = null;
-        if (scanned.phase === "scanning") {
+        if (scanned.phase === "scanning" && aiAllowedRef.current) {
           void lookupCoachBarcode(scanned.code).then((found) => {
-            lookupRef.current = found;
+            const now = pacingRef.current;
+            if ("code" in now && now.code === scanned.code) {
+              lookupRef.current = found;
+            }
           });
         }
         const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
@@ -239,10 +244,21 @@ export default function CoachBarcodeScanScreen() {
         }, REVEAL_MS);
         return () => clearTimeout(timer);
       }
-      case "front":
+      case "front": {
+        const front = pacingRef.current;
+        if (front.phase === "front" && front.retry) {
+          haptic.notification(Haptics.NotificationFeedbackType.Warning);
+          return announceLater(
+            "I couldn't take that photo. Try again, or skip it.",
+          );
+        }
         return announceLater(
           "Optional: take a photo of the front of the pack so I can name it and check its allergy statement, or skip it.",
         );
+      }
+      case "frontShot":
+        AccessibilityInfo.announceForAccessibility("Taking the photo");
+        return;
       case "done": {
         const done = pacingRef.current;
         if (done.phase !== "done") return;
@@ -269,6 +285,9 @@ export default function CoachBarcodeScanScreen() {
     shooting.current = false;
     dispatch({ type: "labelRead", label });
   }, []);
+
+  // False once the screen is gone: a photo taken after that is deleted.
+  const mountedRef = useRef(true);
 
   // The front photo is handed to the chat, which uploads and deletes it.
   const onFrontShutter = useCallback(async () => {
@@ -304,14 +323,15 @@ export default function CoachBarcodeScanScreen() {
 
   // However the screen goes away (close button, back gesture), the chat
   // stops waiting. A no-op after a read.
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set again on mount: a remount (Fast Refresh, StrictMode) runs the
+    // cleanup first.
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
       settleCoachBarcode(null);
-    },
-    [],
-  );
+    };
+  }, []);
 
   // Auto-request only the re-askable state (see BatchScanScreen).
   const permissionStatus = permission?.status;

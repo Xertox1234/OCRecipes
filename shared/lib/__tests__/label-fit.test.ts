@@ -27,5 +27,10 @@ describe("labelFitsProduct", () => {
   it("fits when either side gives nothing to compare", () => {
     expect(labelFitsProduct({ ...cup, servingSize: "1 bar" }, 46)).toBe(true);
     expect(labelFitsProduct(cup, undefined)).toBe(true);
+    // The shared label parser reads a decimal point only (label-serving.ts):
+    // a decimal-comma serving gives no weight, so the check is skipped.
+    expect(labelFitsProduct({ calories: 900, servingSize: "12,5 g" }, 46)).toBe(
+      true,
+    );
   });
 });

@@ -212,7 +212,7 @@ describe("front-label-analysis", () => {
           claims: [],
           allergenStatements: [
             "  ",
-            "x".repeat(500),
+            "x".repeat(900),
             ...Array.from({ length: 30 }, (_, i) => `May contain ${i}`),
           ],
           confidence: 0.6,
@@ -220,8 +220,10 @@ describe("front-label-analysis", () => {
         const result = await analyzeFrontLabel("base64data", {
           allergens: true,
         });
-        expect(result.allergenStatements?.length).toBeLessThanOrEqual(10);
-        expect(result.allergenStatements?.[0]).toHaveLength(200);
+        expect(result.allergenStatements?.length).toBeLessThanOrEqual(20);
+        // Statements keep more than a name: an allergen late in a long
+        // multilingual line must survive the cap.
+        expect(result.allergenStatements?.[0]).toHaveLength(500);
       });
 
       it("leaves the default read without them", async () => {

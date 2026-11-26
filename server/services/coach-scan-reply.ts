@@ -29,6 +29,7 @@ import {
   packagedFoodRow,
   productDisplayName,
   round1,
+  UNNAMED,
   type CardItem,
   type PhotoReply,
 } from "./coach-photo";
@@ -117,12 +118,17 @@ const FRONT_NAME_TEXT = " I took its name from the front of the pack.";
 const FRONT_ALLERGEN_MATCH_TEXT =
   " Allergy check: the allergy statement on the front may mention something on your allergy list. Read the pack before you eat it.";
 const FRONT_NO_MATCH_TEXT =
-  " Nothing in the front's allergy statement matched your allergy list, but read the full ingredients for your allergies.";
+  " I couldn't match anything in the front's allergy statement to your allergy list, so read the full ingredients for your allergies.";
+// Below this the model was unsure of what it read: a name it may have
+// guessed is not put on the card. The statements are still checked, since
+// they can only add a warning.
+const FRONT_NAME_MIN_CONFIDENCE = 0.5;
 const FRONT_NO_STATEMENT_TEXT =
   " I couldn't see an allergy statement on the front, so read the full ingredients for your allergies.";
 
 /** Brand and product name from the front, or "" when it shows neither. */
 function frontName(front: FrontLabelExtractionResult): string {
+  if (front.confidence < FRONT_NAME_MIN_CONFIDENCE) return "";
   return sanitizeContextField(
     [front.brand, front.productName].filter(Boolean).join(" "),
     200,
@@ -142,7 +148,8 @@ function frontAllergyText(
   const flags = buildScanResponseFlags(
     {
       allergenTags: [],
-      ingredientsText: statements.join(". "),
+      // "Contains:milk": the matcher splits on commas and stops, not colons.
+      ingredientsText: statements.join(". ").replace(/:/g, ", "),
       allergenDataAvailable: true,
     },
     profileOutcome,
@@ -262,5 +269,10 @@ export async function scannedBarcodeFrontReply(
     return undefined;
   });
   const reply = await scannedBarcodeReply(code, ctx, label, front);
-  return front ? reply : { ...reply, text: reply.text + FRONT_FAILED_TEXT };
+  // Said only where the front would have named the card; a product found by
+  // its barcode keeps its own name, and the front was never needed.
+  const unnamed = !reply.payload || reply.payload.items[0]?.name === UNNAMED;
+  return front || !unnamed
+    ? reply
+    : { ...reply, text: reply.text + FRONT_FAILED_TEXT };
 }

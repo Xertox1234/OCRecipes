@@ -10,6 +10,7 @@ import { getDeviceTimezone } from "@/lib/timezone";
 import { isValidBarcode } from "@shared/constants/classification";
 import type { PhoneLabelRead } from "@/lib/coach-label-pre-read";
 import { ApiError } from "@/lib/api-error";
+import { deleteAsync } from "expo-file-system/legacy";
 import { labelFitsProduct } from "@shared/lib/label-fit";
 
 /** What the scanner hands back: the code, and the label if its step read one. */
@@ -29,7 +30,12 @@ export type CoachBarcodeLookup =
   | { status: "found"; per100gCalories?: number }
   | { status: "unknown" }
   /** An outage, or no answer: the name is as unknown as for "unknown". */
-  | { status: "failed" };
+  | { status: "failed" }
+  /**
+   * Refused (rate limit, signed out): the chat's own turn would be refused
+   * the same way, so the front step is not offered.
+   */
+  | { status: "refused" };
 
 /**
  * Look the product up while the scanner plays its sweep, to learn whether
@@ -47,9 +53,11 @@ export async function lookupCoachBarcode(
       ? { status: "found", per100gCalories: calories }
       : { status: "found" };
   } catch (err) {
-    return err instanceof ApiError && err.status === 404
-      ? { status: "unknown" }
-      : { status: "failed" };
+    if (!(err instanceof ApiError) || err.status === undefined) {
+      return { status: "failed" };
+    }
+    if (err.status === 404) return { status: "unknown" };
+    return err.status >= 500 ? { status: "failed" } : { status: "refused" };
   }
 }
 
@@ -63,7 +71,7 @@ export function needsFrontOfPack(
   lookup: CoachBarcodeLookup | null,
   label: PhoneLabelRead | undefined,
 ): boolean {
-  if (!label || !lookup) return false;
+  if (!label || !lookup || lookup.status === "refused") return false;
   if (lookup.status !== "found") return true;
   return !labelFitsProduct(label, lookup.per100gCalories);
 }
@@ -90,7 +98,12 @@ export function awaitCoachBarcode(): Promise<CoachBarcodeScan | null> {
 export function settleCoachBarcode(scan: CoachBarcodeScan | null): void {
   const resolve = pending;
   pending = null;
-  resolve?.(scan);
+  if (resolve) {
+    resolve(scan);
+  } else if (scan?.frontUri) {
+    // Nobody will send it: the scanner's front photo is not kept.
+    deleteAsync(scan.frontUri, { idempotent: true }).catch(() => {});
+  }
 }
 
 /**

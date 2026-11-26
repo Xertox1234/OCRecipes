@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
+import * as Haptics from "expo-haptics";
 import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { AccessibilityInfo } from "react-native";
@@ -343,6 +344,64 @@ describe("CoachBarcodeScanScreen", () => {
       expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
         code: "4006381333931",
         label: LABEL,
+      });
+    });
+
+    it("isn't offered while the lookup is still out", async () => {
+      vi.mocked(lookupCoachBarcode).mockReturnValue(new Promise(() => {}));
+      await toLabelRead();
+      expect(screen.queryByText("Add the front of the pack?")).toBeNull();
+      expect(settleCoachBarcode).toHaveBeenCalledOnce();
+    });
+
+    it("isn't offered, or looked up for, before AI sharing is known", async () => {
+      vi.mocked(lookupCoachBarcode).mockResolvedValue({ status: "unknown" });
+      aiSharing.current = undefined;
+      await toLabelRead();
+      expect(screen.queryByText("Add the front of the pack?")).toBeNull();
+      expect(lookupCoachBarcode).not.toHaveBeenCalled();
+    });
+
+    it("says so, and offers it again, when the photo can't be taken", async () => {
+      vi.mocked(lookupCoachBarcode).mockResolvedValue({ status: "unknown" });
+      await toLabelRead();
+      mockTakePicture.mockRejectedValue(new Error("camera busy"));
+      mockNotification.mockClear();
+      await act(async () => {
+        fireEvent.click(
+          screen.getByLabelText("Take a photo of the front of the pack"),
+        );
+      });
+      expect(screen.getByText("I couldn't take that photo")).toBeDefined();
+      expect(mockNotification).toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Warning,
+      );
+      expect(settleCoachBarcode).not.toHaveBeenCalled();
+    });
+
+    it("deletes the front photo when the scanner closes while it is taken", async () => {
+      vi.mocked(lookupCoachBarcode).mockResolvedValue({ status: "unknown" });
+      const { unmount } = renderComponent(<CoachBarcodeScanScreen />);
+      advance(ARM_MS);
+      hold("4006381333931");
+      advance(SWEEP_MS);
+      advance(REVEAL_MS);
+      mockTakePicture.mockResolvedValue({ uri: "file:///label.jpg" });
+      mockPreReadLabel.mockResolvedValue(LABEL);
+      await shoot();
+      advance(SWEEP_MS);
+      advance(REVEAL_MS);
+      let resolveShot!: (v: { uri: string }) => void;
+      mockTakePicture.mockReturnValue(new Promise((r) => (resolveShot = r)));
+      fireEvent.click(
+        screen.getByLabelText("Take a photo of the front of the pack"),
+      );
+      unmount();
+      await act(async () => {
+        resolveShot({ uri: "file:///front.jpg" });
+      });
+      expect(mockDelete).toHaveBeenCalledWith("file:///front.jpg", {
+        idempotent: true,
       });
     });
 

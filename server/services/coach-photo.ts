@@ -258,12 +258,15 @@ export function hasValidCheckDigit(code: string): boolean {
 export const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** One card row for a packaged food, or null when the card's rules refuse it. */
+/** The row's name when nothing names the product. */
+export const UNNAMED = "Packaged food";
+
 export function packagedFoodRow(
   rawName: string,
   rawUnitLabel: string,
   perUnit: CardItem["perUnit"],
 ): CardItem | null {
-  const name = rawName.trim().slice(0, MAX_NAME) || "Packaged food";
+  const name = rawName.trim().slice(0, MAX_NAME) || UNNAMED;
   const unitLabel = rawUnitLabel.trim().slice(0, MAX_UNIT_LABEL) || "1 serving";
   const row = { name, unitLabel, count: 1, estimate: perUnit };
   if (!cardRowSchema.safeParse(row).success) return null;

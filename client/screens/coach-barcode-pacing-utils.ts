@@ -41,7 +41,13 @@ export type PacingState =
    * The optional front-of-pack photo, offered when the barcode gives no
    * usable name for the label's numbers.
    */
-  | { phase: "front"; code: string; label: PhoneLabelRead }
+  | {
+      phase: "front";
+      code: string;
+      label: PhoneLabelRead;
+      /** Back after a photo that couldn't be taken. */
+      retry?: true;
+    }
   /** The front photo is being taken. */
   | { phase: "frontShot"; code: string; label: PhoneLabelRead }
   /** Hand `code` (and `label`, and `frontUri`, unless skipped) to the chat and close. */
@@ -121,7 +127,7 @@ export function pacingReducer(
             label: state.label,
             frontUri: event.uri,
           }
-        : { phase: "front", code: state.code, label: state.label };
+        : { phase: "front", code: state.code, label: state.label, retry: true };
     case "labelRead":
       return state.phase === "reading" && !("read" in state)
         ? settleRead({ ...state, read: event.label })
@@ -208,10 +214,15 @@ export function pacingHint(state: PacingState): PacingHint {
         body: "Try it flat and in good light, or skip it.",
       };
     case "front":
-      return {
-        title: "Add the front of the pack?",
-        body: "I don't have a name for this product. A photo of the front lets me name it and check its allergy statement.",
-      };
+      return state.retry
+        ? {
+            title: "I couldn't take that photo",
+            body: "Try again, or skip it and I'll log it from the label.",
+          }
+        : {
+            title: "Add the front of the pack?",
+            body: "A photo of the front lets me name this product and check its allergy statement.",
+          };
     case "frontShot":
       return { title: "Taking the photo…", body: "Hold still." };
     case "labelFound":
