@@ -347,9 +347,16 @@ export function register(app: Express): void {
           // never given the tool that makes that card.
           cardKinds: z
             .array(
-              z.enum(["pantry", "goals", "allergy", "plan_shop", "quick_log"]),
+              z.enum([
+                "pantry",
+                "goals",
+                "allergy",
+                "plan_shop",
+                "quick_log",
+                "day_progress",
+              ]),
             )
-            .max(5)
+            .max(6)
             .optional(),
           liveCard: z
             .object({

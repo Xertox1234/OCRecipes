@@ -335,6 +335,33 @@ export const checkedTrailSchema = z.object({
 });
 export type CheckedTrailBlock = z.infer<typeof checkedTrailSchema>;
 
+const dayTotalsSchema = z.object({
+  calories: z.number().nonnegative(),
+  protein: z.number().nonnegative(),
+  carbs: z.number().nonnegative(),
+  fat: z.number().nonnegative(),
+});
+
+/**
+ * A day's intake against the goals, kept current (Coach roadmap T3: a living
+ * block). It stores the query, not the answer: the app re-reads the day's
+ * summary and the goals for `date`, so a card from this morning shows
+ * tonight's totals. `snapshot` is what the server read as the reply was made,
+ * shown until the live read arrives (or when it can't).
+ *
+ * SERVER-BUILT: the model asks for one with `{ type: "day_progress", day }`
+ * (server/services/day-progress.ts), which this schema rejects, so a
+ * model-authored block never carries numbers of its own.
+ */
+export const dayProgressBlockSchema = z.object({
+  type: z.literal("day_progress"),
+  /** The user's local calendar day, `YYYY-MM-DD`. */
+  date: z.iso.date(),
+  snapshot: z.object({ totals: dayTotalsSchema, goals: dayTotalsSchema }),
+});
+export type DayProgressBlock = z.infer<typeof dayProgressBlockSchema>;
+export type DayTotals = z.infer<typeof dayTotalsSchema>;
+
 // ── Discriminated union of all blocks ───────────────────────────────
 
 // recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
@@ -359,6 +386,7 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   // payload of another kind is dropped here, before the card casts it.
   writeCardBlockSchema,
   checkedTrailSchema,
+  dayProgressBlockSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;

@@ -663,3 +663,52 @@ describe("memory_refs block", () => {
     ).toBe(false);
   });
 });
+
+describe("day_progress block (Coach roadmap T3)", () => {
+  const block = {
+    type: "day_progress",
+    date: "2026-11-26",
+    snapshot: {
+      totals: { calories: 1420, protein: 82, carbs: 150, fat: 48 },
+      goals: { calories: 2000, protein: 150, carbs: 250, fat: 67 },
+    },
+  };
+
+  it("stores the day it reads, with the numbers as they were", () => {
+    expect(coachBlockSchema.safeParse(block).success).toBe(true);
+  });
+
+  it("needs a calendar date, not a word or a time", () => {
+    for (const date of ["today", "2026-11-26T10:00:00Z", "2026-13-01"]) {
+      expect(coachBlockSchema.safeParse({ ...block, date }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("rejects a snapshot with a missing or negative number", () => {
+    const { fat: _fat, ...noFat } = block.snapshot.totals;
+    expect(
+      coachBlockSchema.safeParse({
+        ...block,
+        snapshot: { ...block.snapshot, totals: noFat },
+      }).success,
+    ).toBe(false);
+    expect(
+      coachBlockSchema.safeParse({
+        ...block,
+        snapshot: {
+          ...block.snapshot,
+          totals: { ...block.snapshot.totals, calories: -1 },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("is not the model's request form, which names only the day", () => {
+    expect(
+      coachBlockSchema.safeParse({ type: "day_progress", day: "today" })
+        .success,
+    ).toBe(false);
+  });
+});

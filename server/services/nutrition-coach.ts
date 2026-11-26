@@ -17,7 +17,7 @@ import {
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
 import { OFFER_RECIPE_TOOL } from "./recipe-finder/offer";
-import { getBlocksSystemPrompt } from "./coach-blocks";
+import { withOfferRecipeRule } from "./coach-blocks";
 import { buildSystemPrompt, type CoachContext } from "./coach-prompt";
 import { releasableLength } from "./coach-sentence-release";
 import type { UserProfile } from "@shared/schema";
@@ -249,11 +249,8 @@ export async function* generateCoachProResponse(
   const promptContext: CoachContext = offerTool
     ? {
         ...context,
-        blocksPrompt: getBlocksSystemPrompt(isRecipeFinderEnabled(), {
-          offer: true,
-          writeCards: !!options?.writeCards,
-          notesPaused: context.notesPaused,
-        }),
+        // offerTool implies a blocksPrompt, built with the finder on.
+        blocksPrompt: withOfferRecipeRule(context.blocksPrompt ?? ""),
       }
     : context;
   const systemPrompt = buildSystemPrompt(promptContext, resolvedIntent, {

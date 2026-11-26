@@ -1451,3 +1451,109 @@ describe("handleCoachChat with write cards", () => {
     });
   });
 });
+
+// Coach roadmap T3: the reply names a day; the server builds the card.
+describe("the day progress card", () => {
+  const quick = {
+    type: "quick_replies" as const,
+    options: [{ label: "Ok", message: "Ok" }],
+  };
+  const types = (events: CoachChatEvent[]) =>
+    blocksEvent(events)?.blocks.map((b) => b.type);
+  const saying = (...chunks: CoachProChunk[]) =>
+    async function* (): AsyncGenerator<CoachProChunk> {
+      for (const c of chunks) yield c;
+    };
+
+  beforeEach(() => {
+    vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+      text: t,
+      blocks: [quick],
+      dayProgress: "today" as const,
+    }));
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 1420,
+      totalProtein: 82,
+      totalCarbs: 150,
+      totalFat: 48,
+      itemCount: 4,
+    });
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      saying({ type: "content", content: "You're on track." }),
+    );
+  });
+
+  it("is built from the day's numbers, before the quick replies, for an app that can draw it", async () => {
+    const events = await collect(
+      handleCoachChat(
+        makeParams({ writeCards: true, dayProgressCard: true, tz: "UTC" }),
+      ),
+    );
+    expect(types(events)).toEqual(["day_progress", "quick_replies"]);
+    const card = blocksEvent(events)?.blocks[0];
+    expect(card).toMatchObject({
+      type: "day_progress",
+      date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      snapshot: {
+        totals: { calories: 1420, protein: 82, carbs: 150, fat: 48 },
+        goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+      },
+    });
+    // The card is saved with the reply, so the chat shows it on reopen.
+    const saved = vi.mocked(storage.createChatMessage).mock.calls.at(-1);
+    expect(saved?.[4]).toMatchObject({ blocks: [card, quick] });
+    expect(getBlocksSystemPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ dayProgress: true }),
+    );
+  });
+
+  it("is not built, or offered, for an app that did not declare it", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+    expect(getBlocksSystemPrompt).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ dayProgress: true }),
+    );
+  });
+
+  it("is not built for a reply the safety message replaced", async () => {
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      saying(
+        { type: "content", content: "Eat less." },
+        { type: "safety_override" },
+      ),
+    );
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, dayProgressCard: true })),
+    );
+    expect(
+      blocksEvent(events)?.blocks.some((b) => b.type === "day_progress"),
+    ).not.toBe(true);
+  });
+
+  it("is left off, and the reply still saves, when the day can't be read", async () => {
+    vi.mocked(storage.getDailySummary).mockImplementation(async (...a) => {
+      // The turn's own context read works; the card's read fails.
+      if (vi.mocked(storage.getDailySummary).mock.calls.length > 1) {
+        throw new Error("db down");
+      }
+      void a;
+      return {
+        totalCalories: 0,
+        totalProtein: 0,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      };
+    });
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, dayProgressCard: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+    expect(storage.createChatMessage).toHaveBeenCalled();
+    expect(svcLog.warn).toHaveBeenCalled();
+  });
+});

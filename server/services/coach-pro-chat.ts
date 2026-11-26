@@ -88,6 +88,7 @@ export async function* handleCoachChat(
   const goalsCard = writeCards && !!params.goalsCard;
   const planShopCard = writeCards && !!params.planShopCard;
   const quickLog = writeCards && !!params.quickLog;
+  const dayProgressCard = writeCards && !!params.dayProgressCard;
 
   // Suicide or self-harm: the crisis message, from the server, on both tiers
   // (audit 2026-11-24, H3). The model is never called, so the reply cannot
@@ -143,6 +144,7 @@ export async function* handleCoachChat(
   const turn = await loadTurnContext(params, {
     writeCards,
     quickLog,
+    dayProgressCard,
     intent,
     finderHistory: finder.history,
   });
