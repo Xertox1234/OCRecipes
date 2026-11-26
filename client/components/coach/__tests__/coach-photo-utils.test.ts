@@ -14,6 +14,8 @@ describe("coachPhotoFailure", () => {
   it.each([
     [ErrorCode.RATE_LIMITED, /wait/i],
     [ErrorCode.IMAGE_TOO_LARGE, /too large/i],
+    // The Coach photo route's 1 MB multer limit answers with multer's code.
+    ["LIMIT_FILE_SIZE", /too large/i],
     [ErrorCode.PREMIUM_REQUIRED, /Coach Pro/],
     [ErrorCode.REQUEST_IN_FLIGHT, /still answering/i],
   ])("has its own line for %s", (code, pattern) => {
