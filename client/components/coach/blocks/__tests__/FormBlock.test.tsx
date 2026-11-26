@@ -51,6 +51,38 @@ describe("FormBlock", () => {
     );
   });
 
+  // L34: the footer copy and the saved row are two mounts of one form.
+  it("keeps the answers when the saved row takes over from the footer", () => {
+    const onSubmit = vi.fn();
+    const first = renderComponent(<FormBlock block={block} />);
+    fireEvent.click(screen.getByLabelText("Dinner"));
+    fireEvent.click(screen.getByLabelText("More Servings"));
+    first.unmount();
+
+    renderComponent(
+      <FormBlock block={block} onSubmit={onSubmit} blockKey="7-0" />,
+    );
+    fireEvent.click(screen.getByLabelText("Send"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Which meal? Dinner\nServings: 3",
+      "7-0",
+    );
+  });
+
+  it("a sent form leaves nothing behind for a later identical form", () => {
+    const onSubmit = vi.fn();
+    const first = renderComponent(
+      <FormBlock block={block} onSubmit={onSubmit} />,
+    );
+    fireEvent.click(screen.getByLabelText("Dinner"));
+    fireEvent.click(screen.getByLabelText("Send"));
+    first.unmount();
+
+    renderComponent(<FormBlock block={block} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByLabelText("Send"));
+    expect(onSubmit).toHaveBeenLastCalledWith("Servings: 2", undefined);
+  });
+
   it("clears a choice when its selected option is tapped again", () => {
     const onSubmit = vi.fn();
     renderComponent(<FormBlock block={block} onSubmit={onSubmit} />);

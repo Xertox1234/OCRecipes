@@ -9,6 +9,7 @@ import {
 import { signIn as googleSignIn } from "./mocks/google-sign-in-module";
 import { clearImportBrowserData } from "./mocks/webview-site-data-module";
 import { useReducedMotion } from "./mocks/react-native-reanimated";
+import { resetWriteCardSessions } from "../client/components/coach/blocks/write-cards/write-card-session";
 
 // node:module must NOT be a static import here: under a shell-exported
 // NODE_ENV=production, vite processes this file with browser conditions and
@@ -77,6 +78,9 @@ process.env.JWT_SECRET =
 // Reset mocks between tests
 beforeEach(() => {
   vi.clearAllMocks();
+  // Write-card sessions are a module store keyed by cardId, and the card
+  // tests share card ids: one test's Undo must not appear in the next.
+  resetWriteCardSessions();
 
   // The mocks under test/mocks/ are module singletons — imported once per
   // worker and shared by every test in that worker. `vi.clearAllMocks()`
