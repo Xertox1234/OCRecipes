@@ -7185,6 +7185,32 @@ npm exec eas-cli $F whoami
 npm pack
 npm prune
 NFROWS
+# NF3 (confirmation review of NF2): the value-flag list is npm's own (107 flags and 7
+# shorthands), not a hand-picked 12 (`npm --fetch-retries 3 publish --dry-run` really ran a
+# publish and was allowed); and npm reached through a launcher reads its own flags too
+# (`npx npm -s publish`, allowed on `main`).
+while IFS='|' read -r nf_cmd nf_reason; do
+  [ -n "$nf_cmd" ] || continue
+  assert_deny "NF3 '$nf_cmd' denies" "$(jsonc "$nf_cmd")" "$nf_reason"
+done <<NFROWS
+npm --fetch-retries 3 publish|command-position 'npm publish'
+npm --before 2020-01-01 publish|command-position 'npm publish'
+npm --init.author.name x pub|command-position 'npm publish'
+npm -L project publish|command-position 'npm publish'
+npm exec npm --before 2020 pub|'npm publish' $NF_L
+npx npm -s publish|'npm publish' $NF_L
+npx npm -C . publish|'npm publish' $NF_L
+bunx npm --tag latest pub|'npm publish' $NF_L
+NFROWS
+while IFS= read -r nf_cmd; do
+  [ -n "$nf_cmd" ] || continue
+  assert_allow "NF3 control '$nf_cmd' stays allowed" "$(jsonc "$nf_cmd")"
+done <<'NFROWS'
+npm --yes run publish
+npm --workspaces run publish
+npm --fetch-retries 3 run publish
+npx npm -s run publish
+NFROWS
 
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
@@ -7199,7 +7225,9 @@ NFROWS
 # deny rows (all ALLOWED before) and 11 allow controls.
 # 1455 -> 1473 (security review of that change): +18 = NF2, 9 deny rows (all ALLOWED before)
 # and 9 allow controls (five of them RED after NF, before the bare-npm value-flag list).
-EXPECTED_TOTAL=1473
+# 1473 -> 1485 (confirmation review of NF2): +12 = NF3, 8 deny rows (all ALLOWED before) and
+# 4 allow controls.
+EXPECTED_TOTAL=1485
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

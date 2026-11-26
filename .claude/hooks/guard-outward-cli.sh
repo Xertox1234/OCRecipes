@@ -3126,9 +3126,12 @@ _OUT_PKG_VERSION_PIN='(@[^[:space:];&|()`{}<>]*)?'
 _OUT_NPM_FLAGS='('"$_OUT_SEP"'(-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?|\$[^[:space:]]*))*'
 # Bare `npm` before its subcommand: a value word only after npm's value-taking flags, so a
 # boolean flag does not swallow the subcommand (`npm -s run publish` runs a script, it does not
-# publish). A value-taking flag missing from this list followed by a separate value is still
-# read as a boolean, which can only miss a deny (docs/harness-residuals.md).
-_OUT_NPM_BARE_FLAGS='('"$_OUT_SEP"'(-{1,2}(loglevel|prefix|registry|cache|userconfig|globalconfig|workspace|tag|otp|access|scope|w|C)('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?|-{1,2}[^[:space:]]*|\$[^[:space:]]*))*'
+# publish). The list is npm 11.19.1's own: every config definition whose type is not (nullable)
+# Boolean, 107 of them, plus the 7 shorthands that expand to one (`-C` = --prefix, `-w` =
+# --workspace, ...), from @npmcli/config/lib/definitions (2026-11-26; a hand-picked 12 left 96
+# spellings such as `npm --fetch-retries 3 publish` allowed, measured by the confirmation
+# review). A flag a later npm adds is read as a boolean, which can only miss a deny.
+_OUT_NPM_BARE_FLAGS='('"$_OUT_SEP"'(-{1,2}(C|L|_auth|access|allow-directory|allow-file|allow-git|allow-remote|allow-scripts|also|audit-level|auth-type|before|browser|c|ca|cache|cache-max|cache-min|cafile|call|cert|cidr|color|cpu|depth|diff|diff-dst-prefix|diff-src-prefix|diff-unified|editor|enjoy-by|expect-result-count|expires|fetch-retries|fetch-retry-factor|fetch-retry-maxtimeout|fetch-retry-mintimeout|fetch-timeout|git|globalconfig|heading|https-proxy|include|init-author-email|init-author-name|init-author-url|init-license|init-module|init-type|init-version|init\.author\.email|init\.author\.name|init\.author\.url|init\.license|init\.module|init\.version|install-strategy|key|libc|local-address|location|lockfile-version|loglevel|logs-dir|logs-max|m|maxsockets|message|min-release-age|min-release-age-exclude|name|node-gyp|node-options|noproxy|omit|only|orgs|orgs-permission|os|otp|pack-destination|package|packages|packages-and-scopes-permission|password|prefix|preid|provenance-file|proxy|reg|registry|replace-registry-host|save-prefix|sbom-format|sbom-type|scope|scopes|script-shell|searchexclude|searchlimit|searchopts|searchstaleness|shell|tag|tag-version-prefix|token-description|umask|user-agent|userconfig|viewer|w|which|workspace)('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?|-{1,2}[^[:space:]]*|\$[^[:space:]]*))*'
 # npm 11 accepts an unambiguous prefix of a command: `npm pu`, `pub`, `publ`, `publi` and
 # `publis` all run publish (security review, measured with npm's deref and a dry-run publish).
 _OUT_NPM_PUBLISH='pu(b(l(i(sh?)?)?)?)?'
@@ -5616,7 +5619,7 @@ if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSI
    || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}(service|environment)${_OUT_DD}${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}${_OUT_NPM_PUBLISH}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_NPM_BARE_FLAGS}${_OUT_DD}${_OUT_SEP}${_OUT_NPM_PUBLISH}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_NPMX_PREFIX}npm${_OUT_PKG_VERSION_PIN}${_OUT_NPM_BARE_FLAGS}${_OUT_DD}${_OUT_SEP}${_OUT_NPM_PUBLISH}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi

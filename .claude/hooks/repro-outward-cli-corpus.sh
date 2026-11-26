@@ -3473,6 +3473,10 @@ EXPECTED_DENY_ATTRIB_ROWS=1925
 #       `casedepth` interact, which must keep the blind pass case-blind so the
 #       union is preserved. See guard-outward-cli.sh's DOCUMENTED RESIDUALS
 #       entry for the model-B construction bound.
+# 2026-11-26, 62 -> 58: npm's publish abbreviation (`npm pub...` is itself a publish) closed
+# r4brlist-nested-npmpub and r4brlist-nested-list-npmpub (the 21 bucket is now 19),
+# verbvcaseparen-npmpub (the last 17 bucket is now 16), and verbvcasecomment-npmpub, which
+# this breakdown never listed.
 # All four buckets are DELIBERATE, documented residuals with open todos, not
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
@@ -6591,6 +6595,10 @@ exit 0
 # r4brlist-nested-list-* 7), and the 2026-09-17 case-arm-in-bare-paren addition
 # a fourth of 17 (toolvcaseparen-* 7, verbvcaseparen-* 7, flagvcaseparen-* 3 of
 # 4), so it is now 7 + 17 + 21 + 17 = 62. Each remaining row
+# 2026-11-26, 62 -> 58: npm's publish abbreviation (`npm pub...` is itself a publish) closed
+# r4brlist-nested-npmpub and r4brlist-nested-list-npmpub (the 21 bucket is now 19),
+# verbvcaseparen-npmpub (the last 17 bucket is now 16), and verbvcasecomment-npmpub, which
+# this breakdown never listed.
 # has an OPEN todo — none is a
 # defect this change introduced, and every one allows on `main` too:
 #

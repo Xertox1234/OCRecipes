@@ -840,11 +840,14 @@ knowing that they publish. Still open, on `main` too, all measured ALLOW:
   measured with npm's own deref and a dry-run publish) and an unquoted variable in npm's flag
   slot (`npm exec eas-cli $F update`). The same review measured a false deny the first
   version added (`npm -s run publish`, `npm -s view publish`, `npm -D i publish`): bare `npm`
-  now takes a value word only after npm's value-taking flags (`--loglevel`, `--prefix`,
-  `--registry`, `--cache`, `--userconfig`, `--globalconfig`, `--workspace`/`-w`, `-C`,
-  `--tag`, `--otp`, `--access`, `--scope`). Still open: a value-taking flag missing from that
-  list with a separate value before `publish` (`npm --before 2020-01-01 publish` would read
-  `2020-01-01` as the subcommand) is allowed. Also open, on `main` too and outside this change
+  now takes a value word only after npm's value-taking flags: npm 11.19.1's own list, the 107
+  config definitions whose type is not (nullable) Boolean plus the 7 shorthands that expand to
+  one, from `@npmcli/config/lib/definitions` (a hand-picked 12 first left 96 spellings such as
+  `npm --fetch-retries 3 publish` allowed; the confirmation review ran one as a real dry-run
+  publish). The same flags now apply when npm itself is run through a launcher
+  (`npx npm -s publish`, `bunx npm --tag latest pub`; allowed on `main`). Still open: a
+  value-taking flag a later npm adds, with a separate value before `publish`, is read as a
+  boolean and allowed. Also open, on `main` too and outside this change
   (measured ALLOW by the same review): `nice`/`timeout 60` before `npm`, `bash -c`/`sh -c`/
   `eval` wrappers, `node .../npm-cli.js exec`, and glued `-yc "eas update"`/`-c'eas update'`.
 - any other flag in that slot (`eas --json update`, `npx eas-cli --non-interactive update`,
