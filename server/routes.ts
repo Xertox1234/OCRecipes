@@ -29,6 +29,7 @@ import { register as registerChat } from "./routes/chat";
 import { register as registerCoachWriteCards } from "./routes/coach-write-cards";
 import { register as registerChatPhoto } from "./routes/chat-photo";
 import { register as registerChatBarcode } from "./routes/chat-barcode";
+import { register as registerChatBarcodeFront } from "./routes/chat-barcode-front";
 import { register as registerCoachContext } from "./routes/coach-context";
 import { register as registerNotebook } from "./routes/notebook";
 import { register as registerRecipeChat } from "./routes/recipe-chat";
@@ -100,6 +101,7 @@ export function registerRoutes(app: Express): Server {
   registerCoachWriteCards(app);
   registerChatPhoto(app);
   registerChatBarcode(app);
+  registerChatBarcodeFront(app);
   registerCoachContext(app);
   registerNotebook(app);
   registerRecipeChat(app);

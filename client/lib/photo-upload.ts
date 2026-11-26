@@ -1,4 +1,5 @@
 import { raiseIfAiSharingRequired } from "./ai-sharing-events";
+import type { PhoneLabelRead } from "@/lib/coach-label-pre-read";
 import { UploadNoAnswerError } from "@/lib/upload-no-answer";
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import { tokenStorage } from "./token-storage";
@@ -198,6 +199,43 @@ export async function uploadPhotoToCoach(
   /** Set on the send that opens a new chat which showed the opening brief. */
   openingBrief?: "full" | "short",
 ): Promise<string | null> {
+  return uploadToCoach(
+    uri,
+    `/api/chat/conversations/${conversationId}/photo`,
+    openingBrief ? { openingBrief } : undefined,
+  );
+}
+
+/**
+ * Send the Coach scanner's front-of-pack photo with its barcode and label
+ * (the scanner's optional third step): the AI model reads the front for the
+ * product's name and printed allergen statements. Resolves with the reply's
+ * text for the screen reader, or null; rejects as `uploadPhotoToCoach` does.
+ */
+export async function uploadBarcodeFrontToCoach(
+  uri: string,
+  conversationId: number,
+  scan: {
+    barcode: string;
+    label: PhoneLabelRead;
+    openingBrief?: "full" | "short";
+  },
+): Promise<string | null> {
+  return uploadToCoach(
+    uri,
+    `/api/chat/conversations/${conversationId}/barcode-front`,
+    // One JSON field: the route allows a single non-file field.
+    { scan: JSON.stringify(scan) },
+  );
+}
+
+/** Compress and upload one photo to a Coach chat route; see uploadPhotoToCoach. */
+async function uploadToCoach(
+  uri: string,
+  path: string,
+  // Form-field limit: MULTIPART_LIMITS.fields (server/routes/_upload.ts)
+  parameters: Record<string, string> | undefined,
+): Promise<string | null> {
   const token = await tokenStorage.get();
   if (!token) {
     throw new Error("Not authenticated");
@@ -208,14 +246,13 @@ export async function uploadPhotoToCoach(
     const compressed = await compressImage(uri);
     compressedUri = compressed.uri;
     const uploadResult = await uploadAsync(
-      `${getApiUrl()}/api/chat/conversations/${conversationId}/photo`,
+      `${getApiUrl()}${path}`,
       compressedUri,
       {
         httpMethod: "POST",
         uploadType: FileSystemUploadType.MULTIPART,
         fieldName: "photo",
-        // Form-field limit: MULTIPART_LIMITS.fields (server/routes/_upload.ts)
-        ...(openingBrief && { parameters: { openingBrief } }),
+        ...(parameters && { parameters }),
         headers: {
           Authorization: `Bearer ${token}`,
           // The card's meal (breakfast, lunch…) is set from the user's clock.

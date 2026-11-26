@@ -41,6 +41,8 @@ import { isRecipeOfferEnabled } from "../services/recipe-finder";
 import {
   scannedBarcodeReply,
   scannedLabelReply,
+} from "../services/coach-scan-reply";
+import {
   photoCardProposal,
   BARCODE_LOOKUP_DOWN_TEXT,
   COACH_BARCODE_USER_TEXT,
@@ -65,7 +67,7 @@ const openingBrief = z.enum(["full", "short"]).optional();
 // The app's label parser reads no value above 10,000; the food card's own,
 // tighter limits are applied when the card is made.
 const amount = z.number().finite().min(0).max(10000);
-const labelReadSchema = z
+export const labelReadSchema = z
   .object({
     calories: amount,
     protein: amount,
@@ -87,7 +89,7 @@ const labelReadSchema = z
     { message: "These label numbers don't add up." },
   );
 
-const barcodeBodySchema = z
+export const barcodeBodySchema = z
   .object({
     // The shapes the app's scanner sends (UPC-E, EAN-8, UPC-A, EAN-13). The
     // phone's decoder has already checked the symbol's own checksum.
@@ -106,13 +108,20 @@ const labelBodySchema = z
   })
   .strict();
 
-interface PhoneReadTurn {
+export interface PhoneReadTurn {
   /** What the stored user turn says. */
   userText: string;
   /** The turn's own daily count. */
   capKind: AiCallKind;
   /** The premium gate's wording. */
   featureName: string;
+  /**
+   * An AI model reads a photo in this turn (the front of the pack): the
+   * plan must include photo analysis.
+   */
+  photo?: boolean;
+  /** Said when the day's count is spent; the scan wording by default. */
+  capText?: string;
   /** Said when the reply could not be made at all. */
   failedText: string;
   /** Said when the card was read but could not be stored. */
@@ -128,7 +137,7 @@ interface PhoneReadTurn {
 }
 
 /** Everything after the body is read: the chat, the plan, the limits, the card. */
-async function answerPhoneRead(
+export async function answerPhoneRead(
   req: AuthenticatedRequest,
   res: Response,
   brief: "full" | "short" | undefined,
@@ -162,6 +171,13 @@ async function answerPhoneRead(
     turn.featureName,
   );
   if (!features) return;
+  if (turn.photo && !features.photoAnalysis)
+    return sendError(
+      res,
+      403,
+      "Photo analysis requires a premium subscription",
+      ErrorCode.PREMIUM_REQUIRED,
+    );
 
   // Saved by the limit check, with the user's turn (audit L98).
   const openingBrief = brief
@@ -202,7 +218,7 @@ async function answerPhoneRead(
       AI_DAILY_CAPS[turn.capKind],
     );
     if (!claimed) {
-      text = SCAN_CAP_TEXT;
+      text = turn.capText ?? SCAN_CAP_TEXT;
     } else {
       const reply = await turn.reply({
         tz,
