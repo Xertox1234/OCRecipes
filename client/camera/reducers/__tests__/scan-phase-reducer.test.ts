@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { scanPhaseReducer } from "../scan-phase-reducer";
-import type { ScanPhase } from "../../types/scan-phase";
+import {
+  MANUAL_ENTRY_BOUNDS,
+  type ResumablePhase,
+  type ScanPhase,
+} from "../../types/scan-phase";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
@@ -568,5 +572,286 @@ describe("scanPhaseReducer — RETAKE_STEP", () => {
   it("is a no-op outside a review step", () => {
     const state: ScanPhase = { type: "HUNTING" };
     expect(scanPhaseReducer(state, { type: "RETAKE_STEP" })).toBe(state);
+  });
+});
+
+describe("guided-camera reducer additions", () => {
+  const product = { name: "Oat Bar" };
+  const prompted: ResumablePhase = {
+    type: "LABEL_PROMPTED",
+    barcode: "123",
+    product,
+  };
+  const confirmed: ResumablePhase = {
+    type: "STEP2_CONFIRMED",
+    barcode: "123",
+    product,
+    nutritionImageUri: "file:///n.jpg",
+    ocrText: "Calories 100",
+  };
+  const skipped: ResumablePhase = {
+    type: "STEP2_CONFIRMED",
+    barcode: "123",
+    product,
+  };
+  const locked: ScanPhase = {
+    type: "BARCODE_LOCKED",
+    barcode: "123",
+    bounds: BOUNDS,
+  };
+
+  it("SKIP_STEP from LABEL_PROMPTED → STEP2_CONFIRMED without nutrition keys", () => {
+    const result = scanPhaseReducer(prompted, { type: "SKIP_STEP" });
+    expect(result).toEqual({
+      type: "STEP2_CONFIRMED",
+      barcode: "123",
+      product,
+    });
+    expect("nutritionImageUri" in result).toBe(false);
+    expect("ocrText" in result).toBe(false);
+  });
+
+  it("SKIP_STEP from STEP2_CONFIRMED → SESSION_COMPLETE carrying the nutrition photo", () => {
+    expect(scanPhaseReducer(confirmed, { type: "SKIP_STEP" })).toEqual({
+      type: "SESSION_COMPLETE",
+      barcode: "123",
+      nutritionImageUri: "file:///n.jpg",
+      ocrText: "Calories 100",
+    });
+  });
+
+  it("SKIP_STEP from a skipped-nutrition STEP2_CONFIRMED has neither key", () => {
+    const result = scanPhaseReducer(skipped, { type: "SKIP_STEP" });
+    expect(result).toEqual({ type: "SESSION_COMPLETE", barcode: "123" });
+    expect("nutritionImageUri" in result).toBe(false);
+    expect("ocrText" in result).toBe(false);
+  });
+
+  it("STEP_PHOTO_CAPTURED from skipped STEP2_CONFIRMED → STEP3_REVIEWING without nutritionImageUri", () => {
+    const result = scanPhaseReducer(skipped, {
+      type: "STEP_PHOTO_CAPTURED",
+      imageUri: "file:///f.jpg",
+    });
+    expect(result).toEqual({
+      type: "STEP3_REVIEWING",
+      barcode: "123",
+      product,
+      frontImageUri: "file:///f.jpg",
+    });
+    expect("nutritionImageUri" in result).toBe(false);
+    expect("ocrText" in result).toBe(false);
+  });
+
+  it("RETAKE_STEP / CONFIRM_PRODUCT from STEP3_REVIEWING copy nutrition fields only when present", () => {
+    const step3: ScanPhase = {
+      type: "STEP3_REVIEWING",
+      barcode: "123",
+      product,
+      frontImageUri: "file:///f.jpg",
+    };
+    const retake = scanPhaseReducer(step3, { type: "RETAKE_STEP" });
+    expect(retake).toEqual(skipped);
+    expect("nutritionImageUri" in retake).toBe(false);
+    const done = scanPhaseReducer(step3, { type: "CONFIRM_PRODUCT" });
+    expect(done).toEqual({
+      type: "SESSION_COMPLETE",
+      barcode: "123",
+      frontImageUri: "file:///f.jpg",
+    });
+    expect("ocrText" in done).toBe(false);
+  });
+
+  it("RESCAN from BARCODE_LOCKED → HUNTING", () => {
+    expect(scanPhaseReducer(locked, { type: "RESCAN" })).toEqual({
+      type: "HUNTING",
+    });
+  });
+
+  it("RESCAN is ignored in every other phase", () => {
+    const others: ScanPhase[] = [
+      { type: "IDLE" },
+      { type: "HUNTING" },
+      { type: "BARCODE_TRACKING", barcode: "1", bounds: BOUNDS, frameCount: 1 },
+      prompted,
+      { type: "STEP2_REVIEWING", barcode: "1", ocrText: null, imageUri: "u" },
+      confirmed,
+      { type: "STEP3_REVIEWING", barcode: "1", frontImageUri: "f" },
+      { type: "SESSION_COMPLETE", barcode: "1" },
+      { type: "CLASSIFYING", imageUri: "u" },
+    ];
+    for (const s of others) {
+      expect(scanPhaseReducer(s, { type: "RESCAN" })).toBe(s);
+    }
+  });
+
+  it("REDO_STEP barcode from LABEL_PROMPTED → HUNTING with resume", () => {
+    expect(
+      scanPhaseReducer(prompted, { type: "REDO_STEP", step: "barcode" }),
+    ).toEqual({ type: "HUNTING", resume: prompted });
+  });
+
+  it("REDO_STEP barcode from STEP2_CONFIRMED → HUNTING with resume", () => {
+    expect(
+      scanPhaseReducer(confirmed, { type: "REDO_STEP", step: "barcode" }),
+    ).toEqual({ type: "HUNTING", resume: confirmed });
+  });
+
+  it("REDO_STEP nutrition from STEP2_CONFIRMED → LABEL_PROMPTED keeping barcode and product", () => {
+    expect(
+      scanPhaseReducer(confirmed, { type: "REDO_STEP", step: "nutrition" }),
+    ).toEqual({ type: "LABEL_PROMPTED", barcode: "123", product });
+  });
+
+  it("REDO_STEP is ignored outside live-camera step phases", () => {
+    const others: ScanPhase[] = [
+      locked,
+      { type: "STEP2_REVIEWING", barcode: "1", ocrText: null, imageUri: "u" },
+      { type: "STEP3_REVIEWING", barcode: "1", frontImageUri: "f" },
+      { type: "SESSION_COMPLETE", barcode: "1" },
+    ];
+    for (const s of others) {
+      expect(scanPhaseReducer(s, { type: "REDO_STEP", step: "barcode" })).toBe(
+        s,
+      );
+      expect(
+        scanPhaseReducer(s, { type: "REDO_STEP", step: "nutrition" }),
+      ).toBe(s);
+    }
+  });
+
+  it("resume survives FIRST_BARCODE_DETECTED, BARCODE_UPDATED and BARCODE_LOST", () => {
+    const hunting: ScanPhase = { type: "HUNTING", resume: confirmed };
+    const tracking = scanPhaseReducer(hunting, {
+      type: "FIRST_BARCODE_DETECTED",
+      barcode: "999",
+      bounds: BOUNDS,
+    });
+    expect(tracking).toMatchObject({
+      type: "BARCODE_TRACKING",
+      resume: confirmed,
+    });
+    const updated = scanPhaseReducer(tracking, {
+      type: "BARCODE_UPDATED",
+      bounds: BOUNDS,
+    });
+    expect(updated).toMatchObject({ resume: confirmed });
+    expect(scanPhaseReducer(updated, { type: "BARCODE_LOST" })).toEqual(
+      hunting,
+    );
+  });
+
+  it("BARCODE_LOCKED with resume of the same barcode returns the resume phase", () => {
+    const tracking: ScanPhase = {
+      type: "BARCODE_TRACKING",
+      barcode: "123",
+      bounds: BOUNDS,
+      frameCount: 3,
+      resume: confirmed,
+    };
+    expect(scanPhaseReducer(tracking, { type: "BARCODE_LOCKED" })).toBe(
+      confirmed,
+    );
+  });
+
+  it("BARCODE_LOCKED with resume of a different barcode → plain BARCODE_LOCKED", () => {
+    const tracking: ScanPhase = {
+      type: "BARCODE_TRACKING",
+      barcode: "999",
+      bounds: BOUNDS,
+      frameCount: 3,
+      resume: confirmed,
+    };
+    const result = scanPhaseReducer(tracking, { type: "BARCODE_LOCKED" });
+    expect(result).toEqual({
+      type: "BARCODE_LOCKED",
+      barcode: "999",
+      bounds: BOUNDS,
+    });
+    expect("resume" in result).toBe(false);
+  });
+
+  it("CAMERA_READY and RESET drop resume", () => {
+    const hunting: ScanPhase = { type: "HUNTING", resume: confirmed };
+    expect(scanPhaseReducer(hunting, { type: "CAMERA_READY" })).toEqual({
+      type: "HUNTING",
+    });
+    expect(scanPhaseReducer(hunting, { type: "RESET" })).toEqual({
+      type: "IDLE",
+    });
+  });
+
+  it("MANUAL_BARCODE_ENTERED from HUNTING → BARCODE_LOCKED with manual bounds", () => {
+    expect(
+      scanPhaseReducer(
+        { type: "HUNTING" },
+        { type: "MANUAL_BARCODE_ENTERED", barcode: "555" },
+      ),
+    ).toEqual({
+      type: "BARCODE_LOCKED",
+      barcode: "555",
+      bounds: MANUAL_ENTRY_BOUNDS,
+    });
+  });
+
+  it("MANUAL_BARCODE_ENTERED obeys resume like BARCODE_LOCKED", () => {
+    const hunting: ScanPhase = { type: "HUNTING", resume: confirmed };
+    expect(
+      scanPhaseReducer(hunting, {
+        type: "MANUAL_BARCODE_ENTERED",
+        barcode: "123",
+      }),
+    ).toBe(confirmed);
+    const diff = scanPhaseReducer(hunting, {
+      type: "MANUAL_BARCODE_ENTERED",
+      barcode: "777",
+    });
+    expect(diff).toEqual({
+      type: "BARCODE_LOCKED",
+      barcode: "777",
+      bounds: MANUAL_ENTRY_BOUNDS,
+    });
+  });
+
+  it("MANUAL_BARCODE_ENTERED works from BARCODE_TRACKING", () => {
+    const tracking: ScanPhase = {
+      type: "BARCODE_TRACKING",
+      barcode: "1",
+      bounds: BOUNDS,
+      frameCount: 2,
+    };
+    expect(
+      scanPhaseReducer(tracking, {
+        type: "MANUAL_BARCODE_ENTERED",
+        barcode: "555",
+      }),
+    ).toMatchObject({ type: "BARCODE_LOCKED", barcode: "555" });
+  });
+
+  it("MANUAL_BARCODE_ENTERED is ignored outside HUNTING / BARCODE_TRACKING", () => {
+    for (const s of [
+      locked,
+      prompted,
+      confirmed,
+      { type: "IDLE" } as ScanPhase,
+    ]) {
+      expect(
+        scanPhaseReducer(s, { type: "MANUAL_BARCODE_ENTERED", barcode: "5" }),
+      ).toBe(s);
+    }
+  });
+
+  it("PRODUCT_LOADED for the pre-RESCAN barcode does not attach after MANUAL_BARCODE_ENTERED of a different barcode", () => {
+    const hunting = scanPhaseReducer(locked, { type: "RESCAN" });
+    const relocked = scanPhaseReducer(hunting, {
+      type: "MANUAL_BARCODE_ENTERED",
+      barcode: "555",
+    });
+    expect(
+      scanPhaseReducer(relocked, {
+        type: "PRODUCT_LOADED",
+        barcode: "123",
+        product,
+      }),
+    ).toBe(relocked);
   });
 });

@@ -34,12 +34,13 @@ type Bounds = NonNullable<BarcodeResult["bounds"]>;
 
 export type ScanPhase =
   | { type: "IDLE" }
-  | { type: "HUNTING" }
+  | { type: "HUNTING"; resume?: ResumablePhase }
   | {
       type: "BARCODE_TRACKING";
       barcode: string;
       bounds: Bounds;
       frameCount: number;
+      resume?: ResumablePhase;
     }
   | {
       type: "BARCODE_LOCKED";
@@ -85,17 +86,19 @@ export type ScanPhase =
       type: "STEP2_CONFIRMED";
       barcode: string;
       product?: ProductSummary;
-      nutritionImageUri: string;
+      /** Absent means the nutrition step was skipped. */
+      nutritionImageUri?: string;
       /** See STEP2_REVIEWING — `null` means captured but unreadable. */
-      ocrText: string | null;
+      ocrText?: string | null;
     }
   | {
       type: "STEP3_REVIEWING";
       barcode: string;
       product?: ProductSummary;
-      nutritionImageUri: string;
+      /** Absent means the nutrition step was skipped. */
+      nutritionImageUri?: string;
       /** See STEP2_REVIEWING — `null` means captured but unreadable. */
-      ocrText: string | null;
+      ocrText?: string | null;
       frontImageUri: string;
     }
   | {
@@ -118,6 +121,18 @@ export type ScanPhase =
     }
   | { type: "SMART_ERROR"; imageUri: string; error: string };
 
+/**
+ * Phases a "redo barcode" detour returns to once the same barcode is found
+ * again (the live-camera step phases).
+ */
+export type ResumablePhase = Extract<
+  ScanPhase,
+  { type: "LABEL_PROMPTED" | "STEP2_CONFIRMED" }
+>;
+
+/** Bounds for a typed-in barcode: a zero-size box at screen centre. */
+export const MANUAL_ENTRY_BOUNDS = { x: 0.5, y: 0.5, width: 0, height: 0 };
+
 export type ScanAction =
   | { type: "CAMERA_READY" }
   | { type: "FIRST_BARCODE_DETECTED"; barcode: string; bounds: Bounds }
@@ -131,6 +146,13 @@ export type ScanAction =
   /** Re-photograph the step under review, keeping the wizard's progress. */
   | { type: "RETAKE_STEP" }
   | { type: "PROCEED_TO_LABEL" }
+  /** Skip the current step (nutrition photo, or front photo). */
+  | { type: "SKIP_STEP" }
+  /** Back to hunting from a locked barcode. */
+  | { type: "RESCAN" }
+  /** Redo an earlier step from a live-camera step phase. */
+  | { type: "REDO_STEP"; step: "barcode" | "nutrition" }
+  | { type: "MANUAL_BARCODE_ENTERED"; barcode: string }
   | { type: "STEP_PHOTO_CAPTURED"; imageUri: string; ocrText?: string }
   | { type: "STEP_CONFIRMED" }
   | { type: "SMART_PHOTO_INITIATED"; imageUri: string }

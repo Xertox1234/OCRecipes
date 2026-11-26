@@ -36,7 +36,7 @@ describe("useAutoAdvanceTimer", () => {
     renderHook(() => useAutoAdvanceTimer(step2Reviewing, false, dispatch));
 
     expect(dispatch).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(999);
+    vi.advanceTimersByTime(1499);
     expect(dispatch).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(dispatch).toHaveBeenCalledWith({ type: "STEP_CONFIRMED" });
@@ -47,7 +47,7 @@ describe("useAutoAdvanceTimer", () => {
     const dispatch = vi.fn();
     renderHook(() => useAutoAdvanceTimer(step3Reviewing, false, dispatch));
 
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1500);
     expect(dispatch).toHaveBeenCalledWith({ type: "CONFIRM_PRODUCT" });
   });
 
@@ -80,7 +80,7 @@ describe("useAutoAdvanceTimer", () => {
 
     vi.advanceTimersByTime(500);
     rerender({ phase: barcodeLocked });
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1500);
 
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -94,7 +94,7 @@ describe("useAutoAdvanceTimer", () => {
 
     vi.advanceTimersByTime(500);
     rerender({ phase: step2Reviewing });
-    vi.advanceTimersByTime(500);
+    vi.advanceTimersByTime(1000);
 
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
