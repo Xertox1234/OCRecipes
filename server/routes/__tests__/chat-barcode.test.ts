@@ -126,6 +126,8 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     expect(scannedBarcodeReply).toHaveBeenCalledWith(
       BARCODE,
       expect.objectContaining({ tz: "America/Los_Angeles", userId: "1" }),
+      // No label step: the product's own numbers.
+      undefined,
     );
     const turn = vi.mocked(storage.createChatMessageWithLimitCheck).mock
       .calls[0];
@@ -187,6 +189,7 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
       expect(scannedBarcodeReply).toHaveBeenCalledWith(
         barcode,
         expect.anything(),
+        undefined,
       );
     },
   );
@@ -318,6 +321,39 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
       vi.mocked(storage.createChatMessageWithLimitCheck).mock.calls[0][5]
         ?.openingBrief,
     ).toEqual(row);
+  });
+
+  it("passes the label read on the phone to the reply", async () => {
+    const label = {
+      calories: 120,
+      protein: 3,
+      carbs: 16,
+      fat: 5,
+      servingSize: "1 cup (240 ml)",
+    };
+    const res = await post(app, { barcode: BARCODE, label });
+    expect(res.status).toBe(201);
+    expect(scannedBarcodeReply).toHaveBeenCalledWith(
+      BARCODE,
+      expect.objectContaining({ userId: "1" }),
+      label,
+    );
+  });
+
+  it("400s, storing nothing, on label numbers that don't add up", async () => {
+    const res = await post(app, {
+      barcode: BARCODE,
+      label: {
+        calories: 10,
+        protein: 3,
+        carbs: 37,
+        fat: 8,
+        servingSize: "1/2 cup",
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+    expect(scannedBarcodeReply).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown brief form and an unknown field", async () => {

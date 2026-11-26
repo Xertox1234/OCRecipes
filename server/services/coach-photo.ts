@@ -352,17 +352,23 @@ export interface PhoneLabelRead {
  * as numbers the user types, and the card's own limits still apply. The
  * panel shows no product name, so the row is "Packaged food".
  */
-export function phoneLabelReply(
-  read: PhoneLabelRead,
-  profileOutcome: ProfileOutcome,
-  ctx: { tz: string; now: Date },
-): PhotoReply {
+// A barcode scanned with its label read on the phone (the scanner's label
+// step): the name is the product's, the numbers are the pack's own.
+const BARCODE_LABEL_TEXT =
+  "I found this product from its barcode and used the numbers from your label. Check it's the right one, set how many servings you had, then log it.";
+const BARCODE_UNKNOWN_LABEL_TEXT =
+  "I couldn't find that product from its barcode, so I used the numbers from your label. Check them against the pack, set how many servings you had, then log it.";
+const BARCODE_DOWN_LABEL_TEXT =
+  "I couldn't look that product up just now, so I used the numbers from your label. Check them against the pack, set how many servings you had, then log it.";
+
+/** The one-serving row a label read on the phone makes, under `name`. */
+function phoneLabelRow(read: PhoneLabelRead, name: string): CardItem | null {
   const serving = sanitizeContextField(read.servingSize, 200)
     .replace(/\s+/g, " ")
     .trim();
   const withServing = serving ? `1 serving (${serving})` : "1 serving";
-  const item = packagedFoodRow(
-    "",
+  return packagedFoodRow(
+    name,
     withServing.length <= MAX_UNIT_LABEL ? withServing : serving,
     {
       calories: round1(read.calories),
@@ -371,12 +377,22 @@ export function phoneLabelReply(
       fat: round1(read.fat),
     },
   );
+}
+
+export function phoneLabelReply(
+  read: PhoneLabelRead,
+  profileOutcome: ProfileOutcome,
+  ctx: { tz: string; now: Date },
+  /** What the reply opens with; the plain label wording by default. */
+  lead: string = PHONE_LABEL_TEXT,
+): PhotoReply {
+  const item = phoneLabelRow(read, "");
   if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
   const allergyCheckOwed =
     !profileOutcome.ok || profileOutcome.allergies.length > 0;
   return {
     payload: onePackagedFood(item, ctx),
-    text: PHONE_LABEL_TEXT + (allergyCheckOwed ? LABEL_ALLERGY_TEXT : ""),
+    text: lead + (allergyCheckOwed ? LABEL_ALLERGY_TEXT : ""),
   };
 }
 
@@ -386,6 +402,61 @@ export async function scannedLabelReply(
   ctx: { tz: string; now: Date; userId: string },
 ): Promise<PhotoReply> {
   return phoneLabelReply(read, await loadAllergyProfile(ctx.userId), ctx);
+}
+
+/** The product's allergy line for a barcode reply, or "". */
+function barcodeAllergyText(
+  product: BarcodeLookupResult,
+  profileOutcome: ProfileOutcome,
+): string {
+  // The same allergen check a scan on the Scan screen gets.
+  const flags = buildScanResponseFlags(
+    {
+      allergenTags: product.allergenTags ?? [],
+      ingredientsText: product.ingredientsText ?? null,
+      allergenDataAvailable: product.allergenDataAvailable,
+    },
+    profileOutcome,
+  );
+  return flags.some((f) => f.kind === "allergen")
+    ? ALLERGEN_MATCH_TEXT
+    : flags.some((f) => f.kind === "allergen-unavailable")
+      ? ALLERGEN_UNCHECKED_TEXT
+      : "";
+}
+
+function productDisplayName(product: BarcodeLookupResult): string {
+  const productName =
+    product.productName === LOOKUP_PLACEHOLDER_NAME ? "" : product.productName;
+  return [product.brandName, productName].filter(Boolean).join(" ");
+}
+
+/**
+ * A barcode scanned together with its nutrition label read on the phone: the
+ * card is named from the product and carries the label's numbers, which are
+ * the pack in the user's hand. An unknown product still gets a card, from the
+ * label alone.
+ */
+export function barcodeWithLabelReply(
+  product: BarcodeLookupResult | null,
+  profileOutcome: ProfileOutcome,
+  read: PhoneLabelRead,
+  ctx: { tz: string; now: Date },
+): PhotoReply {
+  if (!product) {
+    return phoneLabelReply(
+      read,
+      profileOutcome,
+      ctx,
+      BARCODE_UNKNOWN_LABEL_TEXT,
+    );
+  }
+  const item = phoneLabelRow(read, productDisplayName(product));
+  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
+  return {
+    payload: onePackagedFood(item, ctx),
+    text: BARCODE_LABEL_TEXT + barcodeAllergyText(product, profileOutcome),
+  };
 }
 
 /** A product found by its barcode, as a one-serving card. */
@@ -399,10 +470,8 @@ export function barcodePhotoReply(
   if (per.calories === undefined) {
     return { payload: null, text: BARCODE_NO_NUTRITION_TEXT };
   }
-  const productName =
-    product.productName === LOOKUP_PLACEHOLDER_NAME ? "" : product.productName;
   const item = packagedFoodRow(
-    [product.brandName, productName].filter(Boolean).join(" "),
+    productDisplayName(product),
     product.servingInfo.displayLabel,
     {
       calories: round1(per.calories),
@@ -417,20 +486,7 @@ export function barcodePhotoReply(
     per.carbs === undefined ||
     per.fat === undefined;
 
-  // The same allergen check a scan on the Scan screen gets.
-  const flags = buildScanResponseFlags(
-    {
-      allergenTags: product.allergenTags ?? [],
-      ingredientsText: product.ingredientsText ?? null,
-      allergenDataAvailable: product.allergenDataAvailable,
-    },
-    profileOutcome,
-  );
-  const allergy = flags.some((f) => f.kind === "allergen")
-    ? ALLERGEN_MATCH_TEXT
-    : flags.some((f) => f.kind === "allergen-unavailable")
-      ? ALLERGEN_UNCHECKED_TEXT
-      : "";
+  const allergy = barcodeAllergyText(product, profileOutcome);
   return {
     payload: onePackagedFood(item, ctx),
     text:
@@ -512,16 +568,28 @@ export async function buildPhotoReply(
 export async function scannedBarcodeReply(
   code: string,
   ctx: { tz: string; now: Date; userId: string },
+  /** The pack's nutrition label, read on the phone in the scanner's label step. */
+  label?: PhoneLabelRead,
 ): Promise<PhotoReply> {
   try {
     const { result, profileOutcome } = await loadBarcodeScanContext(
       code,
       ctx.userId,
     );
-    return barcodePhotoReply(result, profileOutcome, ctx);
+    return label
+      ? barcodeWithLabelReply(result, profileOutcome, label, ctx)
+      : barcodePhotoReply(result, profileOutcome, ctx);
   } catch (err) {
     // Every source errored: an outage, not an unknown product.
     if (err instanceof UpstreamUnavailableError) {
+      if (label) {
+        return phoneLabelReply(
+          label,
+          await loadAllergyProfile(ctx.userId),
+          ctx,
+          BARCODE_DOWN_LABEL_TEXT,
+        );
+      }
       return { payload: null, text: BARCODE_LOOKUP_DOWN_TEXT };
     }
     throw err;

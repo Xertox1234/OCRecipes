@@ -763,6 +763,84 @@ describe("scannedBarcodeReply (a barcode read by the camera)", () => {
   });
 });
 
+describe("scannedBarcodeReply with the label read on the phone", () => {
+  const read = {
+    calories: 120,
+    protein: 3,
+    carbs: 16,
+    fat: 5,
+    servingSize: "1 cup (240 ml)",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("names the card from the barcode and takes the numbers from the label", async () => {
+    scanContext(product());
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items).toEqual([
+      {
+        name: "Oatly Oat Drink",
+        unitLabel: "1 serving (1 cup (240 ml))",
+        perUnit: { calories: 120, protein: 3, carbs: 16, fat: 5 },
+        count: 1,
+        source: "lookup",
+      },
+    ]);
+    expect(foodCardPayloadSchema.safeParse(reply.payload).success).toBe(true);
+    expect(reply.text).toMatch(/barcode/i);
+    expect(reply.text).toMatch(/your label/i);
+  });
+
+  it("uses the label when the product has no nutrition data", async () => {
+    scanContext(product({ perServing: {} }));
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Oatly Oat Drink",
+      perUnit: { calories: 120 },
+    });
+  });
+
+  it("still gives the product's allergy warning", async () => {
+    scanContext(product({ allergenTags: ["en:milk"] }), [
+      { name: "milk", severity: "severe" },
+    ]);
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload).not.toBeNull();
+    expect(reply.text).toMatch(/allergy check/i);
+  });
+
+  it("makes the card from the label alone when the product is unknown", async () => {
+    scanContext(null, [{ name: "milk", severity: "severe" }]);
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items[0]).toMatchObject({
+      name: "Packaged food",
+      perUnit: { calories: 120, protein: 3, carbs: 16, fat: 5 },
+    });
+    expect(reply.text).toMatch(/couldn't find/i);
+    expect(reply.text).not.toMatch(/send a photo/i);
+    // No ingredients to check: the label photo's reminder.
+    expect(reply.text).toMatch(/read the pack/i);
+  });
+
+  it("makes the card from the label when every lookup source is down", async () => {
+    vi.mocked(loadBarcodeScanContext).mockRejectedValue(
+      new UpstreamUnavailableError(),
+    );
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: [],
+    });
+    const reply = await scannedBarcodeReply("4006381333931", ctx, read);
+    expect(reply.payload?.items[0]).toMatchObject({
+      perUnit: { calories: 120 },
+    });
+    expect(reply.text).toMatch(/couldn't look/i);
+    expect(reply.text).not.toMatch(/try again/i);
+  });
+});
+
 describe("phoneLabelReply (a label read on the phone)", () => {
   const read = {
     calories: 250,
