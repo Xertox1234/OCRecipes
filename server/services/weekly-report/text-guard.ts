@@ -79,6 +79,24 @@ export function factNumbers(facts: WeeklyFacts): Set<number> {
   return s;
 }
 
+/**
+ * The text with the user's own recipe titles blanked out, for the word and
+ * digit checks: "The Best Banana Bread" or "30-Minute Chili" named as is is
+ * not Coach saying "best" or giving a count (coach audit 2026-11-24, L80).
+ * Only titles of two or more words count, so a title such as "Best" cannot
+ * switch a check off everywhere. Plain string matching: a title is user text
+ * and never becomes a pattern. The unsafe-advice check never uses this.
+ */
+function withoutTitles(text: string, facts: WeeklyFacts): string {
+  let out = text.toLowerCase();
+  for (const r of facts.recipes) {
+    const title = r.title.trim().toLowerCase();
+    if (!/\s/.test(title)) continue;
+    out = out.split(title).join(" ");
+  }
+  return out;
+}
+
 function texts(c: WeeklyReportContent): string[] {
   return [
     c.headline,
@@ -98,21 +116,25 @@ export function validateContent(
   if (!parsed.success) return { ok: false, reason: "schema" };
   const allowed = factNumbers(facts);
   for (const t of texts(parsed.data)) {
-    if (BANNED_RE.test(t)) return { ok: false, reason: "banned-word" };
+    const own = withoutTitles(t, facts);
+    if (BANNED_RE.test(own)) return { ok: false, reason: "banned-word" };
     for (const m of t.match(NUMBER_RE) ?? []) {
       if (!allowed.has(Number(m.replace(/,/g, "")))) {
         return { ok: false, reason: "unbacked-number" };
       }
     }
-    if (LAST_WEEK_RE.test(t) && !facts.lastWeek) {
+    if (LAST_WEEK_RE.test(own) && !facts.lastWeek) {
       return { ok: false, reason: "no-last-week" };
     }
-    if (BEST_RE.test(t) && !facts.best) return { ok: false, reason: "no-best" };
+    if (BEST_RE.test(own) && !facts.best) {
+      return { ok: false, reason: "no-best" };
+    }
     if (containsUnsafeCoachAdvice(t)) return { ok: false, reason: "unsafe" };
   }
   const next = parsed.data.next;
-  // The idea for next week carries no numbers at all (no grams, times or counts).
-  if (next && /\d/.test(next.text))
+  // The idea for next week carries no numbers of Coach's own (no grams, times
+  // or counts); digits inside a named recipe title are the user's.
+  if (next && /\d/.test(withoutTitles(next.text, facts)))
     return { ok: false, reason: "number-in-next" };
   if (next?.recipeId != null) {
     const found = facts.recipes.some(

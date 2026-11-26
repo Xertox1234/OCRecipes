@@ -204,6 +204,82 @@ describe("factNumbers — recipe titles", () => {
   });
 });
 
+// Audit 2026-11-24 L80: a recipe title is the user's own text, so naming it
+// must not trip the word and digit checks meant for Coach's own sentences.
+describe("validateContent — naming a recipe title", () => {
+  const withRecipe = (title: string, recipeId = 7) =>
+    build({
+      logs: DATES.slice(0, 5).flatMap((d) => meals(d, 110, 1950)),
+      recipes: [
+        {
+          recipeId,
+          recipeType: "mealPlan",
+          title,
+          how: "saved",
+          timesLogged: 1,
+          imageUrl: null,
+        },
+      ],
+    });
+  const nextNaming = (text: string, recipeId = 7) => ({
+    ...base,
+    next: { text, recipeId, recipeType: "mealPlan" as const },
+  });
+
+  it("accepts a title with digits in the next-week idea", () => {
+    const f = withRecipe("30-Minute Chili");
+    expect(
+      validateContent(nextNaming("Try the 30-Minute Chili again."), f),
+    ).toEqual({ ok: true });
+  });
+
+  it("accepts a title with a banned or 'best' word, in any case", () => {
+    const f = withRecipe("The Best Banana Bread");
+    expect(f.best).toBeNull();
+    expect(
+      validateContent(nextNaming("Bake the best banana bread again."), f),
+    ).toEqual({ ok: true });
+    const g = withRecipe("Only Onion Soup");
+    expect(
+      validateContent(
+        { ...base, wins: ["You saved Only Onion Soup this week."] },
+        g,
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("still rejects the same words and digits outside the title (control)", () => {
+    const f = withRecipe("30-Minute Chili");
+    expect(
+      validateContent(nextNaming("Cook the 30-Minute Chili 2 times."), f).ok,
+    ).toBe(false);
+    const g = withRecipe("The Best Banana Bread");
+    expect(
+      validateContent(
+        { ...base, headline: "Your best week, with The Best Banana Bread." },
+        g,
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("a one-word title is never exempted, so a title cannot switch a check off", () => {
+    const f = withRecipe("Best");
+    expect(
+      validateContent({ ...base, headline: "Your Best week yet." }, f).ok,
+    ).toBe(false);
+  });
+
+  it("a title never exempts unsafe advice", () => {
+    // No banned word here: only the unsafe-advice check can catch it.
+    const f = withRecipe("Water Only Fast Broth");
+    const r = validateContent(
+      { ...base, wins: ["You saved Water Only Fast Broth this week."] },
+      f,
+    );
+    expect(r).toEqual({ ok: false, reason: "unsafe" });
+  });
+});
+
 describe("templateContent", () => {
   it.each([
     ["normal", normal],

@@ -158,7 +158,7 @@ export function validateAiResponse<T>(
 const SENTENCE_BREAK = /(?<=[.!?]["'”’)\]*_]*)\s+|\n+/;
 
 /** Below this daily intake the coach must not recommend a plan. */
-const MIN_SAFE_DAILY_CALORIES = 1200;
+export const MIN_SAFE_DAILY_CALORIES = 1200;
 
 /** A fast of 24 hours or longer, as a number of hours. */
 const LONG_HOURS = "(?:2[4-9]|[3-9]\\d|\\d{3,})";
