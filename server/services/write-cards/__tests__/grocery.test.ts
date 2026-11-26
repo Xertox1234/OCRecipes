@@ -591,7 +591,9 @@ describe("grocery write card", () => {
     );
   });
 
-  it("a new list takes what fits and records how many did not", async () => {
+  // A card holds at most 40 items, so it can never fill a new list (500):
+  // a stored card past the payload schema is refused, not saved (audit L52).
+  it("a card past the payload schema's item cap is refused", async () => {
     const p: GroceryCardPayload = {
       items: Array.from({ length: MAX_GROCERY_LIST_ITEMS + 1 }, (_, i) => ({
         name: `Item ${i}`,
@@ -603,9 +605,9 @@ describe("grocery write card", () => {
       defaultListId: null,
       newListName: "Big shop",
     };
-    const refs = await performGrocerySave(tx, card(p), {}, ctx());
-    expect(refs.groceryItemIds).toHaveLength(MAX_GROCERY_LIST_ITEMS);
-    expect(refs.groceryListFull).toBe(1);
+    await expect(
+      performGrocerySave(tx, card(p), {}, ctx()),
+    ).rejects.toBeInstanceOf(WriteCardEditError);
   });
 
   it("with two lists offered, the save goes to the one chosen", async () => {

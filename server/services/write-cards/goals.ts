@@ -12,6 +12,7 @@ import { goalsValues } from "@shared/lib/coach-write-card-math";
 import { getUserGoals, setUserGoals } from "../../storage/users";
 import type { WriteCardTx } from "../../storage/coach-write-cards";
 import { WriteCardEditError } from "./errors";
+import { savableCardPayload } from "./payload";
 import type { SetGoalsCardArgs } from "./tool-args";
 
 export { setGoalsCardArgsSchema, type SetGoalsCardArgs } from "./tool-args";
@@ -70,7 +71,7 @@ export async function performGoalsSave(
   rawEdits: unknown,
   ctx: { userId: string },
 ): Promise<CoachWriteCardSavedRefs> {
-  const payload = card.payload as GoalsCardPayload;
+  const payload = savableCardPayload(card, "goals");
   const values = goalsValues(payload, parseGoalsEdits(payload, rawEdits));
   // The goals as they are now, not as they were when the card was built.
   const before = await getUserGoals(ctx.userId, tx, { forUpdate: true });

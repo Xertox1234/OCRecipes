@@ -62,6 +62,7 @@ import {
   revertGoalsSave,
 } from "./goals";
 import { WriteCardEditError } from "./errors";
+import { readCardPayload, STALE_CARD_RECEIPT } from "./payload";
 import type { WriteCardProposal } from "./tool-args";
 
 export { WriteCardEditError };
@@ -179,7 +180,9 @@ export function writeCardReceiptFor(card: CoachWriteCard): string {
   if (card.kind === "plan") {
     return planReceipt(card, edits as PlanCardEdits);
   }
-  return writeCardReceipt(card.kind, card.payload as WriteCardPayload, edits);
+  const payload = readCardPayload(card, card.kind);
+  if (!payload) return STALE_CARD_RECEIPT;
+  return writeCardReceipt(card.kind, payload, edits);
 }
 
 /** The tool that remakes each kind's card. The allergy card has none: the
@@ -243,11 +246,10 @@ function describePlan(p: PlanCardPayload, e: PlanCardEdits): string {
  * applied at once. It is saved, so a change must go through Undo or the log,
  * never a second log_food_item call.
  */
-export function describeLoggedFood(card: CoachWriteCard): string {
-  const body = describeFood(
-    card.payload as FoodCardPayload,
-    storedEdits(card) as FoodCardEdits,
-  );
+export function describeLoggedFood(card: CoachWriteCard): string | null {
+  const payload = readCardPayload(card, "food");
+  if (!payload) return null;
+  const body = describeFood(payload, storedEdits(card) as FoodCardEdits);
   return `Already logged in this chat, at once, with no tap: ${body}. To change it, the user taps Undo on its card (open for 5 minutes after it was logged) or edits it in their food log. Call log_food_item only for food not logged yet.`;
 }
 
@@ -262,46 +264,45 @@ const KIND_LABEL: Record<WriteCardKind, string> = {
 
 /**
  * The prompt line for the conversation's live card, with the user's edits
- * applied — so "make it three eggs" starts from what is on screen now.
+ * applied — so "make it three eggs" starts from what is on screen now. Null
+ * when the stored payload no longer parses: no line beats a crashed turn.
  */
-export function describeLiveCard(card: CoachWriteCard): string {
-  const e = storedEdits(card);
-  let body: string;
-  switch (card.kind) {
-    case "food":
-      body = describeFood(card.payload as FoodCardPayload, e as FoodCardEdits);
-      break;
-    case "grocery":
-      body = describeGrocery(
-        card.payload as GroceryCardPayload,
-        e as GroceryCardEdits,
-      );
-      break;
-    case "plan":
-      body = describePlan(card.payload as PlanCardPayload, e as PlanCardEdits);
-      break;
-    case "pantry":
-      body = describePantry(
-        card.payload as PantryCardPayload,
-        e as PantryCardEdits,
-      );
-      break;
-    case "goals":
-      body = describeGoals(
-        card.payload as GoalsCardPayload,
-        e as GoalsCardEdits,
-      );
-      break;
-    case "allergy":
-      body = describeAllergy(
-        card.payload as AllergyCardPayload,
-        e as AllergyCardEdits,
-      );
-      break;
-  }
+export function describeLiveCard(card: CoachWriteCard): string | null {
+  const body = describeLiveCardBody(card);
+  if (body === null) return null;
   const shown = `Card on screen (${KIND_LABEL[card.kind]}, not saved): ${body}.`;
   if (card.kind === "allergy") {
     return `${shown} The user picks the severity and saves it on the card.`;
   }
   return `${shown} To change it, call ${TOOL_FOR_KIND[card.kind]} again with the full updated contents.`;
+}
+
+function describeLiveCardBody(card: CoachWriteCard): string | null {
+  const e = storedEdits(card);
+  switch (card.kind) {
+    case "food": {
+      const p = readCardPayload(card, "food");
+      return p && describeFood(p, e as FoodCardEdits);
+    }
+    case "grocery": {
+      const p = readCardPayload(card, "grocery");
+      return p && describeGrocery(p, e as GroceryCardEdits);
+    }
+    case "plan": {
+      const p = readCardPayload(card, "plan");
+      return p && describePlan(p, e as PlanCardEdits);
+    }
+    case "pantry": {
+      const p = readCardPayload(card, "pantry");
+      return p && describePantry(p, e as PantryCardEdits);
+    }
+    case "goals": {
+      const p = readCardPayload(card, "goals");
+      return p && describeGoals(p, e as GoalsCardEdits);
+    }
+    case "allergy": {
+      const p = readCardPayload(card, "allergy");
+      return p && describeAllergy(p, e as AllergyCardEdits);
+    }
+  }
 }

@@ -20,6 +20,7 @@ import {
 import type { WriteCardTx } from "../../storage/coach-write-cards";
 import { logger, toError } from "../../lib/logger";
 import { WriteCardEditError } from "./errors";
+import { savableCardPayload } from "./payload";
 import type { LogFoodCardArgs } from "./tool-args";
 
 export { logFoodCardArgsSchema, type LogFoodCardArgs } from "./tool-args";
@@ -207,7 +208,7 @@ export async function performFoodSave(
   rawEdits: unknown,
   ctx: { userId: string; tz: string; now: Date },
 ): Promise<CoachWriteCardSavedRefs> {
-  const payload = card.payload as FoodCardPayload;
+  const payload = savableCardPayload(card, "food");
   const edits = parseFoodEdits(payload, rawEdits);
   const counts = foodCounts(payload, edits);
   if (counts.every((c) => c === 0)) {

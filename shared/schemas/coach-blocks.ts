@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
 import { allergenIdSchema } from "../constants/allergens";
-import { writeCardBlockObjectSchema } from "./coach-write-cards";
+import { writeCardBlockSchema } from "./coach-write-cards";
 import { formBlockSchema } from "./coach-form";
 import {
   recipeResultsBlockSchema,
@@ -355,8 +355,9 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   recipeAdjustBlockSchema,
   memoryRefsSchema,
   // SERVER-BUILT like the finder blocks (spec 2026-11-09): dropped from model
-  // output by server/services/coach-blocks.ts.
-  writeCardBlockObjectSchema,
+  // output by server/services/coach-blocks.ts. The refined schema, so a
+  // payload of another kind is dropped here, before the card casts it.
+  writeCardBlockSchema,
   checkedTrailSchema,
 ]);
 

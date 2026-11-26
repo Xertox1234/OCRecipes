@@ -406,6 +406,16 @@ describe("write cards in the chat (spec 2026-11-09)", () => {
     options: [{ label: "x", message: "x" }],
   };
 
+  // Audit 2026-11-24, L55: a payload of another kind would crash the card's
+  // render (goals reads payload.rows); the block is dropped, the rest kept.
+  it("filterValidBlocks drops a write card whose payload is another kind's", () => {
+    const mismatched = { ...food(A), kind: "goals" };
+    expect(filterValidBlocks([mismatched, reply, food(B)])).toEqual([
+      reply,
+      food(B),
+    ]);
+  });
+
   it("latestLiveWriteCard ignores saved and replaced cards", () => {
     expect(latestLiveWriteCard([[food(A)], [reply]])).toEqual({
       cardId: A,

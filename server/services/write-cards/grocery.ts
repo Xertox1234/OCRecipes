@@ -32,6 +32,11 @@ import {
   unitKey,
 } from "../pantry-deduction";
 import { WriteCardEditError } from "./errors";
+import {
+  readCardPayload,
+  savableCardPayload,
+  STALE_CARD_RECEIPT,
+} from "./payload";
 import type { AddGroceryCardArgs } from "./tool-args";
 
 export { addGroceryCardArgsSchema, type AddGroceryCardArgs } from "./tool-args";
@@ -159,7 +164,7 @@ export async function performGrocerySave(
   rawEdits: unknown,
   ctx: { userId: string; tz: string; now: Date },
 ): Promise<CoachWriteCardSavedRefs> {
-  const payload = card.payload as GroceryCardPayload;
+  const payload = savableCardPayload(card, "grocery");
   const edits = parseGroceryEdits(payload, rawEdits);
   const kept = groceryKept(payload, edits);
   if (kept.length === 0) throw new WriteCardEditError("Nothing to add.");
@@ -232,8 +237,10 @@ export async function revertGrocerySave(
   }
 }
 
-function groceryReceiptListTitle(card: CoachWriteCard): string | undefined {
-  const payload = card.payload as GroceryCardPayload;
+function groceryReceiptListTitle(
+  card: CoachWriteCard,
+  payload: GroceryCardPayload,
+): string | undefined {
   const refs = card.savedRefs;
   if (!refs?.listId) return undefined;
   if (refs.createdListId) return payload.newListName;
@@ -248,8 +255,9 @@ export function groceryReceipt(
   card: CoachWriteCard,
   edits: GroceryCardEdits = {},
 ): string {
-  const payload = card.payload as GroceryCardPayload;
-  const listTitle = groceryReceiptListTitle(card);
+  const payload = readCardPayload(card, "grocery");
+  if (!payload) return STALE_CARD_RECEIPT;
+  const listTitle = groceryReceiptListTitle(card, payload);
   const kept = groceryKept(payload, edits).length;
   const added = card.savedRefs?.groceryItemIds?.length ?? kept;
   const full = card.savedRefs?.groceryListFull ?? 0;
