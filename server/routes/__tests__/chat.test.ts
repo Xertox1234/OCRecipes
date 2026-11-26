@@ -522,6 +522,25 @@ describe("Chat Routes", () => {
       }
     });
 
+    // Audit 2026-11-24 L41: the recipe screen sends title + every ingredient
+    // with no cap, so a long recipe's Ask Coach was refused outright.
+    it("keeps a too-long screenContext instead of refusing the message", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({
+          content: "Is this healthy?",
+          screenContext: "a, ".repeat(1000),
+        });
+
+      expect(res.body.code).not.toBe("VALIDATION_ERROR");
+      expect(res.status).not.toBe(400);
+    });
+
     it("returns 400 for empty content", async () => {
       vi.mocked(storage.getChatConversation).mockResolvedValue(
         createMockChatConversation(),
@@ -2731,6 +2750,55 @@ describe("Chat Routes", () => {
         expect.any(Number),
         "coach",
         expect.objectContaining({ search: "breakfast", page: 2 }),
+      );
+    });
+
+    // Audit 2026-11-24 L42: a mistyped type silently listed every kind, and
+    // the search text had no length limit.
+    it("answers 400 for an unknown conversation type", async () => {
+      vi.mocked(storage.getChatConversations).mockClear();
+      const res = await request(app)
+        .get("/api/chat/conversations?type=coahc")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_ERROR");
+      expect(storage.getChatConversations).not.toHaveBeenCalled();
+    });
+
+    it("cuts an over-long search to 200 characters", async () => {
+      vi.mocked(storage.getChatConversations).mockResolvedValue([]);
+      const res = await request(app)
+        .get(`/api/chat/conversations?search=${"a".repeat(5000)}`)
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(200);
+      expect(storage.getChatConversations).toHaveBeenCalledWith(
+        "1",
+        expect.any(Number),
+        undefined,
+        expect.objectContaining({ search: "a".repeat(200) }),
+      );
+    });
+
+    it("answers 400 for a repeated search parameter", async () => {
+      vi.mocked(storage.getChatConversations).mockClear();
+      const res = await request(app)
+        .get("/api/chat/conversations?search=a&search=b")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(400);
+      expect(storage.getChatConversations).not.toHaveBeenCalled();
+    });
+
+    it("still lists every kind when no type is given", async () => {
+      vi.mocked(storage.getChatConversations).mockResolvedValue([]);
+      const res = await request(app)
+        .get("/api/chat/conversations")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(200);
+      expect(storage.getChatConversations).toHaveBeenCalledWith(
+        "1",
+        expect.any(Number),
+        undefined,
+        expect.objectContaining({ search: undefined }),
       );
     });
   });

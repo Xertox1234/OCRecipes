@@ -62,7 +62,7 @@ export function register(app: Express): void {
           );
 
         const schema = z.object({
-          messageId: z.number().int().positive(),
+          messageId: z.int32().positive(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)

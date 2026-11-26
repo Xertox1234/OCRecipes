@@ -526,6 +526,24 @@ describe("handleCoachChat", () => {
       expect(passedHistory).toHaveLength(20);
       expect(passedHistory.at(-1)).toEqual({ role: "user", content });
     });
+
+    // Audit 2026-11-24 L48: role is a free text column; it was cast straight
+    // into the model call's role field.
+    it("drops a history row whose role is not user, assistant or system", async () => {
+      const content = "And for dinner?";
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({ role: "tool", content: "stray row" }),
+        createMockChatMessage({ role: "user", content }),
+      ]);
+
+      await collectEvents(
+        handleCoachChat(makeParams({ content, isCoachPro: true })),
+      );
+
+      const passedHistory = vi.mocked(generateCoachProResponse).mock
+        .calls[0][0];
+      expect(passedHistory).toEqual([{ role: "user", content }]);
+    });
   });
 
   // ── Coach Pro vs standard coach branching ─────────────────

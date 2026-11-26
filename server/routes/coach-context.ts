@@ -122,7 +122,9 @@ export function register(app: Express): void {
         if (!features) return;
 
         const schema = z.object({
-          conversationId: z.number(),
+          // int32: a fraction, a negative or a value past the serial
+          // range reached the query and answered 500.
+          conversationId: z.int32().positive(),
           interimTranscript: z.string().min(1).max(2000),
         });
         const parsed = schema.safeParse(req.body);

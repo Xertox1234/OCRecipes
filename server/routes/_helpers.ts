@@ -190,15 +190,23 @@ export function requireValidImage(
 }
 
 /**
+ * Largest Postgres `integer` (and `serial`). An id past it makes the query
+ * throw "out of range", which surfaced as a 500 (audit 2026-11-24, L101).
+ * For body ids, `z.int32().positive()` checks the same range.
+ */
+export const PG_INTEGER_MAX = 2147483647;
+
+/**
  * Parse a route parameter as a positive integer. Returns the parsed number,
- * or null if the value is not a valid positive integer (rejects NaN, 0, and negatives).
+ * or null if the value is not a valid positive integer (rejects NaN, 0,
+ * negatives, and values past the Postgres integer range).
  * Accepts `string | string[]` to match Express 5's req.params type without requiring `as string` casts.
  */
 export function parsePositiveIntParam(value: string | string[]): number | null {
   const str = Array.isArray(value) ? value[0] : value;
   if (!str) return null;
   const num = parseInt(str, 10);
-  if (isNaN(num) || num <= 0) return null;
+  if (isNaN(num) || num <= 0 || num > PG_INTEGER_MAX) return null;
   return num;
 }
 

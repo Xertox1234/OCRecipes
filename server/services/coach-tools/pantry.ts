@@ -6,7 +6,8 @@ import { pantryCardResult } from "../write-cards/results";
 import { defineTool, type CoachToolEntry } from "./types";
 
 const getPantryItemsSchema = z.object({
-  expiringWithinDays: z.number().optional(),
+  // Bounded: a huge count made an Invalid Date that threw in the query.
+  expiringWithinDays: z.number().min(0).max(365).optional(),
 });
 
 // Titles and product names can come from other users' public recipes or an

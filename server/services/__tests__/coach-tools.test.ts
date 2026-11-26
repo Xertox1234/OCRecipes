@@ -1546,3 +1546,64 @@ describe("write-card mode (spec 2026-11-09)", () => {
     );
   });
 });
+
+// Coach chat audit 2026-11-24 L104: a model-chosen argument could be any size.
+// A huge day count made an Invalid Date that threw inside the query, and an
+// unbounded ingredient list built an arbitrarily large paid prompt.
+describe("coach tool argument limits", () => {
+  it("refuses a pantry day count past a year without querying", async () => {
+    vi.mocked(storage.getExpiringPantryItems).mockClear();
+    const result = await executeToolCall(
+      "get_pantry_items",
+      { expiringWithinDays: 1e12 },
+      "user-1",
+    );
+    expect(result).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    expect(storage.getExpiringPantryItems).not.toHaveBeenCalled();
+  });
+
+  it("still answers an ordinary pantry day count", async () => {
+    const result = await executeToolCall(
+      "get_pantry_items",
+      { expiringWithinDays: 3 },
+      "user-1",
+    );
+    expect(result).toMatchObject({ expiringWithinDays: 3 });
+  });
+
+  it("refuses an oversized substitution list without the paid call", async () => {
+    vi.mocked(getSubstitutions).mockClear();
+    const ingredients = Array.from({ length: 31 }, (_, i) => ({
+      name: `item ${i}`,
+    }));
+    const result = await executeToolCall(
+      "get_substitutions",
+      { ingredients },
+      "user-1",
+    );
+    expect(result).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    expect(getSubstitutions).not.toHaveBeenCalled();
+  });
+
+  it("refuses an oversized ingredient name", async () => {
+    vi.mocked(getSubstitutions).mockClear();
+    const result = await executeToolCall(
+      "get_substitutions",
+      { ingredients: [{ name: "x".repeat(201) }] },
+      "user-1",
+    );
+    expect(result).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    expect(getSubstitutions).not.toHaveBeenCalled();
+  });
+
+  it("refuses an oversized nutrition query", async () => {
+    vi.mocked(lookupNutrition).mockClear();
+    const result = await executeToolCall(
+      "lookup_nutrition",
+      { query: "x".repeat(201) },
+      "user-1",
+    );
+    expect(result).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    expect(lookupNutrition).not.toHaveBeenCalled();
+  });
+});

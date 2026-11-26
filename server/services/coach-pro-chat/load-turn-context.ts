@@ -18,10 +18,15 @@ import type { CoachIntent } from "../coach-intent-classifier";
 import { applyWriteCardContext } from "./write-card-context";
 import { proOnly } from "./pro-only";
 import type { CoachChatParams } from "./types";
+import { logger } from "../../lib/logger";
 
 export interface PromptMessage {
   role: "user" | "assistant" | "system";
   content: string;
+}
+
+function isPromptRole(role: string): role is PromptMessage["role"] {
+  return role === "user" || role === "assistant" || role === "system";
 }
 
 /** Everything the reply stage needs, read once at the top of the turn. */
@@ -124,10 +129,18 @@ export async function loadTurnContext(
     await applyWriteCardContext(context, { conversationId, userId, liveCard });
   }
 
-  let messageHistory: PromptMessage[] = history.map((m) => ({
-    role: m.role as "user" | "assistant" | "system",
-    content: m.content,
-  }));
+  // role is a free text column: drop a row with any other value rather than
+  // cast it into the model call (audit 2026-11-24, L48; same as warm-up).
+  let messageHistory: PromptMessage[] = history.flatMap((m) => {
+    if (!isPromptRole(m.role)) {
+      logger.warn(
+        { messageId: m.id, role: m.role },
+        "coach turn: dropping history row with unexpected role",
+      );
+      return [];
+    }
+    return [{ role: m.role, content: m.content }];
+  });
 
   // ── Coach Pro: consume warm-up if available ─────────
   if (isCoachPro && warmUpId) {

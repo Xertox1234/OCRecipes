@@ -77,6 +77,17 @@ describe("visible memory routes", () => {
     expect(storage[fn]).toHaveBeenCalledWith("1", [4, 5, 4]);
   });
 
+  // Audit 2026-11-24 L101: an id past the Postgres integer range threw in
+  // the query and came back as a 500.
+  it("answers 400 for an id past the Postgres integer range", async () => {
+    vi.mocked(storage.confirmNotebookEntries).mockClear();
+    const res = await request(app())
+      .post("/api/coach/notebook/confirm")
+      .send({ ids: [2147483648] });
+    expect(res.status).toBe(400);
+    expect(storage.confirmNotebookEntries).not.toHaveBeenCalled();
+  });
+
   it("refuses to confirm a note while the notes are paused", async () => {
     vi.mocked(storage.areCoachNotesPaused).mockResolvedValueOnce(true);
     const res = await request(app())
