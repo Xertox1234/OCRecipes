@@ -84,8 +84,14 @@ Then re-rank.
       with Undo). Part 3, PR #2002: the allergy card (the Coach's "add allergy" button
       becomes a card with a severity picker, for users who have agreed to
       store health data).
-- [ ] **T2. Undo for small writes.** Apply a low-risk log at once and offer
+- [x] **T2. Undo for small writes.** Apply a low-risk log at once and offer
       undo; keep confirm cards for large changes. Value: medium. Size: M.
+      Done (PR #PRNUM): a food log the user types in the chat, up to three
+      foods and 1000 kcal with macros that match the calories, is logged
+      during the Coach's tool call and arrives saved, with Undo (open for 5
+      minutes). Bigger logs, photo, label and barcode reads, and every other
+      card kind still wait on Save. Left for later: the same for small
+      grocery adds, and a setting to turn it off.
 - [ ] **T3. Living blocks.** A block stores a query instead of a snapshot and
       re-reads it, so an old card shows current numbers. Value: medium. Size: M.
 - [ ] **T4. More chart kinds and a compare block.** Ring, sparkline, heatmap,
