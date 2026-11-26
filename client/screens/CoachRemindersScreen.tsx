@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect } from "react";
 import {
+  ActivityIndicator,
   View,
   Switch,
   ScrollView,
@@ -83,14 +84,15 @@ function useUpdateReminderMute() {
       const res = await apiRequest("PATCH", "/api/reminders/mutes", mutes);
       return res.json() as Promise<{ reminderMutes: ReminderMutes }>;
     },
-    onSuccess: () => {
-      // Invalidate rather than setQueryData — avoids corrupting the full profile
-      // cache when it is cold (old === undefined), which would drop non-mutes
-      // fields read by other hooks on the same key.
-      void queryClient.invalidateQueries({
+    // Invalidate rather than setQueryData — avoids corrupting the full profile
+    // cache when it is cold (old === undefined), which would drop non-mutes
+    // fields read by other hooks on the same key. Returned, so the mutation
+    // stays pending until the refetch lands and the switch keeps showing the
+    // chosen value meanwhile (it snapped back to the old one before).
+    onSuccess: () =>
+      queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.dietaryProfile,
-      });
-    },
+      }),
     onError: () => {
       // Surface mutation failures here so a failed toggle does not silently
       // leave the UI showing the wrong state.
@@ -108,8 +110,11 @@ export default function CoachRemindersScreen() {
   const bottomBudget = useBottomBudget();
   const headerInset = useHeaderContentInset(Spacing.lg);
   const { data, isLoading, isError, refetch } = useReminderMutes();
-  const { mutate: updateMute, isPending: isUpdatingMute } =
-    useUpdateReminderMute();
+  const {
+    mutate: updateMute,
+    isPending: isUpdatingMute,
+    variables: pendingMutes,
+  } = useUpdateReminderMute();
 
   const handleToggle = useCallback(
     (key: keyof ReminderMutes, currentlyMuted: boolean) => {
@@ -128,7 +133,12 @@ export default function CoachRemindersScreen() {
     }
   }, [isError]);
 
-  const mutes = data?.reminderMutes ?? {};
+  // While a change is saving, show the chosen value; a failed save clears
+  // `variables`, so the switch goes back to the server copy.
+  const mutes: ReminderMutes = {
+    ...(data?.reminderMutes ?? {}),
+    ...(isUpdatingMute ? pendingMutes : undefined),
+  };
 
   return (
     <ScrollView
@@ -142,7 +152,14 @@ export default function CoachRemindersScreen() {
         {"Turn off categories you don't want the Coach to remind you about."}
       </ThemedText>
 
-      {isError ? (
+      {isLoading ? (
+        // Not switches that all read "on" before the settings are known.
+        <ActivityIndicator
+          style={styles.loading}
+          color={theme.textSecondary}
+          accessibilityLabel="Loading reminder settings"
+        />
+      ) : isError ? (
         <View style={styles.errorContainer}>
           <ThemedText
             style={[styles.errorText, { color: theme.textSecondary }]}
@@ -199,7 +216,7 @@ export default function CoachRemindersScreen() {
                     thumbColor={
                       Platform.OS === "android" ? "#FFFFFF" : undefined // hardcoded
                     }
-                    disabled={isLoading || isUpdatingMute}
+                    disabled={isUpdatingMute}
                   />
                 </View>
                 {!isLast && (
@@ -222,6 +239,7 @@ export default function CoachRemindersScreen() {
 }
 
 const styles = StyleSheet.create({
+  loading: { paddingVertical: Spacing.xl },
   // ≥44pt tap target for a text link (no hitSlop; see touch-targets tests).
   textLink: {
     minWidth: 44,

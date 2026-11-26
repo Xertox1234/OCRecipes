@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   availableNutrients,
   chartSeries,
+  dataBarStyle,
+  goalChartLabel,
   featureTipRoute,
   formatWeekRange,
   tomorrowLocalDate,
@@ -11,6 +13,8 @@ import {
   shouldShowYourWeek,
   trendSeries,
 } from "../weekly-report-utils";
+import { Colors } from "@/constants/theme";
+import { contrastRatio } from "../../../../test/utils/wcag-contrast";
 import type {
   WeeklyDay,
   WeeklyFacts,
@@ -244,5 +248,63 @@ describe("shouldShowYourWeek", () => {
   });
   it("hides when there is no report", () => {
     expect(shouldShowYourWeek(undefined, new Date())).toBe(false);
+  });
+});
+
+// Coach chat audit 2026-11-24 M14: unmet days, older weeks and unmet
+// sparkline bars were backgroundTertiary on the card's surface, about 1.4:1
+// (light) and 1.3:1 (dark). The bar height is the data, so a bar must reach
+// the 3:1 non-text contrast whether or not it is highlighted.
+describe("dataBarStyle", () => {
+  it.each(["light", "dark"] as const)(
+    "every bar's visible edge reaches 3:1 on the card in %s mode",
+    (mode) => {
+      const theme = Colors[mode];
+      const on = dataBarStyle(theme, true);
+      const off = dataBarStyle(theme, false);
+      expect(
+        contrastRatio(on.backgroundColor, theme.surface),
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        contrastRatio(off.borderColor, theme.surface),
+      ).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  // Review of #2057: a filled accent bar beside a filled grey bar was 1.11:1
+  // (light) and 1.38:1 (dark) apart, hue only, so colour-blind and greyscale
+  // users could not tell them apart. Filled against hollow needs no hue.
+  it("tells the highlighted bar apart by fill, not by colour alone", () => {
+    const theme = Colors.light;
+    const on = dataBarStyle(theme, true);
+    const off = dataBarStyle(theme, false);
+    expect(on.borderWidth).toBe(0);
+    expect(off.backgroundColor).toBe("transparent");
+    expect(off.borderWidth).toBeGreaterThan(0);
+  });
+});
+
+// M14: the label listed values but never which days met the goal.
+describe("goalChartLabel", () => {
+  it("says which days met the goal", () => {
+    const bars = chartSeries(facts(), "protein")!;
+    const label = goalChartLabel("Protein", 120, "g", bars);
+    expect(label).toMatch(/^Protein by day, goal 120 g\. /);
+    expect(label).toContain("Sunday 100 g, goal met");
+    expect(label).toContain("Monday 100 g, goal not met");
+  });
+
+  it("a day with nothing logged is neither", () => {
+    const bars = chartSeries(
+      facts({
+        days: DATES.map((d, i) =>
+          day(d, { protein: i === 0 ? null : 100, proteinMet: null }),
+        ),
+      }),
+      "protein",
+    )!;
+    expect(goalChartLabel("Protein", 120, "g", bars)).toContain(
+      "Sunday nothing logged;",
+    );
   });
 });

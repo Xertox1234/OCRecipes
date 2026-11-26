@@ -4,7 +4,11 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, FontFamily, Spacing } from "@/constants/theme";
 import type { WeeklyTrendPoint } from "@shared/schemas/coach-weekly-report";
-import { trendSeries, type TrendMetric } from "./weekly-report-utils";
+import {
+  dataBarStyle,
+  trendSeries,
+  type TrendMetric,
+} from "./weekly-report-utils";
 
 const PLOT_HEIGHT = 96;
 const METRICS: {
@@ -100,10 +104,7 @@ export function TrendsCard({
                 styles.bar,
                 {
                   height: Math.max(2, ((p.value ?? 0) / max) * PLOT_HEIGHT),
-                  backgroundColor:
-                    i === points.length - 1
-                      ? theme.link
-                      : theme.backgroundTertiary,
+                  ...dataBarStyle(theme, i === points.length - 1),
                 },
               ]}
             />

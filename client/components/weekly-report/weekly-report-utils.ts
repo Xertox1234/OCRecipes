@@ -74,6 +74,51 @@ export function chartSeries(
   }));
 }
 
+/**
+ * A data bar's look. The bar's height is the data, so every bar's visible
+ * edge reaches the 3:1 non-text contrast on the card (backgroundTertiary
+ * fills were about 1.4:1). The highlighted bar (goal met, this week, a day
+ * with a log) is filled with the accent; the rest are hollow outlines, so the
+ * two differ by shape and not by hue alone (a grey fill beside the accent was
+ * only 1.1:1 apart in luminance).
+ */
+export function dataBarStyle(
+  theme: { link: string; textSecondary: string },
+  highlighted: boolean,
+): { backgroundColor: string; borderColor: string; borderWidth: number } {
+  return highlighted
+    ? { backgroundColor: theme.link, borderColor: theme.link, borderWidth: 0 }
+    : {
+        backgroundColor: "transparent",
+        borderColor: theme.textSecondary,
+        borderWidth: 1.5,
+      };
+}
+
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+/** The goal chart's spoken label: each day's value and whether it met the goal. */
+export function goalChartLabel(
+  nutrientLabel: string,
+  goal: number,
+  unit: string,
+  bars: ChartBar[],
+): string {
+  const days = bars.map((b, i) => {
+    if (b.value === null) return `${DAY_NAMES[i]} nothing logged`;
+    return `${DAY_NAMES[i]} ${Math.round(b.value)} ${unit}, ${b.met ? "goal met" : "goal not met"}`;
+  });
+  return `${nutrientLabel} by day, goal ${Math.round(goal)} ${unit}. ${days.join("; ")}.`;
+}
+
 const NUTRIENT_ORDER: ChartNutrient[] = ["protein", "calories", "carbs"];
 
 export function availableNutrients(facts: WeeklyFacts): ChartNutrient[] {

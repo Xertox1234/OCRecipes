@@ -7,6 +7,8 @@ import type { WeeklyFacts } from "@shared/schemas/coach-weekly-report";
 import {
   availableNutrients,
   chartSeries,
+  dataBarStyle,
+  goalChartLabel,
   type ChartNutrient,
 } from "./weekly-report-utils";
 
@@ -21,16 +23,6 @@ const UNIT: Record<ChartNutrient, string> = {
   calories: "kcal",
   carbs: "g",
 };
-const DAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
 /** Goal vs actual, one bar per day, a dashed goal line, chips per nutrient. */
 export function GoalChart({ facts }: { facts: WeeklyFacts }) {
   const { theme } = useTheme();
@@ -43,12 +35,7 @@ export function GoalChart({ facts }: { facts: WeeklyFacts }) {
   const goal = facts.goals[nutrient] ?? 0;
   const max = Math.max(goal * 1.25, ...bars.map((b) => b.value ?? 0), 1);
   const unit = UNIT[nutrient];
-  const label = `${LABEL[nutrient]} by day, goal ${Math.round(goal)} ${unit}. ${bars
-    .map(
-      (b, i) =>
-        `${DAY_NAMES[i]} ${b.value === null ? "nothing logged" : `${Math.round(b.value)} ${unit}`}`,
-    )
-    .join(", ")}.`;
+  const label = goalChartLabel(LABEL[nutrient], goal, unit, bars);
 
   return (
     <View
@@ -125,9 +112,7 @@ export function GoalChart({ facts }: { facts: WeeklyFacts }) {
                     b.value === null
                       ? 2
                       : Math.max(2, (b.value / max) * CHART_HEIGHT),
-                  backgroundColor: b.met
-                    ? theme.link
-                    : theme.backgroundTertiary,
+                  ...dataBarStyle(theme, b.met),
                 },
               ]}
             />
