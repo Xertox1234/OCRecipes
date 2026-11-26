@@ -6872,14 +6872,21 @@ ND_PAYLOAD=$(jsonc "$ND_OUTWARD")
 ND_OUT=$(PATH="$ND_JQ:$PATH" bash "$HOOK" 2>/dev/null <<<"$ND_PAYLOAD"); ND_RC=$?; ND_ERR=""
 n="ND5 deny() cannot build its JSON: the static ended-before-a-decision deny, rc 0"
 nd_only_deny && nd_reason_has 'ended before it reached a decision' && nd_ok "$n" || nd_bad "$n"
-# ND5b. A command too large to evaluate inside the 15 s hook timeout (same review): above
-#      300000 characters with an outward word it denies at once. Payloads go to the hook on
+# ND5b. A command too large to evaluate inside the 10 s hook timeout (same review): above
+#      200000 characters with an outward word it denies at once. Payloads go to the hook on
 #      stdin from jq -Rs (one --arg over 128 KB is E2BIG).
+# The timed rows run the hook in a UTF-8 locale when the machine has one, as CI's runner and a
+# macOS session do: bash's pattern substitution is far slower there (2026-11-25: ND5d took 8 s
+# in CI and 0.4 s under the C locale here, from cmd_fastpath_has). C where there is none.
+ND_LOCALE=C
+for _l in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
+  if locale -a 2>/dev/null | grep -qixF -- "$_l"; then ND_LOCALE=$_l; break; fi
+done
 nd_big() {  # $1=first line  $2=padding bytes ; sets ND_OUT ND_RC ND_SECS
   local t0 t1
   t0=$(date +%s)
   ND_OUT=$({ printf '%s\n' "$1"; head -c "$2" /dev/zero | tr '\0' 'b' | fold -w 78 | sed 's/^/# /'; } \
-    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
   t1=$(date +%s); ND_SECS=$((t1 - t0))
 }
 nd_big "$ND_OUTWARD" 600000
@@ -6891,6 +6898,50 @@ nd_silent && nd_ok "$n" || nd_bad "$n"
 nd_big "$ND_OUTWARD" 100000
 n="ND5b control: a 100 KB outward command still gets the precise reason, not the size one"
 nd_only_deny && ! nd_reason_has 'characters long' && nd_ok "$n" || nd_bad "$n"
+# The cap is 200000 (2026-11-25; it was 300000, chosen against a 15 s timeout the hook never
+# had): a 250 KB outward command took about 5.5 s through the precise path, past half the 10 s.
+nd_big "$ND_OUTWARD" 250000
+n="ND5b a 250 KB outward command: too-large deny in under 5 s"
+nd_only_deny && nd_reason_has 'characters long' && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+# ND5c. A command dense in substitutions, well under the size cap (2026-11-25). The deep
+#      renderings in lib/cmd-detect.sh started one awk per `$(...)`/backtick body, about
+#      2.6 ms each, so 2000 lines of two substitutions (79 KB) took 10.7 s against the 10 s
+#      hook timeout, and these 4000 lines (160 KB) took about 21 s.
+nd_subs() {  # $1=first line  $2=lines of substitutions ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ printf '%s\n' "$1"; awk -v n="$2" 'BEGIN { for (i = 0; i < n; i++) printf "echo \"$(date +%%s) $(hostname)\" row %d\n", i }'; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_subs "$ND_OUTWARD" 4000
+n="ND5c an outward command followed by 8000 substitutions: the precise deny in under 5 s"
+nd_only_deny && nd_reason_has 'eas update' && ! nd_reason_has 'characters long' && [ "$ND_SECS" -lt 5 ] \
+  && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_subs 'npm test' 4000
+n="ND5c control: the same substitutions after a command that is not outward: allowed in under 5 s"
+nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+# ND5d. A command of many short lines (security review, 2026-11-25, on `main` too). Every awk
+#      that reads the whole command appends to its buffer once per line, so the cost grows
+#      with the square of the line count: 199000 newlines before a hidden OTA update took
+#      13.6 s against the 10 s timeout, though the command is under the character cap.
+#      Above 20000 lines it denies at once.
+nd_lines() {  # $1=newlines  $2=last line ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ awk -v n="$1" 'BEGIN { for (i = 0; i < n; i++) printf "\n" }'; printf '%s' "$2"; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_lines 150000 "echo \"\$(e''as up''date --branch preview)\""
+n="ND5d 150000 newlines before a hidden OTA update: the too-many-lines deny in under 5 s"
+nd_only_deny && nd_reason_has 'lines long' && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_lines 150000 'ls -la'
+n="ND5d control: 150000 newlines before a command with no outward word are allowed, rc 0"
+nd_silent && nd_ok "$n" || nd_bad "$n"
+nd_lines 19000 "echo \"\$(e''as up''date --branch preview)\""
+n="ND5d control: 19000 newlines (the cap is 20000) before a hidden OTA update still get the precise reason"
+nd_only_deny && ! nd_reason_has 'lines long' && nd_ok "$n" || nd_bad "$n"
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -7053,7 +7104,12 @@ DDROWS
 # (all RED before the guard change) and 6 allow controls.
 # 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
 # allowed before) and 10 allow controls.
-EXPECTED_TOTAL=1419
+# 1419 -> 1421 (2026-11-25, substitution-dense commands outran the 10 s hook timeout): +2 =
+# ND5c, a deny row and an allow control, both RED before the batched deep renderings.
+# 1421 -> 1422 (same change): +1 = ND5b at 250 KB, RED while the size cap was 300000.
+# 1422 -> 1425 (security review of that change): +3 = ND5d, a deny row RED before the line
+# cap and two controls.
+EXPECTED_TOTAL=1425
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
