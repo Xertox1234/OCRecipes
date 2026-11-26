@@ -17,6 +17,7 @@ import { askDishFollowUps } from "./ask-follow-ups";
 import { buildAdjustBlock, validateAdjustAnswers } from "./adjust";
 import { buildOfferBlock } from "./offer";
 import { findCommunity } from "./find-community";
+import { CommunitySearchUnavailableError } from "./community-unavailable";
 import { findInspired } from "./find-inspired";
 import { askClarifying } from "./ask-clarifying";
 import { getSpoonacularDailyCap, isOnlineCatalogConfigured } from "./config";
@@ -224,8 +225,13 @@ async function executeFinderStepUnscreened(
       const query = await extractQuery(step.request, {
         dietType: ctx.profile?.dietType ?? null,
       });
-      const items = await findCommunity(query, ctx.userId, step.excludeIds);
-      result = { kind: "community", query, items };
+      try {
+        const items = await findCommunity(query, ctx.userId, step.excludeIds);
+        result = { kind: "community", query, items };
+      } catch (err) {
+        if (!(err instanceof CommunitySearchUnavailableError)) throw err;
+        result = { kind: "community", query, items: [], unavailable: true };
+      }
       break;
     }
     case "search_online": {

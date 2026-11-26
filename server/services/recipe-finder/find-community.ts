@@ -12,6 +12,7 @@ import { searchRecipes, initSearchIndex } from "../recipe-search";
 import { isIndexInitialized } from "../../lib/search-index";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { createServiceLogger, toError } from "../../lib/logger";
+import { CommunitySearchUnavailableError } from "./community-unavailable";
 
 const log = createServiceLogger("recipe-finder-community");
 
@@ -97,11 +98,16 @@ export function isFilterOnlyRequest(query: RecipeQuery): boolean {
       .toLowerCase()
       .split(/[\s-]+/),
   );
-  return communityQueryText(query)
-    .toLowerCase()
-    .split(/[^a-z]+/)
-    .filter(Boolean)
-    .every((w) => BROWSE_FILLER.has(w) || dietWords.has(w));
+  return (
+    communityQueryText(query)
+      .toLowerCase()
+      // Letters of any script: a dish named in Japanese or Cyrillic is real
+      // search text, never filler (audit 2026-11-24, L51). Digits still split,
+      // so "3 keto dinner ideas" browses as before.
+      .split(/[^\p{L}]+/u)
+      .filter(Boolean)
+      .every((w) => BROWSE_FILLER.has(w) || dietWords.has(w))
+  );
 }
 
 /** R3: community rows always have cuisine null, so cuisine goes into q. */
@@ -137,10 +143,11 @@ export async function findCommunity(
     floor: CLOSE_MATCH_FLOOR,
   },
 ): Promise<FinderItem[]> {
-  // §6: an index still building at boot is 0 matches, not a wait.
+  // An index still building at boot is unavailable, not 0 matches (L50):
+  // callers must not act on it as an empty result.
   if (!isIndexInitialized()) {
     fireAndForget("recipe-finder-index-init", initSearchIndex());
-    return [];
+    throw new CommunitySearchUnavailableError();
   }
   const browse = isFilterOnlyRequest(query);
   const q = communityQueryText(query);
@@ -187,10 +194,7 @@ export async function findCommunity(
       .map((h) => toFinderItem(h.recipe))
       .filter((i): i is FinderItem => i !== null);
   } catch (error) {
-    log.warn(
-      { err: toError(error) },
-      "findCommunity failed; treating as 0 matches",
-    );
-    return [];
+    log.warn({ err: toError(error) }, "findCommunity failed");
+    throw new CommunitySearchUnavailableError({ cause: error });
   }
 }

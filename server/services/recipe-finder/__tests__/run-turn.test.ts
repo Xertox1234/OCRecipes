@@ -14,6 +14,7 @@ import { buildFinderGenerationMessages } from "../generate";
 import { storage } from "../../../storage";
 import { extractQuery, extractOfferDetails } from "../extract-query";
 import { findCommunity } from "../find-community";
+import { CommunitySearchUnavailableError } from "../community-unavailable";
 import { findInspired } from "../find-inspired";
 import { askClarifying } from "../ask-clarifying";
 import { askDishFollowUps } from "../ask-follow-ups";
@@ -244,6 +245,45 @@ describe("executeFinderStep", () => {
     );
     expect(out.kind).toBe("generate");
     expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+  });
+
+  it("round 1 with the search unavailable shows the results card and claims nothing", async () => {
+    vi.mocked(extractQuery).mockResolvedValue({ q: "x" });
+    vi.mocked(findCommunity).mockRejectedValue(
+      new CommunitySearchUnavailableError(),
+    );
+    const out = await executeFinderStep(
+      {
+        kind: "search_community",
+        request: "x. Time? 20 min",
+        round: 1,
+        excludeIds: [],
+        priorShownIds: [],
+      },
+      ctx(),
+    );
+    if (out.kind !== "message" || out.block.type !== "recipe_results") {
+      throw new Error(`expected results, got ${out.kind}`);
+    }
+    expect(out.block.items).toEqual([]);
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+  });
+
+  it("a search error that is not unavailability still throws", async () => {
+    vi.mocked(extractQuery).mockResolvedValue({ q: "x" });
+    vi.mocked(findCommunity).mockRejectedValue(new Error("bug"));
+    await expect(
+      executeFinderStep(
+        {
+          kind: "search_community",
+          request: "x",
+          round: 1,
+          excludeIds: [],
+          priorShownIds: [],
+        },
+        ctx(),
+      ),
+    ).rejects.toThrow("bug");
   });
 
   it("ignore → ignored, with no AI or DB work", async () => {
