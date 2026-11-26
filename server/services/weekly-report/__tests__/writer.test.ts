@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { aiChat } from "../../../lib/ai-client";
 import { buildWeeklyReportMessages, writeWeeklyReport } from "../writer";
 import { buildWeeklyFacts } from "../facts";
-import { templateContent } from "../text-guard";
+import { isBestWeek, templateContent } from "../text-guard";
 import { logger } from "../../../lib/logger";
 import type { WeeklyFacts } from "@shared/schemas/coach-weekly-report";
 
@@ -221,6 +221,18 @@ describe("buildWeeklyReportMessages", () => {
     expect(all).not.toContain("a private message to coach");
     expect(all).not.toMatch(/coachMessages/);
     expect(all).not.toContain("IGNORE ALL PREVIOUS INSTRUCTIONS");
+  });
+
+  // L66: the prompt gets a ready answer to "is this the best week?", the
+  // same one the guard checks, so the model is not left to guess from best.
+  it("tells the model whether this week is the best week", () => {
+    const user = String(buildWeeklyReportMessages(facts())[1].content);
+    const sent = JSON.parse(user.replace(/^FACTS:\n/, "")) as {
+      bestWeek: boolean;
+    };
+    expect(sent.bestWeek).toBe(isBestWeek(facts()));
+    const system = String(buildWeeklyReportMessages(facts())[0].content);
+    expect(system).toContain("FACTS.bestWeek");
   });
 
   it("names each day's weekday in the facts, from the civil date (M3)", () => {

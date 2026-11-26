@@ -1,5 +1,6 @@
 import { containsUnsafeCoachAdvice } from "../../lib/ai-safety";
 import { matchesDisorderedEating } from "../coach-intent-classifier";
+import { civilWeekday } from "./week-window";
 import {
   weeklyReportContentSchema,
   type WeeklyFacts,
@@ -20,6 +21,22 @@ const BEST_RE = /\b(best|record)\b/i;
 const CALORIE_RE = /\b(calorie|calories|kcal|cals?)\b/i;
 /** "1,950" or "1950" or "12.5". */
 const NUMBER_RE = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
+/** "5 days", "5 of 7 days", "1 day": captures the count. */
+const DAY_COUNT_RE = /\b(\d+)\s+(?:of\s+7\s+)?days?\b/gi;
+/** A count written as a word ("five days"); the prompt asks for digits. */
+const NUMBER_WORD_RE =
+  /\b(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:days?|meals?|times|recipes?|weeks?)\b/i;
+const WEEKDAY_RE =
+  /\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi;
+const WEEKDAYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const;
 
 export function hasSafetySignal(messages: string[]): boolean {
   return messages.some(matchesDisorderedEating);
@@ -80,6 +97,70 @@ export function factNumbers(facts: WeeklyFacts): Set<number> {
 }
 
 /**
+ * True when this week equals the best on a measure above zero. facts.best
+ * spans this week and up to six before it, so it exists from the second
+ * report on even when this week is below it (coach audit 2026-11-24, L66).
+ */
+export function isBestWeek(facts: WeeklyFacts): boolean {
+  const best = facts.best;
+  if (!best) return false;
+  if (facts.daysActive > 0 && facts.daysActive >= best.daysActive) return true;
+  return (
+    facts.proteinDaysMet !== null &&
+    best.proteinDaysMet !== null &&
+    facts.proteinDaysMet > 0 &&
+    facts.proteinDaysMet >= best.proteinDaysMet
+  );
+}
+
+/**
+ * Counts of days the text may state ("5 days"): the week's day counts and the
+ * comparisons built from them, never meals, grams or recipe counts. A count
+ * can still be attached to the wrong day measure (daysActive for protein);
+ * this narrows the pool, it does not bind each claim (L25).
+ */
+function dayCounts(facts: WeeklyFacts): Set<number> {
+  const s = new Set<number>([7]);
+  const add = (v: number | null | undefined) => {
+    if (v !== null && v !== undefined) s.add(v);
+  };
+  add(facts.daysActive);
+  add(facts.proteinDaysMet);
+  add(facts.caloriesDaysMet);
+  add(facts.carbsDaysMet);
+  if (facts.lastWeek) {
+    add(facts.lastWeek.daysActive);
+    add(facts.lastWeek.proteinDaysMet);
+    add(Math.abs(facts.daysActive - facts.lastWeek.daysActive));
+    if (
+      facts.proteinDaysMet !== null &&
+      facts.lastWeek.proteinDaysMet !== null
+    ) {
+      add(Math.abs(facts.proteinDaysMet - facts.lastWeek.proteinDaysMet));
+    }
+  }
+  if (facts.best) {
+    add(facts.best.daysActive);
+    add(facts.best.proteinDaysMet);
+  }
+  for (const t of facts.trend) {
+    add(t.daysActive);
+    add(t.proteinDaysMet);
+  }
+  for (const p of facts.patterns) addNumbersFromText(s, p);
+  return s;
+}
+
+/** Weekdays (lower case) of the week's days with a meal logged. */
+function loggedWeekdays(facts: WeeklyFacts): Set<string> {
+  return new Set(
+    facts.days
+      .filter((d) => d.meals > 0)
+      .map((d) => WEEKDAYS[civilWeekday(d.date)]),
+  );
+}
+
+/**
  * The text with the user's own recipe titles blanked out, for the word and
  * digit checks: "The Best Banana Bread" or "30-Minute Chili" named as is is
  * not Coach saying "best" or giving a count (coach audit 2026-11-24, L80).
@@ -115,6 +196,9 @@ export function validateContent(
   const parsed = weeklyReportContentSchema.safeParse(content);
   if (!parsed.success) return { ok: false, reason: "schema" };
   const allowed = factNumbers(facts);
+  const days = dayCounts(facts);
+  const weekdays = loggedWeekdays(facts);
+  const next = parsed.data.next;
   for (const t of texts(parsed.data)) {
     const own = withoutTitles(t, facts);
     if (BANNED_RE.test(own)) return { ok: false, reason: "banned-word" };
@@ -123,15 +207,28 @@ export function validateContent(
         return { ok: false, reason: "unbacked-number" };
       }
     }
+    for (const m of own.matchAll(DAY_COUNT_RE)) {
+      if (!days.has(Number(m[1]))) {
+        return { ok: false, reason: "unbacked-day-count" };
+      }
+    }
+    if (NUMBER_WORD_RE.test(own)) return { ok: false, reason: "number-word" };
+    // The next-week idea is about next week, so any weekday may be named.
+    if (!next || t !== next.text) {
+      for (const m of own.matchAll(WEEKDAY_RE)) {
+        if (!weekdays.has(m[1].toLowerCase())) {
+          return { ok: false, reason: "unlogged-weekday" };
+        }
+      }
+    }
     if (LAST_WEEK_RE.test(own) && !facts.lastWeek) {
       return { ok: false, reason: "no-last-week" };
     }
-    if (BEST_RE.test(own) && !facts.best) {
+    if (BEST_RE.test(own) && !isBestWeek(facts)) {
       return { ok: false, reason: "no-best" };
     }
     if (containsUnsafeCoachAdvice(t)) return { ok: false, reason: "unsafe" };
   }
-  const next = parsed.data.next;
   // The idea for next week carries no numbers of Coach's own (no grams, times
   // or counts); digits inside a named recipe title are the user's.
   if (next && /\d/.test(withoutTitles(next.text, facts)))

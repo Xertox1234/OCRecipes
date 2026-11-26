@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   applyGuards,
   factNumbers,
+  isBestWeek,
   hasSafetySignal,
   templateContent,
   validateContent,
 } from "../text-guard";
 import { buildWeeklyFacts, type WeeklyInputs } from "../facts";
+import { createMockWeeklyFacts } from "../../../__tests__/factories";
 import type {
   WeeklyFacts,
   WeeklyReportContent,
@@ -375,5 +377,117 @@ describe("hasSafetySignal", () => {
     );
     expect(hasSafetySignal(["I made purée tonight"])).toBe(false);
     expect(hasSafetySignal([])).toBe(false);
+  });
+});
+
+// Audit 2026-11-24 L66: "best"/"record" passed whenever any previous week
+// existed, even when this week was below the best.
+describe("validateContent — best week", () => {
+  const prev = (daysActive: number, proteinDaysMet: number) => ({
+    weekStart: "2026-10-25",
+    weekEnd: "2026-10-31",
+    daysActive,
+    proteinDaysMet,
+    mealsLogged: daysActive * 2,
+    recipesAdded: 0,
+    tipIds: [],
+  });
+  const withPrev = (p: ReturnType<typeof prev>) =>
+    build({
+      logs: DATES.slice(0, 5).flatMap((d) => meals(d, 110, 1950)),
+      previous: [createMockWeeklyFacts(p)],
+    });
+
+  it("rejects 'best' when this week is below the best week", () => {
+    const f = withPrev(prev(7, 7));
+    expect(f.best).not.toBeNull();
+    expect(isBestWeek(f)).toBe(false);
+    expect(
+      validateContent({ ...base, headline: "Your best week yet." }, f),
+    ).toEqual({ ok: false, reason: "no-best" });
+  });
+
+  it("accepts 'best' when this week ties or beats the best (control)", () => {
+    const f = withPrev(prev(3, 2));
+    expect(isBestWeek(f)).toBe(true);
+    expect(
+      validateContent({ ...base, headline: "Your best week yet." }, f),
+    ).toEqual({ ok: true });
+  });
+
+  it("a tie at zero is not a best week", () => {
+    const f = build({ previous: [createMockWeeklyFacts(prev(0, 0))] });
+    expect(f.daysActive).toBe(0);
+    expect(isBestWeek(f)).toBe(false);
+  });
+});
+
+// Audit 2026-11-24 L25: numbers were checked against one pool, so a real
+// number could be attached to the wrong claim; number words and weekday
+// names were never checked.
+describe("validateContent — claims about days", () => {
+  // normal: 5 days active, protein met on 5 (110 >= 108), logs Nov 1-5.
+  it("rejects a day count that is not one of the week's day counts", () => {
+    // 10 is mealsLogged, not a count of days.
+    expect(factNumbers(normal).has(10)).toBe(true);
+    expect(
+      validateContent(
+        { ...base, wins: ["Protein on target 10 days this week."] },
+        normal,
+      ),
+    ).toEqual({ ok: false, reason: "unbacked-day-count" });
+  });
+
+  it("accepts a real day count, with or without 'of 7' (control)", () => {
+    expect(
+      validateContent(
+        { ...base, wins: ["Protein on target 5 of 7 days."] },
+        normal,
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      validateContent({ ...base, wins: ["You logged on 5 days."] }, normal),
+    ).toEqual({ ok: true });
+  });
+
+  it("rejects a count written as a word", () => {
+    expect(
+      validateContent(
+        { ...base, wins: ["Protein on target five days this week."] },
+        normal,
+      ),
+    ).toEqual({ ok: false, reason: "number-word" });
+  });
+
+  it("rejects a weekday with nothing logged, accepts one with meals", () => {
+    // Nov 1 2026 is a Sunday; Nov 6 (Friday) has no meals.
+    expect(
+      validateContent(
+        { ...base, wins: ["Friday was your strongest day."] },
+        normal,
+      ),
+    ).toEqual({ ok: false, reason: "unlogged-weekday" });
+    expect(
+      validateContent(
+        { ...base, wins: ["Tuesday was your strongest day."] },
+        normal,
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("lets the next-week idea name any weekday (it is about next week)", () => {
+    expect(
+      validateContent(
+        {
+          ...base,
+          next: {
+            text: "Try prepping lunch on Friday.",
+            recipeId: null,
+            recipeType: null,
+          },
+        },
+        normal,
+      ),
+    ).toEqual({ ok: true });
   });
 });
