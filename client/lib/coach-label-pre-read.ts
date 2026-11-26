@@ -19,6 +19,7 @@ import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { coachTurnReplyText } from "@/lib/coach-barcode-scan";
 import { parseLabelServingGrams } from "@shared/lib/label-serving";
+import { labelEnergyAgrees } from "@shared/lib/label-energy";
 import {
   parseNutritionFromOCR,
   type NumericField,
@@ -68,7 +69,26 @@ export function labelFromOCRText(text: string): PhoneLabelRead | null {
     return null;
   }
   if (!fitsFoodCard(calories, protein, totalCarbs, totalFat)) return null;
-  if (!addsUp(calories, protein, totalCarbs, totalFat)) return null;
+  // A digit misread or dropped ("230" read as "20"), or kilojoules taken
+  // for calories: the same range the server's label photo read uses.
+  if (
+    !labelEnergyAgrees(
+      calories,
+      {
+        protein,
+        carbs: totalCarbs,
+        fat: totalFat,
+        // Only a fibre read off the print: a guessed one could raise the floor.
+        fibre: parsed.directReads.includes("dietaryFiber")
+          ? parsed.dietaryFiber
+          : null,
+      },
+      // Strict: a refusal only sends the photo to the server read.
+      { alcohol: false },
+    )
+  ) {
+    return null;
+  }
   return {
     calories,
     protein,
@@ -89,17 +109,6 @@ function fitsFoodCard(
   fat: number,
 ) {
   return kcal <= 5000 && protein <= 500 && carbs <= 1000 && fat <= 500;
-}
-
-/**
- * The calories agree with the macros (4 kcal a gram of protein or carbs, 9 of
- * fat). A direct read can still have a digit misread or dropped ("230" read
- * as "20"); this catches it. The band is wide, because fibre, sugar alcohols
- * and the label's own rounding make real panels drift.
- */
-function addsUp(kcal: number, protein: number, carbs: number, fat: number) {
-  const fromMacros = 4 * protein + 4 * carbs + 9 * fat;
-  return Math.abs(fromMacros - kcal) <= Math.max(30, 0.25 * kcal);
 }
 
 /**

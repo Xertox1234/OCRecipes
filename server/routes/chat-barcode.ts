@@ -15,6 +15,7 @@
  * photo credit. Each is still a Coach turn (daily message limit), still Coach
  * Pro's because the reply is a write card, and has its own daily count.
  */
+import { labelEnergyAgrees } from "@shared/lib/label-energy";
 import type { Express, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
@@ -83,7 +84,19 @@ const labelBodySchema = z
         fat: amount,
         servingSize: z.string().trim().min(1).max(100),
       })
-      .strict(),
+      .strict()
+      // The phone checks this before it sends; checked again here, so a
+      // misread figure never reaches a card. A 400 makes the app send the
+      // photo instead.
+      .refine(
+        (l) =>
+          labelEnergyAgrees(l.calories, {
+            protein: l.protein,
+            carbs: l.carbs,
+            fat: l.fat,
+          }),
+        { message: "These label numbers don't add up." },
+      ),
     openingBrief,
   })
   .strict();

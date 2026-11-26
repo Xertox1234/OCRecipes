@@ -460,10 +460,29 @@ describe("POST /api/chat/conversations/:id/label (a label read on the phone)", (
     ],
     ["an unknown field in the label", { label: { ...label, sodium: 10 } }],
     ["an unknown field", { label, photo: "BASE64" }],
+    // The same rule the phone checks before sending: calories its own
+    // macros do not make are a misread (owner report 2026-11-26).
+    [
+      "calories that do not match the macros",
+      { label: { ...label, calories: 10 } },
+    ],
   ])("400s on %s, storing nothing", async (_what, body) => {
     const res = await postLabel(body);
     expect(res.status).toBe(400);
     expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+  });
+
+  it("accepts a high-fibre label, whose carbs make less than 4 kcal a gram", async () => {
+    const res = await postLabel({
+      label: {
+        calories: 60,
+        protein: 2,
+        carbs: 25,
+        fat: 1,
+        servingSize: "1/2 cup (30g)",
+      },
+    });
+    expect(res.status).toBe(201);
   });
 
   it("saves the opening brief first when the read opens a new chat", async () => {
