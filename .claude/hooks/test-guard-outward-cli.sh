@@ -7273,6 +7273,51 @@ timeout 60 echo eas update
 stdbuf -oL npm run lint
 flock /tmp/l npm ci
 WRROWS
+# WR2 (security and code review of WR, all ALLOWED on `main`): an expansion as the positional
+# word (`timeout ${T:-60}`), `arch -arm64` (Apple Silicon), BSD `script -q /dev/null CMD`, the
+# Homebrew `gnice`/`gstdbuf`, and the environment and secret runners (`op run`, `mise exec`,
+# `direnv exec DIR`, `dotenvx run`, `volta run`, `fnm exec`, `asdf exec`).
+while IFS='|' read -r wr_cmd wr_reason; do
+  [ -n "$wr_cmd" ] || continue
+  assert_deny "WR2 '$wr_cmd' denies" "$(jsonc "$wr_cmd")" "$wr_reason"
+done <<'WRROWS'
+timeout ${T:-60} eas update|guard-outward-cli
+timeout $((30*2)) eas update|guard-outward-cli
+chrt -f ${P} eas update|guard-outward-cli
+arch -arm64 eas update|eas update/publish/submit
+/usr/bin/arch -x86_64 npm publish|npm publish
+script -q /dev/null eas update|eas update/publish/submit
+gnice eas update|eas update/publish/submit
+gstdbuf -oL railway up|railway up/deploy
+op run -- eas update|eas update/publish/submit
+op run --env-file=.env -- npm publish|npm publish
+mise exec -- eas update|eas update/publish/submit
+mise x node@20 -- eas update|eas update/publish/submit
+direnv exec . eas update|eas update/publish/submit
+dotenvx run -- railway up|railway up/deploy
+volta run eas update|eas update/publish/submit
+fnm exec --using=20 eas update|eas update/publish/submit
+asdf exec eas update|eas update/publish/submit
+xargs -n1 echo eas update|eas update/publish/submit
+op run -- echo eas update|eas update/publish/submit
+WRROWS
+# (The last two deny rows are the KNOWN over-read, the safe direction: a flag (`-n1`, `--`) may
+# take `echo` as its value, as `sudo -E echo eas update` already did. A tightening that allows
+# them is intended.)
+while IFS= read -r wr_cmd; do
+  [ -n "$wr_cmd" ] || continue
+  assert_allow "WR2 control '$wr_cmd' stays allowed" "$(jsonc "$wr_cmd")"
+done <<'WRROWS'
+nice gh pr merge 42 --auto --squash
+timeout 60 gh pr merge 42 --auto
+arch -arm64 npm test
+script -q /dev/null npm test
+op run -- npm test
+op run -- printenv
+mise exec -- npm run build
+direnv exec . npm test
+timeout ${T:-60} npm test
+WRROWS
 
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
@@ -7291,7 +7336,9 @@ WRROWS
 # 4 allow controls.
 # 1485 -> 1529 (2026-11-26, argument-taking wrappers): +44 = WR, 33 deny rows (all ALLOWED
 # before) and 11 allow controls.
-EXPECTED_TOTAL=1529
+# 1529 -> 1557 (review of WR): +28 = WR2, 19 deny rows (17 ALLOWED before; the last two pin the
+# known over-read) and 9 allow controls.
+EXPECTED_TOTAL=1557
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

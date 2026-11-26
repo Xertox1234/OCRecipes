@@ -947,7 +947,17 @@ takes `nice`, `ionice`, `stdbuf`, `unbuffer`, `caffeinate`, `chronic`, `xargs`, 
 `nocorrect` and `noglob` with their flags, and `timeout`/`gtimeout`, `chrt`, `taskset` and
 `flock` with their flags and one positional word. They share the privilege words' flag run and
 its over-read: a flag's optional value word can swallow a command that is not gated
-(`xargs -n1 echo eas update` denies, as `sudo -E echo eas update` already did). Still open: a
-wrapper not on the list (`strace`, `ltrace`, `valgrind`, `firejail`, `systemd-run`,
-`xvfb-run`, `parallel`), a positional wrapper given two positional words, and the `-c` string
-wrappers (`bash -c`, `sh -c`, `eval`, `su -c`, `script -c`).
+(`xargs -n1 echo eas update` and `op run -- echo eas update` deny, as
+`sudo -E echo eas update` already did). Found by the review of that change and fixed with it
+(rows `WR2`): an expansion as the positional word (`timeout ${T:-60} eas update`,
+`timeout $((30*2))`), `arch -arm64 eas update` (an everyday Apple Silicon idiom), BSD
+`script -q /dev/null eas update`, Homebrew's `gnice`/`gstdbuf`, and the environment and secret
+runners `op run`, `dotenvx run`, `volta run`, `fnm exec`, `asdf exec`, `mise exec`/`mise x`
+(with `tool@version` specs) and `direnv exec DIR`. Still open, all measured ALLOW on `main`
+too: `find . -exec eas update \;` (and `-execdir`, `-ok`); `ssh host eas update`; `nvm exec
+20 eas update`; wrappers not on the list (`strace`, `ltrace`, `valgrind`, `faketime`,
+`proxychains`, `torsocks`, `numactl`, `cpulimit`, `unshare`, `nsenter`, `chroot`, `pkexec`,
+`rlwrap`, `dbus-run-session`, `firejail`, `systemd-run`, `xvfb-run`, `parallel`); a backslash
+in the wrapper name (`n\ice eas update`, the documented backslash class); and the string
+wrappers (`bash -c`, `sh -c`, `eval`, `su user -c`, `script -c`, `expect -c`, `env -S`,
+`watch "eas update"`, `flock FILE -c "..."`).
