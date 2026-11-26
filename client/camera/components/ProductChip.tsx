@@ -7,7 +7,6 @@ import {
   StyleSheet,
   View,
   Text,
-  TouchableOpacity,
   type ViewProps,
 } from "react-native";
 import { Image } from "expo-image";

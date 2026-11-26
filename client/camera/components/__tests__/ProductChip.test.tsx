@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import * as ProductChipUtils from "../ProductChip-utils";
 import { ProductChip } from "../ProductChip";
@@ -32,6 +32,9 @@ vi.mock("@/components/PressableScale", async () => {
 // animation on the same shared value cancels the spring, `true` when it settles.
 type SpringCallback = (finished?: boolean) => void;
 const springCallbacks: SpringCallback[] = [];
+// Same for withTiming (the shared mock fires its callback at once): the
+// reduced-motion exit fades and unmounts from this callback.
+const timingCallbacks: SpringCallback[] = [];
 
 vi.mock("react-native-reanimated", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -41,8 +44,17 @@ vi.mock("react-native-reanimated", async (importOriginal) => {
       if (cb) springCallbacks.push(cb);
       return val;
     },
+    withTiming: (val: number, _config?: unknown, cb?: SpringCallback) => {
+      if (cb) timingCallbacks.push(cb);
+      return val;
+    },
   };
 });
+
+const accessibility = { reducedMotion: false, screenReaderEnabled: false };
+vi.mock("@/hooks/useAccessibility", () => ({
+  useAccessibility: () => accessibility,
+}));
 
 const noop = () => {};
 
@@ -428,5 +440,41 @@ describe("ProductChip — exit spring completion", () => {
     act(() => springCallbacks[0](true));
 
     expect(chipIsRendered()).toBe(false);
+  });
+});
+
+describe("ProductChip — reduced motion fades without travel", () => {
+  beforeEach(() => {
+    springCallbacks.length = 0;
+    timingCallbacks.length = 0;
+    accessibility.reducedMotion = true;
+  });
+  afterEach(() => {
+    accessibility.reducedMotion = false;
+  });
+
+  it("exits with a fade (no spring) and unmounts when the fade finishes", () => {
+    const { rerender } = render(
+      <ProductChip phase={barcodeLock} {...handlers} />,
+    );
+    rerender(<ProductChip phase={idle} {...handlers} />);
+    expect(springCallbacks).toHaveLength(0);
+    expect(timingCallbacks).toHaveLength(1);
+
+    act(() => timingCallbacks[0](true));
+
+    expect(chipIsRendered()).toBe(false);
+  });
+
+  it("stays rendered when the fade is cancelled by the variant returning", () => {
+    const { rerender } = render(
+      <ProductChip phase={barcodeLock} {...handlers} />,
+    );
+    rerender(<ProductChip phase={idle} {...handlers} />);
+    const exitCallback = timingCallbacks[0];
+    rerender(<ProductChip phase={barcodeLock} {...handlers} />);
+    act(() => exitCallback(false));
+
+    expect(chipIsRendered()).toBe(true);
   });
 });

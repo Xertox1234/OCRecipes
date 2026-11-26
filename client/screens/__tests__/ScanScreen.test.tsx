@@ -836,7 +836,7 @@ describe("ScanScreen — barcode-lock chip shows the top flag (Task 14)", () => 
       });
     }
 
-    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+    expect(await screen.findByText("Contains Milk")).toBeTruthy();
     expect(screen.queryByText(/High in sugar/)).toBeNull();
   });
 });
@@ -903,7 +903,7 @@ describe("ScanScreen — scan-lock chip filters info-level flags (final-review f
     await driveBarcodeLock();
 
     expect(await screen.findByText("Clean Snack")).toBeTruthy();
-    expect(screen.queryByText(/⚠/)).toBeNull();
+    expect(screen.queryByText(/Nutri-Score/)).toBeNull();
   });
 
   it("still surfaces a warn-level flag alongside an info-level one", async () => {
@@ -922,7 +922,7 @@ describe("ScanScreen — scan-lock chip filters info-level flags (final-review f
 
     await driveBarcodeLock();
 
-    expect(await screen.findByText("⚠ High in sugar")).toBeTruthy();
+    expect(await screen.findByText("High in sugar")).toBeTruthy();
     expect(screen.queryByText(/Nutri-Score/)).toBeNull();
   });
 
@@ -958,7 +958,7 @@ describe("ScanScreen — scan-lock chip filters info-level flags (final-review f
 
     await driveBarcodeLock();
 
-    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+    expect(await screen.findByText("Contains Milk")).toBeTruthy();
   });
 });
 
@@ -1024,7 +1024,7 @@ describe("ScanScreen — scan-lock chip ranks safety tier before severity (fix r
       });
     }
 
-    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+    expect(await screen.findByText("Contains Milk")).toBeTruthy();
     expect(screen.queryByText(/High in sugar/)).toBeNull();
   });
 });
@@ -1034,7 +1034,7 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
   // it, `onBarcodeScanned` ignores every phase but HUNTING/BARCODE_TRACKING,
   // BARCODE_LOST is BARCODE_TRACKING-only, and the chip (the sole dispatcher of
   // PROCEED_TO_LABEL *and* CONFIRM_PRODUCT) unmounts in this phase. Pressing
-  // "Scan Nutrition Facts →" therefore stranded the user with only "Close
+  // "Next: nutrition →" therefore stranded the user with only "Close
   // camera", after removing the barcode-only escape hatch a tap earlier.
   //
   // Neither the reducer test (which dispatches STEP_PHOTO_CAPTURED from
@@ -1067,10 +1067,10 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
   const proceedToLabelThenShoot = async () => {
     await driveBarcodeLock();
 
-    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+    fireEvent.click(await screen.findByLabelText("Next: nutrition →"));
     // Precondition, not decoration: the chip really is gone in LABEL_PROMPTED,
     // so the shutter is the ONLY remaining route forward.
-    expect(screen.queryByLabelText("Scan Nutrition Facts →")).toBeNull();
+    expect(screen.queryByLabelText("Next: nutrition →")).toBeNull();
     expect(screen.queryByLabelText("Use database data anyway")).toBeNull();
 
     await act(async () => {
@@ -1398,7 +1398,7 @@ describe("ScanScreen — fetchProductInfo Warning haptic is gated on liveness (a
 
     // Control: the fetch really did resolve and dispatch PRODUCT_LOADED —
     // otherwise "not called" would be true for the wrong reason.
-    expect(await screen.findByText("⚠ Contains Tree Nuts")).toBeTruthy();
+    expect(await screen.findByText("Contains Tree Nuts")).toBeTruthy();
     expect(Haptics.notificationAsync).not.toHaveBeenCalledWith(
       Haptics.NotificationFeedbackType.Warning,
     );
@@ -1651,7 +1651,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       });
     }
 
-    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+    fireEvent.click(await screen.findByLabelText("Next: nutrition →"));
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
@@ -1711,9 +1711,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
   it("deletes the STEP2 photo when the two-step flow is abandoned before confirming", async () => {
     const { rerender } = await driveToStep2Reviewing();
 
-    await screen.findByLabelText(
-      "Nutrition label captured. Double tap to retake.",
-    );
+    await screen.findByLabelText("Retake nutrition label photo");
     expect(mockDeleteAsync).not.toHaveBeenCalled();
 
     mockIsFocused.value = false;
@@ -1745,7 +1743,7 @@ describe("ScanScreen — Retake keeps the wizard's progress", () => {
         firstHandler!(frame);
       });
     }
-    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+    fireEvent.click(await screen.findByLabelText("Next: nutrition →"));
 
     return rendered;
   };
@@ -1763,9 +1761,7 @@ describe("ScanScreen — Retake keeps the wizard's progress", () => {
     });
 
     fireEvent.click(
-      await screen.findByLabelText(
-        "Nutrition label captured. Double tap to retake.",
-      ),
+      await screen.findByLabelText("Retake nutrition label photo"),
     );
 
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -1813,11 +1809,7 @@ describe("ScanScreen — Retake keeps the wizard's progress", () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    fireEvent.click(
-      await screen.findByLabelText(
-        "Front label captured. Double tap to retake.",
-      ),
-    );
+    fireEvent.click(await screen.findByLabelText("Retake front label photo"));
 
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockDeleteAsync).toHaveBeenCalledWith("file:///front.jpg", {

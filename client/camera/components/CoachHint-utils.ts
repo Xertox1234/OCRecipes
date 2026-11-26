@@ -20,7 +20,7 @@ export function getCoachMessage(
     // useEffect(…, [message]) on iOS and accessibilityLiveRegion="polite" on
     // Android — neither re-fires on an unchanged string. Sharing the arm would
     // leave a screen-reader user with no announcement at all when the chip
-    // collapses after they press "Scan Nutrition Facts →". "Now" also confirms
+    // collapses after they press "Next: nutrition →". "Now" also confirms
     // to sighted users that the tap registered.
     case "LABEL_PROMPTED":
       return "Product confirmed. Now frame the Nutrition Facts panel";

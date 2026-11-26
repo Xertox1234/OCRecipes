@@ -144,7 +144,7 @@ describe("getCoachMessage", () => {
   // CoachHint announces via `useEffect(…, [message])` on iOS and relies on
   // `accessibilityLiveRegion="polite"` on Android. NEITHER re-fires when the
   // string is unchanged. If LABEL_PROMPTED reused BARCODE_LOCKED's exact copy,
-  // a screen-reader user who presses "Scan Nutrition Facts →" would get the
+  // a screen-reader user who presses "Next: nutrition →" would get the
   // chip silently unmounting and NO announcement at all — no confirmation their
   // tap did anything.
   //
