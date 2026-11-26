@@ -298,7 +298,8 @@
 #     hides the outward command inside a quoted string (`sudo railway up` and
 #     the argument-taking wrappers -- `timeout 30 eas update`, `nice`, `xargs`,
 #     `caffeinate` and the rest, and the runners `find -exec`, `ssh HOST`, `nvm exec`,
-#     `strace` and friends -- are CLOSED: see _OUT_PRIV_WORD); the quoted-`-c`
+#     `strace` and friends -- are CLOSED: see _OUT_PRIV_WORD, though `ssh host 'CMD'` with
+#     the remote command quoted is this string class); the quoted-`-c`
 #     case blanks via `cmd_bare` (the same primitive that stops `git commit
 #     -m "mentions eas update"` from a false-positive deny) — same accepted
 #     residual class as git-safety.sh's own sudo/env/command/xargs/subshell/
@@ -1438,6 +1439,13 @@
 # session (broader-scoped; prefer the inline form).
 # Tests: .claude/hooks/test-guard-outward-cli.sh
 set -uo pipefail
+# Byte locale for the whole hook (2026-11-26). Under a UTF-8 locale bash's `[[ =~ ]]` and the
+# libs' awk work in multibyte mode, several times slower: a command of 24850 `ssh 'h'` words
+# took 13.8 s under C.UTF-8 against the 10 s hook timeout, 1.3 s under C. Every class this hook
+# matches on is ASCII (quotes, separators, `[:space:]`, flag dashes), and bash itself splits
+# words on ASCII bytes only, so byte semantics read the command the way bash will run it.
+# `${#CMD}` now counts bytes, so the size caps below are stricter for non-ASCII text.
+export LC_ALL=C
 
 [ -n "${ALLOW_OUTWARD_CLI:-}" ] && exit 0
 
@@ -2660,8 +2668,16 @@ _OUT_ARGWRAP_POSWORD='[^-[:space:]][^[:space:]]*'
 # (an escaped `\;`, a previous `-exec`'s end, is a word), so a later command's `-exec` text
 # is not read as find's. Same over-read as the rest: `ssh -t host echo eas update` denies.
 _OUT_QPOSWORD="('[^']*'|\"[^\"]*\"|${_OUT_ARGWRAP_POSWORD})"
+# faketime stops reading options at the first word it does not know and takes that word as the
+# time even when it starts with `-` (`faketime -1d CMD`, `faketime -f -1d CMD`, `faketime -- CMD`;
+# libfaketime's src/faketime.c), so its time word may be a dash word too (security review).
+# Close relatives the security review found ALLOWED, the ones a Node repo reaches for:
+# `cross-env A=1 CMD` (its `NAME=value` words), `dotenv -e .env -- CMD`, `env-cmd -f .env CMD`,
+# `doppler run`/`infisical run`, `nodemon --exec CMD`, `sshpass -p pw ssh HOST CMD`,
+# `autossh`/`slogin HOST CMD` and GNU `sem` (parallel's semaphore mode).
+_OUT_FAKETIME_WORD="(${_OUT_QPOSWORD}|-[^[:space:]]*)"
 _OUT_FIND_WORD='([^[:space:];&|]|\\;)+'
-_OUT_PRIV_WORD='((sudo|doas|corepack|nice|gnice|ionice|stdbuf|gstdbuf|unbuffer|caffeinate|chronic|xargs|watch|nocorrect|noglob|arch|strace|ltrace|valgrind|proxychains4?|torsocks|numactl|cpulimit|unshare|nsenter|pkexec|rlwrap|dbus-run-session|firejail|systemd-run|xvfb-run|parallel|((op|dotenvx|volta)'"$_OUT_SEP"'run)|((fnm|asdf|nvm)'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN"'|(timeout|gtimeout|chrt|taskset|flock|script|(direnv'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN$_OUT_ARGWRAP_POSWORD$_OUT_FLAG_RUN"'|(faketime|chroot|ssh|(nvm'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN$_OUT_QPOSWORD$_OUT_FLAG_RUN"'|(g?find('"$_OUT_SEP$_OUT_FIND_WORD"')*'"$_OUT_SEP"'-(exec|execdir|ok|okdir)|fd(find)?('"$_OUT_SEP$_OUT_FIND_WORD"')*'"$_OUT_SEP"'(-x|--exec|-X|--exec-batch))'"$_OUT_SEP"'|(mise|rtx)'"$_OUT_SEP"'(exec|x)'"$_OUT_FLAG_RUN"'([^-[:space:]][^[:space:]]*@[^[:space:]]*'"$_OUT_FLAG_RUN"')*)'
+_OUT_PRIV_WORD='((sudo|doas|corepack|nice|gnice|ionice|stdbuf|gstdbuf|unbuffer|caffeinate|chronic|xargs|watch|nocorrect|noglob|arch|strace|ltrace|valgrind|proxychains4?|torsocks|numactl|cpulimit|unshare|nsenter|pkexec|rlwrap|dbus-run-session|firejail|systemd-run|xvfb-run|parallel|sem|sshpass|dotenv|env-cmd|nodemon|((op|dotenvx|volta|doppler|infisical)'"$_OUT_SEP"'run)|((fnm|asdf|nvm)'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN"'|(timeout|gtimeout|chrt|taskset|flock|script|(direnv'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN$_OUT_ARGWRAP_POSWORD$_OUT_FLAG_RUN"'|cross-env(-shell)?'"$_OUT_FLAG_RUN"'([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*'"$_OUT_SEP"')*|(chroot|ssh|autossh|slogin|(nvm'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN$_OUT_QPOSWORD$_OUT_FLAG_RUN"'|faketime'"$_OUT_FLAG_RUN$_OUT_FAKETIME_WORD$_OUT_FLAG_RUN"'|(g?find('"$_OUT_SEP$_OUT_FIND_WORD"')*'"$_OUT_SEP"'-(exec|execdir|ok|okdir)|fd(find)?('"$_OUT_SEP$_OUT_FIND_WORD"')*'"$_OUT_SEP"'(-x|--exec|-X|--exec-batch))'"$_OUT_SEP"'|(mise|rtx)'"$_OUT_SEP"'(exec|x)'"$_OUT_FLAG_RUN"'([^-[:space:]][^[:space:]]*@[^[:space:]]*'"$_OUT_FLAG_RUN"')*)'
 
 # LAUNCHER/PATH AXIS (todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md).
 # Defined HERE, after `_OUT_SEP`, not beside `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`

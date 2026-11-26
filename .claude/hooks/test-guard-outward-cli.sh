@@ -6942,6 +6942,22 @@ nd_silent && nd_ok "$n" || nd_bad "$n"
 nd_lines 19000 "echo \"\$(e''as up''date --branch preview)\""
 n="ND5d control: 19000 newlines (the cap is 20000) before a hidden OTA update still get the precise reason"
 nd_only_deny && ! nd_reason_has 'lines long' && nd_ok "$n" || nd_bad "$n"
+# ND5e. A command of many runner words under a UTF-8 locale (security review of RN). The hook
+#      pins LC_ALL=C: under C.UTF-8 24850 `ssh 'h'` words before a merge took 13.8 s against
+#      the 10 s timeout (7.7 s before RN), 1.3 s under C.
+nd_words() {  # $1=tail ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ awk 'BEGIN { for (i = 0; i < 24850; i++) printf "ssh %ch%c ", 39, 39 }'; printf '%s' "$1"; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_words 'ls; gh pr merge 42'
+n="ND5e 24850 ssh words before a merge without --auto: the deny in under 5 s"
+nd_only_deny && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_words 'ls; gh pr merge 42 --auto'
+n="ND5e control: the same words before an --auto merge: allowed in under 5 s"
+nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -7363,7 +7379,7 @@ parallel eas update ::: a|eas update/publish/submit
 parallel -j4 npm publish ::: x|npm publish
 sudo strace -f eas update|eas update/publish/submit
 nice faketime 2020-01-01 eas update|eas update/publish/submit
-strace -f gh pr merge 42 --admin|guard-outward-cli
+strace -f gh pr merge 42 --admin|without a REAL --auto flag
 fd -e ts -x eas update|eas update/publish/submit
 fd . --exec npm publish|npm publish
 fdfind -X railway up|railway up/deploy
@@ -7389,6 +7405,77 @@ strace -f gh pr merge 42 --auto --squash
 fd -x echo
 find . -name x; echo -exec eas update
 RNROWS
+# RN2 (security and code review of RN, all ALLOWED on `main`): a `faketime` time word that
+# starts with `-` (faketime takes the first word it does not know as the time), and the close
+# relatives a Node repo reaches for (`cross-env`, `dotenv`, `env-cmd`, `doppler run`,
+# `infisical run`, `nodemon --exec`, `sshpass ... ssh`, `autossh`, `slogin`, `sem`). The allow
+# controls carry a gated binary in a read-only form, so a widened arm that denied everything
+# would redden them.
+while IFS='|' read -r rn_cmd rn_reason; do
+  [ -n "$rn_cmd" ] || continue
+  assert_deny "RN2 '$rn_cmd' denies" "$(jsonc "$rn_cmd")" "$rn_reason"
+done <<'RNROWS'
+faketime -f '-1d' eas update|eas update/publish/submit
+faketime '-1d' eas update|eas update/publish/submit
+faketime "-1d" eas update|eas update/publish/submit
+faketime -1d eas update|eas update/publish/submit
+faketime --freeze -15d eas update|eas update/publish/submit
+faketime -- eas update|eas update/publish/submit
+faketime -f '-1d' gh pr merge 42 --admin|without a REAL --auto flag
+cross-env A=1 eas update|eas update/publish/submit
+cross-env NODE_ENV=production B=2 npm publish|npm publish
+npx cross-env A=1 eas update|eas update/publish/submit
+cross-env-shell A=1 eas update|eas update/publish/submit
+dotenv -e .env -- eas update|eas update/publish/submit
+npx dotenv -e .env -- eas update|eas update/publish/submit
+env-cmd -f .env eas update|eas update/publish/submit
+doppler run -- eas update|eas update/publish/submit
+infisical run --env=prod -- railway up|railway up/deploy
+nodemon --exec eas update|eas update/publish/submit
+sshpass -p pw ssh host eas update|eas update/publish/submit
+sshpass -e ssh -p 22 host npm publish|npm publish
+autossh -M 0 host eas update|eas update/publish/submit
+slogin host eas update|eas update/publish/submit
+sem -j1 eas update|eas update/publish/submit
+fd --exec-batch eas update|eas update/publish/submit
+fdfind -x eas update|eas update/publish/submit
+nvm exec 20 -- eas update|eas update/publish/submit
+ssh host gh pr merge 42|without a REAL --auto flag
+RNROWS
+while IFS= read -r rn_cmd; do
+  [ -n "$rn_cmd" ] || continue
+  assert_allow "RN2 control '$rn_cmd' stays allowed" "$(jsonc "$rn_cmd")"
+done <<'RNROWS'
+ssh host eas whoami
+find . -exec eas whoami \;
+nvm exec 20 eas whoami
+strace eas update:list
+find . -name x | echo -exec eas update
+find . -name x && echo -exec eas update
+faketime -1d npm test
+faketime eas update
+cross-env A=1 npm test
+cross-env NODE_ENV=test vitest run
+dotenv -e .env -- npm test
+nodemon --exec npm test
+sshpass -p pw ssh host ls
+ssh host gh pr merge 42 --auto
+nvm exec 20 gh pr merge 42 --auto --squash
+RNROWS
+# KNOWN GAPS, pinned so a fix reddens them (docs/harness-residuals.md): the quoted remote command
+# of `ssh` is the string-wrapper class, and `parallel` taking its command from `:::` arguments or
+# stdin is not read. A change that makes these deny is intended: move them to the deny rows.
+while IFS= read -r rn_cmd; do
+  [ -n "$rn_cmd" ] || continue
+  assert_allow "RN2 known gap '$rn_cmd' is still allowed" "$(jsonc "$rn_cmd")"
+done <<'RNROWS'
+ssh host 'eas update'
+parallel ::: 'eas update'
+echo eas update | parallel
+RNROWS
+# Known false positive, the safe direction: `{}` in a `gh pr merge` argument already denied bare
+# (`xargs -I{} gh pr merge {} --auto` too); the new runners reach that handling.
+assert_deny "RN2 known false positive 'find . -exec gh pr merge {} --auto \\;' denies" "$(jsonc 'find . -exec gh pr merge {} --auto \;')" "gh pr merge"
 
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
@@ -7411,7 +7498,10 @@ RNROWS
 # known over-read) and 9 allow controls.
 # 1557 -> 1613 (2026-11-26, other command runners and unlisted wrappers): +56 = RN, 41
 # deny rows (all ALLOWED before) and 15 allow controls.
-EXPECTED_TOTAL=1613
+# 1613 -> 1660 (review of RN): +47 = RN2, 26 deny rows (all ALLOWED before), 15 allow
+# controls, 3 known-gap pins and 1 known false positive; and ND5e, a timed deny row and
+# its control (RED under a UTF-8 locale before the hook pinned LC_ALL=C).
+EXPECTED_TOTAL=1660
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
