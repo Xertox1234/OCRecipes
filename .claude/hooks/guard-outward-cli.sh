@@ -297,7 +297,8 @@
 #   * `bash -c "…"` / `sh -c '…'` / `eval "…"` / any interpreter `-c` wrapper
 #     hides the outward command inside a quoted string (`sudo railway up` and
 #     the argument-taking wrappers -- `timeout 30 eas update`, `nice`, `xargs`,
-#     `caffeinate` and the rest -- are CLOSED: see _OUT_PRIV_WORD); the quoted-`-c`
+#     `caffeinate` and the rest, and the runners `find -exec`, `ssh HOST`, `nvm exec`,
+#     `strace` and friends -- are CLOSED: see _OUT_PRIV_WORD); the quoted-`-c`
 #     case blanks via `cmd_bare` (the same primitive that stops `git commit
 #     -m "mentions eas update"` from a false-positive deny) — same accepted
 #     residual class as git-safety.sh's own sudo/env/command/xargs/subshell/
@@ -2647,7 +2648,20 @@ _OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:s
 # positional word uses the flag-value class, so an expansion is a word too (`timeout ${T:-60}`,
 # `timeout $((30*2))` were allowed while `timeout $T` denied).
 _OUT_ARGWRAP_POSWORD='[^-[:space:]][^[:space:]]*'
-_OUT_PRIV_WORD='((sudo|doas|corepack|nice|gnice|ionice|stdbuf|gstdbuf|unbuffer|caffeinate|chronic|xargs|watch|nocorrect|noglob|arch|((op|dotenvx|volta)'"$_OUT_SEP"'run)|((fnm|asdf)'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN"'|(timeout|gtimeout|chrt|taskset|flock|script|(direnv'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN$_OUT_ARGWRAP_POSWORD$_OUT_FLAG_RUN"'|(mise|rtx)'"$_OUT_SEP"'(exec|x)'"$_OUT_FLAG_RUN"'([^-[:space:]][^[:space:]]*@[^[:space:]]*'"$_OUT_FLAG_RUN"')*)'
+# OTHER RUNNERS AND UNLISTED WRAPPERS (2026-11-26, all ALLOWED on `main`). Flag-only: the
+# tracers and sandboxes `strace`, `ltrace`, `valgrind`, `proxychains`/`proxychains4`,
+# `torsocks`, `numactl`, `cpulimit`, `unshare`, `nsenter`, `pkexec`, `rlwrap`,
+# `dbus-run-session`, `firejail`, `systemd-run`, `xvfb-run`, and `parallel` (its command
+# template comes first: `parallel eas update ::: a`). One positional word: `faketime TIME`
+# (often quoted with a space, so a quoted string is a word here), `chroot DIR`, `ssh HOST` (the
+# remote command still publishes), and `nvm exec [VERSION]` (the version is optional, so it is
+# in both arms). `find`/`gfind` take any words before `-exec`/`-execdir`/`-ok`/`-okdir`, and
+# `fd`/`fdfind` before `-x`/`--exec`/`-X`/`--exec-batch`; those words stop at `;`, `&` and `|`
+# (an escaped `\;`, a previous `-exec`'s end, is a word), so a later command's `-exec` text
+# is not read as find's. Same over-read as the rest: `ssh -t host echo eas update` denies.
+_OUT_QPOSWORD="('[^']*'|\"[^\"]*\"|${_OUT_ARGWRAP_POSWORD})"
+_OUT_FIND_WORD='([^[:space:];&|]|\\;)+'
+_OUT_PRIV_WORD='((sudo|doas|corepack|nice|gnice|ionice|stdbuf|gstdbuf|unbuffer|caffeinate|chronic|xargs|watch|nocorrect|noglob|arch|strace|ltrace|valgrind|proxychains4?|torsocks|numactl|cpulimit|unshare|nsenter|pkexec|rlwrap|dbus-run-session|firejail|systemd-run|xvfb-run|parallel|((op|dotenvx|volta)'"$_OUT_SEP"'run)|((fnm|asdf|nvm)'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN"'|(timeout|gtimeout|chrt|taskset|flock|script|(direnv'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN$_OUT_ARGWRAP_POSWORD$_OUT_FLAG_RUN"'|(faketime|chroot|ssh|(nvm'"$_OUT_SEP"'exec))'"$_OUT_FLAG_RUN$_OUT_QPOSWORD$_OUT_FLAG_RUN"'|(g?find('"$_OUT_SEP$_OUT_FIND_WORD"')*'"$_OUT_SEP"'-(exec|execdir|ok|okdir)|fd(find)?('"$_OUT_SEP$_OUT_FIND_WORD"')*'"$_OUT_SEP"'(-x|--exec|-X|--exec-batch))'"$_OUT_SEP"'|(mise|rtx)'"$_OUT_SEP"'(exec|x)'"$_OUT_FLAG_RUN"'([^-[:space:]][^[:space:]]*@[^[:space:]]*'"$_OUT_FLAG_RUN"')*)'
 
 # LAUNCHER/PATH AXIS (todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md).
 # Defined HERE, after `_OUT_SEP`, not beside `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`

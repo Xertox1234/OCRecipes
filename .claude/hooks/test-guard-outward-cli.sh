@@ -7318,6 +7318,77 @@ mise exec -- npm run build
 direnv exec . npm test
 timeout ${T:-60} npm test
 WRROWS
+# RN (2026-11-26, other command runners and wrappers not on the list, all ALLOWED on `main`):
+# `find ... -exec/-execdir/-ok/-okdir CMD` (and `fd -x`), `ssh [flags] HOST CMD`, `nvm exec [VERSION] CMD`,
+# `faketime TIME CMD`, `chroot DIR CMD`, and the flag-only runners (`strace`, `ltrace`,
+# `valgrind`, `proxychains`, `torsocks`, `numactl`, `cpulimit`, `unshare`, `nsenter`, `pkexec`,
+# `rlwrap`, `dbus-run-session`, `firejail`, `systemd-run`, `xvfb-run`, `parallel`).
+while IFS='|' read -r rn_cmd rn_reason; do
+  [ -n "$rn_cmd" ] || continue
+  assert_deny "RN '$rn_cmd' denies" "$(jsonc "$rn_cmd")" "$rn_reason"
+done <<'RNROWS'
+find . -exec eas update \;|eas update/publish/submit
+find . -name x -execdir eas update {} +|eas update/publish/submit
+find src -type f -ok npm publish \;|npm publish
+find . -maxdepth 1 -okdir railway up \;|railway up/deploy
+find . -exec ls {} \; -exec eas update \;|eas update/publish/submit
+ssh host eas update|eas update/publish/submit
+ssh -p 2222 ci@host eas update|eas update/publish/submit
+ssh -t host npm publish|npm publish
+ssh -o StrictHostKeyChecking=no host railway up|railway up/deploy
+nvm exec 20 eas update|eas update/publish/submit
+nvm exec eas update|eas update/publish/submit
+nvm exec --silent 20 npm publish|npm publish
+strace -f eas update|eas update/publish/submit
+ltrace -c npm publish|npm publish
+valgrind --tool=memcheck eas update|eas update/publish/submit
+faketime 2020-01-01 eas update|eas update/publish/submit
+faketime '2020-01-01 10:00:00' eas update|eas update/publish/submit
+faketime -f +2d npm publish|npm publish
+proxychains eas update|eas update/publish/submit
+proxychains4 -q npm publish|npm publish
+torsocks railway up|railway up/deploy
+numactl --cpunodebind=0 eas update|eas update/publish/submit
+cpulimit -l 50 -- eas update|eas update/publish/submit
+unshare -r eas update|eas update/publish/submit
+nsenter -t 1 -m eas update|eas update/publish/submit
+chroot /srv/jail eas update|eas update/publish/submit
+pkexec --user ci eas update|eas update/publish/submit
+rlwrap eas update|eas update/publish/submit
+dbus-run-session -- eas update|eas update/publish/submit
+firejail --net=none eas update|eas update/publish/submit
+systemd-run --user --scope eas update|eas update/publish/submit
+xvfb-run -a eas update|eas update/publish/submit
+parallel eas update ::: a|eas update/publish/submit
+parallel -j4 npm publish ::: x|npm publish
+sudo strace -f eas update|eas update/publish/submit
+nice faketime 2020-01-01 eas update|eas update/publish/submit
+strace -f gh pr merge 42 --admin|guard-outward-cli
+fd -e ts -x eas update|eas update/publish/submit
+fd . --exec npm publish|npm publish
+fdfind -X railway up|railway up/deploy
+gfind . -exec eas update \;|eas update/publish/submit
+RNROWS
+while IFS= read -r rn_cmd; do
+  [ -n "$rn_cmd" ] || continue
+  assert_allow "RN control '$rn_cmd' stays allowed" "$(jsonc "$rn_cmd")"
+done <<'RNROWS'
+find . -name x
+find . -exec grep eas {} \;
+find . -name '*.ts' -exec npm test \;
+ssh host ls
+ssh host echo hi
+nvm exec 20 npm test
+nvm use 20
+strace -f npm test
+parallel echo ::: eas update
+faketime 2020-01-01 npm test
+chroot /srv/jail ls
+xvfb-run -a npm test
+strace -f gh pr merge 42 --auto --squash
+fd -x echo
+find . -name x; echo -exec eas update
+RNROWS
 
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
@@ -7338,7 +7409,9 @@ WRROWS
 # before) and 11 allow controls.
 # 1529 -> 1557 (review of WR): +28 = WR2, 19 deny rows (17 ALLOWED before; the last two pin the
 # known over-read) and 9 allow controls.
-EXPECTED_TOTAL=1557
+# 1557 -> 1613 (2026-11-26, other command runners and unlisted wrappers): +56 = RN, 41
+# deny rows (all ALLOWED before) and 15 allow controls.
+EXPECTED_TOTAL=1613
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
