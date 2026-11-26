@@ -1,6 +1,6 @@
 # Guided scan camera — design
 
-Date: 2026-11-26 · Status: draft for owner approval · Mockups: `2026-11-26-scan-guided-camera-mockups/` (open the `.html` files in a browser)
+Date: 2026-11-26 · Status: approved by owner 2026-11-26 · Mockups: `2026-11-26-scan-guided-camera-mockups/` (open the `.html` files in a browser)
 
 ## Why
 
