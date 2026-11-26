@@ -165,38 +165,25 @@ export async function admitTurn({
     }
   }
 
-  if (
-    !message &&
-    openingBrief &&
-    conversationType === "coach" &&
-    !finderAction
-  ) {
-    await saveOpeningBrief(req, id, features, openingBrief);
-  }
-
   if (!message) {
+    // Rendered now, saved by the limit check below in its own transaction.
+    const brief =
+      openingBrief && conversationType === "coach" && !finderAction
+        ? await prepareOpeningBrief(req, id, features, openingBrief)
+        : undefined;
     // Atomically check daily limit and create message in a single
     // transaction to prevent TOCTOU races bypassing the limit.
     const dailyLimit = config.dailyLimit(features);
     // Offer flag on: only typed Coach messages count toward the daily
     // limit — finder tap rows (finderInput) are left out of the count.
-    message =
-      offerEnabled && conversationType === "coach"
-        ? await storage.createChatMessageWithLimitCheck(
-            id,
-            req.userId,
-            sanitizedContent,
-            dailyLimit,
-            conversationType,
-            { excludeFinderTaps: true },
-          )
-        : await storage.createChatMessageWithLimitCheck(
-            id,
-            req.userId,
-            sanitizedContent,
-            dailyLimit,
-            conversationType,
-          );
+    message = await storage.createChatMessageWithLimitCheck(
+      id,
+      req.userId,
+      sanitizedContent,
+      dailyLimit,
+      conversationType,
+      ...limitCheckOptions(offerEnabled && conversationType === "coach", brief),
+    );
     if (!message) {
       sendError(
         res,
@@ -216,44 +203,58 @@ export async function admitTurn({
   };
 }
 
+export interface OpeningBriefRow {
+  content: string;
+  metadata: Record<string, unknown>;
+}
+
 /**
- * Save the opening brief as the conversation's first (assistant) message, so
- * the coach sees what it "said". The text is re-rendered here from the
+ * Render the opening brief for the conversation's first (assistant) message,
+ * so the coach sees what it "said". The text is re-rendered here from the
  * user's own data — the client only says which form it showed and never
- * supplies assistant text. Only into an empty conversation; a failure is
- * logged and the user's message goes through without it.
+ * supplies assistant text. The limit check saves it (`limitCheckOptions`),
+ * in the same transaction as the user's message, and clears the reminders
+ * with it: saved here, a 429 left an orphan brief and the reminders gone
+ * (audit 2026-11-24, L98). Undefined for a conversation that already has
+ * messages; a failure is logged and the message goes through without it.
  */
-export async function saveOpeningBrief(
+export async function prepareOpeningBrief(
   req: AuthenticatedRequest,
   conversationId: number,
   features: TurnFeatures,
   form: BriefForm,
-): Promise<void> {
+): Promise<OpeningBriefRow | undefined> {
   try {
+    // Cheap skip; the limit check repeats it inside its transaction.
     const existing = await storage.getChatMessages(
       conversationId,
       1,
       req.userId,
     );
-    if (existing.length > 0) return;
+    if (existing.length > 0) return undefined;
     const brief = await buildCoachBrief(
       req.userId,
       features,
       parseTimezone(req.headers?.["x-timezone"]),
       form,
     );
-    await storage.createChatMessage(
-      conversationId,
-      req.userId,
-      "assistant",
-      brief.text,
-      { ...OPENING_BRIEF_METADATA },
-    );
-    // Only now clear the reminders: the client leaves this to the server on
-    // a brief send, because clearing first would drop the reminder the user
-    // is answering from the brief saved above.
-    await storage.acknowledgeReminders(req.userId);
+    return { content: brief.text, metadata: { ...OPENING_BRIEF_METADATA } };
   } catch (err) {
     logger.warn({ err, conversationId }, "opening brief not saved");
+    return undefined;
   }
+}
+
+/** The limit check's optional last argument, left out when it is empty. */
+export function limitCheckOptions(
+  excludeFinderTaps: boolean,
+  openingBrief: OpeningBriefRow | undefined,
+): [] | [{ excludeFinderTaps?: true; openingBrief?: OpeningBriefRow }] {
+  if (!excludeFinderTaps && !openingBrief) return [];
+  return [
+    {
+      ...(excludeFinderTaps && { excludeFinderTaps: true as const }),
+      ...(openingBrief && { openingBrief }),
+    },
+  ];
 }

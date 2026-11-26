@@ -436,6 +436,7 @@ export const storage = {
   withdrawLoggedWriteCard: coachWriteCards.withdrawLoggedWriteCard,
   getLatestLoggedFoodCard: coachWriteCards.getLatestLoggedFoodCard,
   getWriteCardsByIds: coachWriteCards.getWriteCardsByIds,
+  withdrawWriteCard: coachWriteCards.withdrawWriteCard,
   getConfirmedNotebookEntries: coachNotebookMemory.getConfirmedNotebookEntries,
   clearNotebook: coachNotebookMemory.clearNotebook,
   updateMoodScore: coachNotebookMemory.updateMoodScore,

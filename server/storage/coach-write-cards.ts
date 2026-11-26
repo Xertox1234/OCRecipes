@@ -229,6 +229,54 @@ export async function getLatestLoggedFoodCard(
   return card;
 }
 
+/**
+ * Take back a card created for a turn whose client left before it was shown
+ * (audit 2026-11-24, L87): delete it and put the card it replaced back to
+ * live, so the card the user was looking at still saves. The previous card is
+ * revived only while it still has the status this card gave it and the
+ * conversation has no other live card.
+ */
+export async function withdrawWriteCard(input: {
+  cardId: string;
+  userId: string;
+  previous: { id: string; status: "replaced" | "expired" } | null;
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [removed] = await tx
+      .delete(coachWriteCards)
+      .where(
+        and(
+          eq(coachWriteCards.id, input.cardId),
+          eq(coachWriteCards.userId, input.userId),
+          eq(coachWriteCards.status, "live"),
+        ),
+      )
+      .returning({ conversationId: coachWriteCards.conversationId });
+    if (!removed || !input.previous) return;
+    const [otherLive] = await tx
+      .select({ id: coachWriteCards.id })
+      .from(coachWriteCards)
+      .where(
+        and(
+          eq(coachWriteCards.conversationId, removed.conversationId),
+          eq(coachWriteCards.userId, input.userId),
+          eq(coachWriteCards.status, "live"),
+        ),
+      );
+    if (otherLive) return;
+    await tx
+      .update(coachWriteCards)
+      .set({ status: "live" })
+      .where(
+        and(
+          eq(coachWriteCards.id, input.previous.id),
+          eq(coachWriteCards.userId, input.userId),
+          eq(coachWriteCards.status, input.previous.status),
+        ),
+      );
+  });
+}
+
 export async function getWriteCard( // idor-safe: filtered by userId
   id: string,
   userId: string,

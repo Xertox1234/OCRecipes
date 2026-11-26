@@ -26,7 +26,7 @@ import {
   formatZodError,
 } from "./_helpers";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
-import { saveOpeningBrief } from "./chat-admit";
+import { limitCheckOptions, prepareOpeningBrief } from "./chat-admit";
 import { ipKeyGenerator, resolveRateLimitMax } from "./_rate-limiters";
 import { upload } from "./_upload";
 import { CONVERSATION_CONFIG } from "../services/chat-turn";
@@ -133,29 +133,27 @@ export function register(app: Express): void {
         const imageBase64 = requireValidImage(req, res);
         if (!imageBase64) return;
 
-        if (fields.data.openingBrief) {
-          await saveOpeningBrief(req, id, features, fields.data.openingBrief);
-        }
+        // Saved by the limit check, with the user's turn (audit L98).
+        const brief = fields.data.openingBrief
+          ? await prepareOpeningBrief(
+              req,
+              id,
+              features,
+              fields.data.openingBrief,
+            )
+          : undefined;
 
         // A photo is a Coach turn: it counts toward the daily message limit,
         // checked and stored atomically like a typed message (chat-admit.ts).
         const dailyLimit = CONVERSATION_CONFIG.coach.dailyLimit(features);
-        const userMessage = isRecipeOfferEnabled()
-          ? await storage.createChatMessageWithLimitCheck(
-              id,
-              req.userId,
-              COACH_PHOTO_USER_TEXT,
-              dailyLimit,
-              "coach",
-              { excludeFinderTaps: true },
-            )
-          : await storage.createChatMessageWithLimitCheck(
-              id,
-              req.userId,
-              COACH_PHOTO_USER_TEXT,
-              dailyLimit,
-              "coach",
-            );
+        const userMessage = await storage.createChatMessageWithLimitCheck(
+          id,
+          req.userId,
+          COACH_PHOTO_USER_TEXT,
+          dailyLimit,
+          "coach",
+          ...limitCheckOptions(isRecipeOfferEnabled(), brief),
+        );
         if (!userMessage)
           return sendError(
             res,

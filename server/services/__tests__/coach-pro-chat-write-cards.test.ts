@@ -50,6 +50,7 @@ vi.mock("../../storage", () => ({
     createLoggedWriteCard: vi.fn(),
     withdrawLoggedWriteCard: vi.fn(),
     getLatestLoggedFoodCard: vi.fn(),
+    withdrawWriteCard: vi.fn(),
   },
 }));
 
@@ -1098,6 +1099,58 @@ describe("handleCoachChat with write cards", () => {
       ),
     );
     expect(storage.createWriteCard).not.toHaveBeenCalled();
+  });
+
+  // L87: a food card whose lookup failed mid-stream is built again at the
+  // end, and its nutrition lookups can take seconds. A client that leaves
+  // meanwhile must not get a row that locks the card it was looking at.
+  it("a client that left while the card was being built gets no card row", async () => {
+    let aborted = false;
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposing({ kind: "food", args: foodArgs }),
+    );
+    vi.mocked(buildWriteCardPayload)
+      .mockRejectedValueOnce(new Error("lookup read failed"))
+      .mockImplementationOnce(async () => {
+        aborted = true;
+        return foodPayload;
+      });
+    const events = await collect(
+      handleCoachChat(
+        makeParams({ writeCards: true, isAborted: () => aborted }),
+      ),
+    );
+    expect(storage.createWriteCard).not.toHaveBeenCalled();
+    expect(blocksEvent(events)).toBeUndefined();
+  });
+
+  it("a client that left while the card row was written gets it withdrawn", async () => {
+    let aborted = false;
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      proposing({ kind: "food", args: foodArgs }),
+    );
+    const previous = { id: "prev-card", status: "replaced" as const };
+    vi.mocked(storage.createWriteCard).mockImplementation(async () => {
+      aborted = true;
+      return {
+        card: createMockCoachWriteCard({
+          id: CARD_ID,
+          kind: "food",
+          payload: foodPayload,
+        }),
+        previous,
+      };
+    });
+    await collect(
+      handleCoachChat(
+        makeParams({ writeCards: true, isAborted: () => aborted }),
+      ),
+    );
+    expect(storage.withdrawWriteCard).toHaveBeenCalledWith({
+      cardId: CARD_ID,
+      userId: "user-42",
+      previous,
+    });
   });
 
   // Coach roadmap T2: a small food log the user typed is applied at once,

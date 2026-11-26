@@ -4,7 +4,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { buildPhotoReply } from "../../services/coach-photo";
 import { createWriteCardBlock } from "../../services/coach-pro-chat/write-card-context";
-import { saveOpeningBrief } from "../chat-admit";
+import { prepareOpeningBrief } from "../chat-admit";
 import { register } from "../chat-photo";
 import {
   createMockChatConversation,
@@ -37,7 +37,10 @@ vi.mock("../../services/coach-pro-chat/write-card-context", () => ({
   createWriteCardBlock: vi.fn(),
 }));
 
-vi.mock("../chat-admit", () => ({ saveOpeningBrief: vi.fn() }));
+vi.mock("../chat-admit", async (orig) => ({
+  ...(await orig<typeof import("../chat-admit")>()),
+  prepareOpeningBrief: vi.fn(),
+}));
 
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
@@ -392,24 +395,31 @@ describe("POST /api/chat/conversations/:id/photo", () => {
     expect(buildPhotoReply).not.toHaveBeenCalled();
   });
 
-  it("saves the opening brief first when the photo opens a new chat", async () => {
+  // L98: the limit check saves the brief in its own transaction, so a 429
+  // leaves no brief behind and the reminders uncleared.
+  it("hands the opening brief to the limit check when the photo opens a new chat", async () => {
+    const row = {
+      content: "Good morning.",
+      metadata: { kind: "opening_brief" },
+    };
+    vi.mocked(prepareOpeningBrief).mockResolvedValue(row);
     const res = await post(app).send({ openingBrief: "short" });
     expect(res.status).toBe(201);
-    expect(saveOpeningBrief).toHaveBeenCalledWith(
+    expect(prepareOpeningBrief).toHaveBeenCalledWith(
       expect.anything(),
       1,
       expect.objectContaining({ coachPro: true }),
       "short",
     );
-    const briefOrder = vi.mocked(saveOpeningBrief).mock.invocationCallOrder[0];
-    const turnOrder = vi.mocked(storage.createChatMessageWithLimitCheck).mock
-      .invocationCallOrder[0];
-    expect(briefOrder).toBeLessThan(turnOrder);
+    expect(
+      vi.mocked(storage.createChatMessageWithLimitCheck).mock.calls[0][5]
+        ?.openingBrief,
+    ).toEqual(row);
   });
 
   it("saves no brief when none was shown, and rejects an unknown form", async () => {
     await post(app);
-    expect(saveOpeningBrief).not.toHaveBeenCalled();
+    expect(prepareOpeningBrief).not.toHaveBeenCalled();
     vi.mocked(storage.claimDailyAiCall).mockClear();
     const res = await post(app).send({ openingBrief: "<script>" });
     expect(res.status).toBe(400);

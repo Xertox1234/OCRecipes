@@ -87,7 +87,7 @@ async function proReplyBlocks(
   ) {
     const card = await createWriteCardBlock(
       reply.writeCardProposal,
-      { conversationId, userId, tz: turn.tz },
+      { conversationId, userId, tz: turn.tz, isAborted },
       reply.writeCardPrepared,
     );
     if (card) {
@@ -117,7 +117,7 @@ async function proReplyBlocks(
   ) {
     const card = await createWriteCardBlock(
       { kind: "allergy", args: { allergen: allergyBlock.action.allergen } },
-      { conversationId, userId, tz: turn.tz },
+      { conversationId, userId, tz: turn.tz, isAborted },
     );
     if (card) {
       blocks = [...blocks.filter((_, i) => i !== allergyAt), card];

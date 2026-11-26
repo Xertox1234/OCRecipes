@@ -16,7 +16,11 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { chatMessages, communityRecipes } from "@shared/schema";
+import {
+  chatMessages,
+  communityRecipes,
+  pendingReminders,
+} from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
@@ -336,6 +340,83 @@ describe("chat storage", () => {
 
       const messages = await getChatMessages(conv.id, 100, testUser.id);
       expect(messages).toEqual([]);
+    });
+  });
+
+  // ---- Opening brief inside the limit check (audit 2026-11-24, L98) ----
+
+  describe("createChatMessageWithLimitCheck — opening brief", () => {
+    const brief = {
+      content: "Morning. You logged 1,200 kcal yesterday.",
+      metadata: { kind: "opening_brief" },
+    };
+    const addReminder = () =>
+      tx.insert(pendingReminders).values({
+        userId: testUser.id,
+        type: "meal-log",
+        context: {},
+        scheduledFor: new Date(),
+      });
+    const openReminders = async () =>
+      (
+        await tx
+          .select()
+          .from(pendingReminders)
+          .where(eq(pendingReminders.userId, testUser.id))
+      ).filter((r) => r.acknowledgedAt === null).length;
+
+    it("saves the brief before the user message and clears reminders", async () => {
+      const conv = await createChatConversation(testUser.id, "Coach", "coach");
+      await addReminder();
+      const msg = await createChatMessageWithLimitCheck(
+        conv.id,
+        testUser.id,
+        "Thanks!",
+        50,
+        "coach",
+        { openingBrief: brief },
+      );
+      expect(msg?.role).toBe("user");
+      const rows = await getChatMessages(conv.id, 10, testUser.id);
+      expect(rows.map((r) => r.role)).toEqual(["assistant", "user"]);
+      expect(rows[0].content).toBe(brief.content);
+      expect(rows[0].metadata).toEqual(brief.metadata);
+      expect(rows[0].createdAt.getTime()).toBeLessThan(
+        rows[1].createdAt.getTime(),
+      );
+      expect(await openReminders()).toBe(0);
+    });
+
+    it("saves no brief and keeps reminders when the limit is reached", async () => {
+      const conv = await createChatConversation(testUser.id, "Coach", "coach");
+      await addReminder();
+      const msg = await createChatMessageWithLimitCheck(
+        conv.id,
+        testUser.id,
+        "Thanks!",
+        0,
+        "coach",
+        { openingBrief: brief },
+      );
+      expect(msg).toBeNull();
+      expect(await getChatMessages(conv.id, 10, testUser.id)).toHaveLength(0);
+      expect(await openReminders()).toBe(1);
+    });
+
+    it("adds the brief only to an empty conversation", async () => {
+      const conv = await createChatConversation(testUser.id, "Coach", "coach");
+      for (const text of ["first", "second"]) {
+        await createChatMessageWithLimitCheck(
+          conv.id,
+          testUser.id,
+          text,
+          50,
+          "coach",
+          { openingBrief: brief },
+        );
+      }
+      const rows = await getChatMessages(conv.id, 10, testUser.id);
+      expect(rows.filter((r) => r.role === "assistant")).toHaveLength(1);
     });
   });
 

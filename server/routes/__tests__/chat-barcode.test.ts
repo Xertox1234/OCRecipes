@@ -7,7 +7,7 @@ import {
   scannedLabelReply,
 } from "../../services/coach-photo";
 import { createWriteCardBlock } from "../../services/coach-pro-chat/write-card-context";
-import { saveOpeningBrief } from "../chat-admit";
+import { prepareOpeningBrief } from "../chat-admit";
 import { register } from "../chat-barcode";
 import {
   createMockChatConversation,
@@ -40,7 +40,10 @@ vi.mock("../../services/coach-pro-chat/write-card-context", () => ({
   createWriteCardBlock: vi.fn(),
 }));
 
-vi.mock("../chat-admit", () => ({ saveOpeningBrief: vi.fn() }));
+vi.mock("../chat-admit", async (orig) => ({
+  ...(await orig<typeof import("../chat-admit")>()),
+  prepareOpeningBrief: vi.fn(),
+}));
 
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
@@ -295,19 +298,26 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
     expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
   });
 
-  it("saves the opening brief first when the scan opens a new chat", async () => {
+  // L98: the limit check saves the brief in its own transaction, so a 429
+  // leaves no brief behind and the reminders uncleared.
+  it("hands the opening brief to the limit check when the scan opens a new chat", async () => {
+    const row = {
+      content: "Good morning.",
+      metadata: { kind: "opening_brief" },
+    };
+    vi.mocked(prepareOpeningBrief).mockResolvedValue(row);
     const res = await post(app, { barcode: BARCODE, openingBrief: "short" });
     expect(res.status).toBe(201);
-    expect(saveOpeningBrief).toHaveBeenCalledWith(
+    expect(prepareOpeningBrief).toHaveBeenCalledWith(
       expect.anything(),
       1,
       expect.objectContaining({ coachPro: true }),
       "short",
     );
-    const briefOrder = vi.mocked(saveOpeningBrief).mock.invocationCallOrder[0];
-    const turnOrder = vi.mocked(storage.createChatMessageWithLimitCheck).mock
-      .invocationCallOrder[0];
-    expect(briefOrder).toBeLessThan(turnOrder);
+    expect(
+      vi.mocked(storage.createChatMessageWithLimitCheck).mock.calls[0][5]
+        ?.openingBrief,
+    ).toEqual(row);
   });
 
   it("rejects an unknown brief form and an unknown field", async () => {
@@ -458,7 +468,7 @@ describe("POST /api/chat/conversations/:id/label (a label read on the phone)", (
 
   it("saves the opening brief first when the read opens a new chat", async () => {
     await postLabel({ label, openingBrief: "short" });
-    expect(saveOpeningBrief).toHaveBeenCalledWith(
+    expect(prepareOpeningBrief).toHaveBeenCalledWith(
       expect.anything(),
       1,
       expect.anything(),

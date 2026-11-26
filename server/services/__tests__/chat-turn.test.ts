@@ -5,6 +5,7 @@ import type { Response } from "express";
 import { storage } from "../../storage";
 import { handleCoachChat } from "../coach-pro-chat";
 import { runTurn, type TurnInput } from "../chat-turn";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -187,5 +188,75 @@ describe("runTurn (coach path)", () => {
       null,
       "turn-1",
     );
+  });
+
+  // L43: the SSE timeout and the size cap end the response themselves, so the
+  // close handler never marks a disconnect. The answer the user already saw
+  // must still be kept (or the message refunded), as for a disconnect.
+  it("L43: an SSE timeout after content keeps the partial as the reply", async () => {
+    vi.useFakeTimers();
+    try {
+      const res = makeRes();
+      vi.mocked(handleCoachChat).mockImplementation(async function* (params: {
+        abortSignal: AbortSignal;
+      }) {
+        yield { type: "content", content: "partial answer" };
+        await new Promise((_, reject) =>
+          params.abortSignal.addEventListener("abort", () =>
+            reject(new Error("aborted")),
+          ),
+        );
+      } as unknown as typeof handleCoachChat);
+      vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+
+      const turn = runTurn(makeInput(res));
+      await vi.advanceTimersByTimeAsync(SSE_TIMEOUT_MS);
+      await turn;
+
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        7,
+        "u1",
+        "assistant",
+        "partial answer",
+        null,
+        "turn-1",
+      );
+      expect(storage.refundUndeliveredMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("L43: a size-cap stop keeps what was sent before the cap", async () => {
+    const res = makeRes();
+    vi.mocked(handleCoachChat).mockImplementation(async function* () {
+      yield { type: "content", content: "sent part" };
+      yield { type: "content", content: "x".repeat(60 * 1024) };
+    } as unknown as typeof handleCoachChat);
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+
+    await runTurn(makeInput(res));
+
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      7,
+      "u1",
+      "assistant",
+      "sent part",
+      null,
+      "turn-1",
+    );
+  });
+
+  it("L43: a size-cap stop before anything was sent refunds the message", async () => {
+    const res = makeRes();
+    vi.mocked(handleCoachChat).mockImplementation(async function* () {
+      yield { type: "content", content: "x".repeat(60 * 1024) };
+    } as unknown as typeof handleCoachChat);
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+
+    await runTurn(makeInput(res));
+
+    expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(501, "u1");
+    expect(storage.createChatMessage).not.toHaveBeenCalled();
   });
 });
