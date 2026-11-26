@@ -293,6 +293,43 @@ describe("weekly-reports storage", () => {
       expect(inputs.logs.map((l) => l.protein)).toEqual([20, 20]);
     });
 
+    // Audit 2026-11-24 L96 (owner: scan up to writing time): the week ends
+    // at Sunday 00:00 but the report is written that evening, so the safety
+    // scan runs on to the moment of writing. Logs keep the week's bounds.
+    it("scans coach messages up to the scan end, past the week's end", async () => {
+      const [coach] = await tx
+        .insert(schema.chatConversations)
+        .values({ userId: user.id, title: "Coach", type: "coach" })
+        .returning();
+      const sundayMorning = new Date("2026-11-08T09:00:00Z"); // after TO
+      const afterWriting = new Date("2026-11-08T20:00:00Z");
+      await tx.insert(schema.chatMessages).values([
+        {
+          conversationId: coach.id,
+          role: "user",
+          content: "sunday morning",
+          createdAt: sundayMorning,
+        },
+        {
+          conversationId: coach.id,
+          role: "user",
+          content: "after writing",
+          createdAt: afterWriting,
+        },
+      ]);
+      const writingAt = new Date("2026-11-08T18:00:00Z");
+      const inputs = await wr.getWeeklyReportInputs(
+        user.id,
+        FROM,
+        TO,
+        writingAt,
+      );
+      expect(inputs.coachMessages).toEqual(["sunday morning"]);
+      // Without a scan end the week's bounds apply (control).
+      const plain = await wr.getWeeklyReportInputs(user.id, FROM, TO);
+      expect(plain.coachMessages).toEqual([]);
+    });
+
     it("reads this user's coach messages in range, not other chats", async () => {
       const [coach] = await tx
         .insert(schema.chatConversations)
