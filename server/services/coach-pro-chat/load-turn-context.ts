@@ -18,7 +18,9 @@ import type { CoachIntent } from "../coach-intent-classifier";
 import { applyWriteCardContext } from "./write-card-context";
 import { proOnly } from "./pro-only";
 import type { CoachChatParams } from "./types";
-import { logger } from "../../lib/logger";
+import { createServiceLogger } from "../../lib/logger";
+
+const log = createServiceLogger("coach-pro-chat");
 
 export interface PromptMessage {
   role: "user" | "assistant" | "system";
@@ -133,7 +135,7 @@ export async function loadTurnContext(
   // cast it into the model call (audit 2026-11-24, L48; same as warm-up).
   let messageHistory: PromptMessage[] = history.flatMap((m) => {
     if (!isPromptRole(m.role)) {
-      logger.warn(
+      log.warn(
         { messageId: m.id, role: m.role },
         "coach turn: dropping history row with unexpected role",
       );
