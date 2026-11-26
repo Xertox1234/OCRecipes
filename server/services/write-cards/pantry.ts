@@ -32,6 +32,11 @@ import type { WriteCardTx } from "../../storage/coach-write-cards";
 import { TIER_FEATURES } from "@shared/types/premium";
 import { parseQuantityForSum, roundQuantity } from "../grocery-generation";
 import { WriteCardEditError } from "./errors";
+import {
+  readCardPayload,
+  savableCardPayload,
+  STALE_CARD_RECEIPT,
+} from "./payload";
 import { matchKey, unitKey } from "./grocery";
 import type { UpdatePantryCardArgs } from "./tool-args";
 
@@ -216,7 +221,7 @@ export async function performPantrySave(
   rawEdits: unknown,
   ctx: { userId: string; now: Date },
 ): Promise<CoachWriteCardSavedRefs> {
-  const payload = card.payload as PantryCardPayload;
+  const payload = savableCardPayload(card, "pantry");
   const kept = pantryKept(payload, parsePantryEdits(payload, rawEdits));
   if (kept.length === 0) throw new WriteCardEditError("Nothing to change.");
   // The plan is checked when the card is built, and again here: a card can
@@ -347,10 +352,10 @@ export function pantryReceipt(
   card: CoachWriteCard,
   edits: PantryCardEdits = {},
 ): string {
+  const payload = readCardPayload(card, "pantry");
+  if (!payload) return STALE_CARD_RECEIPT;
   const counts = card.savedRefs?.pantryCounts;
-  if (!counts) {
-    return writeCardReceipt("pantry", card.payload as PantryCardPayload, edits);
-  }
+  if (!counts) return writeCardReceipt("pantry", payload, edits);
   const done = [
     counts.added > 0 && `${counts.added} added`,
     counts.used > 0 && `${counts.used} used`,

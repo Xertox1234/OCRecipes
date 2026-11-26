@@ -15,6 +15,7 @@ import type { WriteCardTx } from "../../storage/coach-write-cards";
 import type { AfterCommit } from "../../storage/meal-plan-recipes-crud";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { WriteCardEditError } from "./errors";
+import { savableCardPayload } from "./payload";
 
 /** The dietary profile holds at most this many (server/routes/_schemas.ts). */
 const MAX_ALLERGIES = 30;
@@ -60,7 +61,7 @@ export async function performAllergySave(
     throw new WriteCardEditError("Choose how severe the allergy is.");
   }
   const { severity } = parsed.data;
-  const { allergen } = card.payload as AllergyCardPayload;
+  const { allergen } = savableCardPayload(card, "allergy");
   // The profile as it is now, not as it was when the card was built.
   const profile = await getProfileAllergies(ctx.userId, tx, {
     forUpdate: true,

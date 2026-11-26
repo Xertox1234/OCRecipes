@@ -53,6 +53,11 @@ import { autoGenerateRecipeImage } from "../recipe-auto-image";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { LISTS_OFFERED, MAX_GROCERY_LISTS, lineKey } from "./grocery";
 import { WriteCardEditError } from "./errors";
+import {
+  readCardPayload,
+  savableCardPayload,
+  STALE_CARD_RECEIPT,
+} from "./payload";
 import type { AddMealPlanCardArgs, RecipeRefArg } from "./tool-args";
 
 export {
@@ -297,7 +302,7 @@ export async function performPlanSave(
   rawEdits: unknown,
   ctx: { userId: string; afterCommit?: AfterCommit },
 ): Promise<CoachWriteCardSavedRefs> {
-  const payload = card.payload as PlanCardPayload;
+  const payload = savableCardPayload(card, "plan");
   const edits = parsePlanEdits(payload, rawEdits);
   const kept = planKept(payload, edits);
   if (kept.length === 0) throw new WriteCardEditError("Nothing to plan.");
@@ -524,7 +529,8 @@ export function planReceipt(
   card: CoachWriteCard,
   edits: PlanCardEdits = {},
 ): string {
-  const payload = card.payload as PlanCardPayload;
+  const payload = readCardPayload(card, "plan");
+  if (!payload) return STALE_CARD_RECEIPT;
   const base = writeCardReceipt("plan", payload, edits);
   if (!planShoppingOn(payload, edits)) return base;
   const refs = card.savedRefs;

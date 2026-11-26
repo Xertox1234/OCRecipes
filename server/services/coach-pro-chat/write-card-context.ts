@@ -57,7 +57,7 @@ export async function applyWriteCardContext(
   }
   const lines: string[] = [];
   const live = await storage.getLiveWriteCard(a.conversationId, a.userId);
-  if (live) lines.push(describeLiveCard(live));
+  if (live) pushCardLine(lines, live.kind, describeLiveCard(live));
   if (a.quickLog) {
     // A food logged at once is saved, not live, so no line above names it:
     // without this, "make it three eggs" would be logged a second time.
@@ -65,12 +65,21 @@ export async function applyWriteCardContext(
       a.conversationId,
       a.userId,
     );
-    if (logged) lines.push(describeLoggedFood(logged));
+    if (logged) pushCardLine(lines, "food", describeLoggedFood(logged));
   }
   if (lines.length > 0) {
     // Item names came from model output — sanitize like any context field.
     context.liveWriteCard = sanitizeContextField(lines.join("\n"), 1800);
   }
+}
+
+/** A card whose stored payload no longer parses gets no line (audit L52). */
+function pushCardLine(lines: string[], kind: string, line: string | null) {
+  if (line === null) {
+    log.warn({ kind }, "coach write card payload does not parse");
+    return;
+  }
+  lines.push(line);
 }
 
 /** Builds the proposal's card and its row; null (logged) when it can't. */

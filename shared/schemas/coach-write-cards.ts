@@ -310,10 +310,10 @@ export type WriteCardEdits =
 // ── Block ───────────────────────────────────────────────────────────
 
 /**
- * The chat block. A plain object (the coach block union discriminates on
- * `type`, so this cannot itself be a union); the kind/payload pairing is
- * checked by the refinement in `writeCardBlockSchema`, and `coachBlockSchema`
- * registers the unrefined object.
+ * The chat block. A plain object; the kind/payload pairing is checked by the
+ * refinement in `writeCardBlockSchema`. In Zod 4 a refined object is still a
+ * ZodObject, so `coachBlockSchema` registers the refined one and every
+ * parse (the app's included) checks the pairing (audit 2026-11-24, L55).
  */
 export const writeCardBlockObjectSchema = z.object({
   type: z.literal("write_card"),
