@@ -219,7 +219,8 @@ async function recordSent(userId: string, reportId: number) {
 /**
  * Hand an unsent report back to the popup. A failed release must not stop the
  * loop: the remaining pushes still go out this tick. The row it could not
- * release keeps deliveredVia = 'push' and is logged, since nothing retries it.
+ * release keeps an unsent push claim, which the next tick's stranded-claim
+ * sweep (releaseStrandedPushClaims) hands to the popup.
  */
 async function releaseDelivery(userId: string, reportId: number) {
   try {
@@ -227,7 +228,7 @@ async function releaseDelivery(userId: string, reportId: number) {
   } catch (err) {
     logger.error(
       { err: toError(err), userId, reportId },
-      "weekly report: could not release the push claim; report is stranded as pushed",
+      "weekly report: could not release the push claim; the next run hands it to the popup",
     );
   }
 }

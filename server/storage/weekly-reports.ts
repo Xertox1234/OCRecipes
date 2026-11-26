@@ -25,7 +25,18 @@ import type {
   WeeklyReportContent,
   WeeklyReportSettings,
 } from "@shared/schemas/coach-weekly-report";
-import { and, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { db } from "../db";
 import { logNutrientSql } from "./nutrition";
 
@@ -464,6 +475,9 @@ export async function claimWeeklyReportDelivery(
         eq(coachWeeklyReports.id, id),
         eq(coachWeeklyReports.userId, userId),
         isNull(coachWeeklyReports.deliveredVia),
+        // A push is claimable only while one is still waiting: turning pushes
+        // off clears pushDueAt, and must win even after the batch was read.
+        via === "push" ? isNotNull(coachWeeklyReports.pushDueAt) : undefined,
       ),
     )
     .returning({ id: coachWeeklyReports.id });
@@ -529,9 +543,11 @@ export async function cancelWeeklyReportPush(
 
 /**
  * Hand push claims that never recorded a send, and were due before `cutoff`,
- * to the popup. Safe because senders never overlap: the weekly job runs once
- * per hourly slot (runIfClaimed), so at the start of a tick no claim from
- * another sender is still in flight. Returns how many it released.
+ * to the popup. The weekly job runs once per hourly slot (runIfClaimed), so
+ * this assumes a run finishes within its hour: then, at the start of a tick,
+ * no other sender's claim is still in flight. A run that overran would have
+ * a live claim released, and that user would get the push and the popup.
+ * Returns how many it released.
  */
 export async function releaseStrandedPushClaims(cutoff: Date): Promise<number> {
   // idor-safe: scheduler's cross-user sweep; it only clears delivery state on rows it selects by state

@@ -92,7 +92,11 @@ describe("weekly-reports storage", () => {
     });
 
     it("claims delivery once", async () => {
-      const r = await wr.insertWeeklyReport(user.id, row("2026-11-01"));
+      // A push claim needs a waiting push, as every sender claim has.
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-08T18:00:00Z") }),
+      );
       expect(await wr.claimWeeklyReportDelivery(user.id, r!.id, "push")).toBe(
         true,
       );
@@ -259,6 +263,23 @@ describe("weekly-reports storage", () => {
         await wr.getDuePushes(new Date("2026-11-10T00:00:00Z")),
       ).not.toContainEqual(expect.objectContaining({ id: r!.id }));
       expect((await wr.getPendingPopup(user.id))?.id).toBe(r!.id);
+    });
+
+    // L95, the window inside one send run: the batch was read while pushes
+    // were on, then the user turned them off before the loop reached the row.
+    it("a push cancelled after the batch was read can no longer be claimed", async () => {
+      const r = await wr.insertWeeklyReport(
+        user.id,
+        row("2026-11-01", { pushDueAt: new Date("2026-11-08T18:00:00Z") }),
+      );
+      await wr.setWeeklyReportSettings(user.id, { pushEnabled: false });
+      expect(await wr.claimWeeklyReportDelivery(user.id, r!.id, "push")).toBe(
+        false,
+      );
+      // The popup can still claim it (control).
+      expect(await wr.claimWeeklyReportDelivery(user.id, r!.id, "popup")).toBe(
+        true,
+      );
     });
 
     it("turning the push off never cancels a push already claimed", async () => {
