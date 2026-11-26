@@ -77,7 +77,8 @@ export async function generateWeeklyReportForUser(
   if (await storage.weeklyReportExists(userId, week.weekStart)) return "exists";
 
   const [inputs, previous, usage] = await Promise.all([
-    storage.getWeeklyReportInputs(userId, week.fromUtc, week.toUtc),
+    // The safety scan runs on to now, the writing time (L96).
+    storage.getWeeklyReportInputs(userId, week.fromUtc, week.toUtc, now),
     storage.getRecentWeeklyFacts(userId, week.weekStart, 6),
     storage.getFeatureUsage(userId),
   ]);

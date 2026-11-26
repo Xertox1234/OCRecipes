@@ -85,10 +85,18 @@ function positiveOrNull(v: number | null | undefined): number | null {
 
 // ── Inputs ──────────────────────────────────────────────────────────────
 
+/**
+ * `scanToUtc` ends the coach-message safety scan; it defaults to the week's
+ * end. The report is written on Sunday evening, after the week ends at
+ * Sunday 00:00, so the generator passes the writing time: a worrying message
+ * sent that Sunday reaches this report, not next week's (coach audit
+ * 2026-11-24, L96, owner ruling). Logs and recipes keep the week's bounds.
+ */
 export async function getWeeklyReportInputs(
   userId: string,
   fromUtc: Date,
   toUtc: Date,
+  scanToUtc: Date = toUtc,
 ): Promise<Omit<WeeklyInputs, "previous" | "tipIds">> {
   const [user] = await db
     .select({
@@ -146,7 +154,7 @@ export async function getWeeklyReportInputs(
         eq(chatConversations.type, "coach"),
         eq(chatMessages.role, "user"),
         gte(chatMessages.createdAt, fromUtc),
-        lt(chatMessages.createdAt, toUtc),
+        lt(chatMessages.createdAt, scanToUtc),
       ),
     )
     .orderBy(chatMessages.createdAt);

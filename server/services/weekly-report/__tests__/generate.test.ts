@@ -161,10 +161,12 @@ describe("generateWeeklyReportForUser", () => {
     expect(row.facts.tipIds).toHaveLength(1);
     expect(row.source).toBe("ai");
     expect(row.pushDueAt).toEqual(NOW);
+    // The safety scan runs on to the writing time (L96), past the week's end.
     expect(s.getWeeklyReportInputs).toHaveBeenCalledWith(
       "u1",
       new Date("2026-11-08T08:00:00Z"),
       new Date("2026-11-15T08:00:00Z"),
+      NOW,
     );
   });
 
