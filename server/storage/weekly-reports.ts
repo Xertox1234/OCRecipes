@@ -430,7 +430,24 @@ export function markCelebrationShown(userId: string, id: number) {
   return setOnce(userId, id, "celebrationShownAt");
 }
 
-/** True only for the first claimer: a push and a popup never both fire. */
+/**
+ * No newer report exists for this row's user. Only the newest report is ever
+ * announced: after it is delivered, an older undelivered one must not pop up
+ * or be pushed as "Your week is ready" (coach audit 2026-11-24, L112). Older
+ * ones stay readable in the profile.
+ */
+const isNewestReport = sql`NOT EXISTS (
+  SELECT 1 FROM coach_weekly_reports newer
+  WHERE newer.user_id = ${coachWeeklyReports.userId}
+    AND newer.week_start > ${coachWeeklyReports.weekStart}
+)`;
+
+/**
+ * True only for the first claimer, so a push and a popup are never both
+ * claimed. A push claim leaves deliveredAt empty until the push is sent
+ * (markWeeklyReportPushSent): an empty one past its due time is a claim whose
+ * process died before sending (coach audit 2026-11-24, L65).
+ */
 export async function claimWeeklyReportDelivery(
   userId: string,
   id: number,
@@ -438,7 +455,10 @@ export async function claimWeeklyReportDelivery(
 ): Promise<boolean> {
   const rows = await db
     .update(coachWeeklyReports)
-    .set({ deliveredVia: via, deliveredAt: new Date() })
+    .set({
+      deliveredVia: via,
+      deliveredAt: via === "popup" ? new Date() : null,
+    })
     .where(
       and(
         eq(coachWeeklyReports.id, id),
@@ -470,21 +490,91 @@ export async function releaseWeeklyReportDelivery(
     );
 }
 
+/** Record that a claimed push reached a device: the claim is then final. */
+export async function markWeeklyReportPushSent(
+  userId: string,
+  id: number,
+): Promise<void> {
+  await db
+    .update(coachWeeklyReports)
+    .set({ deliveredAt: new Date() })
+    .where(
+      and(
+        eq(coachWeeklyReports.id, id),
+        eq(coachWeeklyReports.userId, userId),
+        eq(coachWeeklyReports.deliveredVia, "push"),
+      ),
+    );
+}
+
+/**
+ * Cancel a push that is waiting and unclaimed, so the in-app popup delivers
+ * the report instead (the user turned pushes off after it was queued).
+ */
+export async function cancelWeeklyReportPush(
+  userId: string,
+  id: number,
+): Promise<void> {
+  await db
+    .update(coachWeeklyReports)
+    .set({ pushDueAt: null })
+    .where(
+      and(
+        eq(coachWeeklyReports.id, id),
+        eq(coachWeeklyReports.userId, userId),
+        isNull(coachWeeklyReports.deliveredVia),
+      ),
+    );
+}
+
+/**
+ * Hand push claims that never recorded a send, and were due before `cutoff`,
+ * to the popup. Safe because senders never overlap: the weekly job runs once
+ * per hourly slot (runIfClaimed), so at the start of a tick no claim from
+ * another sender is still in flight. Returns how many it released.
+ */
+export async function releaseStrandedPushClaims(cutoff: Date): Promise<number> {
+  // idor-safe: scheduler's cross-user sweep; it only clears delivery state on rows it selects by state
+  const rows = await db
+    .update(coachWeeklyReports)
+    .set({ deliveredVia: null, deliveredAt: null, pushDueAt: null })
+    .where(
+      and(
+        eq(coachWeeklyReports.deliveredVia, "push"),
+        isNull(coachWeeklyReports.deliveredAt),
+        lt(coachWeeklyReports.pushDueAt, cutoff),
+      ),
+    )
+    .returning({ id: coachWeeklyReports.id });
+  return rows.length;
+}
+
 export async function getDuePushes( // idor-safe: scheduler's cross-user batch; each row carries its own userId and the claim re-checks it
   now: Date,
   limit = 500,
-): Promise<{ userId: string; id: number; headline: string }[]> {
+): Promise<
+  { userId: string; id: number; headline: string; pushEnabled: boolean }[]
+> {
   const rows = await db
     .select({
       userId: coachWeeklyReports.userId,
       id: coachWeeklyReports.id,
       content: coachWeeklyReports.content,
+      // Read now, not when the row was written: the user may have turned
+      // pushes off while the report was being generated (L95). No settings
+      // row means the default, on.
+      pushEnabled: sql<boolean>`COALESCE(${coachWeeklyReportSettings.pushEnabled}, true)`,
     })
     .from(coachWeeklyReports)
+    .leftJoin(
+      coachWeeklyReportSettings,
+      eq(coachWeeklyReportSettings.userId, coachWeeklyReports.userId),
+    )
     .where(
       and(
         lte(coachWeeklyReports.pushDueAt, now),
         isNull(coachWeeklyReports.deliveredVia),
+        isNewestReport,
       ),
     )
     .orderBy(coachWeeklyReports.pushDueAt)
@@ -493,10 +583,11 @@ export async function getDuePushes( // idor-safe: scheduler's cross-user batch; 
     userId: r.userId,
     id: r.id,
     headline: r.content.headline,
+    pushEnabled: r.pushEnabled,
   }));
 }
 
-/** The newest undelivered report that no push is waiting to announce. */
+/** The user's newest report, if it is undelivered and no push is waiting. */
 export async function getPendingPopup(
   userId: string,
 ): Promise<CoachWeeklyReport | null> {
@@ -508,6 +599,7 @@ export async function getPendingPopup(
         eq(coachWeeklyReports.userId, userId),
         isNull(coachWeeklyReports.deliveredVia),
         isNull(coachWeeklyReports.pushDueAt),
+        isNewestReport,
       ),
     )
     .orderBy(desc(coachWeeklyReports.weekStart))
