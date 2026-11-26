@@ -134,6 +134,62 @@ describe("useNotebookSaves", () => {
     expect(mockToastError).toHaveBeenCalledWith("Couldn't undo. Try again.");
   });
 
+  // Audit 2026-11-24 L62: the toast says "Try again", so the saves (and the
+  // Undo button with them) must come back.
+  it("a failed Undo brings the saves back so Undo can be tried again", async () => {
+    mockApiRequest.mockImplementation(async (method: string, url: string) => {
+      if (url.endsWith("/unseen")) return ok({ entries: saves });
+      if (url.endsWith("/reject")) throw new Error("500: boom");
+      return ok({});
+    });
+    const { result } = setup();
+    act(() => result.current.checkForSaves());
+    await flush();
+    await act(async () => {
+      result.current.undo();
+    });
+    await flush();
+    expect(result.current.saves.map((s) => s.id)).toEqual([4, 5]);
+  });
+
+  // L62: a failed confirm left the entries unconfirmed for good, since they
+  // are already marked shown and the feed never returns them.
+  it("a failed confirm is sent again with the next confirm", async () => {
+    let confirmCalls = 0;
+    mockApiRequest.mockImplementation(async (method: string, url: string) => {
+      if (url.endsWith("/unseen")) return ok({ entries: saves });
+      if (url.endsWith("/confirm")) {
+        confirmCalls++;
+        if (confirmCalls === 1) throw new Error("offline");
+      }
+      return ok({});
+    });
+    const { result } = setup();
+    act(() => result.current.checkForSaves());
+    await flush();
+    await act(async () => {
+      result.current.confirm();
+    });
+    await flush();
+    // Nothing on screen now; the next action confirms the held ids.
+    expect(result.current.saves).toEqual([]);
+    await act(async () => {
+      result.current.confirm();
+    });
+    await flush();
+    expect(mockApiRequest).toHaveBeenLastCalledWith(
+      "POST",
+      "/api/coach/notebook/confirm",
+      { ids: [4, 5] },
+    );
+    // Once it went through, nothing is held (control).
+    await act(async () => {
+      result.current.confirm();
+    });
+    await flush();
+    expect(confirmCalls).toBe(2);
+  });
+
   it("a failed or missing feed means no popup and no toast", async () => {
     mockApiRequest.mockRejectedValue(new Error("404: Not Found"));
     const { result } = setup();

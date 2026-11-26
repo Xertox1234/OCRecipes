@@ -77,17 +77,39 @@ export function useNotebookSaves(): {
     });
   }, [fetchOnce]);
 
+  // Ids whose confirm failed. They are already marked shown, so the feed
+  // never returns them: they ride along with the next confirm (coach audit
+  // 2026-11-24, L62).
+  const unconfirmed = useRef<number[]>([]);
+
   const settle = useCallback(
     (path: "confirm" | "reject") => {
-      const ids = saves.map((s) => s.id);
+      const shown = saves;
+      const shownIds = shown.map((s) => s.id);
+      const ids =
+        path === "confirm"
+          ? [...new Set([...shownIds, ...unconfirmed.current])]
+          : shownIds;
       setSaves([]);
       if (ids.length === 0) return;
+      if (path === "confirm") unconfirmed.current = [];
       apiRequest("POST", `/api/coach/notebook/${path}`, { ids })
         .then(() => {
           void queryClient.invalidateQueries({ queryKey: NOTEBOOK_KEY });
         })
         .catch(() => {
-          if (path === "reject") toast.error("Couldn't undo. Try again.");
+          if (path === "confirm") {
+            unconfirmed.current = [
+              ...new Set([...unconfirmed.current, ...ids]),
+            ];
+            return;
+          }
+          // The toast says "Try again": bring the saves, and Undo, back.
+          setSaves((prev) => {
+            const seen = new Set(prev.map((s) => s.id));
+            return [...shown.filter((s) => !seen.has(s.id)), ...prev];
+          });
+          toast.error("Couldn't undo. Try again.");
         });
     },
     [saves, queryClient, toast],

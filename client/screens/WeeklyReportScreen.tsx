@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -128,9 +128,19 @@ export default function WeeklyReportScreen() {
     [],
   );
 
+  // One add at a time: the plan route does not dedupe (planning a recipe
+  // twice is valid), so a double tap planned it twice (coach audit
+  // 2026-11-24, L83). The ref is the guard, written in the handler itself so
+  // a second tap in the same frame sees it; the state drives the spinner.
+  const addingRef = useRef(false);
+  const [adding, setAdding] = useState(false);
+
   const handleAddToPlan = useCallback(async () => {
     const next = report?.content.next;
     if (!next?.recipeId || next.recipeType !== "mealPlan") return;
+    if (addingRef.current) return;
+    addingRef.current = true;
+    setAdding(true);
     const plannedDate = tomorrowLocalDate(new Date());
     try {
       const item = await addToPlan({
@@ -144,6 +154,9 @@ export default function WeeklyReportScreen() {
     } catch {
       toast.error("Couldn't add it to your plan. Please try again.");
     }
+    // Not in a `finally`: that opts the component out of React Compiler.
+    addingRef.current = false;
+    setAdding(false);
   }, [report, addToPlan, removeFromPlan, toast]);
 
   const handleFewer = useCallback(() => {
@@ -291,7 +304,11 @@ export default function WeeklyReportScreen() {
           {content.next ? <Sentence>{content.next.text}</Sentence> : null}
           <View style={styles.actions}>
             {canAddToPlan && (
-              <Button onPress={() => void handleAddToPlan()}>
+              <Button
+                onPress={() => void handleAddToPlan()}
+                loading={adding}
+                loadingText="Adding…"
+              >
                 Add to my plan
               </Button>
             )}
