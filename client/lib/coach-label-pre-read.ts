@@ -69,14 +69,23 @@ export function labelFromOCRText(text: string): PhoneLabelRead | null {
     return null;
   }
   if (!fitsFoodCard(calories, protein, totalCarbs, totalFat)) return null;
-  // A digit misread or dropped ("230" read as "20"): the same rule the
-  // server's label photo read uses.
+  // A digit misread or dropped ("230" read as "20"), or kilojoules taken
+  // for calories: the same range the server's label photo read uses.
   if (
-    !labelEnergyAgrees(calories, {
-      protein,
-      carbs: totalCarbs,
-      fat: totalFat,
-    })
+    !labelEnergyAgrees(
+      calories,
+      {
+        protein,
+        carbs: totalCarbs,
+        fat: totalFat,
+        // Only a fibre read off the print: a guessed one could raise the floor.
+        fibre: parsed.directReads.includes("dietaryFiber")
+          ? parsed.dietaryFiber
+          : null,
+      },
+      // Strict: a refusal only sends the photo to the server read.
+      { alcohol: false },
+    )
   ) {
     return null;
   }

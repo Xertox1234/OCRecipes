@@ -91,6 +91,19 @@ Protein / Protéines 2g`;
     ).toBe(230);
   });
 
+  // Nutrition review: carbs that are mostly fibre make far less than 4 kcal
+  // a gram; a correct label must still be read on the phone.
+  it("reads a high-fibre cereal whose carbs make less than 4 kcal a gram", () => {
+    const text = `Nutrition Facts
+Serving Size 1/2 cup (30g)
+Calories 60
+Total Fat 1g
+Total Carbohydrate 25g
+  Dietary Fiber 14g
+Protein 2g`;
+    expect(labelFromOCRText(text)?.calories).toBe(60);
+  });
+
   it("reads a zero-calorie drink", () => {
     const text = `Nutrition Facts
 Serving Size 1 can (355 mL)

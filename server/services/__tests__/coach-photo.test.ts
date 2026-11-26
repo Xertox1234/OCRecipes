@@ -480,7 +480,47 @@ describe("buildPhotoReply", () => {
       expect(reply.text).toMatch(/don't add up/i);
       expect(reply.text).toMatch(/10 calories/);
       expect(reply.text).toMatch(/about 232/);
+      // A way to log it anyway: the user types the calories.
+      expect(reply.text).toMatch(/tell me the calories/i);
       expect(reply.text).toMatch(/barcode/i);
+    });
+
+    it("says when the calories look like the label's kilojoules", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(label({ calories: 970 }));
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload).toBeNull();
+      expect(reply.text).toMatch(/kilojoules/i);
+      expect(reply.text).toMatch(/970/);
+    });
+
+    // Nutrition review: carbs that are mostly fibre make far less than
+    // 4 kcal a gram, and a correct label must still be logged.
+    it("logs a high-fibre label whose carbs make less than 4 kcal a gram", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(
+        label({
+          calories: 60,
+          protein: 2,
+          totalCarbs: 25,
+          dietaryFiber: 14,
+          totalFat: 1,
+        }),
+      );
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload?.items[0].perUnit.calories).toBe(60);
+    });
+
+    it("logs a beer, whose alcohol no macro covers", async () => {
+      vi.mocked(analyzeLabelPhoto).mockResolvedValue(
+        label({
+          calories: 153,
+          protein: 1.6,
+          totalCarbs: 13,
+          dietaryFiber: 0,
+          totalFat: 0,
+        }),
+      );
+      const reply = await buildPhotoReply("BASE64", ctx);
+      expect(reply.payload?.items[0].perUnit.calories).toBe(153);
     });
 
     it("catches it with a macro unread when the rest already exceed the calories", async () => {

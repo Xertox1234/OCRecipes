@@ -14,7 +14,12 @@
  * (coach-receipt-photo.ts), and restaurant menus, read into a list of the
  * best dishes for the user's goals (coach-menu-photo.ts).
  */
-import { labelEnergyAgrees, macroCalories } from "@shared/lib/label-energy";
+import {
+  labelEnergyAgrees,
+  looksLikeKilojoules,
+  macroCalories,
+  type LabelMacros,
+} from "@shared/lib/label-energy";
 import {
   analyzePhoto,
   analyzeLabelPhoto,
@@ -191,8 +196,13 @@ const LABEL_TEXT =
  * cal). No card, since the card cannot fix its calories; the numbers are
  * the vision model's, rounded, never text from the photo.
  */
-function labelDoesNotAddUpText(kcal: number, fromMacros: number): string {
-  return `The numbers I read from that label don't add up: ${Math.round(kcal)} calories, but its protein, carbs and fat make about ${Math.round(fromMacros)}. I won't log it from this photo. Try again with the whole nutrition panel flat and in good light, or scan the barcode instead.`;
+function labelDoesNotAddUpText(kcal: number, macros: LabelMacros): string {
+  const read = Math.round(kcal);
+  const fromMacros = Math.round(macroCalories(macros));
+  const opening = looksLikeKilojoules(kcal, macros)
+    ? `The ${read} I read from that label looks like its kilojoules, not its calories: its protein, carbs and fat make about ${fromMacros} calories.`
+    : `The numbers I read from that label don't add up: ${read} calories, but its protein, carbs and fat make about ${fromMacros}.`;
+  return `${opening} I won't log it from this photo. Tell me the calories printed on it and I'll log that, or try again with the panel flat and in good light, or scan the barcode instead.`;
 }
 const LABEL_GAPS_TEXT = " I couldn't read every number, so some show as 0.";
 const LABEL_UNSURE_TEXT =
@@ -296,15 +306,16 @@ export function labelPhotoReply(
     },
   );
   if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
-  const macros = {
+  const macros: LabelMacros = {
     protein: label.protein,
     carbs: label.totalCarbs,
     fat: label.totalFat,
+    fibre: label.dietaryFiber,
   };
   if (!labelEnergyAgrees(label.calories, macros)) {
     return {
       payload: null,
-      text: labelDoesNotAddUpText(label.calories, macroCalories(macros)),
+      text: labelDoesNotAddUpText(label.calories, macros),
     };
   }
   const gaps =

@@ -472,6 +472,19 @@ describe("POST /api/chat/conversations/:id/label (a label read on the phone)", (
     expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
   });
 
+  it("accepts a high-fibre label, whose carbs make less than 4 kcal a gram", async () => {
+    const res = await postLabel({
+      label: {
+        calories: 60,
+        protein: 2,
+        carbs: 25,
+        fat: 1,
+        servingSize: "1/2 cup (30g)",
+      },
+    });
+    expect(res.status).toBe(201);
+  });
+
   it("saves the opening brief first when the read opens a new chat", async () => {
     await postLabel({ label, openingBrief: "short" });
     expect(prepareOpeningBrief).toHaveBeenCalledWith(
