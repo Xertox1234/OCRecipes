@@ -2920,7 +2920,7 @@ assert_deny "eas with a brace-range-split verb denies (todo's illustrative const
 assert_deny "gh pr comment with a brace-range-split verb denies" \
   "$(jsonc 'gh pr com{m..m}ent 5 --body hi --repo other/org')" "glued to a brace RANGE"
 assert_deny "npm with a brace-range-split verb denies" \
-  "$(json 'npm pub{l..l}ish')" "glued to a brace RANGE"
+  "$(json 'npm p{u..u}blish')" "glued to a brace RANGE"
 assert_deny "railway with a brace-range-split verb denies (no argument after it)" \
   "$(json 'railway u{p..p}')" "glued to a brace RANGE"
 assert_deny "gh api with a brace-range-split verb denies" \
@@ -2971,7 +2971,7 @@ assert_deny "a three-field increment brace range glued to a verb denies (gh)" \
 assert_deny "a three-field increment brace range glued to a verb denies (eas)" \
   "$(json 'eas up{d..d..3}ate --branch preview')" "glued to a brace RANGE"
 assert_deny "a three-field increment range with a signed step denies" \
-  "$(json 'npm pub{l..l..-1}ish')" "glued to a brace RANGE"
+  "$(json 'npm p{u..u..-1}blish')" "glued to a brace RANGE"
 # CONTROLS for the widening -- the increment clause is OPTIONAL, so every ordinary
 # brace range and every benign use must be untouched. Without these, the three pins
 # above would pass just as happily on a pattern that denied any command with braces.
@@ -3043,7 +3043,7 @@ assert_deny "a genuine, independently-allowed gh pr create{X..Y} (no --repo) els
 assert_deny "a genuine, independently-allowed gh pr comment{X..Y} elsewhere does not suppress an unrelated genuine railway glued construction" \
   "$(json 'railway u{p..p} && gh pr comment{1..3}')" "glued to a brace RANGE"
 assert_deny "a genuine, independently-allowed gh api{X..Y} elsewhere does not suppress an unrelated genuine npm glued construction" \
-  "$(json 'npm pub{l..l}ish && gh api{1..3}')" "glued to a brace RANGE"
+  "$(json 'npm p{u..u}blish && gh api{1..3}')" "glued to a brace RANGE"
 # Sanity control: the co-occurring gh construction really is independently
 # benign on its own (not itself a hidden deny riding along) -- if this ever
 # starts denying, the assertions above stop proving what they claim to.
@@ -3082,7 +3082,7 @@ assert_deny "eas with a brace-list-split verb denies (todo's illustrative constr
 assert_deny "gh pr merge with a brace-list-split verb denies (todo's illustrative construction)" \
   "$(json 'gh pr me{r,r}ge 42')" "glued to a brace LIST"
 assert_deny "npm with a brace-list-split verb denies (todo's illustrative construction)" \
-  "$(json 'npm pub{l,z}ish')" "glued to a brace LIST"
+  "$(json 'npm p{u,z}blish')" "glued to a brace LIST"
 assert_deny "gh pr comment with a brace-list-split verb denies" \
   "$(jsonc 'gh pr com{m,m}ent 5 --body hi --repo other/org')" "glued to a brace LIST"
 assert_deny "railway with a brace-list-split verb denies (no argument after it)" \
@@ -7100,6 +7100,118 @@ git diff main -- eas-cli update
 npm test -- eas -- update
 DDROWS
 
+# NF (2026-11-26): npm's OWN flags between the package and the verb, no `--` needed.
+# `npm exec <pkg>` / `npm x <pkg>` consume every dash-word after the package, and a flag npm
+# knows takes its value too (measured with a local stub package, npm 11.19.1:
+# `npm exec stub --yes x`, `-s x`, `--loglevel error x`, `--prefix . x` and
+# `--registry https://r.example x` each gave the bin ["x"]). So these are `eas update` and
+# friends, and they were ALLOWED on `main`. Bare `npm` reads its flags before `publish` the
+# same way. `npx` passes such flags ON to the bin (`npx stub --yes x` gave ["--yes","x"]), so
+# `npx eas-cli --yes update` depends on eas and stays in the residual list.
+NF_L='reached through a launcher'
+while IFS='|' read -r nf_cmd nf_reason; do
+  [ -n "$nf_cmd" ] || continue
+  assert_deny "NF '$nf_cmd' denies" "$(jsonc "$nf_cmd")" "$nf_reason"
+done <<NFROWS
+npm exec eas-cli --yes update --branch production|'eas update/publish/submit' $NF_L
+npm exec eas-cli -y update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --silent update|'eas update/publish/submit' $NF_L
+npm exec eas-cli -s update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --loglevel=error update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --loglevel error update|'eas update/publish/submit' $NF_L
+npm exec eas-cli --loglevel error -- update|'eas update/publish/submit' $NF_L
+npm x eas-cli --yes submit|'eas update/publish/submit' $NF_L
+npm exec --yes eas-cli@latest -s update|'eas update/publish/submit' $NF_L
+npm exec eas-cli -y update:republish|'eas update:delete/edit/republish
+npm exec eas-cli --yes channel:create x|'eas channel:/branch: create
+npm exec railway --silent up|'railway up/deploy
+npm exec railway --loglevel warn -- up|'railway up/deploy
+npm exec railway --yes variable set A=b|'railway variable/vars/var set/delete'
+npm exec @railway/cli@latest -s service delete|$NF_L
+npm exec npm --yes publish|'npm publish' $NF_L
+npm -s publish|command-position 'npm publish'
+npm --registry=https://r.example publish|command-position 'npm publish'
+npm --prefix . -- publish|command-position 'npm publish'
+NFROWS
+while IFS= read -r nf_cmd; do
+  [ -n "$nf_cmd" ] || continue
+  assert_allow "NF control '$nf_cmd' stays allowed" "$(jsonc "$nf_cmd")"
+done <<'NFROWS'
+npm exec eas-cli --yes whoami
+npm exec eas-cli --loglevel error -- whoami
+npm exec eas-cli --yes update:list
+npm exec eas-cli -y build:list
+npm -s run build
+npm --prefix . test
+npm --loglevel silent run lint
+npm exec railway --silent status
+npm exec vitest --run update
+npm -s view eas-cli version
+npm exec eas-cli --yes -- whoami
+NFROWS
+# NF2 (security review of NF, on `main` too): npm 11 accepts its command abbreviations,
+# (Four brace rows above used to split `npm pub{l..l}ish`; `pub` is now itself a publish, so
+# they split `p{u..u}blish` instead, where only the brace checks can see the verb.)
+# `npm pu`/`pub`/`publ`/`publi`/`publis` all run publish (measured with npm's own deref and a
+# dry-run publish); and an unquoted variable in npm's flag slot (`npm exec eas-cli $F update`
+# runs `eas update` whether F is empty or holds an npm flag). Controls: a value word is taken
+# after bare `npm`'s flags only for npm's value-taking flags, so a subcommand after a boolean
+# flag is not swallowed (`npm -s run publish` was allowed on `main` and must stay allowed).
+while IFS='|' read -r nf_cmd nf_reason; do
+  [ -n "$nf_cmd" ] || continue
+  assert_deny "NF2 '$nf_cmd' denies" "$(jsonc "$nf_cmd")" "$nf_reason"
+done <<NFROWS
+npm pu|command-position 'npm publish'
+npm pub|command-position 'npm publish'
+npm publ --dry-run|command-position 'npm publish'
+npm publis|command-position 'npm publish'
+npm -s pu --dry-run|command-position 'npm publish'
+npm --loglevel silent pub|command-position 'npm publish'
+npm exec npm --yes pub|'npm publish' $NF_L
+npm exec eas-cli \$F update|'eas update/publish/submit' $NF_L
+npm exec railway \$F up|named in command position but the verb
+NFROWS
+while IFS= read -r nf_cmd; do
+  [ -n "$nf_cmd" ] || continue
+  assert_allow "NF2 control '$nf_cmd' stays allowed" "$(jsonc "$nf_cmd")"
+done <<'NFROWS'
+npm -s run publish
+npm -s view publish
+npm -s help publish
+npm -D i publish
+npm --json info publish version
+npm --loglevel silent run publish
+npm exec eas-cli $F whoami
+npm pack
+npm prune
+NFROWS
+# NF3 (confirmation review of NF2): the value-flag list is npm's own (107 flags and 7
+# shorthands), not a hand-picked 12 (`npm --fetch-retries 3 publish --dry-run` really ran a
+# publish and was allowed); and npm reached through a launcher reads its own flags too
+# (`npx npm -s publish`, allowed on `main`).
+while IFS='|' read -r nf_cmd nf_reason; do
+  [ -n "$nf_cmd" ] || continue
+  assert_deny "NF3 '$nf_cmd' denies" "$(jsonc "$nf_cmd")" "$nf_reason"
+done <<NFROWS
+npm --fetch-retries 3 publish|command-position 'npm publish'
+npm --before 2020-01-01 publish|command-position 'npm publish'
+npm --init.author.name x pub|command-position 'npm publish'
+npm -L project publish|command-position 'npm publish'
+npm exec npm --before 2020 pub|'npm publish' $NF_L
+npx npm -s publish|'npm publish' $NF_L
+npx npm -C . publish|'npm publish' $NF_L
+bunx npm --tag latest pub|'npm publish' $NF_L
+NFROWS
+while IFS= read -r nf_cmd; do
+  [ -n "$nf_cmd" ] || continue
+  assert_allow "NF3 control '$nf_cmd' stays allowed" "$(jsonc "$nf_cmd")"
+done <<'NFROWS'
+npm --yes run publish
+npm --workspaces run publish
+npm --fetch-retries 3 run publish
+npx npm -s run publish
+NFROWS
+
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
 # 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
@@ -7109,7 +7221,13 @@ DDROWS
 # 1421 -> 1422 (same change): +1 = ND5b at 250 KB, RED while the size cap was 300000.
 # 1422 -> 1425 (security review of that change): +3 = ND5d, a deny row RED before the line
 # cap and two controls.
-EXPECTED_TOTAL=1425
+# 1425 -> 1455 (2026-11-26, npm's own flags between the package and the verb): +30 = NF, 19
+# deny rows (all ALLOWED before) and 11 allow controls.
+# 1455 -> 1473 (security review of that change): +18 = NF2, 9 deny rows (all ALLOWED before)
+# and 9 allow controls (five of them RED after NF, before the bare-npm value-flag list).
+# 1473 -> 1485 (confirmation review of NF2): +12 = NF3, 8 deny rows (all ALLOWED before) and
+# 4 allow controls.
+EXPECTED_TOTAL=1485
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
