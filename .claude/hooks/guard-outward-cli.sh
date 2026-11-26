@@ -2582,8 +2582,11 @@ _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 # IS `eas update`, and it was ALLOWED because every verb check wanted the verb to be the word
 # right after the binary. Flag-shaped words in front of the `--` are absorbed with it
 # (`npm exec eas-cli --yes -- update`: npm takes `--yes` for itself, then removes the `--`),
-# but ONLY when a `--` follows them, and NOT a flag's separate value word
-# (`--loglevel error -- update` is still allowed: docs/harness-residuals.md). Used wherever a gated verb follows a gated binary: the
+# but ONLY when a `--` follows them, and NOT a flag's separate value word. Under `npm exec`/
+# `npm x`, and for bare `npm publish`, the checks put _OUT_NPM_FLAGS in front of _OUT_DD, which
+# also takes npm's flags with no `--` and a flag's value word (2026-11-26); under the other
+# launchers `--loglevel error -- update` is still allowed (docs/harness-residuals.md). Used
+# wherever a gated verb follows a gated binary: the
 # eas and railway verb checks (bare and launcher; in the two-word railway checks before EACH
 # word, because npm removes the first `--` wherever it sits), both `npm publish` checks
 # (`npm -- prefix` runs `prefix`), the two package-directory checks, and the first half of
@@ -3118,7 +3121,17 @@ _OUT_PKG_VERSION_PIN='(@[^[:space:];&|()`{}<>]*)?'
 # eas `production update`, and this denies it), which is the safe direction. NOT used for
 # `npx`, `bunx`, `pnpm dlx` or `yarn dlx`: `npx <pkg> --yes x` passes `--yes` ON to the bin
 # (measured), so what those spellings run depends on the CLI (docs/harness-residuals.md).
-_OUT_NPM_FLAGS='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?)*'
+# A word starting with `$` counts as a possible flag (security review, 2026-11-26): `npm exec
+# eas-cli $F update` runs `eas update` whether F is empty or holds an npm flag.
+_OUT_NPM_FLAGS='('"$_OUT_SEP"'(-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?|\$[^[:space:]]*))*'
+# Bare `npm` before its subcommand: a value word only after npm's value-taking flags, so a
+# boolean flag does not swallow the subcommand (`npm -s run publish` runs a script, it does not
+# publish). A value-taking flag missing from this list followed by a separate value is still
+# read as a boolean, which can only miss a deny (docs/harness-residuals.md).
+_OUT_NPM_BARE_FLAGS='('"$_OUT_SEP"'(-{1,2}(loglevel|prefix|registry|cache|userconfig|globalconfig|workspace|tag|otp|access|scope|w|C)('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?|-{1,2}[^[:space:]]*|\$[^[:space:]]*))*'
+# npm 11 accepts an unambiguous prefix of a command: `npm pu`, `pub`, `publ`, `publi` and
+# `publis` all run publish (security review, measured with npm's deref and a dry-run publish).
+_OUT_NPM_PUBLISH='pu(b(l(i(sh?)?)?)?)?'
 _OUT_NPMX_PREFIX="${_OUT_POS_PREFIX_W}(${_OUT_LAUNCH_STEP})*(${_OUT_PATH_PREFIX})?npm${_OUT_FLAG_RUN}(exec?|x)${_OUT_FLAG_RUN}${_OUT_LAUNCH_INTER}(${_OUT_PATH_PREFIX})?"
 
 # _OUT_GH_GLOBALS — the ROOT-POSITION flag slot, between `gh` and its namespace.
@@ -3972,7 +3985,7 @@ if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_DD}${_OUT_SEP}(service|environme
 fi
 
 # --- npm publish -------------------------------------------------------------
-if grep -Eqi "${_OUT_POS_PREFIX_W}npm${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}npm${_OUT_NPM_BARE_FLAGS}${_OUT_DD}${_OUT_SEP}${_OUT_NPM_PUBLISH}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
@@ -5603,8 +5616,8 @@ if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSI
    || grep -Eqi "${_OUT_NPMX_PREFIX}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}(service|environment)${_OUT_DD}${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
-   || grep -Eqi "${_OUT_NPMX_PREFIX}npm${_OUT_PKG_VERSION_PIN}${_OUT_NPM_FLAGS}${_OUT_DD}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_DD}${_OUT_SEP}${_OUT_NPM_PUBLISH}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_NPMX_PREFIX}npm${_OUT_PKG_VERSION_PIN}${_OUT_NPM_BARE_FLAGS}${_OUT_DD}${_OUT_SEP}${_OUT_NPM_PUBLISH}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \

@@ -7127,7 +7127,7 @@ npm exec eas-cli --yes channel:create x|'eas channel:/branch: create
 npm exec railway --silent up|'railway up/deploy
 npm exec railway --loglevel warn -- up|'railway up/deploy
 npm exec railway --yes variable set A=b|'railway variable/vars/var set/delete'
-npm exec @railway/cli@latest -s service delete|'railway service/environment delete'
+npm exec @railway/cli@latest -s service delete|$NF_L
 npm exec npm --yes publish|'npm publish' $NF_L
 npm -s publish|command-position 'npm publish'
 npm --registry=https://r.example publish|command-position 'npm publish'
@@ -7149,6 +7149,40 @@ npm exec vitest --run update
 npm -s view eas-cli version
 npm exec eas-cli --yes -- whoami
 NFROWS
+# NF2 (security review of NF, on `main` too): npm 11 accepts its command abbreviations,
+# `npm pu`/`pub`/`publ`/`publi`/`publis` all run publish (measured with npm's own deref and a
+# dry-run publish); and an unquoted variable in npm's flag slot (`npm exec eas-cli $F update`
+# runs `eas update` whether F is empty or holds an npm flag). Controls: a value word is taken
+# after bare `npm`'s flags only for npm's value-taking flags, so a subcommand after a boolean
+# flag is not swallowed (`npm -s run publish` was allowed on `main` and must stay allowed).
+while IFS='|' read -r nf_cmd nf_reason; do
+  [ -n "$nf_cmd" ] || continue
+  assert_deny "NF2 '$nf_cmd' denies" "$(jsonc "$nf_cmd")" "$nf_reason"
+done <<NFROWS
+npm pu|command-position 'npm publish'
+npm pub|command-position 'npm publish'
+npm publ --dry-run|command-position 'npm publish'
+npm publis|command-position 'npm publish'
+npm -s pu --dry-run|command-position 'npm publish'
+npm --loglevel silent pub|command-position 'npm publish'
+npm exec npm --yes pub|'npm publish' $NF_L
+npm exec eas-cli \$F update|'eas update/publish/submit' $NF_L
+npm exec railway \$F up|'railway up/deploy
+NFROWS
+while IFS= read -r nf_cmd; do
+  [ -n "$nf_cmd" ] || continue
+  assert_allow "NF2 control '$nf_cmd' stays allowed" "$(jsonc "$nf_cmd")"
+done <<'NFROWS'
+npm -s run publish
+npm -s view publish
+npm -s help publish
+npm -D i publish
+npm --json info publish version
+npm --loglevel silent run publish
+npm exec eas-cli $F whoami
+npm pack
+npm prune
+NFROWS
 
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
@@ -7161,7 +7195,9 @@ NFROWS
 # cap and two controls.
 # 1425 -> 1455 (2026-11-26, npm's own flags between the package and the verb): +30 = NF, 19
 # deny rows (all ALLOWED before) and 11 allow controls.
-EXPECTED_TOTAL=1455
+# 1455 -> 1473 (security review of that change): +18 = NF2, 9 deny rows (all ALLOWED before)
+# and 9 allow controls (five of them RED after NF, before the bare-npm value-flag list).
+EXPECTED_TOTAL=1473
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

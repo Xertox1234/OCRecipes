@@ -823,8 +823,9 @@ railway do with a leading `--` was not measured, so those spellings are denied w
 knowing that they publish. Still open, on `main` too, all measured ALLOW:
 
 - FIXED 2026-11-26 (rows `NF` in `test-guard-outward-cli.sh`): npm's own flags after the
-  package word, with or without a `--` and with a separate value (`npm exec eas-cli --yes
-update`, `-y`, `--silent`, `-s`, `--loglevel=error`, `--loglevel error -- update`,
+  package word, with or without a `--` and with a separate value
+  (`npm exec eas-cli --yes update`, `-y`, `--silent`, `-s`, `--loglevel=error`,
+  `--loglevel error -- update`,
   `npm exec railway --silent up`), and bare `npm` flags before `publish` (`npm -s publish`,
   `npm --registry=x publish`, `npm --prefix . -- publish`). `npm exec`/`npm x` consume every
   dash-word after the package and a known flag's value (measured with a local stub, npm
@@ -834,6 +835,18 @@ update`, `-y`, `--silent`, `-s`, `--loglevel=error`, `--loglevel error -- update
   pass such flags ON to the bin (`npx <stub> --yes x` gave `["--yes","x"]`), so
   `npx eas-cli --yes update` depends on what eas does with a leading flag, not measured, and
   is allowed (listed with the next item).
+  Found by the security review of that change, on `main` too, fixed with it (rows `NF2`): npm
+  11's command abbreviations (`npm pu`, `pub`, `publ`, `publi`, `publis` all run publish,
+  measured with npm's own deref and a dry-run publish) and an unquoted variable in npm's flag
+  slot (`npm exec eas-cli $F update`). The same review measured a false deny the first
+  version added (`npm -s run publish`, `npm -s view publish`, `npm -D i publish`): bare `npm`
+  now takes a value word only after npm's value-taking flags (`--loglevel`, `--prefix`,
+  `--registry`, `--cache`, `--userconfig`, `--globalconfig`, `--workspace`/`-w`, `-C`,
+  `--tag`, `--otp`, `--access`, `--scope`). Still open: a value-taking flag missing from that
+  list with a separate value before `publish` (`npm --before 2020-01-01 publish` would read
+  `2020-01-01` as the subcommand) is allowed. Also open, on `main` too and outside this change
+  (measured ALLOW by the same review): `nice`/`timeout 60` before `npm`, `bash -c`/`sh -c`/
+  `eval` wrappers, `node .../npm-cli.js exec`, and glued `-yc "eas update"`/`-c'eas update'`.
 - any other flag in that slot (`eas --json update`, `npx eas-cli --non-interactive update`,
   `railway --verbose up`; whether the real CLIs accept a flag there was not measured; the
   hook's header lists "a global flag before the verb" as a known gap), and `npx eas-cli --yes update`.
