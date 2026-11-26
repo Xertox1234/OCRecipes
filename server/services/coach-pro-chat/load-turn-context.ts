@@ -129,25 +129,19 @@ export async function loadTurnContext(
     content: m.content,
   }));
 
-  // ── Coach Pro: consume warm-up if available ─────────
+  // ── Coach Pro: consume the warm-up, which frees the user's one slot ──
+  // Its snapshot is never the prompt: it is the same 20 rows read above, but
+  // taken before the send, so it misses rows written since (the opening
+  // brief saved with this send, a photo reply, a turn that finished later),
+  // and the read above happens on every turn anyway (audit 2026-11-24, L103).
   if (isCoachPro && warmUpId) {
-    const warmedUp = consumeWarmUp(userId, conversationId, warmUpId);
-    if (warmedUp) {
-      // Warm-up already has conversation history — use it
-      // The last message in warmedUp is the interim transcript;
-      // replace it with the final transcript
-      warmedUp[warmedUp.length - 1] = {
-        role: "user",
-        content,
-      };
-      messageHistory = warmedUp;
-    }
+    consumeWarmUp(userId, conversationId, warmUpId);
   }
 
-  // ── Token-budget truncation (both DB history and warm-up paths) ──
+  // ── Token-budget truncation ──
   // Drop oldest tool-result messages first, then oldest assistant messages,
   // to keep total history under the budget. The last user message is always
-  // preserved. Applied after warm-up substitution so both paths are covered.
+  // preserved.
   messageHistory = truncateHistoryToBudget(
     messageHistory,
     DEFAULT_HISTORY_TOKEN_BUDGET,

@@ -415,15 +415,18 @@ describe("handleCoachChat", () => {
   // ── Warm-up consumption ───────────────────────────────────
 
   describe("warm-up consumption", () => {
-    it("consumes warm-up when warmUpId is provided and isCoachPro", async () => {
-      const warmedMessages: {
-        role: "user" | "assistant" | "system";
-        content: string;
-      }[] = [
-        { role: "system", content: "sys" },
+    // L103: the snapshot is taken before the send, so it misses rows written
+    // since (the opening brief saved with this send, a photo reply, a turn
+    // that finished later). The prompt comes from the fresh read; the
+    // warm-up is still consumed, which frees the user's one warm-up slot.
+    it("consumes the warm-up but prompts from the fresh history", async () => {
+      vi.mocked(consumeWarmUp).mockReturnValue([
         { role: "user", content: "interim transcript" },
-      ];
-      vi.mocked(consumeWarmUp).mockReturnValue(warmedMessages);
+      ]);
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({ role: "user", content: "final transcript" }),
+        createMockChatMessage({ role: "assistant", content: "Morning brief" }),
+      ]);
 
       const params = makeParams({
         warmUpId: "warm-123",
@@ -433,17 +436,15 @@ describe("handleCoachChat", () => {
 
       await collectEvents(handleCoachChat(params));
 
-      // Signature is now (userId, conversationId, warmUpId) so the composite
+      // Signature is (userId, conversationId, warmUpId) so the composite
       // cache key is per-conversation, not per-user.
       expect(consumeWarmUp).toHaveBeenCalledWith("user-42", 1, "warm-123");
-      // The last message in warmedMessages should be replaced with final content
-      // generateCoachProResponse is called with the replaced history
-      expect(generateCoachProResponse).toHaveBeenCalled();
       const passedHistory = vi.mocked(generateCoachProResponse).mock
         .calls[0][0];
-      const lastMsg = passedHistory[passedHistory.length - 1];
-      expect(lastMsg.content).toBe("final transcript");
-      expect(lastMsg.role).toBe("user");
+      expect(passedHistory).toEqual([
+        { role: "user", content: "final transcript" },
+        { role: "assistant", content: "Morning brief" },
+      ]);
     });
 
     it("does not consume warm-up when warmUpId is not provided", async () => {

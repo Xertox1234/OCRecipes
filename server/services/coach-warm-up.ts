@@ -2,7 +2,9 @@
  * Coach Warm-Up Cache Service
  *
  * In-memory warm-up cache for Coach Pro — stores pre-fetched conversation
- * history so the final message send can skip the DB round-trip.
+ * history. The send consumes the entry (freeing the per-user slot) but
+ * prompts from its own fresh read: the snapshot predates rows written since
+ * (audit 2026-11-24, L103).
  *
  * Extracted from server/routes/coach-context.ts to avoid cross-route imports.
  *
