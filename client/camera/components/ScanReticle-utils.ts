@@ -6,6 +6,9 @@ export const LABEL_RETICLE = { width: 200, height: 270 } as const;
 // Shared with scan-screen-utils' lock decision — the reticle's confidence ring
 // and the actual barcode-lock math must derive from the same frame budget.
 export const LOCK_THRESHOLD_FRAMES = 7;
+// Confidence colour stops (white → amber → green) — semantic design values,
+// cannot use theme in a worklet. Shared by every barcode viewfinder.
+export const CONFIDENCE_COLORS = ["#FFFFFF", "#f59e0b", "#22c55e"] as const; // hardcoded — live-camera overlay, not theme-able
 
 export interface ReticleTarget {
   cx: number;
