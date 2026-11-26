@@ -84,4 +84,9 @@ describe("HelpSheet", () => {
       screen.getByText("Barcode won't read? Type the number"),
     ).toBeTruthy();
   });
+
+  it("traps VoiceOver in the sheet content (accessibilityViewIsModal)", () => {
+    renderSheet();
+    expect(document.querySelector('[aria-modal="true"]')).not.toBeNull();
+  });
 });

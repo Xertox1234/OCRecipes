@@ -1,8 +1,15 @@
 // The one-time tips carousel shown before the very first scan: a light
 // (app-theme) screen with 3 pages, dots, and Next / "Scan now". Presentational
 // only — the screen decides when it shows and what onDone does.
-import React, { useCallback, useState } from "react";
-import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -222,6 +229,19 @@ export function TipsCarousel({ onDone }: TipsCarouselProps) {
       scheduleOnRN(setPage, target);
     },
   });
+
+  // accessibilityLiveRegion is Android-only, so iOS needs an explicit
+  // announcement: one utterance, page label plus the new page's title.
+  const announcedPage = useRef(page);
+  useEffect(() => {
+    if (announcedPage.current === page) return;
+    announcedPage.current = page;
+    if (Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        `Page ${page + 1} of ${PAGES.length}. ${PAGES[page].title}`,
+      );
+    }
+  }, [page]);
 
   const isLast = page === LAST_PAGE;
   const ctaLabel = isLast ? "Scan now" : "Next";

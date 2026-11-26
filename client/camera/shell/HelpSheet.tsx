@@ -113,7 +113,9 @@ export function HelpSheet({
       // not null. See docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
       accessible={false}
     >
-      <BottomSheetView style={styles.content}>
+      {/* BottomSheetModal does not forward accessibilityViewIsModal, so the
+          trap goes on the content: VoiceOver stays off the camera behind. */}
+      <BottomSheetView style={styles.content} accessibilityViewIsModal>
         <Text
           style={styles.stepTitle}
           accessibilityRole="header"

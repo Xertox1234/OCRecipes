@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as RN from "react-native";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { StyleProp, ViewStyle } from "react-native";
 
@@ -59,5 +60,39 @@ describe("TipsCarousel", () => {
   it('page dots expose "Page 1 of 3"', () => {
     render(<TipsCarousel onDone={vi.fn()} />);
     expect(screen.getByLabelText("Page 1 of 3")).toBeTruthy();
+  });
+
+  describe("page announcements", () => {
+    const originalOS = RN.Platform.OS;
+    let announceSpy: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    });
+    afterEach(() => {
+      RN.Platform.OS = originalOS;
+      announceSpy.mockRestore();
+    });
+
+    it("announces the page and its title after Next (iOS)", () => {
+      RN.Platform.OS = "ios";
+      render(<TipsCarousel onDone={vi.fn()} />);
+      fireEvent.click(screen.getByLabelText("Next"));
+      expect(announceSpy).toHaveBeenCalledWith(
+        "Page 2 of 3. Barcodes scan by themselves",
+      );
+    });
+
+    it("does not announce on first render", () => {
+      RN.Platform.OS = "ios";
+      render(<TipsCarousel onDone={vi.fn()} />);
+      expect(announceSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not announce on Android", () => {
+      RN.Platform.OS = "android";
+      render(<TipsCarousel onDone={vi.fn()} />);
+      fireEvent.click(screen.getByLabelText("Next"));
+      expect(announceSpy).not.toHaveBeenCalled();
+    });
   });
 });
