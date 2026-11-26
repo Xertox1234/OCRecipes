@@ -37,13 +37,22 @@ export function GroceryWriteCard({ payload, edits, onEdit }: Props) {
           }}
         />
       ))}
+      {/* The group below carries this name. Android reads the labelled group,
+          so the caption would be a second read there; iOS drops the group's
+          label and keeps the caption (importantForAccessibility is
+          Android-only). */}
       <ThemedText
         type="caption"
         style={[styles.label, { color: theme.textSecondary }]}
+        importantForAccessibility="no"
       >
         Add to
       </ThemedText>
-      <View style={styles.chips} accessibilityRole="radiogroup">
+      <View
+        style={styles.chips}
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Add to"
+      >
         {payload.lists.map((l) => (
           <Chip
             key={l.id}

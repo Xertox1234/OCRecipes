@@ -86,7 +86,13 @@ export default function FormBlock({
               accessibilityRole="radiogroup"
               accessibilityLabel={field.label}
             >
-              <ThemedText type="small" style={styles.label}>
+              {/* Hidden on Android only: the labelled group is read there,
+                  and iOS drops the group's label. */}
+              <ThemedText
+                type="small"
+                style={styles.label}
+                importantForAccessibility="no"
+              >
                 {field.label}
               </ThemedText>
               <View style={styles.chips}>

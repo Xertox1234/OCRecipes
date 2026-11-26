@@ -58,7 +58,14 @@ export function FoodWriteCard({ payload, edits, onEdit }: Props) {
           />
         </View>
       ))}
-      <View style={styles.chips} accessibilityRole="radiogroup">
+      {/* Named groups: TalkBack read "Lunch, radio button" with no sign it
+          was the meal. iOS Fabric drops a group's label (accepted,
+          docs/rules/accessibility.md). */}
+      <View
+        style={styles.chips}
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Day"
+      >
         {DAYS.map((d) => (
           <Chip
             key={d}
@@ -70,7 +77,11 @@ export function FoodWriteCard({ payload, edits, onEdit }: Props) {
           />
         ))}
       </View>
-      <View style={styles.chips} accessibilityRole="radiogroup">
+      <View
+        style={styles.chips}
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Meal"
+      >
         {MEALS.map((m) => (
           <Chip
             key={m}

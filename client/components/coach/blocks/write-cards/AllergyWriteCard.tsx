@@ -42,7 +42,13 @@ export function AllergyWriteCard({ payload, edits, onEdit }: Props) {
         accessibilityRole="radiogroup"
         accessibilityLabel={question}
       >
-        <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+        {/* Hidden on Android only: the labelled group is read there, and
+            iOS drops the group's label. */}
+        <ThemedText
+          type="caption"
+          style={{ color: theme.textSecondary }}
+          importantForAccessibility="no"
+        >
           {question}
         </ThemedText>
         <View style={styles.chips}>

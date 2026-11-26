@@ -12,6 +12,8 @@ import { RecipeFinderMessage } from "../RecipeFinderMessage";
 import type {
   RecipeAdjustBlock,
   RecipeOfferBlock,
+  RecipeQuestionsBlock,
+  RecipeResultsBlock,
 } from "@shared/schemas/recipe-finder";
 
 // The "once" record outlives a mount on purpose, so every test gets its own
@@ -22,7 +24,10 @@ function nextFlowId(): string {
   return `00000000-0000-4000-8000-${String(flowSeq).padStart(12, "0")}`;
 }
 
-function flow(flowId: string, stage: "offer" | "adjust") {
+function flow(
+  flowId: string,
+  stage: "offer" | "adjust" | "clarifying" | "results",
+) {
   return {
     flowId,
     stage,
@@ -49,8 +54,39 @@ function adjustBlock(flowId: string): RecipeAdjustBlock {
   };
 }
 
+// Coach chat audit 2026-11-24 L9: the questions card had no arrival
+// announcement. L11: the results list kept its "once" record per mount, so
+// a remount announced it again.
+function questionsBlock(flowId: string): RecipeQuestionsBlock {
+  return {
+    type: "recipe_questions",
+    questions: [{ question: "How much time?", options: ["Quick", "Slow"] }],
+    flow: flow(flowId, "clarifying"),
+  };
+}
+
+function resultsBlock(flowId: string): RecipeResultsBlock {
+  return {
+    type: "recipe_results",
+    source: "community",
+    items: [
+      {
+        id: 12,
+        source: "community",
+        title: "Quinoa Salad",
+        imageUrl: null,
+        readyInMinutes: 20,
+        calories: 350,
+      },
+    ],
+    actions: ["generate"],
+    notice: null,
+    flow: flow(flowId, "results"),
+  };
+}
+
 function renderCard(
-  block: RecipeOfferBlock | RecipeAdjustBlock,
+  block: React.ComponentProps<typeof RecipeFinderMessage>["block"],
   over: { isActive?: boolean; announceArrival?: boolean } = {},
 ) {
   return renderComponent(
@@ -68,6 +104,9 @@ function renderCard(
 
 const OFFER_ANNOUNCEMENT = "Recipe offer: Yes, Search, or No";
 const ADJUST_ANNOUNCEMENT = "Adjust Spaghetti & meatballs, then Generate";
+const QUESTIONS_ANNOUNCEMENT =
+  "Recipe questions: pick answers, then Search with these";
+const RESULTS_ANNOUNCEMENT = "Found 1 community recipe";
 
 let spy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
@@ -80,6 +119,8 @@ afterEach(() => {
 describe.each([
   ["offer", offerBlock, OFFER_ANNOUNCEMENT],
   ["adjust card", adjustBlock, ADJUST_ANNOUNCEMENT],
+  ["questions card", questionsBlock, QUESTIONS_ANNOUNCEMENT],
+  ["results list", resultsBlock, RESULTS_ANNOUNCEMENT],
 ] as const)("%s arrival announcement", (_name, makeBlock, message) => {
   it("announces once when a new live card appears", () => {
     renderCard(makeBlock(nextFlowId()));

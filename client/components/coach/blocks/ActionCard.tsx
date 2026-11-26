@@ -74,11 +74,13 @@ const ActionCard = React.memo(function ActionCard({
         ? "Failed"
         : block.actionLabel;
 
+  // Fills under white text use the solid tones; success/error are text
+  // colours and fail contrast under white in dark mode.
   const buttonBg =
     state === "success"
-      ? theme.success
+      ? theme.successSolid
       : state === "error"
-        ? theme.error
+        ? theme.errorSolid
         : theme.accentSolid;
 
   return (

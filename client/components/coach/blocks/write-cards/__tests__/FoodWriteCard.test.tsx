@@ -236,6 +236,15 @@ describe("FoodWriteCard", () => {
         .getAttribute("aria-checked"),
     ).toBe("false");
   });
+
+  // Audit 2026-11-24 L6: the groups had no name, so TalkBack read "Lunch,
+  // radio button" with no sign it was the meal. iOS Fabric drops a group's
+  // label (accepted, docs/rules/accessibility.md); Android reads it.
+  it("names the day and meal radio groups", () => {
+    renderComponent(<Harness initial={block()} />);
+    expect(screen.getByRole("radiogroup", { name: "Day" })).toBeDefined();
+    expect(screen.getByRole("radiogroup", { name: "Meal" })).toBeDefined();
+  });
 });
 
 describe("FoodWriteCard after a newer card", () => {

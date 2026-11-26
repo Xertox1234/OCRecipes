@@ -127,6 +127,7 @@ export function RecipeFinderMessage({
     <RecipeQuestions
       block={block}
       isActive={isActive}
+      announceArrival={announceArrival}
       onSubmit={handleSubmit}
     />
   );

@@ -36,6 +36,16 @@ describe("SuggestionList", () => {
     expect(onAction).toHaveBeenCalledWith({ type: "navigate", screen: "Scan" });
   });
 
+  // Audit 2026-11-24 L5: an information row was announced "dimmed", as if it
+  // were an unavailable control.
+  it("an item without an action is plain text, not a disabled control", () => {
+    renderComponent(<SuggestionList block={block} />);
+    const info = screen.getByLabelText(/just a tip/i);
+    expect(info.getAttribute("aria-disabled")).toBeNull();
+    expect(info.getAttribute("role")).toBeNull();
+    expect(screen.getByRole("button", { name: /open scanner/i })).toBeTruthy();
+  });
+
   it("does not fire onAction for an item without an action (disabled branch)", () => {
     const onAction = vi.fn();
     renderComponent(<SuggestionList block={block} onAction={onAction} />);

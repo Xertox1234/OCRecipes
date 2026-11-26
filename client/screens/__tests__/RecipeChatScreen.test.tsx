@@ -1201,6 +1201,9 @@ describe("RecipeChatScreen — recipe finder", () => {
   // never in the same commit as the bridge's "Recipe response received" (two
   // imperative announces in one commit can drop one on iOS).
   it("announces a streamed finder list once across the pending → persisted swap", () => {
+    // Its own flow: a finder list is announced once per app session, and the
+    // tests above already showed FLOW_NEW live.
+    const FLOW_SWAP = "22222222-2222-4222-8222-222222222222";
     const spy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
     const found = () =>
       spy.mock.calls.filter(([msg]) => /^Found /.test(msg)).length;
@@ -1219,7 +1222,7 @@ describe("RecipeChatScreen — recipe finder", () => {
       mockSendMessageState.value = {
         ...mockSendMessageState.value,
         streamingContent: "Here are 1 community recipe:",
-        streamingFinder: block(FLOW_NEW),
+        streamingFinder: block(FLOW_SWAP),
         isStreaming: true,
       };
       rerender(<RecipeChatScreen />);
@@ -1237,7 +1240,7 @@ describe("RecipeChatScreen — recipe finder", () => {
       expect(found()).toBe(0);
 
       // The refetch lands: the persisted row replaces the pending bubble.
-      mockChatMessagesData.value = [userMessage, finderMessage(2, FLOW_NEW)];
+      mockChatMessagesData.value = [userMessage, finderMessage(2, FLOW_SWAP)];
       rerender(<RecipeChatScreen />);
       expect(screen.getAllByText("From the community")).toHaveLength(1);
       expect(found()).toBe(1);

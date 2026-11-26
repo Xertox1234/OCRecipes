@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import InlineChart from "../InlineChart";
 import type { InlineChart as InlineChartType } from "@shared/schemas/coach-blocks";
+import { Colors } from "@/constants/theme";
 
 const statRowBlock: InlineChartType = {
   type: "inline_chart",
@@ -62,6 +63,57 @@ describe("InlineChart", () => {
     expect(screen.getByText("2 of 7 days on target")).toBeTruthy();
   });
 
+  // Audit 2026-11-24 M2: the chart's one accessible node said only the title
+  // and summary; the bars were never spoken, and hit/miss was colour only.
+  it("bar chart label speaks every bar and whether it was on target", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    expect(
+      screen.getByLabelText(
+        "Weekly Calories. Mon: 1800, on target. Tue: 2400, missed. 2 of 7 days on target",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a bar with no hit value is neither on target nor missed", () => {
+    renderComponent(
+      <InlineChart
+        block={{
+          type: "inline_chart",
+          chartType: "bar",
+          title: "Water",
+          data: [{ label: "Mon", value: 6 }],
+        }}
+      />,
+    );
+    expect(screen.getByLabelText("Water. Mon: 6")).toBeTruthy();
+    expect(screen.queryByText("✓")).toBeNull();
+    expect(screen.queryByText("✗")).toBeNull();
+  });
+
+  it("marks hit and missed bars with a symbol, not colour alone", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    expect(screen.getAllByText("✓")).toHaveLength(1);
+    expect(screen.getAllByText("✗")).toHaveLength(1);
+  });
+
+  // Review of #2054: the 10pt marks in the success/error tones were 4.43:1
+  // and 4.02:1 on the chart's light background, under AA. The bar carries
+  // the colour; the mark carries the shape, in the text colour.
+  it("draws the marks in the text colour", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    expect(screen.getByText("✓").style.color).toBe(hexToRgb(Colors.light.text));
+    expect(screen.getByText("✗").style.color).toBe(hexToRgb(Colors.light.text));
+  });
+
+  // Audit L3: at large text sizes the labels wrapped and overflowed a fixed
+  // 80pt row into the summary.
+  it("the bar row grows with its labels instead of a fixed height", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    const row = screen.getByTestId("inline-chart-bars");
+    expect(row.style.height).toBe("");
+    expect(row.style.minHeight).toBe("80px");
+  });
+
   it("renders a progress chart, computing percent from value/target", () => {
     renderComponent(<InlineChart block={progressBlock} />);
     expect(
@@ -75,3 +127,8 @@ describe("InlineChart", () => {
     expect(screen.getByLabelText("Steps. 5000 of ?")).toBeTruthy();
   });
 });
+
+function hexToRgb(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}
