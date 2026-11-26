@@ -15,7 +15,11 @@ import Animated, {
 import type { SharedValue } from "react-native-reanimated";
 import type { ScanPhase } from "../types/scan-phase";
 import { reticleSettleSpringConfig } from "@/constants/animations";
-import { getReticleTarget, getConfidenceFromPhase } from "./ScanReticle-utils";
+import {
+  CONFIDENCE_COLORS,
+  getReticleTarget,
+  getConfidenceFromPhase,
+} from "./ScanReticle-utils";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -24,9 +28,6 @@ const STROKE_WIDTH = 3;
 const SPRING_TRACK = { damping: 20, mass: 1, stiffness: 200 };
 const SPRING_MORPH = { damping: 16, mass: 1, stiffness: 220 };
 const SPRING_SNAP = { damping: 8, mass: 1, stiffness: 300 };
-
-// Confidence colour stops — semantic design values, cannot use theme in worklet
-const CONFIDENCE_COLORS = ["#FFFFFF", "#f59e0b", "#22c55e"] as const; // hardcoded — live-camera overlay, not theme-able
 
 type Corner = "tl" | "tr" | "bl" | "br";
 

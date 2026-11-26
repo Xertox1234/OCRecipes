@@ -1,5 +1,12 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Pressable, Text, StyleSheet, Linking } from "react-native";
+import React, { useCallback, useEffect, useReducer, useRef } from "react";
+import {
+  AccessibilityInfo,
+  View,
+  Pressable,
+  Text,
+  StyleSheet,
+  Linking,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useNavigation, useIsFocused } from "@react-navigation/native";
@@ -10,12 +17,24 @@ import { CameraView, useCameraPermissions } from "@/camera";
 import type { BarcodeResult, ExpoBarcodeType } from "@/camera";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { BarcodeViewfinder } from "@/camera/components/BarcodeViewfinder";
 import {
   scannedProductCode,
   settleCoachBarcode,
 } from "@/lib/coach-barcode-scan";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import {
+  ARM_MS,
+  INITIAL_PACING,
+  LOST_MS,
+  REVEAL_MS,
+  SWEEP_MS,
+  pacingConfidence,
+  pacingHint,
+  pacingReducer,
+} from "./coach-barcode-pacing-utils";
 
 type NavProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -32,9 +51,13 @@ const PRODUCT_BARCODE_TYPES: ExpoBarcodeType[] = [
 
 /**
  * The live barcode scanner opened from the Coach chat. It reads one product
- * barcode, hands the number back to the chat (`settleCoachBarcode`) and
- * closes; the chat sends it as a Coach turn. Nothing is looked up or logged
- * here.
+ * barcode and hands the number back to the chat (`settleCoachBarcode`); the
+ * chat sends it as a Coach turn. Nothing is looked up or logged here.
+ *
+ * The read is paced so it is seen (coach-barcode-pacing-utils): the
+ * viewfinder settles before it listens, the code must hold for a few frames,
+ * and the number goes to the chat at the lock, so the lookup runs while the
+ * sweep and the reveal play, before the screen closes.
  */
 export default function CoachBarcodeScanScreen() {
   const navigation = useNavigation<NavProp>();
@@ -42,26 +65,57 @@ export default function CoachBarcodeScanScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   const { permission, requestPermission } = useCameraPermissions();
+  const [pacing, dispatch] = useReducer(pacingReducer, INITIAL_PACING);
+  const granted = permission?.status === "granted";
 
-  // The decoder reports the same barcode on every frame: the ref makes the
-  // first read the only one, the state turns the camera off.
-  const readRef = useRef(false);
-  const [hasRead, setHasRead] = useState(false);
+  // The viewfinder listens only once it has settled on screen.
+  useEffect(() => {
+    if (!granted || !isFocused) return;
+    const timer = setTimeout(() => dispatch({ type: "armed" }), ARM_MS);
+    return () => clearTimeout(timer);
+  }, [granted, isFocused]);
 
-  const onBarcodeScanned = useCallback(
-    (result: BarcodeResult) => {
-      if (readRef.current) return;
-      const code = scannedProductCode(result.data);
-      if (!code) return;
-      readRef.current = true;
-      setHasRead(true);
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
-      settleCoachBarcode(code);
-      navigation.goBack();
+  // The decoder reports a code on every frame it sees one; a gap means the
+  // barcode left the frame, and the hold starts over.
+  const lostTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (lostTimer.current) clearTimeout(lostTimer.current);
     },
-    [haptics, navigation],
+    [],
   );
+
+  const onBarcodeScanned = useCallback((result: BarcodeResult) => {
+    const code = scannedProductCode(result.data);
+    if (!code) return;
+    dispatch({ type: "read", code });
+    if (lostTimer.current) clearTimeout(lostTimer.current);
+    lostTimer.current = setTimeout(() => dispatch({ type: "lost" }), LOST_MS);
+  }, []);
+
+  const phase = pacing.phase;
+  const code = "code" in pacing ? pacing.code : null;
+  useEffect(() => {
+    if (phase === "scanning" && code) {
+      if (lostTimer.current) clearTimeout(lostTimer.current);
+      // The chat starts the lookup now, while the sweep plays.
+      settleCoachBarcode(code);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+      AccessibilityInfo.announceForAccessibility(
+        "Barcode found. Looking it up.",
+      );
+      const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
+      return () => clearTimeout(timer);
+    }
+    if (phase === "found") {
+      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      const timer = setTimeout(() => dispatch({ type: "revealed" }), REVEAL_MS);
+      return () => clearTimeout(timer);
+    }
+    if (phase === "done") navigation.goBack();
+  }, [phase, code, haptics, navigation]);
 
   // However the screen goes away (close button, back gesture), the chat
   // stops waiting. A no-op after a read.
@@ -75,7 +129,7 @@ export default function CoachBarcodeScanScreen() {
     }
   }, [permissionStatus, requestPermission]);
 
-  if (permission?.status !== "granted") {
+  if (!granted) {
     return (
       <View
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
@@ -121,6 +175,7 @@ export default function CoachBarcodeScanScreen() {
     );
   }
 
+  const hint = pacingHint(pacing);
   return (
     <View style={styles.container} accessibilityViewIsModal>
       {/* accessible={false} keeps VoiceOver off the camera preview */}
@@ -128,10 +183,19 @@ export default function CoachBarcodeScanScreen() {
         <CameraView
           style={StyleSheet.absoluteFill}
           barcodeTypes={PRODUCT_BARCODE_TYPES}
-          isActive={isFocused && !hasRead}
+          isActive={isFocused && phase !== "done"}
           onBarcodeScanned={onBarcodeScanned}
         />
       </View>
+
+      <BarcodeViewfinder
+        confidence={pacingConfidence(pacing)}
+        armed={phase !== "arming"}
+        sweeping={phase === "scanning"}
+        found={phase === "found" || phase === "done"}
+        sweepMs={SWEEP_MS}
+        reducedMotion={reducedMotion}
+      />
 
       <Pressable
         onPress={() => navigation.goBack()}
@@ -159,10 +223,16 @@ export default function CoachBarcodeScanScreen() {
         ]}
       >
         <Text style={[styles.hintTitle, { color: theme.text }]}>
-          Point the camera at a barcode
+          {hint.title}
         </Text>
-        <Text style={[styles.hintBody, { color: theme.text }]}>
-          The Coach will find the product and offer to log it.
+        <Text
+          style={[
+            styles.hintBody,
+            code && phase !== "tracking" && styles.hintDigits,
+            { color: theme.text },
+          ]}
+        >
+          {hint.body}
         </Text>
       </View>
     </View>
@@ -226,5 +296,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: Spacing.xs,
     textAlign: "center",
+  },
+  hintDigits: {
+    fontSize: 18,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: 2,
   },
 });
