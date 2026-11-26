@@ -20,7 +20,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { CameraView, useCameraPermissions } from "@/camera";
-import type { BarcodeResult, ExpoBarcodeType } from "@/camera";
+import type { BarcodeResult, CameraRef, ExpoBarcodeType } from "@/camera";
+import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
+import { deleteAsync } from "expo-file-system/legacy";
+import { preReadLabel, type PhoneLabelRead } from "@/lib/coach-label-pre-read";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -57,13 +60,15 @@ const PRODUCT_BARCODE_TYPES: ExpoBarcodeType[] = [
 
 /**
  * The live barcode scanner opened from the Coach chat. It reads one product
- * barcode and hands the number back to the chat (`settleCoachBarcode`); the
- * chat sends it as a Coach turn. Nothing is looked up or logged here.
+ * barcode, then asks for its nutrition label, and hands both back to the
+ * chat (`settleCoachBarcode`); the chat sends them as one Coach turn.
+ * Nothing is looked up or logged here.
  *
- * The read is paced so it is seen (coach-barcode-pacing-utils): the
+ * The scan is paced so it is seen (coach-barcode-pacing-utils): the
  * viewfinder settles before it listens, the code must hold for a few frames,
- * and the number goes to the chat at the lock, so the lookup runs while the
- * sweep and the reveal play, before the screen closes.
+ * a sweep plays and the digits show. The label photo is read on the phone
+ * while a sweep plays over it, and never leaves the phone; the user can skip
+ * it, and the card then carries the product's own numbers.
  */
 export default function CoachBarcodeScanScreen() {
   const navigation = useNavigation<NavProp>();
@@ -74,6 +79,7 @@ export default function CoachBarcodeScanScreen() {
   const { reducedMotion } = useAccessibility();
   const { permission, requestPermission } = useCameraPermissions();
   const [pacing, dispatch] = useReducer(pacingReducer, INITIAL_PACING);
+  const cameraRef = useRef<CameraRef>(null);
   const granted = permission?.status === "granted";
 
   // The viewfinder listens only once it has settled on screen.
@@ -95,12 +101,14 @@ export default function CoachBarcodeScanScreen() {
 
   // Read at frame time: past the lock, frames are dropped before any timer.
   const phaseRef = useRef(pacing.phase);
+  const pacingRef = useRef(pacing);
   // One-shot side effects read these through refs, so a new haptics object
   // (Reduce Motion toggled mid-scan) cannot replay a haptic or a timer.
   const hapticsRef = useRef(haptics);
   const navigationRef = useRef(navigation);
   useLayoutEffect(() => {
     phaseRef.current = pacing.phase;
+    pacingRef.current = pacing;
     hapticsRef.current = haptics;
     navigationRef.current = navigation;
   });
@@ -118,25 +126,82 @@ export default function CoachBarcodeScanScreen() {
   const phase = pacing.phase;
   const code = "code" in pacing ? pacing.code : null;
   useEffect(() => {
-    if (phase === "scanning" && code) {
-      if (lostTimer.current) clearTimeout(lostTimer.current);
-      // The chat starts the lookup now, while the sweep plays. From here a
-      // Close tap no longer cancels: the turn is already sent, and its food
-      // card still waits for the user to confirm the log.
-      settleCoachBarcode(code);
-      hapticsRef.current.impact(Haptics.ImpactFeedbackStyle.Medium);
-      // Kept short: the chat follows with its own "Looking up that barcode".
-      AccessibilityInfo.announceForAccessibility("Barcode found");
-      const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
-      return () => clearTimeout(timer);
+    const haptic = hapticsRef.current;
+    switch (phase) {
+      case "scanning": {
+        if (lostTimer.current) clearTimeout(lostTimer.current);
+        haptic.impact(Haptics.ImpactFeedbackStyle.Medium);
+        AccessibilityInfo.announceForAccessibility("Barcode found");
+        const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
+        return () => clearTimeout(timer);
+      }
+      case "found": {
+        haptic.notification(Haptics.NotificationFeedbackType.Success);
+        const timer = setTimeout(
+          () => dispatch({ type: "revealed" }),
+          REVEAL_MS,
+        );
+        return () => clearTimeout(timer);
+      }
+      case "label":
+        AccessibilityInfo.announceForAccessibility(
+          "Now take a photo of the nutrition label, or skip it.",
+        );
+        return;
+      case "reading": {
+        const timer = setTimeout(() => dispatch({ type: "swept" }), SWEEP_MS);
+        return () => clearTimeout(timer);
+      }
+      case "unreadable":
+        haptic.notification(Haptics.NotificationFeedbackType.Warning);
+        AccessibilityInfo.announceForAccessibility(
+          "I couldn't read that label. Retake the photo, or skip it.",
+        );
+        return;
+      case "labelFound": {
+        haptic.notification(Haptics.NotificationFeedbackType.Success);
+        AccessibilityInfo.announceForAccessibility("Label read");
+        const timer = setTimeout(
+          () => dispatch({ type: "revealed" }),
+          REVEAL_MS,
+        );
+        return () => clearTimeout(timer);
+      }
+      case "done": {
+        const done = pacingRef.current;
+        if (done.phase !== "done") return;
+        settleCoachBarcode(
+          done.label
+            ? { code: done.code, label: done.label }
+            : { code: done.code },
+        );
+        navigationRef.current.goBack();
+        return;
+      }
     }
-    if (phase === "found") {
-      hapticsRef.current.notification(Haptics.NotificationFeedbackType.Success);
-      const timer = setTimeout(() => dispatch({ type: "revealed" }), REVEAL_MS);
-      return () => clearTimeout(timer);
+  }, [phase]);
+
+  // The label photo is read here, on the phone, and deleted once read.
+  const shooting = useRef(false);
+  const onShutter = useCallback(async () => {
+    const p = phaseRef.current;
+    if (shooting.current || (p !== "label" && p !== "unreadable")) return;
+    shooting.current = true;
+    dispatch({ type: "shutter" });
+    hapticsRef.current.impact(Haptics.ImpactFeedbackStyle.Light);
+    let label: PhoneLabelRead | null = null;
+    let uri: string | undefined;
+    try {
+      uri = (await cameraRef.current?.takePicture({ quality: 0.8 }))?.uri;
+      if (uri) label = await preReadLabel(uri, recognizeTextFromPhoto);
+    } catch {
+      label = null;
+    } finally {
+      if (uri) deleteAsync(uri, { idempotent: true }).catch(() => {});
+      shooting.current = false;
     }
-    if (phase === "done") navigationRef.current.goBack();
-  }, [phase, code]);
+    dispatch({ type: "labelRead", label });
+  }, []);
 
   // However the screen goes away (close button, back gesture), the chat
   // stops waiting. A no-op after a read.
@@ -197,6 +262,12 @@ export default function CoachBarcodeScanScreen() {
   }
 
   const hint = pacingHint(pacing);
+  const labelStep =
+    phase === "label" ||
+    phase === "reading" ||
+    phase === "unreadable" ||
+    phase === "labelFound" ||
+    (phase === "done" && "label" in pacing);
   return (
     <View style={styles.container} accessibilityViewIsModal>
       {/* accessible={false} keeps VoiceOver off the camera preview */}
@@ -204,16 +275,18 @@ export default function CoachBarcodeScanScreen() {
         <CameraView
           style={StyleSheet.absoluteFill}
           barcodeTypes={PRODUCT_BARCODE_TYPES}
+          ref={cameraRef}
           isActive={isFocused && phase !== "done"}
           onBarcodeScanned={onBarcodeScanned}
         />
       </View>
 
       <BarcodeViewfinder
-        confidence={pacingConfidence(pacing)}
+        shape={labelStep ? "label" : "barcode"}
+        confidence={labelStep ? 0 : pacingConfidence(pacing)}
         armed={phase !== "arming"}
-        sweeping={phase === "scanning"}
-        found={phase === "found" || phase === "done"}
+        sweeping={phase === "scanning" || phase === "reading"}
+        found={phase === "found" || phase === "labelFound" || phase === "done"}
         sweepMs={SWEEP_MS}
         reducedMotion={reducedMotion}
       />
@@ -234,31 +307,65 @@ export default function CoachBarcodeScanScreen() {
         <Feather name="x" size={24} color={theme.text} />
       </Pressable>
 
-      <View
-        style={[
-          styles.hint,
-          {
-            bottom: insets.bottom + Spacing.xl,
-            backgroundColor: withOpacity(theme.backgroundRoot, 0.85),
-          },
-        ]}
-      >
-        <Text style={[styles.hintTitle, { color: theme.text }]}>
-          {hint.title}
-        </Text>
-        <Text
+      <View style={[styles.bottom, { bottom: insets.bottom + Spacing.xl }]}>
+        <View
           style={[
-            styles.hintBody,
-            code && phase !== "tracking" && styles.hintDigits,
-            { color: theme.text },
+            styles.hint,
+            { backgroundColor: withOpacity(theme.backgroundRoot, 0.85) },
           ]}
-          // Digits one by one, not as one huge number.
-          accessibilityLabel={
-            code && phase !== "tracking" ? code.split("").join(" ") : undefined
-          }
         >
-          {hint.body}
-        </Text>
+          <Text style={[styles.hintStep, { color: theme.textSecondary }]}>
+            {labelStep ? "Step 2 of 2: label" : "Step 1 of 2: barcode"}
+          </Text>
+          <Text style={[styles.hintTitle, { color: theme.text }]}>
+            {hint.title}
+          </Text>
+          <Text
+            style={[
+              styles.hintBody,
+              (phase === "found" || phase === "labelFound") &&
+                styles.hintDigits,
+              { color: theme.text },
+            ]}
+            // Digits one by one, not as one huge number.
+            accessibilityLabel={
+              phase === "found" && code ? code.split("").join(" ") : undefined
+            }
+          >
+            {hint.body}
+          </Text>
+        </View>
+
+        {(phase === "label" || phase === "unreadable") && (
+          <View style={styles.controls}>
+            <Pressable
+              onPress={() => dispatch({ type: "skip" })}
+              style={[
+                styles.skipButton,
+                { backgroundColor: withOpacity(theme.backgroundRoot, 0.85) },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Skip the label"
+              accessibilityHint="Uses the product's own numbers"
+            >
+              <Text style={[styles.skipText, { color: theme.text }]}>Skip</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void onShutter()}
+              style={styles.shutter}
+              accessibilityRole="button"
+              accessibilityLabel={
+                phase === "unreadable"
+                  ? "Retake the label photo"
+                  : "Take a photo of the nutrition label"
+              }
+            >
+              <View style={styles.shutterInner} />
+            </Pressable>
+            {/* Balances the row so the shutter sits in the middle. */}
+            <View style={styles.skipButton} />
+          </View>
+        )}
       </View>
     </View>
   );
@@ -303,14 +410,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 10,
   },
-  hint: {
+  bottom: {
     position: "absolute",
     left: Spacing.lg,
     right: Spacing.lg,
+    gap: Spacing.lg,
+  },
+  hint: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
     alignItems: "center",
+  },
+  hintStep: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: Spacing.xs,
+    textAlign: "center",
   },
   hintTitle: {
     fontSize: 16,
@@ -326,5 +442,37 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontVariant: ["tabular-nums"],
     letterSpacing: 2,
+  },
+  controls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  skipButton: {
+    minWidth: 72,
+    minHeight: 44,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  skipText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  shutter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 4,
+    borderColor: "#FFFFFF", // hardcoded — live-camera overlay
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  shutterInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FFFFFF", // hardcoded — live-camera overlay
   },
 });

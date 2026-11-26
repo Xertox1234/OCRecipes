@@ -8,15 +8,23 @@
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { isValidBarcode } from "@shared/constants/classification";
+import type { PhoneLabelRead } from "@/lib/coach-label-pre-read";
 
-let pending: ((code: string | null) => void) | null = null;
+/** What the scanner hands back: the code, and the label if its step read one. */
+export interface CoachBarcodeScan {
+  code: string;
+  /** The pack's nutrition label, read on the phone in the label step. */
+  label?: PhoneLabelRead;
+}
+
+let pending: ((scan: CoachBarcodeScan | null) => void) | null = null;
 
 /**
- * Wait for the scanner screen. Resolves with the code it read, or null when
- * it closed without one. Call this before opening the screen. A newer wait
+ * Wait for the scanner screen. Resolves with what it read, or null when it
+ * closed without a code. Call this before opening the screen. A newer wait
  * gives up an older one.
  */
-export function awaitCoachBarcode(): Promise<string | null> {
+export function awaitCoachBarcode(): Promise<CoachBarcodeScan | null> {
   settleCoachBarcode(null);
   return new Promise((resolve) => {
     pending = resolve;
@@ -24,14 +32,14 @@ export function awaitCoachBarcode(): Promise<string | null> {
 }
 
 /**
- * The scanner's answer: a code, or null on closing. Only the first call
- * after a wait counts, so the screen can call it with null whenever it goes
- * away.
+ * The scanner's answer: what it read, or null on closing. Only the first
+ * call after a wait counts, so the screen can call it with null whenever it
+ * goes away.
  */
-export function settleCoachBarcode(code: string | null): void {
+export function settleCoachBarcode(scan: CoachBarcodeScan | null): void {
   const resolve = pending;
   pending = null;
-  resolve?.(code);
+  resolve?.(scan);
 }
 
 /**
@@ -55,11 +63,17 @@ export async function sendBarcodeToCoach(
   conversationId: number,
   /** Set on the send that opens a new chat which showed the opening brief. */
   openingBrief?: "full" | "short",
+  /** The pack's label, read in the scanner's label step: the card's numbers. */
+  label?: PhoneLabelRead,
 ): Promise<string | null> {
   const res = await apiRequest(
     "POST",
     `/api/chat/conversations/${conversationId}/barcode`,
-    { barcode: code, ...(openingBrief && { openingBrief }) },
+    {
+      barcode: code,
+      ...(label && { label }),
+      ...(openingBrief && { openingBrief }),
+    },
     // The card's meal (breakfast, lunch…) is set from the user's clock.
     { headers: { "X-Timezone": getDeviceTimezone() } },
   );

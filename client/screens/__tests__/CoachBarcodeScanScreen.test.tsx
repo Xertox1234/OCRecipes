@@ -19,12 +19,18 @@ const {
   mockGoBack,
   mockNotification,
   mockImpact,
+  mockTakePicture,
+  mockPreReadLabel,
+  mockDelete,
   cameraProps,
   permissionState,
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockNotification: vi.fn(),
   mockImpact: vi.fn(),
+  mockTakePicture: vi.fn(),
+  mockPreReadLabel: vi.fn(),
+  mockDelete: vi.fn(() => Promise.resolve()),
   cameraProps: {
     current: null as {
       barcodeTypes: string[];
@@ -52,16 +58,33 @@ vi.mock("@/hooks/useHaptics", () => ({
   }),
 }));
 
-vi.mock("@/camera", () => ({
-  CameraView: (props: NonNullable<typeof cameraProps.current>) => {
-    cameraProps.current = props;
-    return null;
-  },
-  useCameraPermissions: () => ({
-    permission: permissionState.current,
-    requestPermission: permissionState.request,
-  }),
+vi.mock("@/camera", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    CameraView: forwardRef(function CameraView(
+      props: NonNullable<typeof cameraProps.current>,
+      ref,
+    ) {
+      cameraProps.current = props;
+      useImperativeHandle(ref, () => ({ takePicture: mockTakePicture }));
+      return null;
+    }),
+    useCameraPermissions: () => ({
+      permission: permissionState.current,
+      requestPermission: permissionState.request,
+    }),
+  };
+});
+
+vi.mock("@/camera/utils/recognizeTextFromPhoto", () => ({
+  recognizeTextFromPhoto: vi.fn(),
 }));
+
+vi.mock("@/lib/coach-label-pre-read", () => ({
+  preReadLabel: mockPreReadLabel,
+}));
+
+vi.mock("expo-file-system/legacy", () => ({ deleteAsync: mockDelete }));
 
 vi.mock("@/lib/coach-barcode-scan", async (orig) => {
   const actual = await orig<typeof import("@/lib/coach-barcode-scan")>();
@@ -82,6 +105,30 @@ function openArmed() {
   advance(ARM_MS);
   return utils;
 }
+
+const LABEL = {
+  calories: 120,
+  protein: 3,
+  carbs: 16,
+  fat: 5,
+  servingSize: "1 cup (240 ml)",
+};
+
+/** Scan `code` and play the barcode step through to the label step. */
+function toLabelStep(code: string) {
+  openArmed();
+  hold(code);
+  advance(SWEEP_MS);
+  advance(REVEAL_MS);
+}
+
+/** Tap the shutter and let the photo and the read settle. */
+const shoot = () =>
+  act(async () => {
+    fireEvent.click(
+      screen.getByLabelText("Take a photo of the nutrition label"),
+    );
+  });
 
 /** Hold one code in view long enough to lock. */
 function hold(code: string) {
@@ -134,17 +181,13 @@ describe("CoachBarcodeScanScreen", () => {
     expect(settleCoachBarcode).not.toHaveBeenCalled();
   });
 
-  it("hands the code over at the lock, then sweeps, shows it and closes", () => {
+  it("sweeps at the lock, shows the digits, then asks for the label", () => {
     openArmed();
     hold("4006381333931");
-    // The lookup starts now, while the scan still plays.
-    expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith("4006381333931");
     expect(mockImpact).toHaveBeenCalledOnce();
-    // Short, so the chat's own "Looking up that barcode" follows cleanly.
     expect(announce).toHaveBeenCalledExactlyOnceWith("Barcode found");
     expect(screen.getByText("Reading the barcode…")).toBeDefined();
     expect(screen.getByTestId("barcode-viewfinder-sweep")).toBeDefined();
-    expect(mockGoBack).not.toHaveBeenCalled();
     expect(mockNotification).not.toHaveBeenCalled();
 
     advance(SWEEP_MS);
@@ -153,14 +196,105 @@ describe("CoachBarcodeScanScreen", () => {
     // VoiceOver reads the digits one by one, not as one number.
     expect(screen.getByLabelText("4 0 0 6 3 8 1 3 3 3 9 3 1")).toBeDefined();
     expect(mockNotification).toHaveBeenCalledOnce();
-    expect(mockGoBack).not.toHaveBeenCalled();
 
     advance(REVEAL_MS);
+    expect(screen.getByText("Now the nutrition label")).toBeDefined();
+    expect(screen.getByText("Step 2 of 2: label")).toBeDefined();
+    expect(
+      screen.getByLabelText("Take a photo of the nutrition label"),
+    ).toBeDefined();
+    // Nothing is handed over until the label step is done.
+    expect(settleCoachBarcode).not.toHaveBeenCalled();
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("reads the label photo on the phone and hands over both", async () => {
+    mockTakePicture.mockResolvedValue({ uri: "file:///label.jpg" });
+    mockPreReadLabel.mockResolvedValue(LABEL);
+    toLabelStep("4006381333931");
+
+    await shoot();
+    expect(mockPreReadLabel).toHaveBeenCalledWith(
+      "file:///label.jpg",
+      expect.any(Function),
+    );
+    // The photo never leaves the phone, and is not kept.
+    expect(mockDelete).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+    expect(screen.getByText("Reading the label…")).toBeDefined();
+    expect(screen.getByTestId("barcode-viewfinder-sweep")).toBeDefined();
+
+    advance(SWEEP_MS);
+    expect(screen.getByText("Got the label")).toBeDefined();
+    expect(
+      screen.getByText("120 cal · 3 g protein · 16 g carbs · 5 g fat"),
+    ).toBeDefined();
+    expect(settleCoachBarcode).not.toHaveBeenCalled();
+
+    advance(REVEAL_MS);
+    expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
+      code: "4006381333931",
+      label: LABEL,
+    });
     expect(mockGoBack).toHaveBeenCalledOnce();
     expect(cameraProps.current?.isActive).toBe(false);
   });
 
-  it("keeps the pause but drops the sweep with Reduce Motion", () => {
+  it("offers a retake or a skip when the label can't be read", async () => {
+    mockTakePicture.mockResolvedValue({ uri: "file:///label.jpg" });
+    mockPreReadLabel.mockResolvedValue(null);
+    toLabelStep("4006381333931");
+    await shoot();
+    advance(SWEEP_MS);
+    expect(screen.getByText("I couldn't read that label")).toBeDefined();
+
+    mockPreReadLabel.mockResolvedValue(LABEL);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Retake the label photo"));
+    });
+    advance(SWEEP_MS);
+    advance(REVEAL_MS);
+    expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
+      code: "4006381333931",
+      label: LABEL,
+    });
+  });
+
+  it("treats a failed photo as an unreadable label", async () => {
+    mockTakePicture.mockRejectedValue(new Error("camera busy"));
+    toLabelStep("4006381333931");
+    await shoot();
+    advance(SWEEP_MS);
+    expect(screen.getByText("I couldn't read that label")).toBeDefined();
+    expect(mockPreReadLabel).not.toHaveBeenCalled();
+  });
+
+  it("sends the code alone when the label is skipped", () => {
+    toLabelStep("4006381333931");
+    fireEvent.click(screen.getByLabelText("Skip the label"));
+    expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
+      code: "4006381333931",
+    });
+    expect(mockGoBack).toHaveBeenCalledOnce();
+    expect(mockTakePicture).not.toHaveBeenCalled();
+  });
+
+  it("takes one photo however fast the shutter is tapped", async () => {
+    mockTakePicture.mockResolvedValue({ uri: "file:///label.jpg" });
+    mockPreReadLabel.mockResolvedValue(LABEL);
+    toLabelStep("4006381333931");
+    const shutter = screen.getByLabelText(
+      "Take a photo of the nutrition label",
+    );
+    await act(async () => {
+      fireEvent.click(shutter);
+      fireEvent.click(shutter);
+    });
+    expect(mockTakePicture).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the pauses but drops the sweeps with Reduce Motion", async () => {
     vi.mocked(useReducedMotion).mockReturnValue(true);
     openArmed();
     hold("4006381333931");
@@ -171,17 +305,22 @@ describe("CoachBarcodeScanScreen", () => {
     advance(1);
     expect(mockNotification).toHaveBeenCalledOnce();
     advance(REVEAL_MS);
+    mockTakePicture.mockResolvedValue({ uri: "file:///label.jpg" });
+    mockPreReadLabel.mockResolvedValue(LABEL);
+    await shoot();
+    expect(screen.queryByTestId("barcode-viewfinder-sweep")).toBeNull();
+    advance(SWEEP_MS);
+    advance(REVEAL_MS);
     expect(mockGoBack).toHaveBeenCalledOnce();
   });
 
   it("counts one read only, however many frames show the barcode", () => {
-    openArmed();
-    hold("4006381333931");
+    toLabelStep("4006381333931");
     hold("012345678905");
-    advance(SWEEP_MS);
-    advance(REVEAL_MS);
-    expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith("4006381333931");
-    expect(mockGoBack).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByLabelText("Skip the label"));
+    expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith({
+      code: "4006381333931",
+    });
   });
 
   it("starts the hold over when the barcode leaves the frame", () => {
@@ -196,9 +335,9 @@ describe("CoachBarcodeScanScreen", () => {
   it("keeps looking past a code that is not a product barcode", () => {
     openArmed();
     hold("https://example.com/p/1");
-    expect(settleCoachBarcode).not.toHaveBeenCalled();
+    expect(screen.queryByText("Reading the barcode…")).toBeNull();
     hold("4006381333931");
-    expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith("4006381333931");
+    expect(screen.getByText("Reading the barcode…")).toBeDefined();
   });
 
   it("closes without a code from the close button", () => {

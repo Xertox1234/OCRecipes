@@ -67,12 +67,12 @@ describe("pacingReducer", () => {
     expect(run([...reads(3, OTHER), { type: "lost" }], locked)).toEqual(locked);
   });
 
-  it("reveals the digits after the sweep, then is done", () => {
+  it("reveals the digits after the sweep, then asks for the label", () => {
     const locked = run([{ type: "armed" }, ...reads(LOCK_THRESHOLD_FRAMES)]);
     const found = pacingReducer(locked, { type: "swept" });
     expect(found).toEqual({ phase: "found", code: CODE });
     expect(pacingReducer(found, { type: "revealed" })).toEqual({
-      phase: "done",
+      phase: "label",
       code: CODE,
     });
   });
@@ -84,6 +84,79 @@ describe("pacingReducer", () => {
     const hunting = run([{ type: "armed" }]);
     expect(run([{ type: "armed" }, { type: "swept" }], hunting)).toEqual(
       hunting,
+    );
+  });
+});
+
+describe("pacingReducer: the label step", () => {
+  const LABEL = {
+    calories: 120,
+    protein: 3,
+    carbs: 16,
+    fat: 5,
+    servingSize: "1 cup (240 ml)",
+  };
+  const atLabel: PacingState = { phase: "label", code: CODE };
+
+  it("reads the photo while the sweep plays, then shows what it read", () => {
+    const reading = pacingReducer(atLabel, { type: "shutter" });
+    expect(reading).toEqual({ phase: "reading", code: CODE, swept: false });
+    // A fast read still waits for the sweep, and the sweep for the read.
+    const read = pacingReducer(reading, { type: "labelRead", label: LABEL });
+    expect(read).toMatchObject({ phase: "reading" });
+    const shown = pacingReducer(read, { type: "swept" });
+    expect(shown).toEqual({ phase: "labelFound", code: CODE, label: LABEL });
+    expect(
+      run([{ type: "swept" }, { type: "labelRead", label: LABEL }], reading),
+    ).toEqual(shown);
+    expect(pacingReducer(shown, { type: "revealed" })).toEqual({
+      phase: "done",
+      code: CODE,
+      label: LABEL,
+    });
+  });
+
+  it("offers a retake when the label could not be read", () => {
+    const failed = run(
+      [
+        { type: "shutter" },
+        { type: "labelRead", label: null },
+        { type: "swept" },
+      ],
+      atLabel,
+    );
+    expect(failed).toEqual({ phase: "unreadable", code: CODE });
+    expect(pacingReducer(failed, { type: "shutter" })).toEqual({
+      phase: "reading",
+      code: CODE,
+      swept: false,
+    });
+  });
+
+  it("sends the code alone when the label is skipped", () => {
+    expect(pacingReducer(atLabel, { type: "skip" })).toEqual({
+      phase: "done",
+      code: CODE,
+    });
+    expect(
+      pacingReducer({ phase: "unreadable", code: CODE }, { type: "skip" }),
+    ).toEqual({ phase: "done", code: CODE });
+  });
+
+  it("ignores the shutter and skip outside the label step", () => {
+    const reading = pacingReducer(atLabel, { type: "shutter" });
+    expect(run([{ type: "shutter" }, { type: "skip" }], reading)).toEqual(
+      reading,
+    );
+    const hunting: PacingState = { phase: "hunting" };
+    expect(run([{ type: "shutter" }, { type: "skip" }], hunting)).toEqual(
+      hunting,
+    );
+  });
+
+  it("ignores a label result that arrives outside a read", () => {
+    expect(pacingReducer(atLabel, { type: "labelRead", label: LABEL })).toEqual(
+      atLabel,
     );
   });
 });
@@ -118,6 +191,31 @@ describe("pacingHint", () => {
     expect(pacingHint({ phase: "found", code: CODE })).toEqual({
       title: "Got it",
       body: CODE,
+    });
+    expect(pacingHint({ phase: "label", code: CODE }).title).toBe(
+      "Now the nutrition label",
+    );
+    expect(
+      pacingHint({ phase: "reading", code: CODE, swept: false }).title,
+    ).toBe("Reading the label…");
+    expect(pacingHint({ phase: "unreadable", code: CODE }).title).toBe(
+      "I couldn't read that label",
+    );
+    expect(
+      pacingHint({
+        phase: "labelFound",
+        code: CODE,
+        label: {
+          calories: 120,
+          protein: 3,
+          carbs: 16,
+          fat: 5,
+          servingSize: "1 cup (240 ml)",
+        },
+      }),
+    ).toEqual({
+      title: "Got the label",
+      body: "120 cal · 3 g protein · 16 g carbs · 5 g fat",
     });
   });
 });
