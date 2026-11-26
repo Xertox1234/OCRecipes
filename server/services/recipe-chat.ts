@@ -11,6 +11,7 @@ import { OPENAI_TIMEOUT_HEAVY_MS, OPENAI_TIMEOUT_LONG_MS } from "../lib/openai";
 import {
   sanitizeContextField,
   sanitizeUserInput,
+  sanitizeSingleLineField,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
@@ -269,16 +270,25 @@ export function buildRemixSystemPrompt(
       {
         title: sanitizeUserInput(originalRecipe.title),
         description: sanitizeUserInput(originalRecipe.description ?? ""),
-        difficulty: originalRecipe.difficulty,
-        timeEstimate: originalRecipe.timeEstimate,
+        // Every field is another user's text (any public recipe), so each is
+        // filtered and capped, not only the long ones (audit 2026-11-24, L91).
+        difficulty: originalRecipe.difficulty
+          ? sanitizeSingleLineField(originalRecipe.difficulty, 30)
+          : originalRecipe.difficulty,
+        timeEstimate: originalRecipe.timeEstimate
+          ? sanitizeSingleLineField(originalRecipe.timeEstimate, 50)
+          : originalRecipe.timeEstimate,
         servings: originalRecipe.servings,
         ingredients: originalRecipe.ingredients.map((i) => ({
           name: sanitizeUserInput(i.name),
-          quantity: i.quantity,
-          unit: i.unit,
+          quantity: sanitizeSingleLineField(i.quantity ?? "", 30),
+          unit: sanitizeSingleLineField(i.unit ?? "", 30),
         })),
         instructions: originalRecipe.instructions.map(sanitizeUserInput),
-        dietTags: originalRecipe.dietTags,
+        dietTags: originalRecipe.dietTags
+          .slice(0, 20)
+          .map((t) => sanitizeSingleLineField(t, 40))
+          .filter(Boolean),
       },
       null,
       2,

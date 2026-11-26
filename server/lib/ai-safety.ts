@@ -89,6 +89,16 @@ const INJECTION_PATTERNS: RegExp[] = [
 ];
 
 /**
+ * Global copies for replacing: without `g`, String.replace removed only the
+ * first match, so "[system] x [system] ..." kept the second (audit
+ * 2026-11-24, L84). Separate copies so a `.test()` caller of the originals
+ * never meets a stateful `lastIndex`; replace() resets it on global regexes.
+ */
+const INJECTION_PATTERNS_GLOBAL: RegExp[] = INJECTION_PATTERNS.map(
+  (p) => new RegExp(p.source, p.flags.includes("g") ? p.flags : `${p.flags}g`),
+);
+
+/**
  * Sanitize user input text before passing to AI models.
  * Strips known prompt injection patterns while preserving normal food-related text.
  * Returns a cleaned string safe for inclusion in AI prompts.
@@ -101,7 +111,7 @@ export function sanitizeUserInput(text: string): string {
   sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
 
   // Strip content that matches injection patterns
-  for (const pattern of INJECTION_PATTERNS) {
+  for (const pattern of INJECTION_PATTERNS_GLOBAL) {
     sanitized = sanitized.replace(pattern, "[filtered]");
   }
 
@@ -499,6 +509,19 @@ export function sanitizeContextField(text: string, maxLen = 1500): string {
   // Run standard injection pattern filter
   s = sanitizeUserInput(s);
   return s.trim();
+}
+
+/**
+ * sanitizeContextField for a value the prompt writes on one line (a name, a
+ * diet type, a goal). Line breaks become a space first: with them, a food
+ * dislike could open what looked like a new system-prompt section (audit
+ * 2026-11-24, L88). Multi-line fields keep using sanitizeContextField.
+ */
+export function sanitizeSingleLineField(text: string, maxLen = 200): string {
+  return sanitizeContextField(
+    text.replace(/[\r\n\u000B\u000C\u0085\u2028\u2029]+/g, " "),
+    maxLen,
+  );
 }
 
 /** System prompt boundary instruction to append to AI system prompts. */

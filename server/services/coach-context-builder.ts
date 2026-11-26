@@ -1,6 +1,9 @@
 import { storage } from "../storage";
 import { civilHourInTz } from "../lib/civil-date";
-import { sanitizeContextField } from "../lib/ai-safety";
+import {
+  sanitizeContextField,
+  sanitizeSingleLineField,
+} from "../lib/ai-safety";
 import { getBlocksSystemPrompt } from "./coach-blocks";
 import {
   formatNotebookLine,
@@ -328,26 +331,29 @@ function buildAboutUser(
 ): CoachContext["aboutUser"] {
   const aboutUser: NonNullable<CoachContext["aboutUser"]> = {};
   if (profile?.primaryGoal) {
-    aboutUser.primaryGoal = sanitizeContextField(profile.primaryGoal, 100);
+    aboutUser.primaryGoal = sanitizeSingleLineField(profile.primaryGoal, 100);
   }
   if (profile?.activityLevel) {
-    aboutUser.activityLevel = sanitizeContextField(profile.activityLevel, 100);
+    aboutUser.activityLevel = sanitizeSingleLineField(
+      profile.activityLevel,
+      100,
+    );
   }
   if (profile?.cookingSkillLevel) {
-    aboutUser.cookingSkillLevel = sanitizeContextField(
+    aboutUser.cookingSkillLevel = sanitizeSingleLineField(
       profile.cookingSkillLevel,
       100,
     );
   }
   if (profile?.cookingTimeAvailable) {
-    aboutUser.cookingTimeAvailable = sanitizeContextField(
+    aboutUser.cookingTimeAvailable = sanitizeSingleLineField(
       profile.cookingTimeAvailable,
       100,
     );
   }
   const cuisines = (profile?.cuisinePreferences ?? [])
     .filter(Boolean)
-    .map((c) => sanitizeContextField(c, 100));
+    .map((c) => sanitizeSingleLineField(c, 100));
   if (cuisines.length > 0) {
     aboutUser.cuisinePreferences = cuisines;
   }
@@ -359,7 +365,7 @@ function buildAboutUser(
   const conditions = (profile?.healthConditions ?? [])
     .filter((c): c is string => typeof c === "string" && c.trim() !== "")
     .slice(0, HEALTH_CONDITIONS_SENT_MAX)
-    .map((c) => sanitizeContextField(c, HEALTH_CONDITION_SENT_CHARS))
+    .map((c) => sanitizeSingleLineField(c, HEALTH_CONDITION_SENT_CHARS))
     .filter(Boolean);
   if (conditions.length > 0) {
     aboutUser.healthConditions = conditions;
@@ -424,14 +430,16 @@ export function assembleCoachContext(a: {
       fat: Number(dailySummary.totalFat),
     },
     dietaryProfile: {
-      dietType: profile?.dietType || null,
+      dietType: profile?.dietType
+        ? sanitizeSingleLineField(profile.dietType, 50)
+        : null,
       // Sanitize at the context boundary (M40 — 2026-04-18) so both the prompt
       // builder and any future consumers see clean values. Severity is
       // enum-validated (jsonb defense-in-depth) — bogus values are dropped.
       allergies: (profile?.allergies || [])
         .filter((a) => a?.name)
         .map((a) => ({
-          name: sanitizeContextField(a.name, 100),
+          name: sanitizeSingleLineField(a.name, 100),
           ...(a.severity === "mild" ||
           a.severity === "moderate" ||
           a.severity === "severe"
@@ -439,7 +447,7 @@ export function assembleCoachContext(a: {
             : {}),
         })),
       dislikes: ((profile?.foodDislikes as string[]) || []).map((d) =>
-        sanitizeContextField(d, 100),
+        sanitizeSingleLineField(d, 100),
       ),
     },
     screenContext,
@@ -465,7 +473,7 @@ export function assembleCoachContext(a: {
   // ── Coach Pro: frequent foods (30-day aggregate) ────
   if (isCoachPro && frequentFoods.length > 0) {
     context.frequentFoodsSummary = frequentFoods
-      .map((f) => `${sanitizeContextField(f.name, 100)} (${f.timesLogged}×)`)
+      .map((f) => `${sanitizeSingleLineField(f.name, 100)} (${f.timesLogged}×)`)
       .join(", ");
   }
 

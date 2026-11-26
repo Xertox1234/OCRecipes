@@ -8,6 +8,10 @@ import {
 import type { FinderBlock, FinderFlow } from "@shared/schemas/recipe-finder";
 import type { PremiumFeatures } from "@shared/types/premium";
 import { storage } from "../../storage";
+import {
+  containsUnsafeCoachAdviceInValue,
+  STANDARD_SAFETY_MESSAGE,
+} from "../../lib/ai-safety";
 import { extractQuery, extractOfferDetails } from "./extract-query";
 import { askDishFollowUps } from "./ask-follow-ups";
 import { buildAdjustBlock, validateAdjustAnswers } from "./adjust";
@@ -103,7 +107,44 @@ async function adjustMessage(
   return { kind: "message", block, content: finderFallbackText(block) };
 }
 
+/**
+ * The model-written text a finder card shows: clarifying questions, dish
+ * follow-ups, inspired ideas. Stored community recipes are other users'
+ * text, not advice, and are left alone.
+ */
+function modelWrittenCardText(block: FinderBlock): unknown {
+  switch (block.type) {
+    case "recipe_questions":
+      return block.questions;
+    case "recipe_adjust":
+      return block.followUps;
+    case "recipe_results":
+      return block.source === "inspired" ? block.items : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * One finder step, with the output screen on any card the model wrote. Both
+ * Coach and RecipeChef save and show this result directly, so a hit becomes
+ * the standard safety message with no card (audit 2026-11-24, L93).
+ */
 export async function executeFinderStep(
+  step: FinderStep,
+  ctx: FinderTurnContext,
+): Promise<FinderTurnResult> {
+  const turn = await executeFinderStepUnscreened(step, ctx);
+  if (
+    turn.kind === "message" &&
+    containsUnsafeCoachAdviceInValue(modelWrittenCardText(turn.block))
+  ) {
+    return { kind: "plain", content: STANDARD_SAFETY_MESSAGE };
+  }
+  return turn;
+}
+
+async function executeFinderStepUnscreened(
   step: FinderStep,
   ctx: FinderTurnContext,
 ): Promise<FinderTurnResult> {

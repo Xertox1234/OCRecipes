@@ -55,6 +55,8 @@ export interface TurnInput {
   user: TurnUser;
   sanitizedContent: string;
   body: {
+    /** The message as sent; only the safety checks read it (L102). */
+    content: string;
     screenContext?: string;
     warmUpId?: string;
     turnKey?: string;
@@ -470,6 +472,7 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     conversationId: id,
     userId: req.userId,
     content: sanitizedContent,
+    safetyText: ctx.body.content,
     screenContext: ctx.body.screenContext,
     warmUpId: ctx.body.warmUpId,
     writeCards: ctx.body.writeCards,
