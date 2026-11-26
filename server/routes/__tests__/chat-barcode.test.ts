@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
-import { scannedBarcodeReply } from "../../services/coach-photo";
+import {
+  scannedBarcodeReply,
+  scannedLabelReply,
+} from "../../services/coach-photo";
 import { createWriteCardBlock } from "../../services/coach-pro-chat/write-card-context";
 import { saveOpeningBrief } from "../chat-admit";
 import { register } from "../chat-barcode";
@@ -11,6 +14,7 @@ import {
   createMockChatMessage,
 } from "../../__tests__/factories";
 import type { FoodCardPayload } from "@shared/schemas/coach-write-cards";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -25,7 +29,11 @@ vi.mock("../../storage", () => ({
 
 vi.mock("../../services/coach-photo", async (orig) => {
   const actual = await orig<typeof import("../../services/coach-photo")>();
-  return { ...actual, scannedBarcodeReply: vi.fn() };
+  return {
+    ...actual,
+    scannedBarcodeReply: vi.fn(),
+    scannedLabelReply: vi.fn(),
+  };
 });
 
 vi.mock("../../services/coach-pro-chat/write-card-context", () => ({
@@ -313,5 +321,148 @@ describe("POST /api/chat/conversations/:id/barcode", () => {
   it("400s on a bad conversation id", async () => {
     const res = await post(app, { barcode: BARCODE }, "abc");
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/chat/conversations/:id/label (a label read on the phone)", () => {
+  let app: express.Express;
+  const label = {
+    calories: 250,
+    protein: 5,
+    carbs: 31,
+    fat: 12,
+    servingSize: "1 cup (228g)",
+  };
+  const postLabel = (
+    body: Record<string, unknown> = { label },
+    id: string | number = 1,
+  ) =>
+    request(app)
+      .post(`/api/chat/conversations/${id}/label`)
+      .set("X-Timezone", "America/Los_Angeles")
+      .send(body);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+    vi.mocked(storage.getChatConversation).mockResolvedValue(
+      createMockChatConversation({ id: 1, userId: "1", type: "coach" }),
+    );
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
+    vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+      createMockChatMessage({ id: 10, content: "Sent a photo" }),
+    );
+    vi.mocked(storage.createChatMessage).mockImplementation(
+      async (conversationId, _userId, role, content, metadata) =>
+        createMockChatMessage({
+          id: 11,
+          conversationId,
+          role,
+          content,
+          metadata: metadata ?? null,
+        }),
+    );
+    vi.mocked(scannedLabelReply).mockResolvedValue({
+      payload,
+      text: "I read that label on your phone, per serving.",
+    });
+    vi.mocked(createWriteCardBlock).mockResolvedValue(cardBlock);
+    app = createApp();
+  });
+
+  it("stores a photo turn and a reply carrying a food card, spending no photo credit", async () => {
+    const res = await postLabel();
+    expect(res.status).toBe(201);
+    expect(scannedLabelReply).toHaveBeenCalledWith(
+      label,
+      expect.objectContaining({ tz: "America/Los_Angeles", userId: "1" }),
+    );
+    const turn = vi.mocked(storage.createChatMessageWithLimitCheck).mock
+      .calls[0];
+    expect(turn.slice(0, 3)).toEqual([1, "1", "Sent a photo"]);
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "1",
+      "assistant",
+      "I read that label on your phone, per serving.",
+      { blocks: [cardBlock] },
+    );
+    expect(storage.claimDailyAiCall).toHaveBeenCalledExactlyOnceWith(
+      "1",
+      "coachLabelRead",
+      AI_DAILY_CAPS.coachLabelRead,
+    );
+  });
+
+  it("asks for the photo again when the card could not be stored", async () => {
+    vi.mocked(createWriteCardBlock).mockResolvedValue(null);
+    await postLabel();
+    expect(vi.mocked(storage.createChatMessage).mock.calls[0][3]).toMatch(
+      /read your label but couldn't make the card/,
+    );
+  });
+
+  it("replies in text when the reply fails after the turn was stored", async () => {
+    vi.mocked(scannedLabelReply).mockRejectedValue(new Error("db down"));
+    const res = await postLabel();
+    expect(res.status).toBe(201);
+    expect(vi.mocked(storage.createChatMessage).mock.calls[0][3]).toMatch(
+      /couldn't make a card from that label/,
+    );
+  });
+
+  it("answers in the chat, reading nothing, when the day's reads are spent", async () => {
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(false);
+    await postLabel();
+    expect(scannedLabelReply).not.toHaveBeenCalled();
+    expect(vi.mocked(storage.createChatMessage).mock.calls[0][3]).toMatch(
+      /limit/,
+    );
+  });
+
+  it("is Coach Pro only", async () => {
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+    const res = await postLabel();
+    expect(res.status).toBe(403);
+    expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+  });
+
+  it("refuses a recipe conversation", async () => {
+    vi.mocked(storage.getChatConversation).mockResolvedValue(
+      createMockChatConversation({ id: 1, userId: "1", type: "recipe" }),
+    );
+    const res = await postLabel();
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Photos can only be sent to the Coach/);
+  });
+
+  it.each([
+    ["a missing number", { label: { ...label, fat: undefined } }],
+    ["a negative number", { label: { ...label, protein: -1 } }],
+    [
+      "a number past what a label prints",
+      { label: { ...label, calories: 20000 } },
+    ],
+    ["an empty serving", { label: { ...label, servingSize: "  " } }],
+    [
+      "an overlong serving",
+      { label: { ...label, servingSize: "x".repeat(101) } },
+    ],
+    ["an unknown field in the label", { label: { ...label, sodium: 10 } }],
+    ["an unknown field", { label, photo: "BASE64" }],
+  ])("400s on %s, storing nothing", async (_what, body) => {
+    const res = await postLabel(body);
+    expect(res.status).toBe(400);
+    expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+  });
+
+  it("saves the opening brief first when the read opens a new chat", async () => {
+    await postLabel({ label, openingBrief: "short" });
+    expect(saveOpeningBrief).toHaveBeenCalledWith(
+      expect.anything(),
+      1,
+      expect.anything(),
+      "short",
+    );
   });
 });

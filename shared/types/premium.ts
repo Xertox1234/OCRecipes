@@ -115,6 +115,13 @@ export const AI_DAILY_CAPS = {
    * since the Coach Pro daily message limit is effectively unlimited.
    */
   coachBarcodeScan: 200,
+  /**
+   * Nutrition labels read on the phone and sent into the Coach chat as
+   * numbers (Coach roadmap V5). No model is called; bounds the cards and
+   * allergy-profile reads one account can cause (the turns themselves are
+   * stored before this is claimed).
+   */
+  coachLabelRead: 200,
 } as const;
 
 export type AiCallKind = keyof typeof AI_DAILY_CAPS;

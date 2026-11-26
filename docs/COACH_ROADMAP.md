@@ -141,8 +141,19 @@ Then re-rank.
       Size: L. Needs V0.
 - [ ] **V4. Live camera while talking.** Point at a shelf and ask about it.
       Value: high. Size: L. Needs V3 and S1.
-- [ ] **V5. On-device OCR pre-read.** Read label text on the phone before
+- [x] **V5. On-device OCR pre-read.** Read label text on the phone before
       upload, for speed, cost and privacy. Value: medium. Size: M. Needs S2.
+      PR #2055. Before a chat photo uploads, the phone's own text reader
+      (ML Kit, as on the Scan screen) reads it. When the text is plainly a
+      nutrition panel (its "Nutrition Facts" heading, and calories, protein,
+      carbs, fat and a serving in grams or millilitres all read off the
+      print), only those numbers are sent: the photo stays on the phone, no
+      model is called and no photo credit is spent. The reply is the same
+      one-serving food card a label photo gets, named "Packaged food" (the
+      panel shows no name), with the same allergy reminder. Anything less
+      certain uploads the photo as before. Left for later: the label's
+      micronutrients, and the other photo kinds (a receipt or a menu read on
+      the phone).
 
 ## Deliberately out of chat
 

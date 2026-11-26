@@ -5,6 +5,9 @@ import {
   type CoachPhotoSource,
 } from "@/lib/coach-photo-picker";
 import { uploadPhotoToCoach } from "@/lib/photo-upload";
+import { ApiError } from "@/lib/api-error";
+import { preReadLabel, sendLabelToCoach } from "@/lib/coach-label-pre-read";
+import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
 import {
   awaitCoachBarcode,
   sendBarcodeToCoach,
@@ -105,9 +108,40 @@ async function runPhotoSend(
   let failure: CoachPhotoFailure | null = null;
   let replyText: string | null = null;
   try {
-    const send =
-      picked.kind === "barcode" ? sendBarcodeToCoach : uploadPhotoToCoach;
-    replyText = await send(picked.value, conversationId, a.openingBriefForm);
+    if (picked.kind === "barcode") {
+      replyText = await sendBarcodeToCoach(
+        picked.value,
+        conversationId,
+        a.openingBriefForm,
+      );
+    } else {
+      // A nutrition label the phone can read itself goes as numbers, and the
+      // photo stays on the phone (Coach roadmap V5); anything else uploads.
+      const label = await preReadLabel(picked.value, recognizeTextFromPhoto);
+      const sentAsNumbers = label
+        ? await sendLabelToCoach(
+            label,
+            conversationId,
+            a.openingBriefForm,
+          ).then(
+            (text) => ({ text }),
+            (err: unknown) => {
+              // Turned away unread (nothing stored): the photo goes instead,
+              // or the same numbers would be refused on every resend. Any
+              // other refusal may have stored the turn, so nothing is resent.
+              if (err instanceof ApiError && err.status === 400) return null;
+              throw err;
+            },
+          )
+        : null;
+      replyText = sentAsNumbers
+        ? sentAsNumbers.text
+        : await uploadPhotoToCoach(
+            picked.value,
+            conversationId,
+            a.openingBriefForm,
+          );
+    }
   } catch (err) {
     failure = coachPhotoFailure(err, picked.kind);
   }

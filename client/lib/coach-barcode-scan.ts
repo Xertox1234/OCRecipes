@@ -63,6 +63,16 @@ export async function sendBarcodeToCoach(
     // The card's meal (breakfast, lunch…) is set from the user's clock.
     { headers: { "X-Timezone": getDeviceTimezone() } },
   );
+  return coachTurnReplyText(res);
+}
+
+/**
+ * The Coach's stored reply from a turn's answer, for the screen reader; null
+ * when it cannot be read.
+ */
+export async function coachTurnReplyText(
+  res: Response,
+): Promise<string | null> {
   try {
     const body: unknown = await res.json();
     const content = (body as { assistantMessage?: { content?: unknown } })

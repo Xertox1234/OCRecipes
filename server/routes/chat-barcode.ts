@@ -1,14 +1,19 @@
 /**
- * POST /api/chat/conversations/:id/barcode — a barcode the app's camera read,
- * sent into the Coach chat. The reply is a stored assistant message carrying
- * a one-serving food log card for the product, with the same allergy check a
- * scan gets; nothing is logged until the user taps the card.
+ * Turns the phone read itself, sent into the Coach chat:
  *
- * No AI model is called: the camera decodes the number on the phone and the
- * product comes from the barcode lookup. So this route needs no AI consent
- * and spends no photo credit. It is still a Coach turn (daily message limit),
- * still Coach Pro's because the reply is a write card, and has its own daily
- * scan count.
+ * - POST /api/chat/conversations/:id/barcode — a barcode the app's camera
+ *   decoded. The product comes from the barcode lookup, with the same allergy
+ *   check a scan gets.
+ * - POST /api/chat/conversations/:id/label — a nutrition label the app's text
+ *   reader read from a photo (Coach roadmap V5). The photo stays on the
+ *   phone; only the numbers are sent.
+ *
+ * Either way the reply is a stored assistant message carrying a one-serving
+ * food log card; nothing is logged until the user taps the card.
+ *
+ * No AI model is called, so these routes need no AI consent and spend no
+ * photo credit. Each is still a Coach turn (daily message limit), still Coach
+ * Pro's because the reply is a write card, and has its own daily count.
  */
 import type { Express, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
@@ -21,7 +26,7 @@ import { rejectOverlappingChatTurn } from "../lib/in-flight";
 import { parseTimezone } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { isValidBarcode } from "@shared/constants/classification";
-import { AI_DAILY_CAPS } from "@shared/types/premium";
+import { AI_DAILY_CAPS, type AiCallKind } from "@shared/types/premium";
 import {
   handleRouteError,
   checkPremiumFeature,
@@ -34,9 +39,12 @@ import { CONVERSATION_CONFIG } from "../services/chat-turn";
 import { isRecipeOfferEnabled } from "../services/recipe-finder";
 import {
   scannedBarcodeReply,
+  scannedLabelReply,
   photoCardProposal,
   BARCODE_LOOKUP_DOWN_TEXT,
   COACH_BARCODE_USER_TEXT,
+  COACH_PHOTO_USER_TEXT,
+  type PhotoReply,
 } from "../services/coach-photo";
 import { createWriteCardBlock } from "../services/coach-pro-chat/write-card-context";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -45,16 +53,173 @@ const SCAN_CAP_TEXT =
   "You've reached today's scan limit. Tell me what you ate and I'll log it for you.";
 const CARD_FAILED_TEXT =
   "I found the product but couldn't make the card just now. Please scan it again.";
+const LABEL_FAILED_TEXT =
+  "I couldn't make a card from that label just now. Please send it again.";
+const LABEL_CARD_FAILED_TEXT =
+  "I read your label but couldn't make the card just now. Please send it again.";
 
-const bodySchema = z
+// Which opening brief the new chat showed, as on a typed first message.
+const openingBrief = z.enum(["full", "short"]).optional();
+
+const barcodeBodySchema = z
   .object({
     // The shapes the app's scanner sends (UPC-E, EAN-8, UPC-A, EAN-13). The
     // phone's decoder has already checked the symbol's own checksum.
     barcode: z.string().refine(isValidBarcode, "Invalid barcode"),
-    // Which opening brief the new chat showed, as on a typed first message.
-    openingBrief: z.enum(["full", "short"]).optional(),
+    openingBrief,
   })
   .strict();
+
+// The app's label parser reads no value above 10,000; the food card's own,
+// tighter limits are applied when the card is made.
+const amount = z.number().finite().min(0).max(10000);
+const labelBodySchema = z
+  .object({
+    label: z
+      .object({
+        calories: amount,
+        protein: amount,
+        carbs: amount,
+        fat: amount,
+        servingSize: z.string().trim().min(1).max(100),
+      })
+      .strict(),
+    openingBrief,
+  })
+  .strict();
+
+interface PhoneReadTurn {
+  /** What the stored user turn says. */
+  userText: string;
+  /** The turn's own daily count. */
+  capKind: AiCallKind;
+  /** The premium gate's wording. */
+  featureName: string;
+  /** Said when the reply could not be made at all. */
+  failedText: string;
+  /** Said when the card was read but could not be stored. */
+  cardFailedText: string;
+  /** For the wrong-chat refusal ("Barcodes can only be sent to the Coach"). */
+  noun: string;
+  logLabel: string;
+  reply: (ctx: {
+    tz: string;
+    now: Date;
+    userId: string;
+  }) => Promise<PhotoReply>;
+}
+
+/** Everything after the body is read: the chat, the plan, the limits, the card. */
+async function answerPhoneRead(
+  req: AuthenticatedRequest,
+  res: Response,
+  brief: "full" | "short" | undefined,
+  turn: PhoneReadTurn,
+): Promise<void> {
+  const id = parsePositiveIntParam(req.params.id);
+  if (!id)
+    return sendError(
+      res,
+      400,
+      "Invalid conversation ID",
+      ErrorCode.VALIDATION_ERROR,
+    );
+
+  const conversation = await storage.getChatConversation(id, req.userId);
+  if (!conversation)
+    return sendError(res, 404, "Conversation not found", ErrorCode.NOT_FOUND);
+  if (conversation.type === "recipe" || conversation.type === "remix")
+    return sendError(
+      res,
+      400,
+      `${turn.noun} can only be sent to the Coach`,
+      ErrorCode.VALIDATION_ERROR,
+    );
+
+  // The reply is a write card, and write cards are Coach Pro's.
+  const features = await checkPremiumFeature(
+    req,
+    res,
+    "coachPro",
+    turn.featureName,
+  );
+  if (!features) return;
+
+  if (brief) await saveOpeningBrief(req, id, features, brief);
+
+  // A Coach turn: it counts toward the daily message limit, checked and
+  // stored atomically like a typed message (chat-admit.ts).
+  const dailyLimit = CONVERSATION_CONFIG.coach.dailyLimit(features);
+  const userMessage = isRecipeOfferEnabled()
+    ? await storage.createChatMessageWithLimitCheck(
+        id,
+        req.userId,
+        turn.userText,
+        dailyLimit,
+        "coach",
+        { excludeFinderTaps: true },
+      )
+    : await storage.createChatMessageWithLimitCheck(
+        id,
+        req.userId,
+        turn.userText,
+        dailyLimit,
+        "coach",
+      );
+  if (!userMessage)
+    return sendError(
+      res,
+      429,
+      CONVERSATION_CONFIG.coach.limitMessage(features),
+      ErrorCode.DAILY_LIMIT_REACHED,
+    );
+
+  // The user's turn is stored, so every outcome from here answers it in the
+  // conversation rather than leaving a question with no reply.
+  const tz = parseTimezone(req.headers["x-timezone"]);
+  let text = turn.failedText;
+  let blocks: CoachBlock[] = [];
+  try {
+    // Claimed last: a turn refused above (message limit) spends none. A
+    // spent count still stores the turn and its reply
+    // (todos/P3-2026-11-26-coach-scan-cap-still-stores-turns.md).
+    const claimed = await storage.claimDailyAiCall(
+      req.userId,
+      turn.capKind,
+      AI_DAILY_CAPS[turn.capKind],
+    );
+    if (!claimed) {
+      text = SCAN_CAP_TEXT;
+    } else {
+      const reply = await turn.reply({
+        tz,
+        now: new Date(),
+        userId: req.userId,
+      });
+      const { payload } = reply;
+      const card = payload
+        ? await createWriteCardBlock(
+            photoCardProposal(payload),
+            { conversationId: id, userId: req.userId, tz },
+            payload,
+          )
+        : null;
+      if (card) blocks = [card];
+      text = payload && !card ? turn.cardFailedText : reply.text;
+    }
+  } catch (err) {
+    logger.error({ err: toError(err) }, `coach ${turn.logLabel} failed`);
+  }
+
+  const assistantMessage = await storage.createChatMessage(
+    id,
+    req.userId,
+    "assistant",
+    text,
+    blocks.length > 0 ? { blocks } : null,
+  );
+  res.status(201).json({ userMessage, assistantMessage });
+}
 
 export function register(app: Express): void {
   app.post(
@@ -77,16 +242,7 @@ export function register(app: Express): void {
     rejectOverlappingChatTurn,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const id = parsePositiveIntParam(req.params.id);
-        if (!id)
-          return sendError(
-            res,
-            400,
-            "Invalid conversation ID",
-            ErrorCode.VALIDATION_ERROR,
-          );
-
-        const body = bodySchema.safeParse(req.body ?? {});
+        const body = barcodeBodySchema.safeParse(req.body ?? {});
         if (!body.success)
           return sendError(
             res,
@@ -94,108 +250,63 @@ export function register(app: Express): void {
             formatZodError(body.error),
             ErrorCode.VALIDATION_ERROR,
           );
+        const { barcode } = body.data;
+        await answerPhoneRead(req, res, body.data.openingBrief, {
+          userText: COACH_BARCODE_USER_TEXT,
+          capKind: "coachBarcodeScan",
+          featureName: "Scanning in Coach chat",
+          failedText: BARCODE_LOOKUP_DOWN_TEXT,
+          cardFailedText: CARD_FAILED_TEXT,
+          noun: "Barcodes",
+          logLabel: "barcode lookup",
+          reply: (ctx) => scannedBarcodeReply(barcode, ctx),
+        });
+      } catch (error) {
+        handleRouteError(res, error, "send coach barcode");
+      }
+    },
+  );
 
-        const conversation = await storage.getChatConversation(id, req.userId);
-        if (!conversation)
-          return sendError(
-            res,
-            404,
-            "Conversation not found",
-            ErrorCode.NOT_FOUND,
-          );
-        if (conversation.type === "recipe" || conversation.type === "remix")
+  app.post(
+    "/api/chat/conversations/:id/label",
+    requireAuth,
+    // Inline for CodeQL, as above. The photo route's limit: 10/min.
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: resolveRateLimitMax(10, process.env),
+      message: {
+        error: "Too many photos. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
+    rejectOverlappingChatTurn,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const body = labelBodySchema.safeParse(req.body ?? {});
+        if (!body.success)
           return sendError(
             res,
             400,
-            "Barcodes can only be sent to the Coach",
+            formatZodError(body.error),
             ErrorCode.VALIDATION_ERROR,
           );
-
-        // The reply is a write card, and write cards are Coach Pro's.
-        const features = await checkPremiumFeature(
-          req,
-          res,
-          "coachPro",
-          "Scanning in Coach chat",
-        );
-        if (!features) return;
-
-        if (body.data.openingBrief) {
-          await saveOpeningBrief(req, id, features, body.data.openingBrief);
-        }
-
-        // A scan is a Coach turn: it counts toward the daily message limit,
-        // checked and stored atomically like a typed message (chat-admit.ts).
-        const dailyLimit = CONVERSATION_CONFIG.coach.dailyLimit(features);
-        const userMessage = isRecipeOfferEnabled()
-          ? await storage.createChatMessageWithLimitCheck(
-              id,
-              req.userId,
-              COACH_BARCODE_USER_TEXT,
-              dailyLimit,
-              "coach",
-              { excludeFinderTaps: true },
-            )
-          : await storage.createChatMessageWithLimitCheck(
-              id,
-              req.userId,
-              COACH_BARCODE_USER_TEXT,
-              dailyLimit,
-              "coach",
-            );
-        if (!userMessage)
-          return sendError(
-            res,
-            429,
-            CONVERSATION_CONFIG.coach.limitMessage(features),
-            ErrorCode.DAILY_LIMIT_REACHED,
-          );
-
-        // The user's turn is stored, so every outcome from here answers it
-        // in the conversation rather than leaving a question with no reply.
-        const tz = parseTimezone(req.headers["x-timezone"]);
-        let text = BARCODE_LOOKUP_DOWN_TEXT;
-        let blocks: CoachBlock[] = [];
-        try {
-          // Claimed last: a turn refused above (message limit) spends none.
-          const claimed = await storage.claimDailyAiCall(
-            req.userId,
-            "coachBarcodeScan",
-            AI_DAILY_CAPS.coachBarcodeScan,
-          );
-          if (!claimed) {
-            text = SCAN_CAP_TEXT;
-          } else {
-            const reply = await scannedBarcodeReply(body.data.barcode, {
-              tz,
-              now: new Date(),
-              userId: req.userId,
-            });
-            const { payload } = reply;
-            const card = payload
-              ? await createWriteCardBlock(
-                  photoCardProposal(payload),
-                  { conversationId: id, userId: req.userId, tz },
-                  payload,
-                )
-              : null;
-            if (card) blocks = [card];
-            text = payload && !card ? CARD_FAILED_TEXT : reply.text;
-          }
-        } catch (err) {
-          logger.error({ err: toError(err) }, "coach barcode lookup failed");
-        }
-
-        const assistantMessage = await storage.createChatMessage(
-          id,
-          req.userId,
-          "assistant",
-          text,
-          blocks.length > 0 ? { blocks } : null,
-        );
-        res.status(201).json({ userMessage, assistantMessage });
+        const { label } = body.data;
+        await answerPhoneRead(req, res, body.data.openingBrief, {
+          // The user sent a photo; the phone read it.
+          userText: COACH_PHOTO_USER_TEXT,
+          capKind: "coachLabelRead",
+          featureName: "Photos in Coach chat",
+          failedText: LABEL_FAILED_TEXT,
+          cardFailedText: LABEL_CARD_FAILED_TEXT,
+          noun: "Photos",
+          logLabel: "phone label read",
+          reply: (ctx) => scannedLabelReply(label, ctx),
+        });
       } catch (error) {
-        handleRouteError(res, error, "send coach barcode");
+        handleRouteError(res, error, "send coach label");
       }
     },
   );
