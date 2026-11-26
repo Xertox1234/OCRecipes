@@ -104,6 +104,43 @@ describe("buildWeeklyFacts — a nutrient no meal recorded", () => {
   });
 });
 
+// Audit 2026-11-24 L23: a day where some meals recorded the nutrient and some
+// did not has a total that is too low, so "not met" is not known.
+describe("buildWeeklyFacts — a nutrient some meals did not record", () => {
+  const partial = (date: string, v: Partial<Log>) => [
+    log(date, 8, v),
+    log(date, 13, v),
+    log(date, 19, {}), // logged, no nutrition recorded
+  ];
+
+  it("a short protein total with an unrecorded meal is unknown, not missed", () => {
+    const f = facts({ logs: partial(DATES[0], { protein: 35 }) });
+    expect(f.days[0].protein).toBe(70);
+    expect(f.days[0].proteinMet).toBeNull();
+    expect(f.proteinDaysMet).toBe(0);
+  });
+
+  it("a protein total already over the goal still counts as met", () => {
+    const f = facts({ logs: partial(DATES[0], { protein: 60 }) });
+    expect(f.days[0].proteinMet).toBe(true);
+    expect(f.proteinDaysMet).toBe(1);
+  });
+
+  it("a calorie or carb range verdict is unknown when a meal is unrecorded", () => {
+    const f = facts({
+      logs: partial(DATES[0], { calories: 1000, carbs: 110 }),
+    });
+    expect(f.days[0].calories).toBe(2000);
+    expect(f.days[0].caloriesMet).toBeNull();
+    expect(f.days[0].carbsMet).toBeNull();
+  });
+
+  it("every meal recorded keeps the plain verdict (control)", () => {
+    const f = facts({ logs: twoMeals(DATES[0], { protein: 70 }) });
+    expect(f.days[0].proteinMet).toBe(false);
+  });
+});
+
 describe("buildWeeklyFacts — calorie rule (±10%)", () => {
   it("1800 and 2200 are met; 1799 and 2201 are not", () => {
     const f = facts({
@@ -195,6 +232,48 @@ describe("buildWeeklyFacts — low-calorie guard", () => {
       ...DATES.slice(3, 6).flatMap((d) => twoMeals(d, { calories: 2000 })),
     ];
     expect(facts({ logs }).lowCalorieGuard).toBe(false);
+  });
+
+  // Audit 2026-11-24 L22: with no calorie goal the guard used to be off, so a
+  // week of 600 kcal days could be celebrated. The 1,200 kcal safety floor
+  // stands in for the goal.
+  const noCalGoal = { calories: null, protein: 120, carbs: null };
+
+  it("no calorie goal: most full days under 1,200 kcal set the guard", () => {
+    const logs = DATES.slice(0, 6).flatMap((d) =>
+      twoMeals(d, { calories: 600, protein: 130 }),
+    );
+    const f = facts({ goals: noCalGoal, logs });
+    expect(f.proteinDaysMet).toBe(6);
+    expect(f.lowCalorieGuard).toBe(true);
+    expect(f.celebrate).toBe(false);
+  });
+
+  it("no calorie goal: days at 1,200 kcal or more do not (control)", () => {
+    const logs = DATES.slice(0, 6).flatMap((d) =>
+      twoMeals(d, { calories: 1200, protein: 130 }),
+    );
+    const f = facts({ goals: noCalGoal, logs });
+    expect(f.lowCalorieGuard).toBe(false);
+    expect(f.celebrate).toBe(true);
+  });
+
+  it("a goal keeps the spec's 70% rule, not the floor (control)", () => {
+    const logs = DATES.slice(0, 6).flatMap((d) =>
+      twoMeals(d, { calories: 1100 }),
+    );
+    expect(
+      facts({ goals: { calories: 1500, protein: null, carbs: null }, logs })
+        .lowCalorieGuard,
+    ).toBe(false);
+  });
+
+  it("an understated partial day still counts toward the guard (safe side)", () => {
+    const logs = DATES.slice(0, 6).flatMap((d) => [
+      log(d, 8, { calories: 500 }),
+      log(d, 19, {}),
+    ]);
+    expect(facts({ logs }).lowCalorieGuard).toBe(true);
   });
 });
 
@@ -296,5 +375,32 @@ describe("buildWeeklyFacts — patterns", () => {
     expect(facts({ logs }).patterns.some((p) => p.includes("lunch"))).toBe(
       false,
     );
+  });
+});
+
+// Audit 2026-11-24 L69: the recipe list rides the AI prompt, the stored row
+// and every report response, so it is capped; the count stays the true one.
+describe("buildWeeklyFacts — recipe list cap", () => {
+  const recipe = (i: number): WeeklyInputs["recipes"][number] => ({
+    recipeId: i,
+    recipeType: "mealPlan",
+    title: `Recipe ${i}`,
+    how: "saved",
+    timesLogged: 0,
+    imageUrl: null,
+  });
+
+  it("keeps the first 12 recipes but counts all of them", () => {
+    const recipes = Array.from({ length: 40 }, (_, i) => recipe(i + 1));
+    const f = facts({ recipes });
+    expect(f.recipes).toHaveLength(12);
+    expect(f.recipes[0].recipeId).toBe(1);
+    expect(f.recipesAdded).toBe(40);
+  });
+
+  it("leaves a short list as it is (control)", () => {
+    const f = facts({ recipes: [recipe(1), recipe(2)] });
+    expect(f.recipes.map((r) => r.recipeId)).toEqual([1, 2]);
+    expect(f.recipesAdded).toBe(2);
   });
 });

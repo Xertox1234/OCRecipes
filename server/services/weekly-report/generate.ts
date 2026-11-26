@@ -98,6 +98,19 @@ export async function generateWeeklyReportForUser(
     ),
   };
 
+  // Everything that can fail runs before the paid AI call, so a failure
+  // cannot make a catch-up tick pay for the call again; only the insert
+  // itself comes after it (coach audit 2026-11-24, L24). The push setting
+  // read here is re-checked at send time (L95).
+  const dueAt = await pushDueAt(
+    userId,
+    now,
+    tz,
+    settings.pushEnabled,
+    facts,
+    previous,
+  );
+
   // A scheduled job has no signed-in request, so aiChat's own gate can't see
   // this user: check their AI-sharing permission here. Without it the report
   // still saves, with the template text and no AI call.
@@ -112,14 +125,7 @@ export async function generateWeeklyReportForUser(
     facts,
     content,
     source,
-    pushDueAt: await pushDueAt(
-      userId,
-      now,
-      tz,
-      settings.pushEnabled,
-      facts,
-      previous,
-    ),
+    pushDueAt: dueAt,
   });
   if (!row) return "exists";
   if (aiFault === "call") return "created-ai-call-failed";
@@ -127,15 +133,46 @@ export async function generateWeeklyReportForUser(
   return "created";
 }
 
+/** A push claim older than this with no send recorded was stranded. */
+const STRANDED_CLAIM_MS = 15 * 60_000;
+
 /**
  * Send every push that is due. The delivery claim comes first, so a re-run
  * or a second instance can never send twice; a push that reaches no device
  * hands the report back to the in-app popup.
+ *
+ * A claim whose process died before the send is recorded is handed to the
+ * popup on the next tick (coach audit 2026-11-24, L65). If the process dies
+ * after the push but before the send is recorded, the user also gets the
+ * popup: a duplicate announcement, accepted over a report never announced.
  */
 export async function sendDueWeeklyReportPushes(now: Date): Promise<number> {
+  try {
+    await storage.releaseStrandedPushClaims(
+      new Date(now.getTime() - STRANDED_CLAIM_MS),
+    );
+  } catch (err) {
+    logger.error(
+      { err: toError(err) },
+      "weekly report: could not release stale push claims",
+    );
+  }
   const due = await storage.getDuePushes(now);
   let sent = 0;
   for (const p of due) {
+    // The user may have turned pushes off after this report was queued.
+    if (!p.pushEnabled) {
+      try {
+        await storage.cancelWeeklyReportPush(p.userId, p.id);
+      } catch (err) {
+        // Not sent either way; the next tick tries the cancel again.
+        logger.error(
+          { err: toError(err), userId: p.userId, reportId: p.id },
+          "weekly report: could not cancel a push the user turned off",
+        );
+      }
+      continue;
+    }
     if (!(await storage.claimWeeklyReportDelivery(p.userId, p.id, "push"))) {
       continue;
     }
@@ -151,6 +188,7 @@ export async function sendDueWeeklyReportPushes(now: Date): Promise<number> {
       });
       if (pushDelivered) {
         sent++;
+        await recordSent(p.userId, p.id);
         continue;
       }
     } catch (err) {
@@ -165,9 +203,25 @@ export async function sendDueWeeklyReportPushes(now: Date): Promise<number> {
 }
 
 /**
+ * Record a push that went out. A failure is logged and never stops the loop;
+ * the next tick then hands the report to the popup too (see above).
+ */
+async function recordSent(userId: string, reportId: number) {
+  try {
+    await storage.markWeeklyReportPushSent(userId, reportId);
+  } catch (err) {
+    logger.error(
+      { err: toError(err), userId, reportId },
+      "weekly report: push sent but could not record it; the popup may repeat it",
+    );
+  }
+}
+
+/**
  * Hand an unsent report back to the popup. A failed release must not stop the
  * loop: the remaining pushes still go out this tick. The row it could not
- * release keeps deliveredVia = 'push' and is logged, since nothing retries it.
+ * release keeps an unsent push claim, which the next tick's stranded-claim
+ * sweep (releaseStrandedPushClaims) hands to the popup.
  */
 async function releaseDelivery(userId: string, reportId: number) {
   try {
@@ -175,7 +229,7 @@ async function releaseDelivery(userId: string, reportId: number) {
   } catch (err) {
     logger.error(
       { err: toError(err), userId, reportId },
-      "weekly report: could not release the push claim; report is stranded as pushed",
+      "weekly report: could not release the push claim; the next run hands it to the popup",
     );
   }
 }

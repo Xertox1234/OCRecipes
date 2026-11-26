@@ -4,7 +4,11 @@ import { Alert, Platform, type AlertButton } from "react-native";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { ApiError } from "@/lib/api-error";
 import { pickCoachPhoto } from "@/lib/coach-photo-picker";
-import { uploadPhotoToCoach } from "@/lib/photo-upload";
+import {
+  uploadBarcodeFrontToCoach,
+  uploadPhotoToCoach,
+} from "@/lib/photo-upload";
+import { deleteAsync } from "expo-file-system/legacy";
 import {
   awaitCoachBarcode,
   sendBarcodeToCoach,
@@ -16,7 +20,13 @@ import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
 import { useCoachPhotoSend } from "../useCoachPhotoSend";
 
 vi.mock("@/lib/coach-photo-picker", () => ({ pickCoachPhoto: vi.fn() }));
-vi.mock("@/lib/photo-upload", () => ({ uploadPhotoToCoach: vi.fn() }));
+vi.mock("@/lib/photo-upload", () => ({
+  uploadPhotoToCoach: vi.fn(),
+  uploadBarcodeFrontToCoach: vi.fn(),
+}));
+vi.mock("expo-file-system/legacy", () => ({
+  deleteAsync: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("@/lib/coach-label-pre-read", () => ({
   preReadLabel: vi.fn(),
   sendLabelToCoach: vi.fn(),
@@ -420,6 +430,84 @@ describe("useCoachPhotoSend", () => {
       expect(settleCoachBarcode).not.toHaveBeenCalled();
       unmount();
       expect(settleCoachBarcode).toHaveBeenCalledExactlyOnceWith(null);
+    });
+
+    it("uploads the front-of-pack photo with the code and label, then deletes it", async () => {
+      const label = {
+        calories: 120,
+        protein: 3,
+        carbs: 16,
+        fat: 5,
+        servingSize: "1 cup (240 ml)",
+      };
+      vi.mocked(awaitCoachBarcode).mockResolvedValue({
+        code: "4006381333931",
+        label,
+        frontUri: "file:///front.jpg",
+      });
+      vi.mocked(uploadBarcodeFrontToCoach).mockResolvedValue("Named it.");
+      const { result, args } = setup({
+        openScanner: vi.fn(),
+        openingBriefForm: "short",
+      });
+      await choose(result, "Scan a Barcode");
+      expect(uploadBarcodeFrontToCoach).toHaveBeenCalledWith(
+        "file:///front.jpg",
+        7,
+        { barcode: "4006381333931", label, openingBrief: "short" },
+      );
+      expect(sendBarcodeToCoach).not.toHaveBeenCalled();
+      expect(deleteAsync).toHaveBeenCalledWith("file:///front.jpg", {
+        idempotent: true,
+      });
+      expect(args.onSettled).toHaveBeenCalledWith(7, null, true, "Named it.");
+    });
+
+    it("deletes the front photo when its upload fails, and words it as a scan", async () => {
+      vi.mocked(awaitCoachBarcode).mockResolvedValue({
+        code: "4006381333931",
+        label: {
+          calories: 120,
+          protein: 3,
+          carbs: 16,
+          fat: 5,
+          servingSize: "1 cup",
+        },
+        frontUri: "file:///front.jpg",
+      });
+      vi.mocked(uploadBarcodeFrontToCoach).mockRejectedValue(
+        new Error("offline"),
+      );
+      const { result, args } = setup({ openScanner: vi.fn() });
+      await choose(result, "Scan a Barcode");
+      expect(deleteAsync).toHaveBeenCalledWith("file:///front.jpg", {
+        idempotent: true,
+      });
+      const failure = vi.mocked(args.onSettled).mock.calls[0][1];
+      expect(failure?.message).toMatch(/barcode/i);
+    });
+
+    it("deletes the front photo when no chat could be made for it", async () => {
+      vi.mocked(awaitCoachBarcode).mockResolvedValue({
+        code: "4006381333931",
+        label: {
+          calories: 120,
+          protein: 3,
+          carbs: 16,
+          fat: 5,
+          servingSize: "1 cup",
+        },
+        frontUri: "file:///front.jpg",
+      });
+      const { result } = setup({
+        openScanner: vi.fn(),
+        ensureConversation: vi.fn().mockRejectedValue(new Error("offline")),
+      });
+      await choose(result, "Scan a Barcode").catch(() => {});
+      expect(deleteAsync).toHaveBeenCalledWith("file:///front.jpg", {
+        idempotent: true,
+      });
+      expect(uploadBarcodeFrontToCoach).not.toHaveBeenCalled();
     });
 
     it("words a refused scan as a scan, not a photo", async () => {

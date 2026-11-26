@@ -163,6 +163,75 @@ describe("pacingReducer: the label step", () => {
   });
 });
 
+describe("pacingReducer: the front-of-pack step", () => {
+  const LABEL = {
+    calories: 120,
+    protein: 3,
+    carbs: 16,
+    fat: 5,
+    servingSize: "1 cup (240 ml)",
+  };
+  const shown: PacingState = { phase: "labelFound", code: CODE, label: LABEL };
+  const atFront: PacingState = { phase: "front", code: CODE, label: LABEL };
+
+  it("asks for the front after the label only when told it is needed", () => {
+    expect(pacingReducer(shown, { type: "revealed", front: true })).toEqual(
+      atFront,
+    );
+    expect(pacingReducer(shown, { type: "revealed" })).toEqual({
+      phase: "done",
+      code: CODE,
+      label: LABEL,
+    });
+  });
+
+  it("hands over the front photo with the code and label", () => {
+    const shooting = pacingReducer(atFront, { type: "shutter" });
+    expect(shooting).toEqual({ phase: "frontShot", code: CODE, label: LABEL });
+    expect(
+      pacingReducer(shooting, { type: "frontTaken", uri: "file:///f.jpg" }),
+    ).toEqual({
+      phase: "done",
+      code: CODE,
+      label: LABEL,
+      frontUri: "file:///f.jpg",
+    });
+  });
+
+  it("goes back to the front step when the photo could not be taken", () => {
+    const shooting = pacingReducer(atFront, { type: "shutter" });
+    expect(pacingReducer(shooting, { type: "frontTaken", uri: null })).toEqual({
+      ...atFront,
+      retry: true,
+    });
+  });
+
+  it("sends the code and label alone when the front is skipped", () => {
+    expect(pacingReducer(atFront, { type: "skip" })).toEqual({
+      phase: "done",
+      code: CODE,
+      label: LABEL,
+    });
+  });
+
+  it("ignores a photo that arrives outside the front step", () => {
+    expect(
+      pacingReducer(atFront, { type: "frontTaken", uri: "file:///f.jpg" }),
+    ).toEqual(atFront);
+  });
+
+  it("says what the front step is for", () => {
+    expect(pacingHint(atFront).title).toBe("Add the front of the pack?");
+    expect(pacingHint(atFront).body).toMatch(/name/i);
+    // Also offered when the product was found but the label didn't fit it.
+    expect(pacingHint(atFront).body).not.toMatch(/don't have a name/i);
+    expect(pacingHint({ ...atFront, retry: true }).title).toBe(
+      "I couldn't take that photo",
+    );
+    expect(pacingHint(atFront).body).toMatch(/allerg/i);
+  });
+});
+
 describe("labelSummary / labelSpoken", () => {
   const noisy = {
     calories: 123.456,

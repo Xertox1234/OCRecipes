@@ -1,4 +1,5 @@
 import { civilDateString, civilHourInTz } from "../../lib/civil-date";
+import { MIN_SAFE_DAILY_CALORIES } from "../../lib/ai-safety";
 import { addCivilDays } from "./week-window";
 import type {
   WeeklyDay,
@@ -25,6 +26,12 @@ const RANGE_TOLERANCE = 0.1;
 const LOW_CALORIE_RATIO = 0.7;
 const LATE_DINNER_HOUR = 21;
 const MIN_PATTERN_COUNT = 2;
+/**
+ * Recipes kept in the facts. The list goes into the AI prompt, the stored row
+ * and every report response, so a week of bulk saves must not grow them
+ * without end (coach audit 2026-11-24, L69). recipesAdded keeps the true count.
+ */
+const MAX_RECIPES = 12;
 
 function sumOrNull(values: (number | null)[]): number | null {
   const present = values.filter((v): v is number => v !== null);
@@ -109,11 +116,21 @@ export function buildWeeklyFacts(
     const calories = sumOrNull(ls.map((l) => l.calories));
     const protein = sumOrNull(ls.map((l) => l.protein));
     const carbs = sumOrNull(ls.map((l) => l.carbs));
-    // Meals logged but none recorded this nutrient: unknown, not a missed
-    // target (reliability audit 2026-11-19, L-xc-7). A day with no meals
-    // stays "not met".
-    const met = <T>(value: number | null, check: T): T | null =>
-      ls.length > 0 && value === null ? null : check;
+    // A verdict is known only when every logged meal recorded the nutrient.
+    // None recorded (reliability audit 2026-11-19, L-xc-7) or only some
+    // (coach audit 2026-11-24, L23): the total is missing or too low, so the
+    // day is unknown, not a missed target. A day with no meals stays "not met".
+    // A partial total is still a floor: protein already at the goal is met.
+    const met = (
+      key: "calories" | "protein" | "carbs",
+      check: boolean | null,
+      floorCounts: boolean,
+    ): boolean | null => {
+      const unrecorded = ls.filter((l) => l[key] === null).length;
+      if (unrecorded === 0) return check;
+      if (floorCounts && check === true && unrecorded < ls.length) return true;
+      return null;
+    };
     return {
       date,
       meals: ls.length,
@@ -121,9 +138,9 @@ export function buildWeeklyFacts(
       protein,
       carbs,
       fullyLogged: ls.length >= FULL_DAY_MEALS,
-      proteinMet: met(protein, proteinMet(protein, goals.protein)),
-      caloriesMet: met(calories, inRange(calories, goals.calories)),
-      carbsMet: met(carbs, inRange(carbs, goals.carbs)),
+      proteinMet: met("protein", proteinMet(protein, goals.protein), true),
+      caloriesMet: met("calories", inRange(calories, goals.calories), false),
+      carbsMet: met("carbs", inRange(carbs, goals.carbs), false),
     };
   });
 
@@ -135,15 +152,17 @@ export function buildWeeklyFacts(
   const carbsDaysMet =
     goals.carbs === null ? null : countTrue(days, "carbsMet");
 
-  let lowCalorieGuard = false;
-  if (goals.calories !== null) {
-    const full = days.filter((d) => d.fullyLogged && d.calories !== null);
-    const low = full.filter(
-      (d) =>
-        (d.calories as number) < LOW_CALORIE_RATIO * (goals.calories as number),
-    );
-    lowCalorieGuard = full.length > 0 && low.length > full.length / 2;
-  }
+  // With no calorie goal the safety floor stands in for it, so the guard does
+  // not hang on a profile field the user may leave blank (coach audit
+  // 2026-11-24, L22). A partial day's total is too low, which can only set the
+  // guard, never clear it: the safe side.
+  const lowLine =
+    goals.calories !== null
+      ? LOW_CALORIE_RATIO * goals.calories
+      : MIN_SAFE_DAILY_CALORIES;
+  const full = days.filter((d) => d.fullyLogged && d.calories !== null);
+  const low = full.filter((d) => (d.calories as number) < lowLine);
+  const lowCalorieGuard = full.length > 0 && low.length > full.length / 2;
 
   const previous = inputs.previous.slice(0, 6);
   const last = previous[0] ?? null;
@@ -197,7 +216,7 @@ export function buildWeeklyFacts(
       ((proteinDaysMet ?? 0) >= 5 || daysActive === 7),
     lowCalorieGuard,
     safetySignal,
-    recipes: inputs.recipes,
+    recipes: inputs.recipes.slice(0, MAX_RECIPES),
     patterns: buildPatterns(days, inputs.logs, tz),
     lastWeek,
     best,

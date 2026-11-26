@@ -4,13 +4,20 @@ import {
   settleCoachBarcode,
   scannedProductCode,
   sendBarcodeToCoach,
+  lookupCoachBarcode,
+  needsFrontOfPack,
 } from "../coach-barcode-scan";
+import { ApiError } from "../api-error";
 
 const { mockApiRequest } = vi.hoisted(() => ({ mockApiRequest: vi.fn() }));
 
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
+const { mockDelete } = vi.hoisted(() => ({
+  mockDelete: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("expo-file-system/legacy", () => ({ deleteAsync: mockDelete }));
 vi.mock("@/lib/timezone", () => ({
   getDeviceTimezone: () => "America/Toronto",
 }));
@@ -51,6 +58,17 @@ describe("awaitCoachBarcode / settleCoachBarcode", () => {
     await expect(first).resolves.toBeNull();
     settleCoachBarcode({ code: "12345678" });
     await expect(second).resolves.toEqual({ code: "12345678" });
+  });
+
+  it("deletes a front photo nobody is waiting for", () => {
+    settleCoachBarcode({
+      code: "4006381333931",
+      label: LABEL,
+      frontUri: "file:///front.jpg",
+    });
+    expect(mockDelete).toHaveBeenCalledWith("file:///front.jpg", {
+      idempotent: true,
+    });
   });
 
   it("ignores a read nobody is waiting for", () => {
@@ -135,5 +153,81 @@ describe("sendBarcodeToCoach", () => {
   it("rejects when the server refuses the turn", async () => {
     mockApiRequest.mockRejectedValue(new Error("429"));
     await expect(sendBarcodeToCoach("4006381333931", 7)).rejects.toThrow("429");
+  });
+});
+
+describe("lookupCoachBarcode (started at the scanner's lock)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("finds the product and its calories per 100 g", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: () => Promise.resolve({ per100g: { calories: 46 } }),
+    });
+    await expect(lookupCoachBarcode("4006381333931")).resolves.toEqual({
+      status: "found",
+      per100gCalories: 46,
+    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/nutrition/barcode/4006381333931",
+    );
+  });
+
+  it("tells an unknown product from a failed lookup", async () => {
+    mockApiRequest.mockRejectedValueOnce(
+      Object.assign(new ApiError("Product not found"), { status: 404 }),
+    );
+    await expect(lookupCoachBarcode("4006381333931")).resolves.toEqual({
+      status: "unknown",
+    });
+    mockApiRequest.mockRejectedValueOnce(new Error("offline"));
+    await expect(lookupCoachBarcode("4006381333931")).resolves.toEqual({
+      status: "failed",
+    });
+    mockApiRequest.mockRejectedValueOnce(
+      Object.assign(new ApiError("down"), { status: 503 }),
+    );
+    await expect(lookupCoachBarcode("4006381333931")).resolves.toEqual({
+      status: "failed",
+    });
+  });
+
+  it("offers nothing when the lookup was refused (rate limit, signed out)", async () => {
+    for (const status of [429, 401]) {
+      mockApiRequest.mockRejectedValueOnce(
+        Object.assign(new ApiError("no"), { status }),
+      );
+      const found = await lookupCoachBarcode("4006381333931");
+      expect(found).toEqual({ status: "refused" });
+      expect(needsFrontOfPack(found, LABEL)).toBe(false);
+    }
+  });
+});
+
+describe("needsFrontOfPack", () => {
+  const cup = { ...LABEL, calories: 120, servingSize: "1 cup (240 ml)" };
+
+  it("asks for the front when the barcode gives no usable name", () => {
+    expect(needsFrontOfPack({ status: "unknown" }, cup)).toBe(true);
+    expect(needsFrontOfPack({ status: "failed" }, cup)).toBe(true);
+    // 150 per 100 ml against 46: another pack's label.
+    expect(
+      needsFrontOfPack(
+        { status: "found", per100gCalories: 46 },
+        { ...cup, calories: 360 },
+      ),
+    ).toBe(true);
+  });
+
+  it("doesn't when the product was found and the label fits it", () => {
+    expect(
+      needsFrontOfPack({ status: "found", per100gCalories: 46 }, cup),
+    ).toBe(false);
+    expect(needsFrontOfPack({ status: "found" }, cup)).toBe(false);
+  });
+
+  it("doesn't without a label (the front carries no numbers) or a lookup", () => {
+    expect(needsFrontOfPack({ status: "unknown" }, undefined)).toBe(false);
+    expect(needsFrontOfPack(null, cup)).toBe(false);
   });
 });

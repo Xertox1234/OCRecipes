@@ -23,6 +23,9 @@ vi.mock("../../../storage", () => ({
     getDuePushes: vi.fn(),
     claimWeeklyReportDelivery: vi.fn(),
     releaseWeeklyReportDelivery: vi.fn(),
+    markWeeklyReportPushSent: vi.fn(),
+    cancelWeeklyReportPush: vi.fn(),
+    releaseStrandedPushClaims: vi.fn(),
   },
 }));
 vi.mock("../../notifications/notify", () => ({ notify: vi.fn() }));
@@ -99,6 +102,7 @@ beforeEach(() => {
   });
   vi.mocked(notify).mockResolvedValue({ pushDelivered: true });
   vi.mocked(isAiSharingAllowedFor).mockResolvedValue(true);
+  s.releaseStrandedPushClaims.mockResolvedValue(0);
 });
 
 const inserted = () => s.insertWeeklyReport.mock.calls[0][1];
@@ -237,7 +241,7 @@ describe("generateWeeklyReportForUser", () => {
 describe("sendDueWeeklyReportPushes", () => {
   it("claims before sending and sends once per report", async () => {
     s.getDuePushes.mockResolvedValue([
-      { userId: "u1", id: 41, headline: "Your headline" },
+      { userId: "u1", id: 41, headline: "Your headline", pushEnabled: true },
     ]);
     s.claimWeeklyReportDelivery
       .mockResolvedValueOnce(true)
@@ -257,7 +261,9 @@ describe("sendDueWeeklyReportPushes", () => {
   });
 
   it("a push that reaches no device releases the claim for the popup", async () => {
-    s.getDuePushes.mockResolvedValue([{ userId: "u1", id: 41, headline: "h" }]);
+    s.getDuePushes.mockResolvedValue([
+      { userId: "u1", id: 41, headline: "h", pushEnabled: true },
+    ]);
     s.claimWeeklyReportDelivery.mockResolvedValue(true);
     vi.mocked(notify).mockResolvedValue({ pushDelivered: false });
     expect(await sendDueWeeklyReportPushes(NOW)).toBe(0);
@@ -266,8 +272,8 @@ describe("sendDueWeeklyReportPushes", () => {
 
   it("a push that throws releases the claim and carries on", async () => {
     s.getDuePushes.mockResolvedValue([
-      { userId: "u1", id: 41, headline: "h" },
-      { userId: "u2", id: 42, headline: "h" },
+      { userId: "u1", id: 41, headline: "h", pushEnabled: true },
+      { userId: "u2", id: 42, headline: "h", pushEnabled: true },
     ]);
     s.claimWeeklyReportDelivery.mockResolvedValue(true);
     vi.mocked(notify)
@@ -281,8 +287,8 @@ describe("sendDueWeeklyReportPushes", () => {
 
   it("a release that fails after an undelivered push is logged and the loop carries on (L1)", async () => {
     s.getDuePushes.mockResolvedValue([
-      { userId: "u1", id: 41, headline: "h" },
-      { userId: "u2", id: 42, headline: "h" },
+      { userId: "u1", id: 41, headline: "h", pushEnabled: true },
+      { userId: "u2", id: 42, headline: "h", pushEnabled: true },
     ]);
     s.claimWeeklyReportDelivery.mockResolvedValue(true);
     vi.mocked(notify)
@@ -300,8 +306,8 @@ describe("sendDueWeeklyReportPushes", () => {
 
   it("a release that fails after a push that threw is logged and the loop carries on (L1)", async () => {
     s.getDuePushes.mockResolvedValue([
-      { userId: "u1", id: 41, headline: "h" },
-      { userId: "u2", id: 42, headline: "h" },
+      { userId: "u1", id: 41, headline: "h", pushEnabled: true },
+      { userId: "u2", id: 42, headline: "h", pushEnabled: true },
     ]);
     s.claimWeeklyReportDelivery.mockResolvedValue(true);
     vi.mocked(notify)
@@ -316,6 +322,108 @@ describe("sendDueWeeklyReportPushes", () => {
     expect(logger.error).toHaveBeenCalledWith(
       { err: dbDown, userId: "u1", reportId: 41 },
       expect.stringContaining("release"),
+    );
+  });
+});
+
+// Audit 2026-11-24 L24: everything that can fail after the paid AI call
+// moves before it, so a failure there no longer pays for the call again on
+// the next catch-up tick.
+describe("generateWeeklyReportForUser — order around the AI call", () => {
+  it("works out the push time before the AI call", async () => {
+    const order: string[] = [];
+    s.hasReminderSince.mockImplementation(async () => {
+      order.push("push-time");
+      return false;
+    });
+    vi.mocked(writeWeeklyReport).mockImplementation(async () => {
+      order.push("ai");
+      return { content, source: "ai", aiFault: null };
+    });
+    await generateWeeklyReportForUser("u1", NOW, TZ);
+    expect(order).toEqual(["push-time", "ai"]);
+  });
+
+  it("a push-time lookup that fails makes no AI call", async () => {
+    s.hasReminderSince.mockRejectedValue(new Error("db down"));
+    await expect(generateWeeklyReportForUser("u1", NOW, TZ)).rejects.toThrow(
+      "db down",
+    );
+    expect(writeWeeklyReport).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendDueWeeklyReportPushes — delivery state", () => {
+  // L95: the user turned pushes off after the report was queued.
+  it("a push the user has since turned off is not sent; the popup takes it", async () => {
+    s.getDuePushes.mockResolvedValue([
+      { userId: "u1", id: 41, headline: "h", pushEnabled: false },
+    ]);
+    expect(await sendDueWeeklyReportPushes(NOW)).toBe(0);
+    expect(s.claimWeeklyReportDelivery).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect(s.cancelWeeklyReportPush).toHaveBeenCalledWith("u1", 41);
+  });
+
+  // L65: the send is recorded, so a claim without one can be recovered.
+  it("records the send only after a push reaches a device", async () => {
+    s.getDuePushes.mockResolvedValue([
+      { userId: "u1", id: 41, headline: "h", pushEnabled: true },
+      { userId: "u2", id: 42, headline: "h", pushEnabled: true },
+    ]);
+    s.claimWeeklyReportDelivery.mockResolvedValue(true);
+    vi.mocked(notify)
+      .mockResolvedValueOnce({ pushDelivered: true })
+      .mockResolvedValueOnce({ pushDelivered: false });
+    expect(await sendDueWeeklyReportPushes(NOW)).toBe(1);
+    expect(s.markWeeklyReportPushSent).toHaveBeenCalledTimes(1);
+    expect(s.markWeeklyReportPushSent).toHaveBeenCalledWith("u1", 41);
+  });
+
+  it("first hands stale claims with no send recorded to the popup", async () => {
+    const order: string[] = [];
+    s.releaseStrandedPushClaims.mockImplementation(async () => {
+      order.push("sweep");
+      return 2;
+    });
+    s.getDuePushes.mockImplementation(async () => {
+      order.push("due");
+      return [];
+    });
+    await sendDueWeeklyReportPushes(NOW);
+    expect(order).toEqual(["sweep", "due"]);
+    const cutoff = s.releaseStrandedPushClaims.mock.calls[0][0] as Date;
+    expect(NOW.getTime() - cutoff.getTime()).toBe(15 * 60_000);
+  });
+
+  it("a failed sweep is logged and the pushes still go out", async () => {
+    const dbDown = new Error("db down");
+    s.releaseStrandedPushClaims.mockRejectedValue(dbDown);
+    s.getDuePushes.mockResolvedValue([
+      { userId: "u1", id: 41, headline: "h", pushEnabled: true },
+    ]);
+    s.claimWeeklyReportDelivery.mockResolvedValue(true);
+    expect(await sendDueWeeklyReportPushes(NOW)).toBe(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      { err: dbDown },
+      expect.stringContaining("stale"),
+    );
+  });
+
+  it("a send that cannot be recorded is logged, still counted, and the loop carries on", async () => {
+    s.getDuePushes.mockResolvedValue([
+      { userId: "u1", id: 41, headline: "h", pushEnabled: true },
+      { userId: "u2", id: 42, headline: "h", pushEnabled: true },
+    ]);
+    s.claimWeeklyReportDelivery.mockResolvedValue(true);
+    const dbDown = new Error("db down");
+    s.markWeeklyReportPushSent.mockRejectedValueOnce(dbDown);
+    expect(await sendDueWeeklyReportPushes(NOW)).toBe(2);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(s.releaseWeeklyReportDelivery).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      { err: dbDown, userId: "u1", reportId: 41 },
+      expect.stringContaining("record"),
     );
   });
 });

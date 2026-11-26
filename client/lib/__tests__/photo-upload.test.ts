@@ -432,6 +432,22 @@ describe("upload form-field budget (server MULTIPART_LIMITS.fields)", () => {
       run: () => uploadFrontLabelPhoto(PHOTO_URI, "0123456789012"),
       fields: ["barcode"],
     },
+    {
+      name: "uploadBarcodeFrontToCoach",
+      run: () =>
+        photoUpload.uploadBarcodeFrontToCoach(PHOTO_URI, 7, {
+          barcode: "0123456789012",
+          label: {
+            calories: 120,
+            protein: 3,
+            carbs: 16,
+            fat: 5,
+            servingSize: "1 cup",
+          },
+          openingBrief: "full",
+        }),
+      fields: ["scan"],
+    },
   ];
 
   beforeEach(() => {
@@ -960,6 +976,60 @@ describe("session expiry on photo uploads", () => {
     mockFetch.mockResolvedValue(response);
     await expect(run()).rejects.toThrow();
     expect(notifyIfSessionExpired).toHaveBeenCalledWith(response, "test-token");
+  });
+});
+
+describe("uploadBarcodeFrontToCoach", () => {
+  const scan = {
+    barcode: "4006381333931",
+    label: {
+      calories: 120,
+      protein: 3,
+      carbs: 16,
+      fat: 5,
+      servingSize: "1 cup (240 ml)",
+    },
+  };
+
+  beforeEach(() => {
+    vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
+    vi.mocked(compressImage).mockResolvedValue({
+      uri: "file:///compressed.jpg",
+      width: 100,
+      height: 100,
+      sizeKB: 10,
+    });
+  });
+
+  it("posts the compressed front photo with the scan as one JSON field", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 201,
+      body: JSON.stringify({ assistantMessage: { content: "Named it." } }),
+      headers: {},
+      mimeType: "application/json",
+    });
+    await expect(
+      photoUpload.uploadBarcodeFrontToCoach("file:///front.jpg", 7, scan),
+    ).resolves.toBe("Named it.");
+    const [url, uri, options] = vi.mocked(uploadAsync).mock.calls.at(-1)!;
+    expect(url).toMatch(/\/api\/chat\/conversations\/7\/barcode-front$/);
+    expect(uri).toBe("file:///compressed.jpg");
+    const parameters =
+      options && "parameters" in options ? options.parameters : undefined;
+    expect(JSON.parse(parameters?.scan ?? "null")).toEqual(scan);
+    expect(cleanupImage).toHaveBeenCalledWith("file:///compressed.jpg");
+  });
+
+  it("rejects on a refused upload", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 400,
+      body: JSON.stringify({ error: "bad", code: "VALIDATION_ERROR" }),
+      headers: {},
+      mimeType: "application/json",
+    });
+    await expect(
+      photoUpload.uploadBarcodeFrontToCoach("file:///front.jpg", 7, scan),
+    ).rejects.toBeDefined();
   });
 });
 

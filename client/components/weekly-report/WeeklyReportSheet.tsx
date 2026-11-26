@@ -46,7 +46,11 @@ function weeklyReportIdFrom(data: unknown): number | null {
  */
 export function WeeklyReportPopupHost() {
   const { theme } = useTheme();
-  const { data: pendingData } = usePendingWeeklyPopup();
+  // dataUpdatedAt changes on every fetch, even when structural sharing keeps
+  // the same data: it is what lets a failed claim retry on the next
+  // foreground (coach audit 2026-11-24, L60).
+  const { data: pendingData, dataUpdatedAt: pendingFetchedAt } =
+    usePendingWeeklyPopup();
   const { mutateAsync: claimPopup } = useMarkPopupShown();
   const [foregroundPush, setForegroundPush] = useState<{
     reportId: number;
@@ -64,8 +68,18 @@ export function WeeklyReportPopupHost() {
 
   const pending = pendingData?.report ?? null;
 
+  const { data: report, isError: reportFailed } = useWeeklyReport(
+    visibleId ?? 0,
+  );
+  // The dialog, and its close, render only once the report has loaded. A
+  // report that fails to load (offline, a 404) does not hold the host, or no
+  // later popup could show until the app restarts (coach audit 2026-11-24,
+  // L82). Its id stays in shownIds, so it is not offered again this session;
+  // the next popup's id replaces it.
+  const showing = visibleId !== null && !reportFailed;
+
   useEffect(() => {
-    if (visibleId !== null) return;
+    if (showing) return;
     const id = shouldShowPopup({
       pending: pending ? { id: pending.id } : null,
       foregroundPush,
@@ -84,15 +98,15 @@ export function WeeklyReportPopupHost() {
         if (claimed) setVisibleId(id);
       })
       .catch(() => {
-        // Offline or server error: try again on the next foreground.
+        // Offline or server error: try again on the next foreground, when
+        // the pending report is fetched again (pendingFetchedAt changes).
         shownIds.current.delete(id);
       });
-  }, [pending, foregroundPush, visibleId, claimPopup]);
+  }, [pending, pendingFetchedAt, foregroundPush, showing, claimPopup]);
 
-  const { data: report } = useWeeklyReport(visibleId ?? 0);
   const close = useCallback(() => setVisibleId(null), []);
 
-  if (visibleId === null || !report) return null;
+  if (!showing || !report) return null;
   const range = formatWeekRange(report.weekStart, report.weekEnd);
 
   return (

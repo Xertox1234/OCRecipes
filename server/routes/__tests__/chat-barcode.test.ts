@@ -5,7 +5,7 @@ import { storage } from "../../storage";
 import {
   scannedBarcodeReply,
   scannedLabelReply,
-} from "../../services/coach-photo";
+} from "../../services/coach-scan-reply";
 import { createWriteCardBlock } from "../../services/coach-pro-chat/write-card-context";
 import { prepareOpeningBrief } from "../chat-admit";
 import { register } from "../chat-barcode";
@@ -27,14 +27,10 @@ vi.mock("../../storage", () => ({
   },
 }));
 
-vi.mock("../../services/coach-photo", async (orig) => {
-  const actual = await orig<typeof import("../../services/coach-photo")>();
-  return {
-    ...actual,
-    scannedBarcodeReply: vi.fn(),
-    scannedLabelReply: vi.fn(),
-  };
-});
+vi.mock("../../services/coach-scan-reply", () => ({
+  scannedBarcodeReply: vi.fn(),
+  scannedLabelReply: vi.fn(),
+}));
 
 vi.mock("../../services/coach-pro-chat/write-card-context", () => ({
   createWriteCardBlock: vi.fn(),
