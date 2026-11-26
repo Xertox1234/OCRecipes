@@ -34,9 +34,14 @@ describe("dayProgressRows", () => {
     expect(fat.over).toBe(true);
   });
 
-  it("draws an empty bar for a goal of 0 rather than dividing by it", () => {
-    const rows = dayProgressRows(TOTALS, { ...GOALS, protein: 0 });
-    expect(rows[1].fraction).toBe(0);
+  it("shows a total with no goal (0) as just the total, never over", () => {
+    const row = dayProgressRows(TOTALS, { ...GOALS, protein: 0 })[1];
+    expect(row).toMatchObject({
+      text: "82 g · no goal set",
+      fraction: 0,
+      over: false,
+      spoken: "Protein: 82 grams, no goal set",
+    });
   });
 });
 
@@ -58,7 +63,7 @@ describe("liveTotals / liveGoals", () => {
     expect(liveGoals(undefined)).toBeUndefined();
   });
 
-  it("uses the default for a goal not set, as the server does", () => {
+  it("uses the calorie default and no macro goal for one not set, as the server does", () => {
     expect(
       liveGoals({
         dailyCalorieGoal: null,
@@ -70,8 +75,8 @@ describe("liveTotals / liveGoals", () => {
     ).toEqual({
       calories: DEFAULT_NUTRITION_GOALS.calories,
       protein: 120,
-      carbs: DEFAULT_NUTRITION_GOALS.carbs,
-      fat: DEFAULT_NUTRITION_GOALS.fat,
+      carbs: 0,
+      fat: 0,
     });
   });
 });

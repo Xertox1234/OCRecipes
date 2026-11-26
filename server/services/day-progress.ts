@@ -6,7 +6,6 @@
  * date and stores that, with the numbers as they are now for the app to show
  * until its own read of that day arrives. The app then keeps it current.
  */
-import { z } from "zod";
 import { storage } from "../storage";
 import {
   addCivilDays,
@@ -15,23 +14,7 @@ import {
 } from "../lib/civil-date";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 import type { DayProgressBlock, DayTotals } from "@shared/schemas/coach-blocks";
-
-export type DayProgressDay = "today" | "yesterday";
-
-// Not strict: a key the model added (a title, made-up numbers) is dropped,
-// not a reason to lose the card.
-const dayProgressRequestSchema = z.object({
-  type: z.literal("day_progress"),
-  day: z.enum(["today", "yesterday"]),
-});
-
-/** The day a model-authored day_progress block asks for, if it is one. */
-export function readDayProgressRequest(
-  raw: unknown,
-): DayProgressDay | undefined {
-  const parsed = dayProgressRequestSchema.safeParse(raw);
-  return parsed.success ? parsed.data.day : undefined;
-}
+import type { DayProgressDay } from "./day-progress-request";
 
 export interface DayProgressGoals {
   dailyCalorieGoal: number | null;
@@ -46,13 +29,18 @@ function total(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** An unset goal (null or 0) is the default the app shows for it. */
+/**
+ * An unset calorie goal is the app's default, as /api/daily-budget reads it.
+ * An unset macro goal is 0, "no goal", as the Coach's own context and the
+ * day detail screen read it: the card never shows a target the user didn't
+ * pick.
+ */
 function goalsOf(user: DayProgressGoals): DayTotals {
   return {
     calories: user.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories,
-    protein: user.dailyProteinGoal || DEFAULT_NUTRITION_GOALS.protein,
-    carbs: user.dailyCarbsGoal || DEFAULT_NUTRITION_GOALS.carbs,
-    fat: user.dailyFatGoal || DEFAULT_NUTRITION_GOALS.fat,
+    protein: user.dailyProteinGoal || 0,
+    carbs: user.dailyCarbsGoal || 0,
+    fat: user.dailyFatGoal || 0,
   };
 }
 

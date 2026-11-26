@@ -518,6 +518,8 @@ describe("day_progress requests", () => {
     });
     expect(on).toContain('- day_progress: { type: "day_progress", day:');
     expect(on).toMatch(/use one day_progress block, not an inline_chart/);
+    // The card's numbers move on; the reply's words should not pin them.
+    expect(on).toMatch(/say in words how the day is going/);
     // A week or a trend is still an inline_chart.
     expect(on).toContain("- inline_chart:");
     expect(getBlocksSystemPrompt(false, { writeCards: true })).not.toContain(

@@ -66,7 +66,9 @@ const DayProgress = React.memo(function DayProgress({ block }: Props) {
                 styles.fill,
                 {
                   width: `${row.fraction * 100}%`,
-                  backgroundColor: row.over ? theme.warning : theme.success,
+                  // error, not warning: warning is under 3:1 on the
+                  // track in light mode; error passes in both.
+                  backgroundColor: row.over ? theme.error : theme.success,
                 },
               ]}
             />

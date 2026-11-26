@@ -16,7 +16,8 @@ import { extractAndStoreNotebook } from "./notebook";
 import type { TurnContext } from "./load-turn-context";
 import type { ReplyResult } from "./stream-reply";
 import type { CoachChatEvent, CoachChatParams } from "./types";
-import { buildDayProgressBlock, type DayProgressDay } from "../day-progress";
+import { buildDayProgressBlock } from "../day-progress";
+import type { DayProgressDay } from "../day-progress-request";
 import { createServiceLogger, toError } from "../../lib/logger";
 
 const log = createServiceLogger("coach-pro-chat");

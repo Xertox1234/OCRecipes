@@ -40,9 +40,18 @@ export function dayProgressRows(
   return ROWS.map(({ key, label, unit, unitWord }) => {
     const value = totals[key];
     const goal = goals[key];
-    const over = goal > 0 && Math.round(value) > Math.round(goal);
-    const fraction =
-      goal > 0 ? Math.min(Math.round((value / goal) * 100) / 100, 1) : 0;
+    // No goal (0): the total alone, with nothing to be over.
+    if (goal <= 0) {
+      return {
+        label,
+        text: `${whole(value)} ${unit} · no goal set`,
+        fraction: 0,
+        over: false,
+        spoken: `${label}: ${whole(value)}${unitWord}, no goal set`,
+      };
+    }
+    const over = Math.round(value) > Math.round(goal);
+    const fraction = Math.min(Math.round((value / goal) * 100) / 100, 1);
     return {
       label,
       text: `${whole(value)} / ${whole(goal)} ${unit}`,
@@ -73,8 +82,9 @@ export function liveTotals(
 }
 
 /**
- * The goals from /api/goals, an unset one (null or 0) as its default: the
- * same fallback the server used for the snapshot (server/services/day-progress.ts).
+ * The goals from /api/goals: an unset calorie goal is the app's default, an
+ * unset macro goal is 0, "no goal" — the server's snapshot reads them the
+ * same way (server/services/day-progress.ts).
  */
 export function liveGoals(
   goals: GoalsResponse | undefined,
@@ -82,9 +92,9 @@ export function liveGoals(
   if (!goals) return undefined;
   return {
     calories: goals.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories,
-    protein: goals.dailyProteinGoal || DEFAULT_NUTRITION_GOALS.protein,
-    carbs: goals.dailyCarbsGoal || DEFAULT_NUTRITION_GOALS.carbs,
-    fat: goals.dailyFatGoal || DEFAULT_NUTRITION_GOALS.fat,
+    protein: goals.dailyProteinGoal || 0,
+    carbs: goals.dailyCarbsGoal || 0,
+    fat: goals.dailyFatGoal || 0,
   };
 }
 

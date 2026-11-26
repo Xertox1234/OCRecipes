@@ -6,7 +6,10 @@ import {
 import { isFinderBlockType } from "@shared/schemas/recipe-finder";
 import { logger, toError } from "../lib/logger";
 import { extractBlockFences, stripCitationMarkers } from "./coach-reply-text";
-import { readDayProgressRequest, type DayProgressDay } from "./day-progress";
+import {
+  readDayProgressRequest,
+  type DayProgressDay,
+} from "./day-progress-request";
 
 export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   const valid: CoachBlock[] = [];
@@ -157,7 +160,7 @@ const INLINE_CHART_LINE =
 const DAY_PROGRESS_LINE =
   '- day_progress: { type: "day_progress", day: "today"|"yesterday" } (the app fills in that day\'s calories, protein, carbs and fat against the goals, and keeps them up to date)';
 const DAY_PROGRESS_RULE =
-  "- For how today or yesterday is going against the goals, use one day_progress block, not an inline_chart: its numbers stay current. Keep inline_chart for anything else, such as a week or a trend";
+  "- For how today or yesterday is going against the goals, use one day_progress block, not an inline_chart: its numbers stay current, so say in words how the day is going rather than repeating its numbers. Keep inline_chart for anything else, such as a week or a trend";
 const COMMITMENT_CARD_LINE =
   '- commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }';
 const NOTES_PAUSED_RULE =

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { storage } from "../../storage";
-import { buildDayProgressBlock, readDayProgressRequest } from "../day-progress";
+import { buildDayProgressBlock } from "../day-progress";
+import { readDayProgressRequest } from "../day-progress-request";
 import { coachBlockSchema } from "@shared/schemas/coach-blocks";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
@@ -100,7 +101,7 @@ describe("buildDayProgressBlock", () => {
     expect(block.date).toBe("2026-11-25");
   });
 
-  it("falls back to the default goals the app shows for one not set", async () => {
+  it("falls back to the app's calorie default, and leaves a macro goal not set at 0", async () => {
     const block = await buildDayProgressBlock("today", {
       userId: "1",
       tz: TZ,
@@ -112,10 +113,12 @@ describe("buildDayProgressBlock", () => {
         dailyFatGoal: 55,
       },
     });
+    // As the Coach's own context and the day detail screen read them:
+    // 0 is "no goal", never a target the user didn't pick.
     expect(block.snapshot.goals).toEqual({
       calories: DEFAULT_NUTRITION_GOALS.calories,
-      protein: DEFAULT_NUTRITION_GOALS.protein,
-      carbs: DEFAULT_NUTRITION_GOALS.carbs,
+      protein: 0,
+      carbs: 0,
       fat: 55,
     });
   });
