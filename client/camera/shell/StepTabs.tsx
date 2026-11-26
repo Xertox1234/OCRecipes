@@ -63,6 +63,13 @@ function StepTab({ tab, onRedo }: TabProps) {
     prevState.current = state;
   }, [state, checkScale, label, reducedMotion]);
 
+  // Same as StepPill: also fires on mount when a tab starts out active.
+  useEffect(() => {
+    if (state === "active" && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(`${label} step in progress`);
+    }
+  }, [state, label]);
+
   const checkAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: checkScale.value }],
   }));
@@ -90,7 +97,10 @@ function StepTab({ tab, onRedo }: TabProps) {
       onPressOut={() => setPressed(false)}
       disabled={!tab.tappable}
       accessibilityRole="button"
-      accessibilityLabel={isDone ? `${label}, done` : label}
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={[label, tab.sublabel, isDone ? "done" : null]
+        .filter(Boolean)
+        .join(", ")}
       accessibilityHint={
         tab.tappable ? "Double tap to redo this step" : undefined
       }

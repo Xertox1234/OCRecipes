@@ -27,6 +27,11 @@ vi.mock("@/components/PressableScale", async () => {
   };
 });
 
+const accessibility = { reducedMotion: false };
+vi.mock("@/hooks/useAccessibility", () => ({
+  useAccessibility: () => accessibility,
+}));
+
 const selection = vi.fn();
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({ selection }),
@@ -54,6 +59,7 @@ describe("StepTabs", () => {
 
   beforeEach(() => {
     selection.mockClear();
+    accessibility.reducedMotion = false;
     announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
   });
   afterEach(() => {
@@ -153,5 +159,58 @@ describe("StepTabs", () => {
       <StepTabs tabs={tabs("done", "active", "upcoming")} onRedo={vi.fn()} />,
     );
     expect(announceSpy).not.toHaveBeenCalled();
+  });
+
+  it("composes the sublabel into the accessibility label", () => {
+    const { rerender } = render(
+      <StepTabs tabs={tabs("done", "done", "active")} onRedo={vi.fn()} />,
+    );
+    expect(screen.getByLabelText("Front, optional")).toBeTruthy();
+    rerender(<StepTabs tabs={tabs("done", "done", "done")} onRedo={vi.fn()} />);
+    expect(screen.getByLabelText("Front, optional, done")).toBeTruthy();
+    expect(screen.getByLabelText("Barcode, done")).toBeTruthy();
+  });
+
+  it('announces "<label> step in progress" when a tab becomes active (iOS)', () => {
+    RN.Platform.OS = "ios";
+    const { rerender } = render(
+      <StepTabs
+        tabs={tabs("active", "upcoming", "upcoming")}
+        onRedo={vi.fn()}
+      />,
+    );
+    expect(announceSpy).toHaveBeenCalledWith("Barcode step in progress");
+    announceSpy.mockClear();
+    rerender(
+      <StepTabs tabs={tabs("done", "active", "upcoming")} onRedo={vi.fn()} />,
+    );
+    expect(announceSpy).toHaveBeenCalledWith("Nutrition step in progress");
+  });
+
+  it("does not announce step in progress on Android", () => {
+    RN.Platform.OS = "android";
+    render(
+      <StepTabs
+        tabs={tabs("active", "upcoming", "upcoming")}
+        onRedo={vi.fn()}
+      />,
+    );
+    expect(announceSpy).not.toHaveBeenCalled();
+  });
+
+  it("still announces step complete under reduced motion", () => {
+    RN.Platform.OS = "ios";
+    accessibility.reducedMotion = true;
+    const { rerender } = render(
+      <StepTabs
+        tabs={tabs("active", "upcoming", "upcoming")}
+        onRedo={vi.fn()}
+      />,
+    );
+    announceSpy.mockClear();
+    rerender(
+      <StepTabs tabs={tabs("done", "active", "upcoming")} onRedo={vi.fn()} />,
+    );
+    expect(announceSpy).toHaveBeenCalledWith("Barcode step complete");
   });
 });
