@@ -10,6 +10,7 @@ import { parseServingGrams } from "../barcode-lookup";
 import { scaleToGrams } from "../portion-nutrition";
 import { inferMealTimeHint } from "../../lib/meal-time-hint";
 import {
+  civilDateString,
   civilHourInTz,
   sameElapsedTimeOnPreviousDay,
 } from "../../lib/civil-date";
@@ -202,12 +203,34 @@ function parseFoodEdits(p: FoodCardPayload, raw: unknown): FoodCardEdits {
   return parsed.data;
 }
 
+/**
+ * True once the local day a food card was shown on is over (audit
+ * 2026-11-24, L107). Its "today" or "yesterday" and its meal were worked out
+ * for that day, so a tap on a later day would log to the wrong one. The row's
+ * creation time is the day it was shown; nothing new is stored.
+ */
+export function foodCardDayOver(
+  card: Pick<CoachWriteCard, "kind" | "createdAt">,
+  tz: string,
+  now: Date,
+): boolean {
+  return (
+    card.kind === "food" &&
+    civilDateString(card.createdAt, tz) < civilDateString(now, tz)
+  );
+}
+
 export async function performFoodSave(
   tx: WriteCardTx,
   card: CoachWriteCard,
   rawEdits: unknown,
   ctx: { userId: string; tz: string; now: Date },
 ): Promise<CoachWriteCardSavedRefs> {
+  if (foodCardDayOver(card, ctx.tz, ctx.now)) {
+    throw new WriteCardEditError(
+      "This card is from an earlier day. Tell Coach what you ate to log it.",
+    );
+  }
   const payload = savableCardPayload(card, "food");
   const edits = parseFoodEdits(payload, rawEdits);
   const counts = foodCounts(payload, edits);

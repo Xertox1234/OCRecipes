@@ -28,6 +28,7 @@ import { tryArchiveNotebook } from "../services/coach-pro-chat";
 import { sanitizeUserInput } from "../lib/ai-safety";
 import { finderActionSchema } from "@shared/schemas/recipe-finder";
 import { enrichWriteCardBlocks } from "../services/write-cards/enrich";
+import { parseTimezone } from "../lib/civil-date";
 import { admitTurn } from "./chat-admit";
 import {
   CONVERSATION_CONFIG,
@@ -260,9 +261,13 @@ export function register(app: Express): void {
             ErrorCode.NOT_FOUND,
           );
 
+        // The saved timezone decides when a food card's day is over (audit
+        // 2026-11-24, L107); this request carries none.
+        const savedTz = (await storage.getUser(req.userId))?.timezone;
         const messages = await enrichWriteCardBlocks(
           await storage.getChatMessages(id, 100, req.userId),
           req.userId,
+          savedTz ? parseTimezone(savedTz) : null,
         );
         fireAndForget(
           "coach-notebook-archival",
