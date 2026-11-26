@@ -28,6 +28,7 @@ const chipProps = {
   onRetakeStep3: noop,
   onSmartPhotoConfirm: noop,
   onRetry: noop,
+  onRescan: noop,
 };
 
 describe("ProductChip top flag (universal + allergen)", () => {
@@ -43,7 +44,7 @@ describe("ProductChip top flag (universal + allergen)", () => {
     const { getByText } = renderComponent(
       <ProductChip phase={lockedPhase(caffeineFlag)} {...chipProps} />,
     );
-    expect(getByText("⚠ High in caffeine")).toBeTruthy();
+    expect(getByText("High in caffeine")).toBeTruthy();
   });
 
   // Runs the exact computation ScanScreen's fetchProductInfo performs on the
@@ -72,7 +73,7 @@ describe("ProductChip top flag (universal + allergen)", () => {
     const { getByText, queryByText } = renderComponent(
       <ProductChip phase={lockedPhase(topFlag)} {...chipProps} />,
     );
-    expect(getByText("⚠ Contains Milk")).toBeTruthy();
+    expect(getByText("Contains Milk")).toBeTruthy();
     expect(queryByText(/High in sugar/)).toBeNull();
   });
 
@@ -80,6 +81,6 @@ describe("ProductChip top flag (universal + allergen)", () => {
     const { queryByText } = renderComponent(
       <ProductChip phase={lockedPhase(undefined)} {...chipProps} />,
     );
-    expect(queryByText(/⚠/)).toBeNull();
+    expect(queryByText(/High in|Contains/)).toBeNull();
   });
 });

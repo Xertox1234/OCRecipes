@@ -101,7 +101,7 @@ export function getBarcodeLockActions(
     };
   }
   return {
-    primary: { label: "Scan Nutrition Facts →", intent: "proceedToLabel" },
+    primary: { label: "Next: nutrition →", intent: "proceedToLabel" },
     secondary: {
       label: "Use database data anyway",
       intent: "confirmProduct",
@@ -195,13 +195,13 @@ export function getChipAnnounceText(
   }
   switch (variant) {
     case "barcode_lock":
-      return "Product found, choose how to continue";
+      return "Barcode found, choose how to continue";
     case "step2_review":
-      return "Nutrition label scanned, review values";
+      return "Label captured, review or retake";
     case "step2_confirmed":
       return "Nutrition values confirmed";
     case "step3_review":
-      return "Front label scanned, review values";
+      return "Front captured, review or retake";
     case "session_complete":
       return "Scan complete";
     case "smart_error":

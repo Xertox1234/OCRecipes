@@ -353,6 +353,16 @@ export const CameraColors = {
   textShadowLight: "rgba(0,0,0,0.3)",
   /** Muted warm text for upcoming step tabs over the dark camera overlay */
   textMuted: "#B8A898",
+  /** Scrim over the camera feed behind a scan example card (warm, near-opaque so the art reads) */
+  exampleScrim: "rgba(30,24,20,0.94)",
+  /** Example art: kraft package front, the warm amber of a cereal box */
+  exampleArtPackage: "#D9A441",
+  /** Example art: shaded side of the package front */
+  exampleArtPackageShade: "#8A5A2B",
+  /** Example art: dark brown print on the package front */
+  exampleArtPackageInk: "#3A2410",
+  /** Example art: the cream bowl drawn on the package front */
+  exampleArtBowl: "#FFF3DC",
   /** White border for camera UI elements */
   border: "#FFFFFF",
 };

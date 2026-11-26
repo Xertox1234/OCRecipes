@@ -219,18 +219,18 @@ describe("getChipAnnounceText", () => {
     ).toBe("Grilled chicken, tap to confirm");
   });
 
-  it("keeps the static announce strings for all other variants", () => {
+  it("keeps the static announce strings for all other variants, with no ✓ read aloud", () => {
     expect(getChipAnnounceText("barcode_lock", idle)).toBe(
-      "Product found, choose how to continue",
+      "Barcode found, choose how to continue",
     );
     expect(getChipAnnounceText("step2_review", idle)).toBe(
-      "Nutrition label scanned, review values",
+      "Label captured, review or retake",
     );
     expect(getChipAnnounceText("step2_confirmed", idle)).toBe(
       "Nutrition values confirmed",
     );
     expect(getChipAnnounceText("step3_review", idle)).toBe(
-      "Front label scanned, review values",
+      "Front captured, review or retake",
     );
     expect(getChipAnnounceText("session_complete", idle)).toBe("Scan complete");
     expect(getChipAnnounceText("smart_error", idle)).toBe(
@@ -292,7 +292,7 @@ describe("getBarcodeLockActions", () => {
   it("requires the label step as primary when the data is unverified", () => {
     const actions = getBarcodeLockActions("unverified");
     expect(actions.primary).toEqual({
-      label: "Scan Nutrition Facts →",
+      label: "Next: nutrition →",
       intent: "proceedToLabel",
     });
     expect(actions.secondary).toEqual({
@@ -330,7 +330,7 @@ describe("getBarcodeLockActions", () => {
       product: { name: "Cherry Coke" },
     };
     expect(getChipAnnounceText("barcode_lock", phase)).toBe(
-      "Product found, choose how to continue",
+      "Barcode found, choose how to continue",
     );
   });
 });

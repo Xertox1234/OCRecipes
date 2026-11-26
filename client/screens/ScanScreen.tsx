@@ -941,6 +941,13 @@ export default function ScanScreen() {
         screenReaderEnabled={screenReaderEnabled}
         phase={scanPhase}
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
+        // "Not this": drop the lock and resume scanning. Clear the lock gate
+        // first so the next sighting can lock (onBarcodeScanned returns early
+        // while it is set).
+        onRescan={() => {
+          hasLockedRef.current = false;
+          dispatch({ type: "RESCAN" });
+        }}
         onProceedToLabel={() => dispatch({ type: "PROCEED_TO_LABEL" })}
         onStepConfirmed={() => dispatch({ type: "STEP_CONFIRMED" })}
         // Retake stays in the wizard (owner decision 2026-11-22): no

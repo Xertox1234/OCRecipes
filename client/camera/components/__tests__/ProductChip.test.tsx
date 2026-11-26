@@ -54,6 +54,7 @@ const handlers = {
   onRetakeStep3: noop,
   onSmartPhotoConfirm: noop,
   onRetry: noop,
+  onRescan: noop,
 };
 
 const barcodeLock: ScanPhase = {
@@ -94,10 +95,11 @@ describe("ProductChip — step2_confirmed has no secondary capture button", () =
 // step 2 an unlabeled implicit gesture in caption text. Both actions are now
 // real, labelled buttons: see getBarcodeLockActions in ProductChip-utils.ts.
 describe("ProductChip — barcode_lock offers two real actions, not a skip-only primary", () => {
-  it("renders two buttons: primary advances to the label step, secondary is the barcode-only escape hatch", () => {
+  it("renders Not this, the primary that advances to the label step, and the barcode-only escape hatch", () => {
     render(<ProductChip phase={barcodeLock} {...handlers} />);
-    expect(screen.getAllByRole("button")).toHaveLength(2);
-    expect(screen.getByText("Scan Nutrition Facts →")).toBeTruthy();
+    expect(screen.getAllByRole("button")).toHaveLength(3);
+    expect(screen.getByText("Not this")).toBeTruthy();
+    expect(screen.getByText("Next: nutrition →")).toBeTruthy();
     expect(screen.getByText("Use database data anyway")).toBeTruthy();
   });
 
@@ -112,7 +114,7 @@ describe("ProductChip — barcode_lock offers two real actions, not a skip-only 
         }}
       />,
     );
-    screen.getByText("Scan Nutrition Facts →").click();
+    screen.getByText("Next: nutrition →").click();
     expect(called).toBe(true);
   });
 
@@ -152,7 +154,7 @@ describe("ProductChip — barcode_lock offers two real actions, not a skip-only 
 });
 
 describe("ProductChip — step2_review / step3_review auto-advance treatment", () => {
-  it("renders a single tappable review card (no separate Confirm/Retake buttons) when no screen reader is active", () => {
+  it("renders only a Retake button (no Confirm) when no screen reader is active", () => {
     render(
       <ProductChip
         phase={step2Review}
@@ -161,10 +163,10 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
       />,
     );
     expect(screen.getAllByRole("button")).toHaveLength(1);
-    expect(screen.getByText(/nutrition label captured/i)).toBeTruthy();
+    expect(screen.getByText("Label captured ✓")).toBeTruthy();
   });
 
-  it("tapping the review card calls onRetakeStep2", () => {
+  it("tapping Retake calls onRetakeStep2", () => {
     let called = false;
     render(
       <ProductChip
@@ -189,10 +191,10 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
       />,
     );
     expect(screen.getByText("Looks right →")).toBeTruthy();
-    expect(screen.getByText("Retake photo")).toBeTruthy();
+    expect(screen.getByText("Retake")).toBeTruthy();
   });
 
-  it("step3_review also gets the single tappable review card by default", () => {
+  it("step3_review also gets only the Retake button by default", () => {
     render(
       <ProductChip
         phase={step3Review}
@@ -201,7 +203,161 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
       />,
     );
     expect(screen.getAllByRole("button")).toHaveLength(1);
-    expect(screen.getByText(/front label captured/i)).toBeTruthy();
+    expect(screen.getByText("Front captured ✓")).toBeTruthy();
+  });
+});
+
+// The found card (owner complaint: the barcode auto-snapped and nothing said
+// what happened). It names what it caught and offers "Not this" to rescan.
+describe("ProductChip — barcode_lock found card", () => {
+  const withProduct = (
+    product: NonNullable<
+      Extract<ScanPhase, { type: "BARCODE_LOCKED" }>["product"]
+    >,
+  ): ScanPhase => ({ ...barcodeLock, product }) as ScanPhase;
+
+  it('barcode_lock shows "Barcode found ✓" and the product name', () => {
+    render(
+      <ProductChip
+        phase={withProduct({ name: "Oat Crunch Granola", brand: "Acme" })}
+        {...handlers}
+      />,
+    );
+    expect(screen.getByText("Barcode found ✓")).toBeTruthy();
+    expect(screen.getByText(/Oat Crunch Granola/)).toBeTruthy();
+    expect(screen.getByText(/Acme/)).toBeTruthy();
+  });
+
+  it("barcode_lock with product undefined shows a skeleton and no name text", () => {
+    render(<ProductChip phase={barcodeLock} {...handlers} />);
+    expect(screen.getByText("Barcode found ✓")).toBeTruthy();
+    expect(screen.getByTestId("found-card-name-skeleton")).toBeTruthy();
+    // The old placeholder text must be gone — a skeleton never says words.
+    expect(screen.queryByText("Product")).toBeNull();
+    expect(screen.queryByText(/loading/i)).toBeNull();
+  });
+
+  it('"Not this" calls onRescan', () => {
+    const onRescan = vi.fn();
+    render(
+      <ProductChip phase={barcodeLock} {...handlers} onRescan={onRescan} />,
+    );
+    screen.getByRole("button", { name: "Not this" }).click();
+    expect(onRescan).toHaveBeenCalledTimes(1);
+  });
+
+  it('unverified primary reads "Next: nutrition →"', () => {
+    const onProceedToLabel = vi.fn();
+    render(
+      <ProductChip
+        phase={withProduct({ name: "Cola", verificationLevel: "unverified" })}
+        {...handlers}
+        onProceedToLabel={onProceedToLabel}
+      />,
+    );
+    screen.getByRole("button", { name: "Next: nutrition →" }).click();
+    expect(onProceedToLabel).toHaveBeenCalledTimes(1);
+  });
+
+  it('verified primary still reads "Use verified data →"', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ProductChip
+        phase={withProduct({ name: "Cola", verificationLevel: "verified" })}
+        {...handlers}
+        onConfirm={onConfirm}
+      />,
+    );
+    screen.getByRole("button", { name: "Use verified data →" }).click();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Photograph label instead")).toBeTruthy();
+  });
+
+  it("topFlag renders ScanFlagBadge", () => {
+    const { container } = render(
+      <ProductChip
+        phase={withProduct({
+          name: "Trail Mix",
+          topFlag: {
+            id: "allergen:tree_nuts",
+            kind: "allergen",
+            severity: "danger",
+            tier: "safety",
+            title: "Contains Tree Nuts",
+          },
+        })}
+        {...handlers}
+      />,
+    );
+    // ScanFlagBadge renders the bare title (with a Feather icon), not the old
+    // inline "⚠ title" row.
+    expect(screen.getByText("Contains Tree Nuts")).toBeTruthy();
+    expect(screen.queryByText("⚠ Contains Tree Nuts")).toBeNull();
+    // Android's only cue for a flag that loads late is the assertive live
+    // region the old inline row carried; the badge wrapper keeps it.
+    const live = container.querySelector('[aria-live="assertive"]');
+    expect(live?.textContent).toContain("Contains Tree Nuts");
+  });
+
+  it("not in database: says so, offers Next: nutrition →, and no database escape hatch", () => {
+    render(<ProductChip phase={barcodeLock} {...handlers} productNotFound />);
+    expect(
+      screen.getByText(
+        "We don't know this one yet. The label and front photos will fill it in",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("found-card-name-skeleton")).toBeNull();
+    expect(screen.getByText("Next: nutrition →")).toBeTruthy();
+    expect(screen.queryByText("Use database data anyway")).toBeNull();
+  });
+
+  it("every found-card button has a 44pt minimum touch target", () => {
+    render(<ProductChip phase={barcodeLock} {...handlers} />);
+    for (const button of screen.getAllByRole("button")) {
+      expect(getComputedStyle(button).minHeight).toBe("44px");
+    }
+  });
+});
+
+describe("ProductChip — captured cards", () => {
+  it('step2_review shows "Label captured ✓" and Retake', () => {
+    const onRetakeStep2 = vi.fn();
+    render(
+      <ProductChip
+        phase={step2Review}
+        {...handlers}
+        onRetakeStep2={onRetakeStep2}
+      />,
+    );
+    expect(screen.getByText("Label captured ✓")).toBeTruthy();
+    screen.getByText("Retake").click();
+    expect(onRetakeStep2).toHaveBeenCalledTimes(1);
+  });
+
+  it('step3_review shows "Front captured ✓"', () => {
+    const onRetakeStep3 = vi.fn();
+    render(
+      <ProductChip
+        phase={step3Review}
+        {...handlers}
+        onRetakeStep3={onRetakeStep3}
+      />,
+    );
+    expect(screen.getByText("Front captured ✓")).toBeTruthy();
+    screen.getByText("Retake").click();
+    expect(onRetakeStep3).toHaveBeenCalledTimes(1);
+  });
+
+  it("the explicit Confirm appears only with a screen reader on", () => {
+    const { rerender } = render(
+      <ProductChip phase={step3Review} {...handlers} />,
+    );
+    expect(screen.queryByText("Looks right →")).toBeNull();
+    rerender(
+      <ProductChip phase={step3Review} {...handlers} screenReaderEnabled />,
+    );
+    expect(screen.getByText("Looks right →")).toBeTruthy();
+    expect(screen.getByText("Front captured ✓")).toBeTruthy();
   });
 });
 

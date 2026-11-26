@@ -32,6 +32,7 @@ const handlers = {
   onRetakeStep3: noop,
   onSmartPhotoConfirm: noop,
   onRetry: noop,
+  onRescan: noop,
 };
 
 const barcodeLock: ScanPhase = {
@@ -103,7 +104,7 @@ describe("ProductChip — announce model (rework)", () => {
     RN.Platform.OS = os;
     render(<ProductChip phase={barcodeLock} {...handlers} />);
     expect(announceSpy).toHaveBeenCalledWith(
-      "Product found, choose how to continue",
+      "Barcode found, choose how to continue",
     );
   });
 
@@ -167,7 +168,7 @@ describe("ProductChip — announce model (rework)", () => {
       const { rerender } = render(
         <ProductChip phase={barcodeLock} {...handlers} />,
       );
-      announceSpy.mockClear(); // drop the "Product found…" appear announce
+      announceSpy.mockClear(); // drop the "Barcode found…" appear announce
       // PRODUCT_LOADED: same variant, product now present.
       rerender(<ProductChip phase={barcodeLockWithProduct} {...handlers} />);
       expect(announceSpy).toHaveBeenCalledWith("Test Cola");
