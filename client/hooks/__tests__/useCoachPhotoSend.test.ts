@@ -10,10 +10,19 @@ import {
   sendBarcodeToCoach,
   settleCoachBarcode,
 } from "@/lib/coach-barcode-scan";
+import { preReadLabel, sendLabelToCoach } from "@/lib/coach-label-pre-read";
+import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
 import { useCoachPhotoSend } from "../useCoachPhotoSend";
 
 vi.mock("@/lib/coach-photo-picker", () => ({ pickCoachPhoto: vi.fn() }));
 vi.mock("@/lib/photo-upload", () => ({ uploadPhotoToCoach: vi.fn() }));
+vi.mock("@/lib/coach-label-pre-read", () => ({
+  preReadLabel: vi.fn(),
+  sendLabelToCoach: vi.fn(),
+}));
+vi.mock("@/camera/utils/recognizeTextFromPhoto", () => ({
+  recognizeTextFromPhoto: vi.fn(),
+}));
 vi.mock("@/lib/coach-barcode-scan", () => ({
   awaitCoachBarcode: vi.fn(),
   sendBarcodeToCoach: vi.fn(),
@@ -85,6 +94,70 @@ describe("useCoachPhotoSend", () => {
       "I found 2 foods.",
     );
     expect(result.current.isSendingPhoto).toBe(false);
+  });
+
+  describe("a label the phone can read", () => {
+    const read = {
+      calories: 250,
+      protein: 5,
+      carbs: 31,
+      fat: 12,
+      servingSize: "1 cup (228g)",
+    };
+
+    it("sends the numbers, not the photo", async () => {
+      vi.mocked(pickCoachPhoto).mockResolvedValue("file:///label.jpg");
+      vi.mocked(preReadLabel).mockResolvedValue(read);
+      vi.mocked(sendLabelToCoach).mockResolvedValue("I read that label.");
+      const { result, args } = setup({ openingBriefForm: "full" });
+
+      await choose(result, "Choose from Library");
+
+      expect(preReadLabel).toHaveBeenCalledWith(
+        "file:///label.jpg",
+        recognizeTextFromPhoto,
+      );
+      expect(args.onStart).toHaveBeenCalledExactlyOnceWith("photo");
+      expect(sendLabelToCoach).toHaveBeenCalledWith(read, 7, "full");
+      expect(uploadPhotoToCoach).not.toHaveBeenCalled();
+      expect(args.onSettled).toHaveBeenCalledWith(
+        7,
+        null,
+        true,
+        "I read that label.",
+      );
+    });
+
+    it("reports a refused send as a photo failure and does not upload the photo as well", async () => {
+      vi.mocked(pickCoachPhoto).mockResolvedValue("file:///label.jpg");
+      vi.mocked(preReadLabel).mockResolvedValue(read);
+      vi.mocked(sendLabelToCoach).mockRejectedValue(
+        new ApiError("429: limit", ErrorCode.DAILY_LIMIT_REACHED),
+      );
+      const { result, args } = setup();
+
+      await choose(result, "Take Photo");
+
+      expect(uploadPhotoToCoach).not.toHaveBeenCalled();
+      const failure = vi.mocked(args.onSettled).mock.calls[0][1];
+      expect(failure).not.toBeNull();
+    });
+
+    it("uploads the photo when the phone cannot read it as a label", async () => {
+      vi.mocked(pickCoachPhoto).mockResolvedValue("file:///meal.jpg");
+      vi.mocked(preReadLabel).mockResolvedValue(null);
+      vi.mocked(uploadPhotoToCoach).mockResolvedValue("I found 2 foods.");
+      const { result } = setup();
+
+      await choose(result, "Take Photo");
+
+      expect(sendLabelToCoach).not.toHaveBeenCalled();
+      expect(uploadPhotoToCoach).toHaveBeenCalledWith(
+        "file:///meal.jpg",
+        7,
+        undefined,
+      );
+    });
   });
 
   it("does nothing when the user cancels the picker", async () => {

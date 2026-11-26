@@ -30,6 +30,7 @@ import { UpstreamUnavailableError } from "./usda-lookup";
 import type { ProfileOutcome } from "./scan-flags";
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
 import { logger, toError } from "../lib/logger";
+import { sanitizeContextField } from "../lib/ai-safety";
 import { batchNutritionLookup, type NutritionData } from "./nutrition-lookup";
 import { portionNutrition } from "./portion-nutrition";
 import { inferMealTimeHint } from "../lib/meal-time-hint";
@@ -299,6 +300,60 @@ export function labelPhotoReply(
       (label.confidence < CLASSIFY_CONFIDENCE ? LABEL_UNSURE_TEXT : "") +
       (allergyCheckOwed ? LABEL_ALLERGY_TEXT : ""),
   };
+}
+
+const PHONE_LABEL_TEXT =
+  "I read that label on your phone, per serving. Check it against the pack, set how many servings you had, then log it.";
+
+/** The numbers the app's text reader took from a nutrition label (Coach roadmap V5). */
+export interface PhoneLabelRead {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  servingSize: string;
+}
+
+/**
+ * A nutrition label the phone read itself, as a one-serving card. No model
+ * reads anything: the numbers are the user's own phone's reading, as trusted
+ * as numbers the user types, and the card's own limits still apply. The
+ * panel shows no product name, so the row is "Packaged food".
+ */
+export function phoneLabelReply(
+  read: PhoneLabelRead,
+  profileOutcome: ProfileOutcome,
+  ctx: { tz: string; now: Date },
+): PhotoReply {
+  const serving = sanitizeContextField(read.servingSize, 200)
+    .replace(/\s+/g, " ")
+    .trim();
+  const withServing = serving ? `1 serving (${serving})` : "1 serving";
+  const item = packagedFoodRow(
+    "",
+    withServing.length <= MAX_UNIT_LABEL ? withServing : serving,
+    {
+      calories: round1(read.calories),
+      protein: round1(read.protein),
+      carbs: round1(read.carbs),
+      fat: round1(read.fat),
+    },
+  );
+  if (!item) return { payload: null, text: ROW_REFUSED_TEXT };
+  const allergyCheckOwed =
+    !profileOutcome.ok || profileOutcome.allergies.length > 0;
+  return {
+    payload: onePackagedFood(item, ctx),
+    text: PHONE_LABEL_TEXT + (allergyCheckOwed ? LABEL_ALLERGY_TEXT : ""),
+  };
+}
+
+/** The Coach's answer to a label the phone read, with the allergy reminder a label photo gets. */
+export async function scannedLabelReply(
+  read: PhoneLabelRead,
+  ctx: { tz: string; now: Date; userId: string },
+): Promise<PhotoReply> {
+  return phoneLabelReply(read, await loadAllergyProfile(ctx.userId), ctx);
 }
 
 /** A product found by its barcode, as a one-serving card. */

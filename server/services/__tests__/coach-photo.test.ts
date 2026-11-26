@@ -21,6 +21,8 @@ import {
   hasValidCheckDigit,
   photoFoodsToCardItems,
   scannedBarcodeReply,
+  phoneLabelReply,
+  scannedLabelReply,
   photoReplyText,
   COACH_PHOTO_USER_TEXT,
 } from "../coach-photo";
@@ -690,5 +692,95 @@ describe("scannedBarcodeReply (a barcode read by the camera)", () => {
     await expect(scannedBarcodeReply("4006381333931", ctx)).rejects.toThrow(
       "db down",
     );
+  });
+});
+
+describe("phoneLabelReply (a label read on the phone)", () => {
+  const read = {
+    calories: 250,
+    protein: 5,
+    carbs: 31,
+    fat: 12,
+    servingSize: "1 cup (228g)",
+  };
+  const noAllergies = { ok: true as const, allergies: [] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("offers the one-serving card a label photo gets, with no model called", () => {
+    const reply = phoneLabelReply(read, noAllergies, ctx);
+    expect(classifyPhoto).not.toHaveBeenCalled();
+    expect(analyzeLabelPhoto).not.toHaveBeenCalled();
+    expect(reply.payload).toEqual({
+      items: [
+        {
+          name: "Packaged food",
+          unitLabel: "1 serving (1 cup (228g))",
+          perUnit: { calories: 250, protein: 5, carbs: 31, fat: 12 },
+          count: 1,
+          source: "lookup",
+        },
+      ],
+      mealType: "lunch",
+      day: "today",
+    });
+    expect(foodCardPayloadSchema.safeParse(reply.payload).success).toBe(true);
+    expect(reply.text).toMatch(/on your phone/);
+    expect(reply.text).not.toMatch(/allerg/i);
+  });
+
+  it("tells a user with allergies, or whose profile could not be read, to read the pack", () => {
+    const withAllergy = phoneLabelReply(
+      read,
+      { ok: true, allergies: [{ name: "milk", severity: "severe" }] },
+      ctx,
+    );
+    expect(withAllergy.text).toMatch(/read the pack for your allergies/);
+    expect(phoneLabelReply(read, { ok: false }, ctx).text).toMatch(
+      /read the pack for your allergies/,
+    );
+  });
+
+  it("strips invisible characters from the serving text", () => {
+    const reply = phoneLabelReply(
+      { ...read, servingSize: "1​ cup‮ (228g)" },
+      noAllergies,
+      ctx,
+    );
+    expect(reply.payload?.items[0].unitLabel).toBe("1 serving (1 cup (228g))");
+  });
+
+  it("refuses numbers the food card cannot hold", () => {
+    const reply = phoneLabelReply(
+      { ...read, calories: 50000 },
+      noAllergies,
+      ctx,
+    );
+    expect(reply.payload).toBeNull();
+    expect(reply.text).toMatch(/couldn't turn that into something I can log/);
+  });
+});
+
+describe("scannedLabelReply", () => {
+  it("checks the user's allergy list for the reminder", async () => {
+    vi.mocked(loadAllergyProfile).mockResolvedValue({
+      ok: true,
+      allergies: [{ name: "milk", severity: "severe" }],
+    });
+    const reply = await scannedLabelReply(
+      {
+        calories: 250,
+        protein: 5,
+        carbs: 31,
+        fat: 12,
+        servingSize: "1 cup (228g)",
+      },
+      ctx,
+    );
+    expect(loadAllergyProfile).toHaveBeenCalledWith("u1");
+    expect(reply.payload?.items).toHaveLength(1);
+    expect(reply.text).toMatch(/read the pack for your allergies/);
   });
 });
