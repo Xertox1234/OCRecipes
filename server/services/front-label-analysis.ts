@@ -10,21 +10,35 @@ const log = createServiceLogger("front-label-analysis");
 
 const MAX_FIELD_LENGTH = 200;
 const MAX_CLAIMS = 20;
+const MAX_ALLERGEN_STATEMENTS = 20;
+// Longer than a name: an EU or multilingual "Contains: …" line runs long,
+// and an allergen cut off its end would go unwarned.
+const MAX_STATEMENT_LENGTH = 500;
 
-const FRONT_LABEL_PROMPT = `You are a product packaging analysis assistant. Extract the following from the front of this product package photo:
+// The Coach's front-of-pack step also reads the printed allergen lines, for
+// the allergy check on a product the barcode did not find. Only ever read as
+// printed: a missing line is "none printed here", never "allergen-free".
+const ALLERGEN_FIELD = `- allergenStatements: Every allergen statement printed on the package, exactly as printed
+  (e.g., "Contains: milk, soy", "May contain peanuts", "Made in a facility that also processes tree nuts", "Allergy advice: for allergens see ingredients in bold")
+`;
+const ALLERGEN_RULES = `- For allergenStatements, copy each statement exactly as printed; do not infer allergens from the product type, the picture or the ingredients, and return an empty array when none is printed
+`;
+
+function frontLabelPrompt(allergens: boolean): string {
+  return `You are a product packaging analysis assistant. Extract the following from the front of this product package photo:
 
 - brand: The brand or manufacturer name
 - productName: The specific product name or variant
 - netWeight: Net weight or volume with units (e.g., "40g", "1.4 oz", "500ml")
 - claims: List of dietary, health, or marketing claims explicitly printed on the package
   (e.g., "No Added Sugar", "Keto Friendly", "Gluten Free", "Organic", "Non-GMO", "High Protein", "Vegan")
-
+${allergens ? ALLERGEN_FIELD : ""}
 Rules:
 - Only include claims that are explicitly printed on the package
 - Do not infer or guess claims from the product type
 - If a field is not visible or readable, return null
 - Return claims as an array of strings, exactly as printed
-
+${allergens ? ALLERGEN_RULES : ""}
 ${SYSTEM_PROMPT_BOUNDARY}
 
 Respond with JSON only:
@@ -32,17 +46,31 @@ Respond with JSON only:
   "brand": "string or null",
   "productName": "string or null",
   "netWeight": "string or null",
-  "claims": ["claim1", "claim2"],
+  "claims": ["claim1", "claim2"],${allergens ? '\n  "allergenStatements": ["statement1"],' : ""}
   "confidence": 0.85
 }`;
+}
 
 const frontLabelExtractionSchema = z.object({
   brand: z.string().nullable(),
   productName: z.string().nullable(),
   netWeight: z.string().nullable(),
   claims: z.array(z.string()),
+  allergenStatements: z.array(z.string()).optional(),
   confidence: z.number().min(0).max(1),
 });
+
+/** Truncate, trim and cap a list of printed strings. */
+function sanitizeList(
+  values: string[],
+  max: number,
+  maxLength: number,
+): string[] {
+  return values
+    .map((c) => c.slice(0, maxLength).trim())
+    .filter((c) => c.length > 0)
+    .slice(0, max);
+}
 
 /** Sanitize extracted strings — truncate to max length */
 function sanitizeField(value: string | null): string | null {
@@ -56,7 +84,10 @@ function sanitizeField(value: string | null): string | null {
  */
 export async function analyzeFrontLabel(
   imageBase64: string,
+  /** Also read the printed allergen statements (the Coach's front step). */
+  options: { allergens?: boolean } = {},
 ): Promise<FrontLabelExtractionResult> {
+  const allergens = options.allergens === true;
   const startTime = Date.now();
 
   let response;
@@ -71,7 +102,7 @@ export async function analyzeFrontLabel(
         messages: [
           {
             role: "system",
-            content: FRONT_LABEL_PROMPT,
+            content: frontLabelPrompt(allergens),
           },
           {
             role: "user",
@@ -84,7 +115,11 @@ export async function analyzeFrontLabel(
                 type: "image_url",
                 image_url: {
                   url: `data:image/jpeg;base64,${imageBase64}`,
-                  detail: "low",
+                  // Allergen lines are small print; the plain read needs
+                  // only the large brand and name. High detail costs more
+                  // tokens: one call per optional front step, behind the
+                  // photo cap.
+                  detail: allergens ? "high" : "low",
                 },
               },
             ],
@@ -121,6 +156,13 @@ export async function analyzeFrontLabel(
       .slice(0, MAX_CLAIMS)
       .map((c) => c.slice(0, MAX_FIELD_LENGTH).trim())
       .filter((c) => c.length > 0),
+    ...(allergens && {
+      allergenStatements: sanitizeList(
+        parsed.allergenStatements ?? [],
+        MAX_ALLERGEN_STATEMENTS,
+        MAX_STATEMENT_LENGTH,
+      ),
+    }),
     confidence: parsed.confidence,
   };
 

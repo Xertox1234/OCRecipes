@@ -822,18 +822,40 @@ update`). Found by the security review of that change, allowed on `main` too, fi
 railway do with a leading `--` was not measured, so those spellings are denied without
 knowing that they publish. Still open, on `main` too, all measured ALLOW:
 
-- npm's own flags after the package word with NO `--`: `npm exec eas-cli --yes update`,
-  `-y`, `--silent`, `-s`, `--loglevel=error`, `npm exec railway --silent up`. npm consumes
-  the flag (a local stub received only `x` from `npm exec <stub> --yes x`), so these are real
-  publishes. High.
+- FIXED 2026-11-26 (rows `NF` in `test-guard-outward-cli.sh`): npm's own flags after the
+  package word, with or without a `--` and with a separate value
+  (`npm exec eas-cli --yes update`, `-y`, `--silent`, `-s`, `--loglevel=error`,
+  `--loglevel error -- update`,
+  `npm exec railway --silent up`), and bare `npm` flags before `publish` (`npm -s publish`,
+  `npm --registry=x publish`, `npm --prefix . -- publish`). `npm exec`/`npm x` consume every
+  dash-word after the package and a known flag's value (measured with a local stub, npm
+  11.19.1). Each flag may take one following word as its value, so an unknown boolean flag
+  is over-read: `npm exec eas-cli --branch production update` (npm hands eas
+  `production update`) now denies. Still open: `npx`, `bunx`, `pnpm dlx` and `yarn dlx`
+  pass such flags ON to the bin (`npx <stub> --yes x` gave `["--yes","x"]`), so
+  `npx eas-cli --yes update` depends on what eas does with a leading flag, not measured, and
+  is allowed (listed with the next item).
+  Found by the security review of that change, on `main` too, fixed with it (rows `NF2`): npm
+  11's command abbreviations (`npm pu`, `pub`, `publ`, `publi`, `publis` all run publish,
+  measured with npm's own deref and a dry-run publish) and an unquoted variable in npm's flag
+  slot (`npm exec eas-cli $F update`). The same review measured a false deny the first
+  version added (`npm -s run publish`, `npm -s view publish`, `npm -D i publish`): bare `npm`
+  now takes a value word only after npm's value-taking flags: npm 11.19.1's own list, the 107
+  config definitions whose type is not (nullable) Boolean plus the 7 shorthands that expand to
+  one, from `@npmcli/config/lib/definitions` (a hand-picked 12 first left 96 spellings such as
+  `npm --fetch-retries 3 publish` allowed; the confirmation review ran one as a real dry-run
+  publish). The same flags now apply when npm itself is run through a launcher
+  (`npx npm -s publish`, `bunx npm --tag latest pub`; allowed on `main`). Still open: a
+  value-taking flag a later npm adds, with a separate value before `publish`, is read as a
+  boolean and allowed. Also open, on `main` too and outside this change
+  (measured ALLOW by the same review): `nice`/`timeout 60` before `npm`, `bash -c`/`sh -c`/
+  `eval` wrappers, `node .../npm-cli.js exec`, and glued `-yc "eas update"`/`-c'eas update'`.
 - any other flag in that slot (`eas --json update`, `npx eas-cli --non-interactive update`,
   `railway --verbose up`; whether the real CLIs accept a flag there was not measured; the
-  hook's header lists "a global flag before the verb" as a known gap), and `npm -s publish`,
-  `npm --registry=x publish`.
-- a flag whose value is a SEPARATE word in front of the `--`:
-  `npm exec eas-cli --loglevel error -- update`, `npm --prefix . -- publish` (npm consumed
-  the flag, its value and the `--` when measured with `node` as the target). The `=`
-  spellings are denied.
+  hook's header lists "a global flag before the verb" as a known gap), and `npx eas-cli --yes update`.
+- a flag whose value is a SEPARATE word in front of the `--`: FIXED 2026-11-26 for `npm exec`,
+  `npm x` and bare `npm` (above); under the other launchers the same over-reading rule is not
+  applied.
 - a backslash inside the `--` (`npm exec eas-cli -\- update`: the shell delivers `--`), the
   same blindness as `eas up\date`.
 - a brace or an expansion in place of the `--` or after it under a launcher

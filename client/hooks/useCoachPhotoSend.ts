@@ -4,7 +4,11 @@ import {
   pickCoachPhoto,
   type CoachPhotoSource,
 } from "@/lib/coach-photo-picker";
-import { uploadPhotoToCoach } from "@/lib/photo-upload";
+import {
+  uploadBarcodeFrontToCoach,
+  uploadPhotoToCoach,
+} from "@/lib/photo-upload";
+import { deleteAsync } from "expo-file-system/legacy";
 import { ApiError } from "@/lib/api-error";
 import {
   preReadLabel,
@@ -30,7 +34,13 @@ type CoachSendSource = CoachPhotoSource | "scan";
  * What the user picked: a photo's local uri, or a scanned barcode's digits
  * with the label its scanner step read, if any.
  */
-type Picked = { kind: CoachSendKind; value: string; label?: PhoneLabelRead };
+type Picked = {
+  kind: CoachSendKind;
+  value: string;
+  label?: PhoneLabelRead;
+  /** The front-of-pack photo the scanner's third step took. */
+  frontUri?: string;
+};
 
 interface Args {
   /** A reply is streaming or the mic is on: the chooser stays shut. */
@@ -91,13 +101,25 @@ async function pick(
     }
     const scan = await scanned;
     return scan
-      ? { kind: "barcode", value: scan.code, label: scan.label }
+      ? {
+          kind: "barcode",
+          value: scan.code,
+          label: scan.label,
+          frontUri: scan.frontUri,
+        }
       : null;
   }
   const uri = await pickCoachPhoto(source, (message) =>
     latest().onPickFailure(message),
   );
   return uri ? { kind: "photo", value: uri } : null;
+}
+
+/** Sent, refused or never sent: the scanner's front photo is not kept. */
+function discardFront(picked: Picked): void {
+  if (picked.frontUri) {
+    deleteAsync(picked.frontUri, { idempotent: true }).catch(() => {});
+  }
 }
 
 /** Pick, send and settle one turn. Never rejects on a send failure. */
@@ -108,6 +130,19 @@ async function runPhotoSend(
 ): Promise<void> {
   const picked = await pick(source, latest);
   if (!picked) return;
+  try {
+    await sendPicked(picked, latest, setSending);
+  } finally {
+    discardFront(picked);
+  }
+}
+
+/** Send what was picked and settle the turn. */
+async function sendPicked(
+  picked: Picked,
+  latest: () => Args,
+  setSending: (sending: boolean) => void,
+): Promise<void> {
   // Latched now: creating the conversation changes what the host passes.
   const a = latest();
   setSending(true);
@@ -117,7 +152,18 @@ async function runPhotoSend(
   let failure: CoachPhotoFailure | null = null;
   let replyText: string | null = null;
   try {
-    if (picked.kind === "barcode") {
+    if (picked.kind === "barcode" && picked.frontUri && picked.label) {
+      // The AI model reads the front: a photo upload, not the JSON turn.
+      replyText = await uploadBarcodeFrontToCoach(
+        picked.frontUri,
+        conversationId,
+        {
+          barcode: picked.value,
+          label: picked.label,
+          ...(a.openingBriefForm && { openingBrief: a.openingBriefForm }),
+        },
+      );
+    } else if (picked.kind === "barcode") {
       replyText = await sendBarcodeToCoach(
         picked.value,
         conversationId,

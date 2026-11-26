@@ -37,8 +37,26 @@ export type PacingState =
     }
   | { phase: "unreadable"; code: string }
   | { phase: "labelFound"; code: string; label: PhoneLabelRead }
-  /** Hand `code` (and `label`, unless skipped) to the chat and close. */
-  | { phase: "done"; code: string; label?: PhoneLabelRead };
+  /**
+   * The optional front-of-pack photo, offered when the barcode gives no
+   * usable name for the label's numbers.
+   */
+  | {
+      phase: "front";
+      code: string;
+      label: PhoneLabelRead;
+      /** Back after a photo that couldn't be taken. */
+      retry?: true;
+    }
+  /** The front photo is being taken. */
+  | { phase: "frontShot"; code: string; label: PhoneLabelRead }
+  /** Hand `code` (and `label`, and `frontUri`, unless skipped) to the chat and close. */
+  | {
+      phase: "done";
+      code: string;
+      label?: PhoneLabelRead;
+      frontUri?: string;
+    };
 
 export type PacingEvent =
   | { type: "armed" }
@@ -46,12 +64,15 @@ export type PacingEvent =
   | { type: "read"; code: string }
   | { type: "lost" }
   | { type: "swept" }
-  | { type: "revealed" }
+  /** A reveal's pause is over; `front` asks for the front-of-pack step next. */
+  | { type: "revealed"; front?: boolean }
   /** The label photo was taken. */
   | { type: "shutter" }
   /** The phone's reader answered: the label's numbers, or null. */
   | { type: "labelRead"; label: PhoneLabelRead | null }
-  /** Send the code without a label. */
+  /** The front photo was taken (its file), or could not be (null). */
+  | { type: "frontTaken"; uri: string | null }
+  /** Skip the current optional step: the label, or the front. */
   | { type: "skip" };
 
 export const INITIAL_PACING: PacingState = { phase: "arming" };
@@ -86,18 +107,35 @@ export function pacingReducer(
         : state;
     case "revealed":
       if (state.phase === "found") return { phase: "label", code: state.code };
-      return state.phase === "labelFound"
-        ? { phase: "done", code: state.code, label: state.label }
-        : state;
+      if (state.phase !== "labelFound") return state;
+      return event.front
+        ? { phase: "front", code: state.code, label: state.label }
+        : { phase: "done", code: state.code, label: state.label };
     case "shutter":
+      if (state.phase === "front") {
+        return { phase: "frontShot", code: state.code, label: state.label };
+      }
       return state.phase === "label" || state.phase === "unreadable"
         ? { phase: "reading", code: state.code, swept: false }
         : state;
+    case "frontTaken":
+      if (state.phase !== "frontShot") return state;
+      return event.uri
+        ? {
+            phase: "done",
+            code: state.code,
+            label: state.label,
+            frontUri: event.uri,
+          }
+        : { phase: "front", code: state.code, label: state.label, retry: true };
     case "labelRead":
       return state.phase === "reading" && !("read" in state)
         ? settleRead({ ...state, read: event.label })
         : state;
     case "skip":
+      if (state.phase === "front") {
+        return { phase: "done", code: state.code, label: state.label };
+      }
       return state.phase === "label" || state.phase === "unreadable"
         ? { phase: "done", code: state.code }
         : state;
@@ -130,6 +168,8 @@ export function pacingConfidence(state: PacingState): number {
     case "reading":
     case "unreadable":
     case "labelFound":
+    case "front":
+    case "frontShot":
     case "done":
       return 1;
   }
@@ -173,6 +213,18 @@ export function pacingHint(state: PacingState): PacingHint {
         title: "I couldn't read that label",
         body: "Try it flat and in good light, or skip it.",
       };
+    case "front":
+      return state.retry
+        ? {
+            title: "I couldn't take that photo",
+            body: "Try again, or skip it and I'll log it from the label.",
+          }
+        : {
+            title: "Add the front of the pack?",
+            body: "A photo of the front lets me name this product and check its allergy statement.",
+          };
+    case "frontShot":
+      return { title: "Taking the photo…", body: "Hold still." };
     case "labelFound":
     case "done":
       return state.label
