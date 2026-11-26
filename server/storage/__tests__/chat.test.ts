@@ -17,6 +17,7 @@ import {
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 import {
+  chatConversations,
   chatMessages,
   communityRecipes,
   pendingReminders,
@@ -39,6 +40,8 @@ const {
   updateChatConversationTitle,
   createChatMessageWithLimitCheck,
   createConversationWithAssistantMessage,
+  ConversationLimitError,
+  MAX_CONVERSATIONS_PER_USER,
 } = await import("../chat");
 
 const { saveRecipeFromChat } = await import("../recipe-from-chat");
@@ -91,6 +94,34 @@ describe("chat storage", () => {
       expect(conv.id).toBeDefined();
       expect(conv.userId).toBe(testUser.id);
       expect(conv.title).toBe("Test Chat");
+    });
+
+    // Audit 2026-11-24, L85: one account cannot create conversations without end.
+    it("refuses a new conversation once the user has the most allowed", async () => {
+      expect(MAX_CONVERSATIONS_PER_USER).toBe(1000);
+      await tx.insert(chatConversations).values(
+        Array.from({ length: MAX_CONVERSATIONS_PER_USER - 1 }, (_, i) => ({
+          userId: testUser.id,
+          title: `Chat ${i}`,
+        })),
+      );
+      // The 1,000th is allowed; the 1,001st is not.
+      await createChatConversation(testUser.id, "Last one");
+      await expect(
+        createChatConversation(testUser.id, "One too many"),
+      ).rejects.toBeInstanceOf(ConversationLimitError);
+    });
+
+    it("counts only the user's own conversations toward the limit", async () => {
+      const other = await createTestUser(tx);
+      await tx.insert(chatConversations).values(
+        Array.from({ length: MAX_CONVERSATIONS_PER_USER }, (_, i) => ({
+          userId: other.id,
+          title: `Chat ${i}`,
+        })),
+      );
+      const conv = await createChatConversation(testUser.id, "Mine");
+      expect(conv.userId).toBe(testUser.id);
     });
   });
 

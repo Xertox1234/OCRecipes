@@ -34,6 +34,7 @@ import {
   createMockCommunityRecipe,
   createMockUser,
 } from "../../__tests__/factories";
+import { ConversationLimitError } from "../../storage/chat-errors";
 
 vi.mock("../../services/coach-brief", () => ({
   buildCoachBrief: vi.fn(async () => ({
@@ -274,6 +275,22 @@ describe("Chat Routes", () => {
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe(1);
+    });
+
+    // Audit 2026-11-24, L85.
+    it("answers 409 once the user has the most conversations allowed", async () => {
+      vi.mocked(storage.createChatConversation).mockRejectedValue(
+        new ConversationLimitError(),
+      );
+
+      const res = await request(app)
+        .post("/api/chat/conversations")
+        .set("Authorization", "Bearer token")
+        .send({ title: "One too many" });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("LIMIT_REACHED");
+      expect(res.body.error).toMatch(/1,000 chats/);
     });
 
     it("uses default title", async () => {

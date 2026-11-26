@@ -28,6 +28,10 @@ import { tryArchiveNotebook } from "../services/coach-pro-chat";
 import { sanitizeUserInput } from "../lib/ai-safety";
 import { finderActionSchema } from "@shared/schemas/recipe-finder";
 import { enrichWriteCardBlocks } from "../services/write-cards/enrich";
+import {
+  ConversationLimitError,
+  MAX_CONVERSATIONS_PER_USER,
+} from "../storage/chat-errors";
 import { parseTimezone } from "../lib/civil-date";
 import { admitTurn } from "./chat-admit";
 import {
@@ -231,6 +235,14 @@ export function register(app: Express): void {
 
         res.status(201).json(conversation);
       } catch (error) {
+        if (error instanceof ConversationLimitError) {
+          return sendError(
+            res,
+            409,
+            `You have ${MAX_CONVERSATIONS_PER_USER.toLocaleString("en-US")} chats, the most allowed. Delete some to start a new one.`,
+            ErrorCode.LIMIT_REACHED,
+          );
+        }
         handleRouteError(res, error, "create conversation");
       }
     },
