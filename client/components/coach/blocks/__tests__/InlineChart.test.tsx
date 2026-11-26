@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import InlineChart from "../InlineChart";
 import type { InlineChart as InlineChartType } from "@shared/schemas/coach-blocks";
+import { Colors } from "@/constants/theme";
 
 const statRowBlock: InlineChartType = {
   type: "inline_chart",
@@ -95,6 +96,15 @@ describe("InlineChart", () => {
     expect(screen.getAllByText("✗")).toHaveLength(1);
   });
 
+  // Review of #2054: the 10pt marks in the success/error tones were 4.43:1
+  // and 4.02:1 on the chart's light background, under AA. The bar carries
+  // the colour; the mark carries the shape, in the text colour.
+  it("draws the marks in the text colour", () => {
+    renderComponent(<InlineChart block={barBlock} />);
+    expect(screen.getByText("✓").style.color).toBe(hexToRgb(Colors.light.text));
+    expect(screen.getByText("✗").style.color).toBe(hexToRgb(Colors.light.text));
+  });
+
   // Audit L3: at large text sizes the labels wrapped and overflowed a fixed
   // 80pt row into the summary.
   it("the bar row grows with its labels instead of a fixed height", () => {
@@ -117,3 +127,8 @@ describe("InlineChart", () => {
     expect(screen.getByLabelText("Steps. 5000 of ?")).toBeTruthy();
   });
 });
+
+function hexToRgb(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}

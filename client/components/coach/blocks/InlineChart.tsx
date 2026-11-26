@@ -50,14 +50,11 @@ const InlineChart = React.memo(function InlineChart({ block }: Props) {
                 />
               </View>
               {/* A symbol beside the colour, so hit and miss do not rest on
-                  colour alone. */}
+                  colour alone. The bar carries the colour; the small mark is
+                  in the text colour, since the status tones are under 4.5:1
+                  on this background in light mode. */}
               {d.hit !== undefined ? (
-                <Text
-                  style={[
-                    styles.barMark,
-                    { color: d.hit ? theme.success : theme.error },
-                  ]}
-                >
+                <Text style={[styles.barMark, { color: theme.text }]}>
                   {d.hit ? "✓" : "✗"}
                 </Text>
               ) : null}
