@@ -298,3 +298,30 @@ describe("buildWeeklyFacts — patterns", () => {
     );
   });
 });
+
+// Audit 2026-11-24 L69: the recipe list rides the AI prompt, the stored row
+// and every report response, so it is capped; the count stays the true one.
+describe("buildWeeklyFacts — recipe list cap", () => {
+  const recipe = (i: number): WeeklyInputs["recipes"][number] => ({
+    recipeId: i,
+    recipeType: "mealPlan",
+    title: `Recipe ${i}`,
+    how: "saved",
+    timesLogged: 0,
+    imageUrl: null,
+  });
+
+  it("keeps the first 12 recipes but counts all of them", () => {
+    const recipes = Array.from({ length: 40 }, (_, i) => recipe(i + 1));
+    const f = facts({ recipes });
+    expect(f.recipes).toHaveLength(12);
+    expect(f.recipes[0].recipeId).toBe(1);
+    expect(f.recipesAdded).toBe(40);
+  });
+
+  it("leaves a short list as it is (control)", () => {
+    const f = facts({ recipes: [recipe(1), recipe(2)] });
+    expect(f.recipes.map((r) => r.recipeId)).toEqual([1, 2]);
+    expect(f.recipesAdded).toBe(2);
+  });
+});
