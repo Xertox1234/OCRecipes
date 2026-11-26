@@ -21,6 +21,10 @@ import {
   isNull,
 } from "drizzle-orm";
 import { escapeLike } from "./helpers";
+import {
+  ConversationLimitError,
+  MAX_CONVERSATIONS_PER_USER,
+} from "./chat-errors";
 import { quotaDayBounds } from "./quota-day";
 import { fireAndForget } from "../lib/fire-and-forget";
 import {
@@ -104,17 +108,86 @@ export async function getChatConversations(
     .offset(offset);
 }
 
+export { ConversationLimitError, MAX_CONVERSATIONS_PER_USER };
+
+/**
+ * Throws ConversationLimitError once the user holds
+ * MAX_CONVERSATIONS_PER_USER. The count and the insert run under the user's
+ * advisory lock, so two creates at once cannot both pass the count.
+ */
 export async function createChatConversation(
   userId: string,
   title: string,
   type: "coach" | "recipe" | "remix" = "coach",
   metadata?: Record<string, unknown> | null,
 ): Promise<ChatConversation> {
-  const [conversation] = await db
-    .insert(chatConversations)
-    .values({ userId, title, type, metadata: metadata ?? null })
-    .returning();
-  return conversation;
+  return db.transaction(async (tx) => {
+    await lockUser(tx, userId);
+    const [{ n }] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(chatConversations)
+      .where(eq(chatConversations.userId, userId));
+    if (n >= MAX_CONVERSATIONS_PER_USER) throw new ConversationLimitError();
+    const [conversation] = await tx
+      .insert(chatConversations)
+      .values({ userId, title, type, metadata: metadata ?? null })
+      .returning();
+    return conversation;
+  });
+}
+
+type AdjustLike = {
+  type?: unknown;
+  avoiding?: unknown;
+  noted?: Record<string, unknown>;
+};
+
+/** The adjust card with the allergy list and diet type removed. */
+function withoutAdjustHealth(block: unknown): unknown {
+  const b = block as AdjustLike | null;
+  if (!b || typeof b !== "object" || b.type !== "recipe_adjust") return block;
+  const { dietType: _diet, ...noted } = b.noted ?? {};
+  return { ...b, avoiding: [], noted };
+}
+
+/**
+ * Clears the user's allergy list and diet type from the recipe adjust cards
+ * saved in their chat history, on the withdrawal's own transaction (audit
+ * 2026-11-24, L92). The card copies both from the profile; it is saved as
+ * `metadata.finder` (recipe chat) or inside `metadata.blocks` (Coach). The
+ * rest of the card, and every other block, stays as it was.
+ */
+export async function clearAdjustCardHealthData(
+  userId: string,
+  executor: Pick<typeof db, "select" | "update">,
+): Promise<void> {
+  const rows = await executor
+    .select({ id: chatMessages.id, metadata: chatMessages.metadata })
+    .from(chatMessages)
+    .innerJoin(
+      chatConversations,
+      eq(chatConversations.id, chatMessages.conversationId),
+    )
+    .where(
+      and(
+        eq(chatConversations.userId, userId),
+        sql`(${chatMessages.metadata} -> 'finder' ->> 'type' = 'recipe_adjust'
+          OR ${chatMessages.metadata} -> 'blocks' @> '[{"type":"recipe_adjust"}]'::jsonb)`,
+      ),
+    );
+  // One row at a time on the one transaction client (database rules).
+  for (const row of rows) {
+    const meta = row.metadata as Record<string, unknown>;
+    const next: Record<string, unknown> = { ...meta };
+    if ("finder" in meta) next.finder = withoutAdjustHealth(meta.finder);
+    if (Array.isArray(meta.blocks)) {
+      next.blocks = meta.blocks.map(withoutAdjustHealth);
+    }
+    await executor
+      .update(chatMessages)
+      .set({ metadata: next })
+      .where(eq(chatMessages.id, row.id));
+  }
 }
 
 /**

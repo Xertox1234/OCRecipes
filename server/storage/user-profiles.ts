@@ -10,6 +10,7 @@ import { db } from "../db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { clearFamilyHealthData } from "./family-profiles";
 import { expireAllergyCards } from "./coach-write-cards";
+import { clearAdjustCardHealthData } from "./chat";
 import {
   coachNotebook,
   coachResponseCache,
@@ -271,6 +272,10 @@ export async function withdrawHealthConsent(
     await tx
       .delete(mealSuggestionCache)
       .where(eq(mealSuggestionCache.userId, userId));
+
+    // The recipe adjust cards in chat history copied the allergy list and
+    // diet type (audit 2026-11-24, L92).
+    await clearAdjustCardHealthData(userId, tx);
 
     // Family profiles' allergies and notes are health data under the same
     // consent; names stay.

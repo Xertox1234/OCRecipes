@@ -39,7 +39,13 @@ import {
   coachResponseCache,
   mealSuggestionCache,
   familyProfiles,
+  chatConversations,
+  chatMessages,
 } from "@shared/schema";
+import {
+  finderBlockSchema,
+  type RecipeAdjustBlock,
+} from "@shared/schemas/recipe-finder";
 import { eq, inArray } from "drizzle-orm";
 import {
   HEALTH_CONSENT_VERSION,
@@ -773,6 +779,85 @@ describe("users storage", () => {
       expect(user!.goalWeight).toBeNull();
       // A calorie target is a number the user chose, not a body metric.
       expect(user!.dailyCalorieGoal).toBe(2100);
+    });
+
+    // Audit 2026-11-24, L92: the recipe adjust card copies the allergy list
+    // and diet type into chat history, saved in two shapes.
+    it("withdrawal clears the allergy list and diet type from saved adjust cards", async () => {
+      const adjust: RecipeAdjustBlock = {
+        type: "recipe_adjust",
+        prefill: { servings: 2, spice: "mild", time: "moderate" },
+        avoiding: ["peanuts", "milk"],
+        noted: { dietType: "vegan", dislikes: ["olives"] },
+        followUps: [],
+        flow: {
+          flowId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+          stage: "adjust",
+          request: "a curry",
+          query: { q: "curry" },
+          round: 0,
+          shownIds: [],
+          dish: "curry",
+        },
+      };
+      const other = { type: "checked_trail", items: ["Your pantry"] };
+      const otherUser = await createTestUser(tx);
+      await createTestUserProfile(tx, testUser.id, {});
+      const [mine, theirs] = await tx
+        .insert(chatConversations)
+        .values([
+          { userId: testUser.id, title: "Mine", type: "coach" },
+          { userId: otherUser.id, title: "Theirs", type: "coach" },
+        ])
+        .returning();
+      const [finderRow, blocksRow, theirRow] = await tx
+        .insert(chatMessages)
+        .values([
+          {
+            conversationId: mine.id,
+            role: "assistant",
+            content: "Adjust it?",
+            metadata: { metadataVersion: 1, finder: adjust },
+          },
+          {
+            conversationId: mine.id,
+            role: "assistant",
+            content: "Adjust it?",
+            metadata: { blocks: [other, adjust] },
+          },
+          {
+            conversationId: theirs.id,
+            role: "assistant",
+            content: "Adjust it?",
+            metadata: { metadataVersion: 1, finder: adjust },
+          },
+        ])
+        .returning();
+
+      await withdrawHealthConsent(testUser.id);
+
+      const metaOf = async (id: number) =>
+        (
+          await tx
+            .select({ metadata: chatMessages.metadata })
+            .from(chatMessages)
+            .where(eq(chatMessages.id, id))
+        )[0].metadata as Record<string, unknown>;
+      const cleared = {
+        ...adjust,
+        avoiding: [],
+        noted: { dislikes: ["olives"] },
+      };
+
+      const finderMeta = await metaOf(finderRow.id);
+      expect(finderMeta).toEqual({ metadataVersion: 1, finder: cleared });
+      expect(finderBlockSchema.safeParse(finderMeta.finder).success).toBe(true);
+      expect(await metaOf(blocksRow.id)).toEqual({ blocks: [other, cleared] });
+      // Another user's card is not theirs to clear.
+      expect(await metaOf(theirRow.id)).toEqual({
+        metadataVersion: 1,
+        finder: adjust,
+      });
     });
 
     it("a consent given after a withdrawal is stamped afresh", async () => {
