@@ -93,7 +93,9 @@ export async function* handleCoachChat(
   // open on the food log or close with a meal offer. Nothing else runs for
   // this turn: no finder, no cache write, no chat title from the user's
   // words, and no notebook extraction.
-  if (matchesSelfHarm(content)) {
+  // Safety reads the message as sent; the model only ever sees `content`.
+  const safetyText = params.safetyText ?? content;
+  if (matchesSelfHarm(safetyText)) {
     if (params.isAborted()) return;
     yield { type: "content", content: SAFETY_CRISIS_FALLBACK_MESSAGE };
     await persistCoachReply(
@@ -108,13 +110,13 @@ export async function* handleCoachChat(
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
-  const { intent: classifiedIntent } = classifyIntent(content);
+  const { intent: classifiedIntent } = classifyIntent(safetyText);
   // A recipe_request that does not enter the finder (flag off, free Coach, a
   // turn routed elsewhere) keeps the prompt intent it had before this intent
   // existed — flag-off Coach is unchanged (spec §8).
   const intent: CoachIntent =
     classifiedIntent === "recipe_request"
-      ? classifyIntent(content, { recipeRequests: false }).intent
+      ? classifyIntent(safetyText, { recipeRequests: false }).intent
       : classifiedIntent;
 
   // RECIPE_OFFER_ENABLED (spec 2026-10-06). Also requires the finder param:

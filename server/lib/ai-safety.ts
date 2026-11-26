@@ -89,6 +89,16 @@ const INJECTION_PATTERNS: RegExp[] = [
 ];
 
 /**
+ * Global copies for replacing: without `g`, String.replace removed only the
+ * first match, so "[system] x [system] ..." kept the second (audit
+ * 2026-11-24, L84). Separate copies so a `.test()` caller of the originals
+ * never meets a stateful `lastIndex`; replace() resets it on global regexes.
+ */
+const INJECTION_PATTERNS_GLOBAL: RegExp[] = INJECTION_PATTERNS.map(
+  (p) => new RegExp(p.source, p.flags.includes("g") ? p.flags : `${p.flags}g`),
+);
+
+/**
  * Sanitize user input text before passing to AI models.
  * Strips known prompt injection patterns while preserving normal food-related text.
  * Returns a cleaned string safe for inclusion in AI prompts.
@@ -101,7 +111,7 @@ export function sanitizeUserInput(text: string): string {
   sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
 
   // Strip content that matches injection patterns
-  for (const pattern of INJECTION_PATTERNS) {
+  for (const pattern of INJECTION_PATTERNS_GLOBAL) {
     sanitized = sanitized.replace(pattern, "[filtered]");
   }
 

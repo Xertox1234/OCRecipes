@@ -17,6 +17,12 @@ export interface CoachChatParams {
   conversationId: number;
   userId: string;
   content: string;
+  /**
+   * The message as the user sent it, for the safety checks only. `content`
+   * has been through the injection filter, which replaces the very words
+   * the classifier looks for (audit 2026-11-24, L102). Never sent to a model.
+   */
+  safetyText?: string;
   screenContext?: string;
   warmUpId?: string;
   isCoachPro: boolean;

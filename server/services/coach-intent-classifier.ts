@@ -107,10 +107,41 @@ const PURGING =
   "|\\bbinge(?:s|d|ing)?\\s+and\\s+purg" +
   "|\\bi\\s+(?:(?:have\\s+been|keep|just|always|sometimes|often)\\s+)?purg(?:e|ed|ing)\\b(?!\\s+(?:my|the|our|all|some|clams?|mussels?|shellfish)\\b)";
 
+/**
+ * An eating disorder or bingeing, said about oneself: "I think I have
+ * anorexia", "I'm bulimic", "I've been bingeing", "I keep binge eating".
+ * Talk about the topic ("what is anorexia", "my friend has bulimia") and
+ * binge-watching are ordinary (audit 2026-11-24, L46; owner 2026-11-25).
+ */
+const ED_NAME =
+  "(?:(?:an?\\s+)?eating\\s+disorder|anorexia(?:\\s+nervosa)?|bulimia(?:\\s+nervosa)?|binge[\\s-]eating(?:\\s+disorder)?|arfid|orthorexia)";
+const NOT_SCREEN_BINGE =
+  "(?![\\s-]*watch|\\s+(?:on\\s+)?(?:netflix|tv|shows?|series|youtube|podcasts?|movies?|films?)\\b)";
+const NAMED_DISORDER =
+  `\\bi\\s+(?:think\\s+i\\s+|might\\s+|may\\s+|probably\\s+)?(?:(?:might|may)\\s+)?(?:have|had|struggle\\s+with|suffer\\s+from|(?:was|got|have\\s+been)\\s+diagnosed\\s+with)\\s+${ED_NAME}\\b` +
+  `|\\bi(?:['’]m|\\s+am)\\s+(?:(?:in\\s+)?recover(?:y|ing)\\s+from\\s+${ED_NAME}\\b|(?:an?\\s+)?(?:anorexic|bulimic)\\b)` +
+  `|\\bi(?:['’]ve|\\s+have)\\s+been\\s+(?:binge[\\s-]?eating|bing(?:e)?ing)\\b${NOT_SCREEN_BINGE}` +
+  `|\\bi\\s+(?:keep|always|often|sometimes)\\s+(?:binge[\\s-]?eat(?:ing)?|bing(?:e)?(?:ing)?)\\b${NOT_SCREEN_BINGE}`;
+
 const DISORDERED_EATING_RE = new RegExp(
-  `${PURGING}|${SELF_HARM_RE.source}`,
+  `${PURGING}|${NAMED_DISORDER}|${SELF_HARM_RE.source}`,
   "i",
 );
+
+/**
+ * Zero-width characters, the soft hyphen and the BOM, which pasted text and
+ * some keyboards put inside words. One inside "suicide" broke every match
+ * (audit 2026-11-24, L17).
+ */
+const INVISIBLE_CHARS_RE = /[­᠎​-‏⁠-⁤﻿]/g;
+
+/**
+ * The text the safety patterns read: NFKC (full-width letters become plain
+ * ones) with the invisible characters removed.
+ */
+function normalizeForSafety(text: string): string {
+  return text.normalize("NFKC").replace(INVISIBLE_CHARS_RE, "");
+}
 
 /** A fast of 24 hours or longer, as a number of hours. */
 const LONG_FAST_HOURS = "(?:2[4-9]|[3-9]\\d|\\d{3,})";
@@ -414,7 +445,7 @@ function wordCount(message: string): number {
  * over the week's coach messages). One regex, no copy.
  */
 export function matchesDisorderedEating(text: string): boolean {
-  return DISORDERED_EATING_RE.test(text);
+  return DISORDERED_EATING_RE.test(normalizeForSafety(text));
 }
 
 /**
@@ -423,7 +454,7 @@ export function matchesDisorderedEating(text: string): boolean {
  * same pattern the router does, so the two cannot disagree.
  */
 export function matchesSelfHarm(text: string): boolean {
-  return SELF_HARM_RE.test(text);
+  return SELF_HARM_RE.test(normalizeForSafety(text));
 }
 
 /**
@@ -437,7 +468,7 @@ export function classifyIntent(
   message: string,
   opts: { recipeRequests?: boolean } = {},
 ): IntentClassification {
-  const trimmed = message.trim();
+  const trimmed = normalizeForSafety(message).trim();
 
   // ── Rule 1: safety_refusal (highest priority) ─────────────────────────────
   for (const { pattern, name } of SAFETY_PATTERNS) {
