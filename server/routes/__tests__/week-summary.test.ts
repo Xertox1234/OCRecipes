@@ -63,15 +63,16 @@ describe("GET /api/daily-summary/week", () => {
     expect([before, after]).toContain(res.body.endDate);
   });
 
-  it("rejects a date that is not a calendar day (400)", async () => {
-    for (const end of ["2026-02-30", "today", "2026-11-20T00:00:00Z"]) {
+  it.each(["2026-02-30", "today", "2026-11-20T00:00:00Z"])(
+    "rejects %s, not a calendar day (400)",
+    async (end) => {
       const res = await request(createApp())
         .get(`/api/daily-summary/week?end=${end}`)
         .set("Authorization", "Bearer token");
       expect(res.status).toBe(400);
-    }
-    expect(storage.getDailySummary).not.toHaveBeenCalled();
-  });
+      expect(storage.getDailySummary).not.toHaveBeenCalled();
+    },
+  );
 
   it("is a 500, not a partial week, when a day can't be read", async () => {
     vi.mocked(storage.getDailySummary).mockRejectedValue(new Error("db down"));

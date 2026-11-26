@@ -4,7 +4,7 @@
  * for one with `{ "type": "week_progress" }` and never writes its numbers:
  * the server stores the user's calendar date for today, the last of the
  * seven days, with each day's calories as they are now for the app to show
- * until its own reads of those days arrive. The app then keeps it current.
+ * until its own read of the week arrives. The app then keeps it current.
  */
 import { storage } from "../storage";
 import {

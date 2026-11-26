@@ -365,8 +365,9 @@ export type DayTotals = z.infer<typeof dayTotalsSchema>;
 /**
  * The last seven days' calories against the calorie goal, kept current (Coach
  * roadmap T3). Like day_progress it stores the query: `endDate` and the six
- * days before it, which the app re-reads one day at a time with the same
- * reads Home and the day card use. `snapshot.calories` is oldest first, as
+ * days before it, which the app re-reads with one request to
+ * GET /api/daily-summary/week (each day added up as /api/daily-summary adds
+ * it up). `snapshot.calories` is oldest first, as
  * the server read them for the reply; a day with nothing logged is 0.
  *
  * SERVER-BUILT: the model asks with `{ type: "week_progress" }`
