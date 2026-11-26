@@ -1557,3 +1557,124 @@ describe("the day progress card", () => {
     expect(svcLog.warn).toHaveBeenCalled();
   });
 });
+
+describe("the week progress card", () => {
+  const quick = {
+    type: "quick_replies" as const,
+    options: [{ label: "Ok", message: "Ok" }],
+  };
+  const types = (events: CoachChatEvent[]) =>
+    blocksEvent(events)?.blocks.map((b) => b.type);
+
+  beforeEach(() => {
+    vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+      text: t,
+      blocks: [quick],
+      weekProgress: true as const,
+    }));
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 1900,
+      totalProtein: 0,
+      totalCarbs: 0,
+      totalFat: 0,
+      itemCount: 3,
+    });
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      async function* (): AsyncGenerator<CoachProChunk> {
+        yield { type: "content", content: "A steady week." };
+      },
+    );
+  });
+
+  it("is built from the seven days, before the quick replies, for an app that can draw it", async () => {
+    const events = await collect(
+      handleCoachChat(
+        makeParams({ writeCards: true, weekProgressCard: true, tz: "UTC" }),
+      ),
+    );
+    expect(types(events)).toEqual(["week_progress", "quick_replies"]);
+    const card = blocksEvent(events)?.blocks[0];
+    expect(card).toMatchObject({
+      type: "week_progress",
+      endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      snapshot: { calories: Array(7).fill(1900), calorieGoal: 2000 },
+    });
+    const saved = vi.mocked(storage.createChatMessage).mock.calls.at(-1);
+    expect(saved?.[4]).toMatchObject({ blocks: [card, quick] });
+    expect(getBlocksSystemPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ weekProgress: true }),
+    );
+  });
+
+  it("is not built, or offered, for an app that did not declare it", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, dayProgressCard: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+    expect(getBlocksSystemPrompt).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ weekProgress: true }),
+    );
+  });
+
+  it("is not built for a reply the safety message replaced", async () => {
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      async function* (): AsyncGenerator<CoachProChunk> {
+        yield { type: "content", content: "Eat less." };
+        yield { type: "safety_override" };
+      },
+    );
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, weekProgressCard: true })),
+    );
+    expect(
+      blocksEvent(events)?.blocks.some((b) => b.type === "week_progress"),
+    ).not.toBe(true);
+  });
+
+  it("is left off, and the reply still saves, when a day can't be read", async () => {
+    // The turn's own context read works; the card's reads fail.
+    vi.mocked(storage.getDailySummary).mockImplementation(async () => {
+      if (vi.mocked(storage.getDailySummary).mock.calls.length > 1) {
+        throw new Error("db down");
+      }
+      return {
+        totalCalories: 0,
+        totalProtein: 0,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      };
+    });
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, weekProgressCard: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+    expect(storage.createChatMessage).toHaveBeenCalled();
+    expect(svcLog.warn).toHaveBeenCalled();
+  });
+
+  it("sits with a day card the same reply asked for", async () => {
+    vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+      text: t,
+      blocks: [quick],
+      dayProgress: "today" as const,
+      weekProgress: true as const,
+    }));
+    const events = await collect(
+      handleCoachChat(
+        makeParams({
+          writeCards: true,
+          dayProgressCard: true,
+          weekProgressCard: true,
+        }),
+      ),
+    );
+    expect(types(events)).toEqual([
+      "day_progress",
+      "week_progress",
+      "quick_replies",
+    ]);
+  });
+});

@@ -354,9 +354,10 @@ export function register(app: Express): void {
                 "plan_shop",
                 "quick_log",
                 "day_progress",
+                "week_progress",
               ]),
             )
-            .max(6)
+            .max(7)
             .optional(),
           liveCard: z
             .object({

@@ -7,6 +7,7 @@ import { isFinderBlockType } from "@shared/schemas/recipe-finder";
 import { logger, toError } from "../lib/logger";
 import { extractBlockFences, stripCitationMarkers } from "./coach-reply-text";
 import {
+  isWeekProgressRequest,
   readDayProgressRequest,
   type DayProgressDay,
 } from "./day-progress-request";
@@ -24,9 +25,11 @@ export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
       (isFinderBlockType((block as { type?: unknown }).type) ||
         (block as { type?: unknown }).type === "write_card" ||
         (block as { type?: unknown }).type === "checked_trail" ||
-        // The model asks for a day progress card by naming the day; the
-        // server builds it (day-progress.ts), so one with numbers is dropped.
-        (block as { type?: unknown }).type === "day_progress")
+        // The model asks for a day or week progress card by naming it; the
+        // server builds it (day-progress.ts, week-progress.ts), so one with
+        // numbers is dropped.
+        (block as { type?: unknown }).type === "day_progress" ||
+        (block as { type?: unknown }).type === "week_progress")
     ) {
       logger.debug(
         { type: (block as { type?: unknown }).type },
@@ -59,11 +62,14 @@ export function parseBlocksFromContent(content: string): {
   blocks: CoachBlock[];
   /** The day of the first day_progress card the reply asked for (T3). */
   dayProgress?: DayProgressDay;
+  /** The reply asked for the week progress card (T3). */
+  weekProgress?: true;
 } {
   const fences = extractBlockFences(content);
   const text = stripCitationMarkers(fences.text).trim();
   const allBlocks: CoachBlock[] = [];
   let dayProgress: DayProgressDay | undefined;
+  let weekProgress = false;
 
   // warn, not debug: persistent model drift here silently strips every
   // interactive block, and debug is off in production.
@@ -80,6 +86,7 @@ export function parseBlocksFromContent(content: string): {
         allBlocks.push(...validateBlocks(rawBlocks));
         for (const raw of rawBlocks) {
           dayProgress ??= readDayProgressRequest(raw);
+          weekProgress ||= isWeekProgressRequest(raw);
         }
       }
     } catch (err) {
@@ -87,7 +94,12 @@ export function parseBlocksFromContent(content: string): {
     }
   }
 
-  return { text, blocks: allBlocks, ...(dayProgress && { dayProgress }) };
+  return {
+    text,
+    blocks: allBlocks,
+    ...(dayProgress && { dayProgress }),
+    ...(weekProgress && { weekProgress: true as const }),
+  };
 }
 
 export const BLOCKS_SYSTEM_PROMPT = `
@@ -161,6 +173,15 @@ const DAY_PROGRESS_LINE =
   '- day_progress: { type: "day_progress", day: "today"|"yesterday" } (the app fills in that day\'s calories, protein, carbs and fat against the goals, and keeps them up to date)';
 const DAY_PROGRESS_RULE =
   "- For how today or yesterday is going against the goals, use one day_progress block, not an inline_chart: its numbers stay current, so say in words how the day is going rather than repeating its numbers. Keep inline_chart for anything else, such as a week or a trend";
+/** The day rule's last sentence once the week card is offered too. */
+const DAY_RULE_WEEK_TAIL = [
+  "such as a week or a trend",
+  "such as a trend",
+] as const;
+const WEEK_PROGRESS_LINE =
+  '- week_progress: { type: "week_progress" } (the app fills in the calories of the last seven days, today included, against the calorie goal, and keeps them up to date)';
+const WEEK_PROGRESS_RULE =
+  "- For how the last seven days went for calories, use one week_progress block, not an inline_chart: its numbers stay current, so say in words how the week went rather than repeating its numbers. It shows calories only; keep inline_chart for protein or other numbers over a week";
 const COMMITMENT_CARD_LINE =
   '- commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }';
 const NOTES_PAUSED_RULE =
@@ -186,12 +207,14 @@ export function getBlocksSystemPrompt(
     quickLog?: boolean;
     /** The app can draw a day_progress card (T3). */
     dayProgress?: boolean;
+    /** The app can draw a week_progress card (T3). */
+    weekProgress?: boolean;
   } = {},
 ): string {
-  const withCards = withDayProgress(
-    blocksPromptFor(finderEnabled, opts),
-    !!opts.dayProgress,
-  );
+  const withCards = withProgressCards(blocksPromptFor(finderEnabled, opts), {
+    day: !!opts.dayProgress,
+    week: !!opts.weekProgress,
+  });
   if (!opts.notesPaused) return withCards;
   // Coach's notes are paused (no health consent on record): a commitment card
   // offers a check-in that nothing would save. Not offered, and said so.
@@ -213,14 +236,35 @@ export function withOfferRecipeRule(blocksPrompt: string): string {
   return blocksPrompt.replace(FINDER_RECIPE_RULE, OFFER_RECIPE_RULE);
 }
 
-/** Offers the day_progress card next to inline_chart, with its rule. */
-function withDayProgress(prompt: string, on: boolean): string {
-  if (!on) return prompt;
+/**
+ * Offers the day and week progress cards next to inline_chart, each with its
+ * rule. With the week card on, the day rule no longer sends a week to
+ * inline_chart.
+ */
+function withProgressCards(
+  prompt: string,
+  on: { day: boolean; week: boolean },
+): string {
+  const lines: string[] = [];
+  const rules: string[] = [];
+  if (on.day) {
+    lines.push(DAY_PROGRESS_LINE);
+    rules.push(
+      on.week
+        ? DAY_PROGRESS_RULE.replace(...DAY_RULE_WEEK_TAIL)
+        : DAY_PROGRESS_RULE,
+    );
+  }
+  if (on.week) {
+    lines.push(WEEK_PROGRESS_LINE);
+    rules.push(WEEK_PROGRESS_RULE);
+  }
+  if (lines.length === 0) return prompt;
   return prompt
-    .replace(INLINE_CHART_LINE, `${INLINE_CHART_LINE}\n${DAY_PROGRESS_LINE}`)
+    .replace(INLINE_CHART_LINE, [INLINE_CHART_LINE, ...lines].join("\n"))
     .replace(
       "\n\nExample response",
-      `\n${DAY_PROGRESS_RULE}\n\nExample response`,
+      `\n${rules.join("\n")}\n\nExample response`,
     );
 }
 

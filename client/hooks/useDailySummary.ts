@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import type { QueryErrorMeta } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -18,6 +18,20 @@ export function useDailySummary(
   options?: { meta?: QueryErrorMeta },
 ) {
   return useQuery<DailySummaryResponse>({
+    ...dailySummaryQuery(date),
+    meta: options?.meta,
+  });
+}
+
+/**
+ * The key and fetch of one day's summary, for a screen that reads several
+ * days at once with `useQueries` (the Coach's week card): the same cache
+ * entries as `useDailySummary`, so a log refreshes them too.
+ */
+export function dailySummaryQuery(
+  date?: string,
+): Pick<UseQueryOptions<DailySummaryResponse>, "queryKey" | "queryFn"> {
+  return {
     queryKey: date
       ? [...QUERY_KEYS.dailySummary, date]
       : QUERY_KEYS.dailySummary,
@@ -30,6 +44,5 @@ export function useDailySummary(
       );
       return res.json() as Promise<DailySummaryResponse>;
     },
-    meta: options?.meta,
-  });
+  };
 }
