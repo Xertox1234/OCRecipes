@@ -140,3 +140,26 @@ describe("getConfidenceFromPhase", () => {
     ).toBe(1.0);
   });
 });
+
+describe("getReticleTarget with a shape", () => {
+  it('shape "front" centers a 240x260 target', () => {
+    const t = getReticleTarget({ type: "HUNTING" }, SW, SH, "front");
+    expect(t).toEqual({ cx: SW / 2, cy: SH / 2, width: 240, height: 260 });
+  });
+
+  it("BARCODE_TRACKING still follows the bounds when a shape is given", () => {
+    const t = getReticleTarget(
+      {
+        type: "BARCODE_TRACKING",
+        barcode: "1",
+        bounds: BOUNDS,
+        frameCount: 1,
+      },
+      SW,
+      SH,
+      "label",
+    );
+    expect(t.cx).toBeCloseTo(SW * 0.5);
+    expect(t.cy).toBeCloseTo(SH * 0.5);
+  });
+});

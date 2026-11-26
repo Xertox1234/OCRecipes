@@ -3,6 +3,19 @@ import type { ScanPhase } from "../types/scan-phase";
 
 export const BARCODE_RETICLE = { width: 260, height: 160 } as const;
 export const LABEL_RETICLE = { width: 200, height: 270 } as const;
+export type FrameShape = "barcode" | "label" | "front" | "photo";
+
+// Step-shaped reticle frames: each guided step frames what it asks for.
+export const FRAME_SIZES: Record<
+  FrameShape,
+  { width: number; height: number }
+> = {
+  barcode: BARCODE_RETICLE,
+  label: LABEL_RETICLE,
+  front: { width: 240, height: 260 },
+  photo: { width: 280, height: 300 },
+};
+
 // Shared with scan-screen-utils' lock decision — the reticle's confidence ring
 // and the actual barcode-lock math must derive from the same frame budget.
 export const LOCK_THRESHOLD_FRAMES = 7;
@@ -33,8 +46,12 @@ export function getReticleTarget(
   phase: ScanPhase,
   screenWidth: number,
   screenHeight: number,
+  shape?: FrameShape,
 ): ReticleTarget {
   const center = { cx: screenWidth / 2, cy: screenHeight / 2 };
+  if (shape && phase.type !== "BARCODE_TRACKING") {
+    return { ...center, ...FRAME_SIZES[shape] };
+  }
   switch (phase.type) {
     case "BARCODE_TRACKING": {
       const { cx, cy } = boundsToTarget(
