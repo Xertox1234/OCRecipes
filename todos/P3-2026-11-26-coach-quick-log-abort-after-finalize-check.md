@@ -28,9 +28,17 @@ Found in the T2 review (security and server reviewers). The window is a few
 milliseconds wide and the log is the user's own, from their own words, and
 visible in their food log, so this is low.
 
+The final T2 review found a close relative: if the model call fails with a
+non-abort error after the food was logged (a provider 5xx mid-stream),
+`finalizeTurn` never runs, so the log stays while the user sees only an
+error. The next turn's `describeLoggedFood` line stops a double log, and the
+entry can be edited in the food log. A fix: catch in `handleCoachChat`
+(server/services/coach-pro-chat.ts) and call `withdrawFoodLoggedAtOnce`.
+
 ## Acceptance Criteria
 
 - [ ] A turn that ends aborted after its food was logged at once either
       withdraws the log or stores the reply with its write_card block, so the
       card and its Undo are reachable.
 - [ ] A test covers an abort that lands after finalize's first check.
+- [ ] A model call that throws after the food was logged withdraws the log.
