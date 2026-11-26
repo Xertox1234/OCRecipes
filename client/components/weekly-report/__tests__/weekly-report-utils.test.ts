@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   availableNutrients,
   chartSeries,
-  dataBarColor,
+  dataBarStyle,
   goalChartLabel,
   featureTipRoute,
   formatWeekRange,
@@ -255,22 +255,32 @@ describe("shouldShowYourWeek", () => {
 // sparkline bars were backgroundTertiary on the card's surface, about 1.4:1
 // (light) and 1.3:1 (dark). The bar height is the data, so a bar must reach
 // the 3:1 non-text contrast whether or not it is highlighted.
-describe("dataBarColor", () => {
+describe("dataBarStyle", () => {
   it.each(["light", "dark"] as const)(
-    "every bar reaches 3:1 on the card in %s mode",
+    "every bar's visible edge reaches 3:1 on the card in %s mode",
     (mode) => {
       const theme = Colors[mode];
-      for (const highlighted of [true, false]) {
-        expect(
-          contrastRatio(dataBarColor(theme, highlighted), theme.surface),
-        ).toBeGreaterThanOrEqual(3);
-      }
+      const on = dataBarStyle(theme, true);
+      const off = dataBarStyle(theme, false);
+      expect(
+        contrastRatio(on.backgroundColor, theme.surface),
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        contrastRatio(off.borderColor, theme.surface),
+      ).toBeGreaterThanOrEqual(3);
     },
   );
 
-  it("keeps the highlighted bar distinct from the others", () => {
+  // Review of #2057: a filled accent bar beside a filled grey bar was 1.11:1
+  // (light) and 1.38:1 (dark) apart, hue only, so colour-blind and greyscale
+  // users could not tell them apart. Filled against hollow needs no hue.
+  it("tells the highlighted bar apart by fill, not by colour alone", () => {
     const theme = Colors.light;
-    expect(dataBarColor(theme, true)).not.toBe(dataBarColor(theme, false));
+    const on = dataBarStyle(theme, true);
+    const off = dataBarStyle(theme, false);
+    expect(on.borderWidth).toBe(0);
+    expect(off.backgroundColor).toBe("transparent");
+    expect(off.borderWidth).toBeGreaterThan(0);
   });
 });
 

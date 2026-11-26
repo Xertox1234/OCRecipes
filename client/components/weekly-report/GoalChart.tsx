@@ -7,7 +7,7 @@ import type { WeeklyFacts } from "@shared/schemas/coach-weekly-report";
 import {
   availableNutrients,
   chartSeries,
-  dataBarColor,
+  dataBarStyle,
   goalChartLabel,
   type ChartNutrient,
 } from "./weekly-report-utils";
@@ -112,7 +112,7 @@ export function GoalChart({ facts }: { facts: WeeklyFacts }) {
                     b.value === null
                       ? 2
                       : Math.max(2, (b.value / max) * CHART_HEIGHT),
-                  backgroundColor: dataBarColor(theme, b.met),
+                  ...dataBarStyle(theme, b.met),
                 },
               ]}
             />

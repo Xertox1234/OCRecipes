@@ -5,7 +5,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, FontFamily, Spacing } from "@/constants/theme";
 import type { WeeklyTrendPoint } from "@shared/schemas/coach-weekly-report";
 import {
-  dataBarColor,
+  dataBarStyle,
   trendSeries,
   type TrendMetric,
 } from "./weekly-report-utils";
@@ -104,7 +104,7 @@ export function TrendsCard({
                 styles.bar,
                 {
                   height: Math.max(2, ((p.value ?? 0) / max) * PLOT_HEIGHT),
-                  backgroundColor: dataBarColor(theme, i === points.length - 1),
+                  ...dataBarStyle(theme, i === points.length - 1),
                 },
               ]}
             />

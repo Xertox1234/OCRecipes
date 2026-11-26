@@ -75,16 +75,24 @@ export function chartSeries(
 }
 
 /**
- * A data bar's fill. The bar's height is the data, so every bar reaches the
- * 3:1 non-text contrast on the card: the highlighted one (goal met, this
- * week, a day with a log) in the accent, the rest in the secondary text tone
- * (backgroundTertiary was about 1.4:1).
+ * A data bar's look. The bar's height is the data, so every bar's visible
+ * edge reaches the 3:1 non-text contrast on the card (backgroundTertiary
+ * fills were about 1.4:1). The highlighted bar (goal met, this week, a day
+ * with a log) is filled with the accent; the rest are hollow outlines, so the
+ * two differ by shape and not by hue alone (a grey fill beside the accent was
+ * only 1.1:1 apart in luminance).
  */
-export function dataBarColor(
+export function dataBarStyle(
   theme: { link: string; textSecondary: string },
   highlighted: boolean,
-): string {
-  return highlighted ? theme.link : theme.textSecondary;
+): { backgroundColor: string; borderColor: string; borderWidth: number } {
+  return highlighted
+    ? { backgroundColor: theme.link, borderColor: theme.link, borderWidth: 0 }
+    : {
+        backgroundColor: "transparent",
+        borderColor: theme.textSecondary,
+        borderWidth: 1.5,
+      };
 }
 
 const DAY_NAMES = [
