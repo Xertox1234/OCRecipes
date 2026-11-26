@@ -91,13 +91,29 @@ const {
   mockToastInfo: vi.fn(),
 }));
 
-// The real hook, wrapped so a test can see ChatScreen hand it the
-// reduced-motion setting (audit 2026-11-24 M7).
+// The real hook, wrapped so a test can see what ChatScreen hands it and when
+// it asks to follow the newest message (audit 2026-11-24 M7). followLatest
+// is one stable spy, as the real one is stable.
+const { stick, a11y } = vi.hoisted(() => ({
+  stick: { followLatest: vi.fn() },
+  a11y: { reducedMotion: false },
+}));
 vi.mock("@/hooks/useStickToBottom", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/hooks/useStickToBottom")>();
-  return { ...actual, useStickToBottom: vi.fn(actual.useStickToBottom) };
+  return {
+    ...actual,
+    useStickToBottom: vi.fn(
+      (...args: Parameters<typeof actual.useStickToBottom>) => ({
+        ...actual.useStickToBottom(...args),
+        followLatest: stick.followLatest,
+      }),
+    ),
+  };
 });
+vi.mock("@/hooks/useAccessibility", () => ({
+  useAccessibility: () => ({ reducedMotion: a11y.reducedMotion }),
+}));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
@@ -1381,12 +1397,36 @@ describe("ChatScreen — screen reader and scroll position", () => {
   });
 
   // M7: every growth tick pulled the list to the end, animated, whatever
-  // Reduced Motion said. The shared hook only follows a reader at the end.
-  it("follows the latest message through the shared stick-to-bottom hook", () => {
-    vi.mocked(useStickToBottom).mockClear();
-    renderComponent(<ChatScreen />);
-    expect(useStickToBottom).toHaveBeenCalledWith(expect.any(Function), {
-      reducedMotion: expect.any(Boolean),
-    });
+  // Reduced Motion said. The shared hook follows only a reader at the end.
+  it("hands the shared stick-to-bottom hook the Reduced Motion setting", () => {
+    a11y.reducedMotion = true;
+    try {
+      vi.mocked(useStickToBottom).mockClear();
+      renderComponent(<ChatScreen />);
+      expect(useStickToBottom).toHaveBeenCalledWith(expect.any(Function), {
+        reducedMotion: true,
+      });
+    } finally {
+      a11y.reducedMotion = false;
+    }
+  });
+
+  it("follows the newest message when a reply starts", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+    stick.followLatest.mockClear();
+    rerender(<ChatScreen />);
+    expect(stick.followLatest).not.toHaveBeenCalled();
+    mockSendMessageState.value = { ...idle, isStreaming: true };
+    rerender(<ChatScreen />);
+    expect(stick.followLatest).toHaveBeenCalledTimes(1);
+  });
+
+  // The screen stays mounted when the Coach tab re-points it.
+  it("follows the newest message when the conversation changes", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+    stick.followLatest.mockClear();
+    mockRouteParams.value = { conversationId: 7 };
+    rerender(<ChatScreen />);
+    expect(stick.followLatest).toHaveBeenCalledTimes(1);
   });
 });
