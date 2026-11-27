@@ -59,6 +59,7 @@ import { ExampleCard, EXAMPLE_CONTENT } from "@/camera/shell/ExampleCard";
 import { HelpSheet } from "@/camera/shell/HelpSheet";
 import { TipsCarousel } from "@/camera/shell/TipsCarousel";
 import { ManualBarcodeSheet } from "@/camera/shell/ManualBarcodeSheet";
+import { normalizeTypedBarcode } from "@/camera/shell/manual-barcode-utils";
 import {
   getBarcodeFlowView,
   getPhotosDiscardedByCommit,
@@ -977,6 +978,21 @@ export default function ScanScreen() {
     [dispatch, fetchProductInfo, haptics],
   );
 
+  // A barcode handed over by snap anything (navigation.replace with
+  // { lockedBarcode }): lock it as if typed, once. The ref stops a blur ->
+  // refocus of this same screen from re-locking the same number; a different
+  // number arriving in new params may lock again. onManualBarcode itself
+  // refuses unless the phase accepts a barcode.
+  const consumedLockedBarcodeRef = useRef<string | null>(null);
+  const lockedBarcodeParam = route.params?.lockedBarcode;
+  useEffect(() => {
+    if (!isFocused) return;
+    const barcode = normalizeTypedBarcode(lockedBarcodeParam ?? "");
+    if (!barcode || barcode === consumedLockedBarcodeRef.current) return;
+    consumedLockedBarcodeRef.current = barcode;
+    onManualBarcode(barcode);
+  }, [isFocused, lockedBarcodeParam, onManualBarcode]);
+
   const stepExampleKey = getStepExampleKey(view);
   const { showExample } = onboarding;
   // Plain function: React Compiler memoizes it (a manual useCallback over
@@ -1203,7 +1219,14 @@ export default function ScanScreen() {
       chromeHidden={productChipVisible}
       // The feed holds (dims) behind the green frame until the user acts on
       // the found card; "Not this" (RESCAN) leaves BARCODE_LOCKED and lifts it.
-      feedHeld={scanPhase.type === "BARCODE_LOCKED"}
+      // Snap anything holds it too: while classifying and behind its result
+      // and unclear cards the photo is the subject, not the live feed.
+      feedHeld={
+        scanPhase.type === "BARCODE_LOCKED" ||
+        scanPhase.type === "CLASSIFYING" ||
+        scanPhase.type === "SMART_CONFIRMED" ||
+        scanPhase.type === "SMART_ERROR"
+      }
       controlsMuted={exampleCardKey !== null}
       obscured={teachingUp}
       staticUIImportance={staticUIImportance}
@@ -1368,7 +1391,16 @@ export default function ScanScreen() {
                 // user left during OCR — do nothing.
                 break;
               case "barcodeHandoff":
-                // wired in Task 4
+                // replace (not navigate): the Scan screen is swapped for a fresh
+                // one that locks the number, so Back does not return to a stale
+                // photo card. The temp photo stays tracked on purpose — the
+                // blur this causes deletes it (nothing downstream carries it).
+                navigation.replace(
+                  "Scan",
+                  action.barcode
+                    ? { lockedBarcode: action.barcode }
+                    : undefined,
+                );
                 break;
               default: {
                 // Exhaustiveness guard: a new SmartConfirmAction kind must be handled
@@ -1391,6 +1423,15 @@ export default function ScanScreen() {
           setIsSmartConfirming(false);
         }}
         onRetry={rearmScan}
+        onPickItMyself={() => {
+          const phase = scanPhaseRef.current;
+          if (phase.type !== "SMART_CONFIRMED" && phase.type !== "SMART_ERROR")
+            return;
+          // Ownership of the photo moves to PhotoIntent: release it first so
+          // the blur cleanup does not delete the file it is about to show.
+          releaseTempUri(phase.imageUri);
+          navigation.replace("PhotoIntent", { imageUri: phase.imageUri });
+        }}
       />
 
       {confirmCard && (
