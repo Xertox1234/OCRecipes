@@ -58,6 +58,7 @@ vi.mock("../nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   generateCoachResponse: vi.fn(),
   SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
+  PROVIDER_FAILURE_SENTINEL: "\x00PROVIDER_FAILURE\x00",
 }));
 
 vi.mock("../coach-prompt", () => ({
