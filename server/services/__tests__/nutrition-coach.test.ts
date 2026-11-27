@@ -9,6 +9,7 @@ import type { CoachProChunk } from "../nutrition-coach";
 import type { CoachContext } from "../coach-prompt";
 import { aiChat } from "../../lib/ai-client";
 import { executeToolCall } from "../coach-tools";
+import { ONE_CARD_PER_REPLY_RESULT } from "../write-cards/results";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -922,6 +923,110 @@ describe("generateCoachProResponse", () => {
       undefined,
       "UTC",
     );
+  });
+
+  // Audit 2026-11-24 (L19): a reply shows one card and the last write call
+  // wins. In one parallel round, which call finished last decided the card,
+  // and every call's result said its card was on screen. Now only the last
+  // write call in call order runs; the earlier ones are told no card shows.
+  describe("two write-card calls in one round", () => {
+    const twoWrites = () =>
+      createMockStream([
+        {
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_food",
+              function: {
+                name: "log_food_item",
+                arguments: '{"food":"eggs","count":2}',
+              },
+            },
+            {
+              index: 1,
+              id: "call_look",
+              function: {
+                name: "lookup_nutrition",
+                arguments: '{"query":"egg"}',
+              },
+            },
+            {
+              index: 2,
+              id: "call_grocery",
+              function: {
+                name: "add_to_grocery_list",
+                arguments: '{"items":["milk"]}',
+              },
+            },
+          ],
+        },
+        { finish_reason: "tool_calls" },
+      ]);
+
+    function toolMessages(): Record<string, string> {
+      const body = vi.mocked(aiChat).mock.calls[1][1] as {
+        messages: { role: string; tool_call_id?: string; content: string }[];
+      };
+      return Object.fromEntries(
+        body.messages
+          .filter((m) => m.role === "tool")
+          .map((m) => [m.tool_call_id!, m.content]),
+      );
+    }
+
+    it("runs only the last write call and tells the earlier one no card shows", async () => {
+      vi.mocked(aiChat)
+        .mockResolvedValueOnce(twoWrites() as any)
+        .mockResolvedValueOnce(
+          createMockStream([
+            { content: "Tap the card." },
+            { finish_reason: "stop" },
+          ]) as any,
+        );
+      vi.mocked(executeToolCall).mockResolvedValue({ ok: true });
+
+      await collectStream(
+        generateCoachProResponse(
+          [{ role: "user", content: "log 2 eggs and add milk" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+          undefined,
+          undefined,
+          undefined,
+          "UTC",
+          { writeCards: true },
+        ),
+      );
+
+      const ran = vi.mocked(executeToolCall).mock.calls.map((c) => c[0]);
+      expect(ran).toEqual(["lookup_nutrition", "add_to_grocery_list"]);
+      const results = toolMessages();
+      expect(JSON.parse(results.call_food)).toEqual(ONE_CARD_PER_REPLY_RESULT);
+      expect(JSON.parse(results.call_grocery)).toEqual({ ok: true });
+      expect(JSON.parse(results.call_look)).toEqual({ ok: true });
+    });
+
+    it("control: without write-card mode both calls run", async () => {
+      vi.mocked(aiChat)
+        .mockResolvedValueOnce(twoWrites() as any)
+        .mockResolvedValueOnce(
+          createMockStream([
+            { content: "Done." },
+            { finish_reason: "stop" },
+          ]) as any,
+        );
+      vi.mocked(executeToolCall).mockResolvedValue({ ok: true });
+
+      await collectStream(
+        generateCoachProResponse(
+          [{ role: "user", content: "log 2 eggs and add milk" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+
+      expect(vi.mocked(executeToolCall)).toHaveBeenCalledTimes(3);
+    });
   });
 
   it("handles mixed success/failure in parallel tool calls", async () => {

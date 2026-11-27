@@ -20,6 +20,10 @@ import { OFFER_RECIPE_TOOL } from "./recipe-finder/offer";
 import { withOfferRecipeRule } from "./coach-blocks";
 import { buildSystemPrompt, type CoachContext } from "./coach-prompt";
 import { releasableLength } from "./coach-sentence-release";
+import {
+  ONE_CARD_PER_REPLY_RESULT,
+  WRITE_CARD_TOOL_NAMES,
+} from "./write-cards/results";
 import type { UserProfile } from "@shared/schema";
 
 const log = createServiceLogger("nutrition-coach");
@@ -496,9 +500,25 @@ export async function* generateCoachProResponse(
       })),
     };
 
+    // A reply shows one card and the last write call wins. In a parallel
+    // round the winner used to be whichever call finished last, and every
+    // call was told its card was on screen; now only the last write call in
+    // call order runs (audit 2026-11-24, L19).
+    const lastWriteIndex = options?.writeCards
+      ? toolCallsArray.findLastIndex((tc) =>
+          WRITE_CARD_TOOL_NAMES.has(tc.function.name),
+        )
+      : -1;
+
     // Execute tool calls in parallel — preserve order when appending results
     const toolResults = await Promise.all(
-      toolCallsArray.map(async (tc) => {
+      toolCallsArray.map(async (tc, index) => {
+        if (
+          index < lastWriteIndex &&
+          WRITE_CARD_TOOL_NAMES.has(tc.function.name)
+        ) {
+          return { tc, result: ONE_CARD_PER_REPLY_RESULT };
+        }
         // Parse JSON args explicitly so malformed/truncated argument strings
         // (e.g. when finish_reason === "length") are surfaced as their own
         // failure mode rather than falling through the generic outer catch

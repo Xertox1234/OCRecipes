@@ -5,6 +5,26 @@ import type { WriteCardOutcome } from "./tool-args";
 export const CARD_SHOWN_MESSAGE =
   "A card with these details is on screen for the user to check and save. Nothing has been saved. Do not say it was logged or added; tell them to tap the card when it looks right.";
 
+/** The tools that propose a write card in write-card mode. */
+export const WRITE_CARD_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "log_food_item",
+  "add_to_meal_plan",
+  "add_to_grocery_list",
+  "update_pantry",
+  "set_nutrition_goals",
+]);
+
+/**
+ * A reply shows one card and the last write call wins (audit 2026-11-24,
+ * L19). The result for an earlier write call in the same round: it never
+ * runs, so the reply does not point at a card that is not there.
+ */
+export const ONE_CARD_PER_REPLY_RESULT = {
+  card_shown: false,
+  message:
+    "Not shown: a reply can show only one card, and a later request in this reply took its place. Nothing has been saved. Do not mention a card for this one; offer to do it next.",
+} as const;
+
 /**
  * The grocery card's result: what the pantry check changed, so the reply never
  * lists an item the card does not show or points at a card that is not there.
