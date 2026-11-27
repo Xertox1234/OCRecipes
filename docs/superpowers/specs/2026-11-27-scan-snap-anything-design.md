@@ -3,7 +3,7 @@
 Status: APPROVED by the owner 2026-11-27 ("write the plan")
 Date: 2026-11-27
 Builds on: `docs/superpowers/specs/2026-11-26-scan-guided-camera-design.md` (stage 1 merged #2088, motion beats #2092)
-Closes: `todos/P3-2026-11-26-smart-scan-auto-classify-unused.md` (owner chose "revive")
+Closes: `todos/archive/P3-2026-11-26-smart-scan-auto-classify-unused.md` (owner chose "revive")
 Mockup: `docs/superpowers/specs/2026-11-27-scan-snap-anything-mockups/snap-anything.html`
 
 ## Intent
