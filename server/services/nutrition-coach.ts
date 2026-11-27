@@ -259,6 +259,15 @@ export async function* generateCoachProResponse(
     goalsCard?: boolean;
     onWriteCardProposal?: ExecuteToolOptions["onWriteCardProposal"];
     planRecipePool?: ExecuteToolOptions["planRecipePool"];
+    /** The prompt's clock; defaults to the real one. The Coach Pro eval pins it per case. */
+    now?: Date;
+    /**
+     * Coach Pro eval only (audit 2026-11-24, M30): a read tool's result from
+     * the case's fixtures, so no database is needed. Return undefined to run
+     * the tool. Never consulted for a write-card tool, which always runs its
+     * real argument checks and result wording.
+     */
+    readToolResult?: (name: string, args: Record<string, unknown>) => unknown;
   },
 ): AsyncGenerator<CoachProChunk> {
   const lastUserMessage =
@@ -280,6 +289,7 @@ export async function* generateCoachProResponse(
       }
     : context;
   const systemPrompt = buildSystemPrompt(promptContext, resolvedIntent, {
+    now: options?.now,
     tz,
     tier: "pro",
   });
@@ -555,6 +565,16 @@ export async function* generateCoachProResponse(
         };
       }
       try {
+        if (
+          options?.readToolResult &&
+          !WRITE_CARD_TOOL_NAMES.has(tc.function.name)
+        ) {
+          const fixture = options.readToolResult(
+            tc.function.name,
+            args as Record<string, unknown>,
+          );
+          if (fixture !== undefined) return { tc, result: fixture };
+        }
         const result = await executeToolCall(
           tc.function.name,
           args as Record<string, unknown>,

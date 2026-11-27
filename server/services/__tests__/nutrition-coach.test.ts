@@ -2013,3 +2013,126 @@ describe("current time rendering", () => {
     expect(capturedSystemPrompt()).not.toContain("2026-07-11");
   });
 });
+
+// Audit 2026-11-24 (M30): seams the Coach Pro eval runner uses. Production
+// never passes them, so its behaviour is unchanged.
+describe("Coach Pro eval seams", () => {
+  function systemPrompt(): string {
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
+    return (callArgs as { messages: { role: string; content: string }[] })
+      .messages[0].content;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+  });
+
+  it("options.now fixes the prompt's clock", async () => {
+    vi.mocked(aiChat).mockResolvedValue(
+      createMockStream([{ content: "Ok" }, { finish_reason: "stop" }]) as any,
+    );
+    await collectStream(
+      generateCoachProResponse(
+        [{ role: "user", content: "Hi" }],
+        DEFAULT_CONTEXT,
+        "user-1",
+        undefined,
+        undefined,
+        undefined,
+        "America/Toronto",
+        { now: new Date("2026-11-18T17:30:00Z") },
+      ),
+    );
+    expect(systemPrompt()).toContain("Wednesday 2026-11-18 12:30 PM");
+  });
+
+  const lookupThenText = () => {
+    vi.mocked(aiChat)
+      .mockResolvedValueOnce(
+        createMockStream([
+          {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_read",
+                function: {
+                  name: "lookup_nutrition",
+                  arguments: '{"query":"egg"}',
+                },
+              },
+              {
+                index: 1,
+                id: "call_write",
+                function: {
+                  name: "log_food_item",
+                  arguments: '{"food":"egg","count":2}',
+                },
+              },
+            ],
+          },
+          { finish_reason: "tool_calls" },
+        ]) as any,
+      )
+      .mockResolvedValueOnce(
+        createMockStream([{ content: "Ok" }, { finish_reason: "stop" }]) as any,
+      );
+  };
+
+  function toolContent(id: string): unknown {
+    const body = vi.mocked(aiChat).mock.calls[1][1] as {
+      messages: { role: string; tool_call_id?: string; content: string }[];
+    };
+    return JSON.parse(
+      body.messages.find((m) => m.tool_call_id === id)!.content,
+    );
+  }
+
+  it("options.readToolResult answers a read tool without running it", async () => {
+    lookupThenText();
+    vi.mocked(executeToolCall).mockResolvedValue({ real: true });
+    const readToolResult = vi.fn((name: string) =>
+      name === "lookup_nutrition" ? { fixture: "egg" } : undefined,
+    );
+    await collectStream(
+      generateCoachProResponse(
+        [{ role: "user", content: "log 2 eggs" }],
+        DEFAULT_CONTEXT,
+        "user-1",
+        undefined,
+        undefined,
+        undefined,
+        "UTC",
+        { writeCards: true, readToolResult },
+      ),
+    );
+    expect(toolContent("call_read")).toEqual({ fixture: "egg" });
+    // A write-card tool always runs the real code, fixture or not.
+    expect(readToolResult).not.toHaveBeenCalledWith(
+      "log_food_item",
+      expect.anything(),
+    );
+    expect(vi.mocked(executeToolCall).mock.calls.map((c) => c[0])).toEqual([
+      "log_food_item",
+    ]);
+    expect(toolContent("call_write")).toEqual({ real: true });
+  });
+
+  it("a read tool with no fixture runs as before", async () => {
+    lookupThenText();
+    vi.mocked(executeToolCall).mockResolvedValue({ real: true });
+    await collectStream(
+      generateCoachProResponse(
+        [{ role: "user", content: "log 2 eggs" }],
+        DEFAULT_CONTEXT,
+        "user-1",
+        undefined,
+        undefined,
+        undefined,
+        "UTC",
+        { writeCards: true, readToolResult: () => undefined },
+      ),
+    );
+    expect(vi.mocked(executeToolCall)).toHaveBeenCalledTimes(2);
+  });
+});
