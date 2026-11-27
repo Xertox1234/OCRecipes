@@ -33,3 +33,23 @@ const weekProgressRequestSchema = z.object({
 export function isWeekProgressRequest(raw: unknown): boolean {
   return weekProgressRequestSchema.safeParse(raw).success;
 }
+
+// Coach roadmap T4, the compare card: the request names two scans by the
+// ids get_recent_scans gave, never their numbers. Not strict, like the rest.
+// A scan id is a 32-bit serial: a bigger number is no scan, and would only
+// make the read fail.
+const scanId = z.number().int().positive().max(2147483647);
+const labelCompareRequestSchema = z.object({
+  type: z.literal("label_compare"),
+  scanIds: z
+    .tuple([scanId, scanId])
+    .refine(([a, b]) => a !== b, "two different scans"),
+});
+
+/** The two scan ids a model-authored label_compare block names, if it is one. */
+export function readLabelCompareRequest(
+  raw: unknown,
+): [number, number] | undefined {
+  const parsed = labelCompareRequestSchema.safeParse(raw);
+  return parsed.success ? parsed.data.scanIds : undefined;
+}

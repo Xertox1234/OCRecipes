@@ -66,6 +66,8 @@ export async function loadTurnContext(
     weekProgressCard?: boolean;
     /** The app draws ring, sparkline and heatmap charts (T4). */
     moreCharts?: boolean;
+    /** The app can draw the label compare card (T4). */
+    labelCompareCard?: boolean;
     intent: CoachIntent;
     /** History the finder gate already read, if any. */
     finderHistory?: ChatMessage[];
@@ -144,6 +146,7 @@ export async function loadTurnContext(
       dayProgress: a.dayProgressCard,
       weekProgress: a.weekProgressCard,
       moreCharts: a.moreCharts,
+      labelCompare: a.labelCompareCard,
     });
   }
 

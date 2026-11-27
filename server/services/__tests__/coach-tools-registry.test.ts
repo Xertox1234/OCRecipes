@@ -33,6 +33,7 @@ const ALL_TOOL_NAMES = [
   "get_substitutions",
   "get_my_recipes",
   "find_plan_recipes",
+  "get_recent_scans",
   "update_pantry",
   "set_nutrition_goals",
 ];
@@ -79,18 +80,18 @@ describe("coach tool registry: offered and executable are one rule", () => {
     expect(offeredNames({})).toEqual(ALL_TOOL_NAMES.slice(0, 10));
   });
 
-  it("adds the recipe-id tools with write cards and update_pantry only with the pantry card", () => {
+  it("adds the recipe-id tools and get_recent_scans with write cards, and update_pantry only with the pantry card", () => {
     expect(offeredNames({ writeCards: true })).toEqual(
-      ALL_TOOL_NAMES.slice(0, 12),
+      ALL_TOOL_NAMES.slice(0, 13),
     );
     expect(offeredNames({ writeCards: true, pantryCard: true })).toEqual(
-      ALL_TOOL_NAMES.slice(0, 13),
+      ALL_TOOL_NAMES.slice(0, 14),
     );
     expect(
       offeredNames({ writeCards: true, pantryCard: true, goalsCard: true }),
     ).toEqual(ALL_TOOL_NAMES);
     expect(offeredNames({ writeCards: true, goalsCard: true })).toEqual([
-      ...ALL_TOOL_NAMES.slice(0, 12),
+      ...ALL_TOOL_NAMES.slice(0, 13),
       "set_nutrition_goals",
     ]);
     expect(offeredNames({ goalsCard: true })).toEqual(

@@ -943,12 +943,17 @@ describe("Chat Routes", () => {
               "day_progress",
               "week_progress",
               "more_charts",
+              "label_compare",
             ],
           })
         ).status,
       ).toBe(200);
       expect(vi.mocked(getBlocksSystemPrompt).mock.calls.at(-1)?.[1]).toEqual(
-        expect.objectContaining({ writeCards: true, moreCharts: true }),
+        expect.objectContaining({
+          writeCards: true,
+          moreCharts: true,
+          labelCompare: true,
+        }),
       );
     });
 

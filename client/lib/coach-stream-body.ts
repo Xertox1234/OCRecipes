@@ -22,7 +22,8 @@ export interface CoachStreamExtras {
  * with Undo, so a small typed log is applied at once. "day_progress" (T3):
  * this build draws the day card that re-reads its numbers. "week_progress"
  * (T3): the seven-day card that does the same. "more_charts" (T4): this
- * build draws ring, sparkline and heatmap charts.
+ * build draws ring, sparkline and heatmap charts. "label_compare" (T4): two
+ * scanned products side by side.
  */
 const EXTRA_CARD_KINDS = [
   "pantry",
@@ -33,6 +34,7 @@ const EXTRA_CARD_KINDS = [
   "day_progress",
   "week_progress",
   "more_charts",
+  "label_compare",
 ] as const;
 
 /** The POST body for a coach message; unset extras are left out. */

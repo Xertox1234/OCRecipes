@@ -393,6 +393,42 @@ export const weekProgressBlockSchema = z.object({
 });
 export type WeekProgressBlock = z.infer<typeof weekProgressBlockSchema>;
 
+/** A nutrient per serving as the scan stored it; null where the label had none. */
+const perServing = z.number().nonnegative().nullable();
+
+/**
+ * Two scanned products side by side, each per its own serving (Coach roadmap
+ * T4). The servings can differ, so both serving sizes are shown and the
+ * Coach says so in words; nothing is scaled to a common amount.
+ *
+ * SERVER-BUILT: the model asks with `{ type: "label_compare", scanIds:
+ * [a, b] }` (ids from get_recent_scans), which this schema rejects; the
+ * server reads the two scans for the user (server/services/label-compare.ts),
+ * so the numbers are the stored ones, never the model's.
+ */
+export const labelCompareBlockSchema = z.object({
+  type: z.literal("label_compare"),
+  items: z
+    .array(
+      z.object({
+        scanId: z.number().int().positive(),
+        name: z.string(),
+        brand: z.string().nullable(),
+        servingSize: z.string().nullable(),
+        calories: perServing,
+        protein: perServing,
+        carbs: perServing,
+        fat: perServing,
+        fiber: perServing,
+        sugar: perServing,
+        /** Milligrams. */
+        sodium: perServing,
+      }),
+    )
+    .length(2),
+});
+export type LabelCompareBlock = z.infer<typeof labelCompareBlockSchema>;
+
 // ── Discriminated union of all blocks ───────────────────────────────
 
 // recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
@@ -419,6 +455,7 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   checkedTrailSchema,
   dayProgressBlockSchema,
   weekProgressBlockSchema,
+  labelCompareBlockSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;

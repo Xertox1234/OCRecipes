@@ -73,6 +73,8 @@ export interface CoachChatParams {
   weekProgressCard?: boolean;
   /** Coach roadmap T4: the app draws ring, sparkline and heatmap charts. */
   moreCharts?: boolean;
+  /** Coach roadmap T4: the app can draw the label compare card. */
+  labelCompareCard?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {

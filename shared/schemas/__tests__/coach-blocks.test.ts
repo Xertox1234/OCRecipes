@@ -772,3 +772,46 @@ describe("week_progress block (Coach roadmap T3)", () => {
     );
   });
 });
+
+describe("label_compare block (Coach roadmap T4)", () => {
+  const item = (scanId: number, name: string) => ({
+    scanId,
+    name,
+    brand: null,
+    servingSize: "30 g",
+    calories: 120,
+    protein: 3,
+    carbs: 20,
+    fat: 4,
+    fiber: null,
+    sugar: 8,
+    sodium: 140,
+  });
+  const block = {
+    type: "label_compare",
+    items: [item(1, "Oat bar"), item(2, "Nut bar")],
+  };
+
+  it("parses the server-built card", () => {
+    expect(coachBlockSchema.parse(block)).toEqual(block);
+  });
+
+  it("rejects the model's request, which carries ids and no numbers", () => {
+    expect(
+      coachBlockSchema.safeParse({ type: "label_compare", scanIds: [1, 2] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("takes exactly two products, with no negative amounts", () => {
+    expect(
+      coachBlockSchema.safeParse({ ...block, items: [block.items[0]] }).success,
+    ).toBe(false);
+    expect(
+      coachBlockSchema.safeParse({
+        ...block,
+        items: [{ ...block.items[0], fat: -1 }, block.items[1]],
+      }).success,
+    ).toBe(false);
+  });
+});

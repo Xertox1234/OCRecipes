@@ -64,6 +64,7 @@ const CARD_KINDS = [
   "day_progress",
   "week_progress",
   "more_charts",
+  "label_compare",
 ] as const;
 
 export function register(app: Express): void {
