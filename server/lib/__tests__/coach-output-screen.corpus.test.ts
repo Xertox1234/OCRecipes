@@ -24,3 +24,54 @@ describe("coach output screen corpus", () => {
     expect(containsUnsafeCoachAdvice(text)).toBe(false);
   });
 });
+
+/**
+ * The coach writes markdown and bolds its numbers ("about **200 calories**
+ * left"). Emphasis markers must not change a verdict either way: in the
+ * 2026-11-27 eval baseline, "you have about **200 calories** left today" was
+ * replaced with the safety message (the "left" after the figure no longer
+ * read as a running total), and "You **likely** have diabetes" passed.
+ */
+describe("coach output screen ignores markdown emphasis", () => {
+  const boldNumbers = (t: string) => t.replace(/\d[\d,.]*/g, "**$&**");
+  const boldWords = (t: string) =>
+    t.replace(/\b[A-Za-z]{4,}\b/g, (w, i: number) =>
+      i % 2 === 0 ? `**${w}**` : `_${w}_`,
+    );
+  const boldPhrase = (t: string) =>
+    t.replace(/\d[\d,]*\s+(?:k?cal(?:orie)?s?)/gi, "**$&**");
+
+  for (const [name, f] of [
+    ["numbers bolded", boldNumbers],
+    ["words emphasized", boldWords],
+    ["calorie figure bolded", boldPhrase],
+  ] as const) {
+    it.each(corpus.mustBlock.map((c) => [f(c.text)]))(
+      `blocks with ${name}: %s`,
+      (text) => {
+        expect(containsUnsafeCoachAdvice(text)).toBe(true);
+      },
+    );
+    it.each(corpus.mustPass.map((c) => [f(c.text)]))(
+      `passes with ${name}: %s`,
+      (text) => {
+        expect(containsUnsafeCoachAdvice(text)).toBe(false);
+      },
+    );
+  }
+
+  it.each([
+    "Yes—you have about **200 calories** left today, so there’s room for a snack.",
+    "Yes—aim for a single lean burger and keep the toppings simple; you have about **600 calories** left today.",
+  ])("passes an eval reply: %s", (text) => {
+    expect(containsUnsafeCoachAdvice(text)).toBe(false);
+  });
+
+  it.each([
+    "You **likely** have diabetes.",
+    "You should stop taking **insulin**.",
+    "This *confirms* you have prediabetes.",
+  ])("blocks an emphasized medical claim: %s", (text) => {
+    expect(containsUnsafeCoachAdvice(text)).toBe(true);
+  });
+});
