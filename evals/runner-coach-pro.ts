@@ -4,7 +4,11 @@ import * as path from "path";
 import { formatContextSummary } from "./judge";
 import { coachProShownReply } from "./lib/coach-shown-reply";
 import { runCoachProChecks } from "./lib/coach-pro-checks";
-import { coachProCasesSchema, type CoachProCase } from "./lib/coach-pro-cases";
+import {
+  casesForRun,
+  coachProCasesSchema,
+  type CoachProCase,
+} from "./lib/coach-pro-cases";
 import { COACH_DIMENSION_WEIGHTS, COACH_RUBRIC_TEXT } from "./lib/coach-rubric";
 import { runEvalSuite } from "./lib/runner-core";
 import { ALL_DIMENSIONS } from "./types";
@@ -54,13 +58,22 @@ const clockOf = (c: CoachProCase) => ({
 const asPro = (t: EvalTestCase) => t as unknown as CoachProCase;
 
 // The finder flag changes the tool list (search_recipes is retired when it is
-// on), so the run states which it used.
+// on, and offer_recipe exists only then), so the run states which it used
+// and names the offer cases it could not run.
+const { run, skipped } = casesForRun(cases, {
+  finderOn: isRecipeFinderEnabled(),
+});
 console.log(
-  `Coach Pro eval: ${cases.length} case(s); RECIPE_FINDER_ENABLED=${isRecipeFinderEnabled()}`,
+  `Coach Pro eval: ${run.length} case(s); RECIPE_FINDER_ENABLED=${isRecipeFinderEnabled()}`,
 );
+if (skipped.length > 0) {
+  console.log(
+    `Skipped (need RECIPE_FINDER_ENABLED=true): ${skipped.join(", ")}`,
+  );
+}
 
 runEvalSuite(
-  cases.map((c) => ({
+  run.map((c) => ({
     ...c,
     // A server-written safety reply fails every case that does not expect one.
     assertions: {

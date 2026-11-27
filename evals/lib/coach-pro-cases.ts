@@ -49,3 +49,19 @@ export const coachProCasesSchema = z
   .refine((cases) => new Set(cases.map((c) => c.id)).size === cases.length, {
     message: "case ids must be unique",
   });
+
+/**
+ * offer_recipe exists only when the recipe finder is on, so an offer case
+ * cannot pass without it and measures nothing. Skipped, and named, so the
+ * run never reads as covering what it did not run.
+ */
+export function casesForRun(
+  cases: CoachProCase[],
+  env: { finderOn: boolean },
+): { run: CoachProCase[]; skipped: string[] } {
+  if (env.finderOn) return { run: cases, skipped: [] };
+  return {
+    run: cases.filter((c) => !c.flags.offer),
+    skipped: cases.filter((c) => c.flags.offer).map((c) => c.id),
+  };
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { coachProCasesSchema } from "../lib/coach-pro-cases";
+import { casesForRun, coachProCasesSchema } from "../lib/coach-pro-cases";
 import { runAssertions } from "../assertions";
 
 const raw = JSON.parse(
@@ -24,6 +24,15 @@ describe("coach-pro-cases.json (audit 2026-11-24, M30)", () => {
     expect(byId.get("pro-mood-low-no-checkin-01")!.context.moodBand).toBe(
       "low",
     );
+  });
+
+  it("skips offer cases when the finder is off, and says which", () => {
+    const off = casesForRun(parsed.data!, { finderOn: false });
+    expect(off.skipped).toEqual(["pro-offer-recipe-01"]);
+    expect(off.run.some((c) => c.flags.offer)).toBe(false);
+    const on = casesForRun(parsed.data!, { finderOn: true });
+    expect(on.skipped).toEqual([]);
+    expect(on.run).toHaveLength(parsed.data!.length);
   });
 
   it("every regex in the dataset compiles", () => {
