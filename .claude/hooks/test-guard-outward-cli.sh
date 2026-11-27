@@ -6958,6 +6958,21 @@ nd_only_deny && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  too
 nd_words 'ls; gh pr merge 42 --auto'
 n="ND5e control: the same words before an --auto merge: allowed in under 5 s"
 nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+# ND5f. One 150 KB quoted body run by `bash -c` (string wrappers, 2026-11-27): the hook judges
+#      the command and, in a child, the body; 2.2 s with gawk, 5.7 s with mawk.
+nd_body() {  # $1=last command in the body ; sets ND_OUT ND_RC ND_SECS
+  local t0 t1
+  t0=$(date +%s)
+  ND_OUT=$({ printf "bash -c '"; awk 'BEGIN { for (i = 0; i < 13000; i++) printf "echo ea %d; ", i }'; printf "%s'" "$1"; } \
+    | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
+  t1=$(date +%s); ND_SECS=$((t1 - t0))
+}
+nd_body 'eas update'
+n="ND5f a 150 KB bash -c body ending in an OTA update: the deny in under 8 s"
+nd_only_deny && nd_reason_has 'Read inside a quoted string' && [ "$ND_SECS" -lt 8 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_body 'eas whoami'
+n="ND5f control: the same body ending in a read-only command: allowed in under 8 s"
+nd_silent && [ "$ND_SECS" -lt 8 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -7462,12 +7477,11 @@ sshpass -p pw ssh host ls
 ssh host gh pr merge 42 --auto
 nvm exec 20 gh pr merge 42 --auto --squash
 RNROWS
-# KNOWN GAPS, pinned so a fix reddens them (docs/harness-residuals.md): the quoted remote command
-# of `ssh` is the string-wrapper class, and `parallel` taking its command from `:::` arguments or
-# stdin is not read. A change that makes these deny is intended: move them to the deny rows.
+# Once known gaps, closed by the string-wrapper change (rows SW): the quoted remote command of
+# `ssh`, and `parallel` taking its command from `:::` arguments or stdin.
 while IFS= read -r rn_cmd; do
   [ -n "$rn_cmd" ] || continue
-  assert_allow "RN2 known gap '$rn_cmd' is still allowed" "$(jsonc "$rn_cmd")"
+  assert_deny "RN2 former gap '$rn_cmd' denies" "$(jsonc "$rn_cmd")" "eas update/publish/submit"
 done <<'RNROWS'
 ssh host 'eas update'
 parallel ::: 'eas update'
@@ -7476,6 +7490,94 @@ RNROWS
 # Known false positive, the safe direction: `{}` in a `gh pr merge` argument already denied bare
 # (`xargs -I{} gh pr merge {} --auto` too); the new runners reach that handling.
 assert_deny "RN2 known false positive 'find . -exec gh pr merge {} --auto \\;' denies" "$(jsonc 'find . -exec gh pr merge {} --auto \;')" "gh pr merge"
+
+# SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
+# code (`bash -c`, `eval`, `ssh HOST`, `su -c`, `script -c`, `env -S`, `watch`, `flock -c`,
+# `nodemon --exec`, `parallel :::`, `trap`, a here-string or a pipe into a shell). The hook
+# splices each such body back in as commands and judges that copy too. Tab-separated: some
+# rows hold a `|`.
+while IFS=$'\t' read -r sw_cmd sw_reason; do
+  [ -n "$sw_cmd" ] || continue
+  assert_deny "SW '$sw_cmd' denies" "$(jsonc "$sw_cmd")" "$sw_reason"
+done <<'SWROWS'
+bash -c 'eas update'	eas update/publish/submit
+sh -c "npm publish"	npm publish
+bash -lc 'railway up'	railway up/deploy
+bash -o pipefail -c 'eas update --branch production'	eas update/publish/submit
+zsh -c 'eas update'	eas update/publish/submit
+/bin/sh -c 'eas update'	eas update/publish/submit
+sudo bash -c 'npm publish'	npm publish
+env FOO=1 bash -c 'eas update'	eas update/publish/submit
+nohup sh -c 'eas update'	eas update/publish/submit
+eval 'eas update'	eas update/publish/submit
+eval "npm publish --tag next"	npm publish
+ssh host 'eas update'	eas update/publish/submit
+ssh -p 22 ci@host "cd app && eas update"	eas update/publish/submit
+sshpass -p pw ssh host 'npm publish'	npm publish
+su ci -c 'eas update'	eas update/publish/submit
+su - ci -c "railway up"	railway up/deploy
+script -q -c 'eas update' /dev/null	eas update/publish/submit
+env -S 'eas update'	eas update/publish/submit
+watch -n 60 'railway up'	railway up/deploy
+flock /tmp/l -c 'eas update'	eas update/publish/submit
+nodemon --exec 'eas update'	eas update/publish/submit
+find . -exec sh -c 'eas update' \;	eas update/publish/submit
+xargs -I{} sh -c 'eas update'	eas update/publish/submit
+parallel ::: 'eas update'	eas update/publish/submit
+trap 'eas update' EXIT	eas update/publish/submit
+bash <<< 'eas update'	eas update/publish/submit
+echo 'eas update' | bash	eas update/publish/submit
+echo eas update | sh	eas update/publish/submit
+printf '%s\n' 'npm publish' | sh	npm publish
+bash -c "ssh host 'eas update'"	eas update/publish/submit
+bash -c 'gh pr merge 42'	without a REAL --auto flag
+bash -c 'cd app; eas update'	eas update/publish/submit
+x=$(bash -c 'eas update')	eas update/publish/submit
+bash -c 'eas up'"date"	eas update/publish/submit
+ls; bash -c 'eas update'	eas update/publish/submit
+docker exec app sh -c 'eas update'	eas update/publish/submit
+tmux send-keys 'eas update' Enter	eas update/publish/submit
+bash -c $'eas update\n'	eas update/publish/submit
+SWROWS
+while IFS= read -r sw_cmd; do
+  [ -n "$sw_cmd" ] || continue
+  assert_allow "SW control '$sw_cmd' stays allowed" "$(jsonc "$sw_cmd")"
+done <<'SWROWS'
+bash -c 'npm test'
+bash -c 'gh pr merge 42 --auto'
+ssh host 'ls -la'
+git commit -m 'bash -c "eas update"'
+echo "bash -c 'eas update'"
+eval 'npm test'
+sh -c 'eas whoami'
+echo 'eas update' | grep eas
+echo 'eas update' > notes.txt
+watch -n 5 'npm test'
+grep -r 'eas update' docs
+ssh host 'eas whoami'
+bash -c 'echo eas update'
+echo 'npm test' | bash
+SWROWS
+# Known over-reads, the safe direction: a shell `-c` is read after ANY words of its simple
+# command (so `docker exec app sh -c` is seen), which also reads `echo bash -c '...'`; and a pipe
+# into a shell is read whatever the shell's flags (`bash -n` only parses). A tightening that
+# allows these is intended.
+assert_deny "SW known over-read 'echo bash -c ...' denies" "$(jsonc "echo bash -c 'eas update'")" "eas update/publish/submit"
+assert_deny "SW known over-read 'echo ... | bash -n' denies" "$(jsonc "echo 'eas update' | bash -n")" "eas update/publish/submit"
+# Nesting: two levels are read; a third fails closed.
+assert_deny "SW two levels of nesting are read" "$(jsonc "bash -c \"bash -c 'eas update'\"")" "eas update/publish/submit"
+assert_allow "SW control: two levels of nesting around a test run stay allowed" "$(jsonc "bash -c \"bash -c 'npm test'\"")"
+assert_deny "SW a third level of nesting fails closed" "$(jsonc "bash -c \"bash -c \\\"bash -c 'npm test'\\\"\"")" "more than two levels"
+# Heredocs: an apostrophe in a heredoc body does not open a quote past its delimiter.
+assert_allow "SW control: an apostrophe in a heredoc body" "$(jsonc "$(printf "cat <<'EOF' > notes.md\nwe don't ship it, it's fine\nnpm test\nEOF\necho done")")"
+assert_deny "SW a wrapper after a heredoc with an apostrophe" "$(jsonc "$(printf "cat <<'EOF' > n.md\nwe don't ship\nEOF\nbash -c 'eas update'")")" "eas update/publish/submit"
+# The caps: more than 2000 listed bodies, or more than 400 command-position evaluations, deny.
+sw_many=$(awk 'BEGIN { for (i = 0; i < 2001; i++) printf "echo %cnpm run %d%c; ", 39, i, 39; print "true" }')
+assert_deny "SW more than 2000 quoted strings naming a gated word fail closed" "$(jsonc "$sw_many")" "more than 2000 quoted strings"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 401; i++) printf "ssh h%d %ceas whoami%c; ", i, 39, 39; print "true" }')
+assert_deny "SW more than 400 wrapper contexts fail closed" "$(jsonc "$sw_many")" "more quoted strings near a command wrapper"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 399; i++) printf "ssh h%d %ceas whoami%c; ", i, 39, 39; print "true" }')
+assert_allow "SW control: 399 wrapper contexts are read" "$(jsonc "$sw_many")"
 
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
@@ -7501,7 +7603,10 @@ assert_deny "RN2 known false positive 'find . -exec gh pr merge {} --auto \\;' d
 # 1613 -> 1660 (review of RN): +47 = RN2, 26 deny rows (all ALLOWED before), 15 allow
 # controls, 3 known-gap pins and 1 known false positive; and ND5e, a timed deny row and
 # its control (RED under a UTF-8 locale before the hook pinned LC_ALL=C).
-EXPECTED_TOTAL=1660
+# 1660 -> 1724 (2026-11-27, string wrappers): +64 = SW, 38 deny rows (all ALLOWED
+# before) and 14 allow controls; then 10 rows for the known over-reads, nesting, heredocs and the
+# caps, and ND5f, a timed deny row and its control.
+EXPECTED_TOTAL=1724
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

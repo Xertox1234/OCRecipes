@@ -3815,6 +3815,222 @@ fi
 # stays completely unmodified so that one read keeps its existing contract.
 WORDS_DEEP=$(cmd_words_deep "$CMD")
 
+# STRING WRAPPERS (2026-11-27, all ALLOWED on `main`). A quoted string that a wrapper runs as
+# code -- `bash -c 'eas update'`, `eval "npm publish"`, `ssh host 'eas update'`, `su ci -c`,
+# `script -c`, `env -S`, `watch '...'`, `flock F -c`, `nodemon --exec`, `parallel ::: '...'`,
+# `trap '...' EXIT`, `bash <<< '...'`, `echo '...' | sh` -- is one word to every rendering above
+# (cmd_bare blanks it, cmd_words turns its spaces into `x`), so the outward command inside was
+# invisible. This block finds each such word, splices its body back into a copy of the command
+# as plain commands (`bash -c ; eas update ;`), and judges the copy with this same hook. The
+# copy can only ADD a deny: the original is still judged in full below. `_out_sw_scan` (one awk
+# pass, linear in the command) lists every quoted word whose value holds a space or an operator,
+# with the text of its simple command before it (quoted content blanked), and every
+# `echo`/`printf` argument list piped onward, with the next command's text. Which wrappers count
+# is decided here in bash, on that text:
+#   * a shell (`sh`, `bash`, `zsh`, `dash`, `ksh`, ...) with a `-c` flag, or a here-string into
+#     one, AFTER ANY WORDS of its simple command -- so `docker exec app sh -c`, `find . -exec sh
+#     -c`, `sudo -u ci bash -c` are all seen, and so is `echo sh -c '...'` (an over-read: the
+#     copy denies only when the body itself holds an outward command);
+#   * in command position, past the usual prefix and wrapper words: `eval`, `trap`, `ssh`/
+#     `autossh`/`slogin`/`rsh [flags] [HOST]`, `mosh ... --`, `su`/`runuser ... -c`, `script ...
+#     -c`, `env ... -S`, `watch [flags]`, `flock ... -c`, `nodemon ... --exec`, `parallel`/`sem
+#     ... :::`, and `tmux`/`screen` with any words (a quoted argument there is usually a command);
+#   * an `echo`/`printf` argument list piped into a shell or `parallel`.
+# The copy is judged at most two levels deep (a body that holds another wrapper is spliced again
+# in the child); a candidate past that, or a command holding the scan's own \001/\002 field
+# separators, denies. Not read: an option glued to its value (`su --command='...'`,
+# `bash -c'...'`), a body built at run time (`bash -c "$CMD"`), and a wrapper inside a
+# double-quoted substitution (`echo "$(bash -c '...')"`).
+_out_sw_scan() {
+  awk '
+  function startw(p) { if (!inword) { inword = 1; wstart = p; wval = ""; wb = ""; wq = 0 } }
+  # Appends go through a 1 KB buffer: `s = s c` copies s in mawk and BSD awk, so a 150 KB
+  # quoted word appended one byte at a time took 6 s there.
+  function wadd(x) { wb = wb x; if (length(wb) > 1024) { wval = wval wb; wb = "" } }
+  function base(w) { sub(/.*\//, "", w); return w }
+  function addc(x) { if (clen <= 4096) { ctext = ctext x; clen += length(x) } }
+  function prefix(p) { return (p - cstart > 4096) ? "LONG" : substr(ctext, 1, p - cstart) }
+  # The needles of the fast path (after quote and backslash removal): a body without one cannot
+  # make the copy deny, so it is not listed. A body built at run time (`bash -c "$CMD"`) is not
+  # readable from text either way.
+  function needle(v,   t) { t = tolower(v); gsub(/[\047"\\]/, "", t); return (t ~ /eas|railway|npm|yarn|gh|npx|bun|update:/) }
+  function rec(t, a, b, x, v) {
+    if (++nrec > 2000) { printf "X\002\002\002\002\001"; done = 1; exit }
+    printf "%s\002%d\002%d\002%s\002%s\001", t, a, b, x, v
+  }
+  function emitword(endp) {
+    if (wb != "") { wval = wval wb; wb = "" }
+    if (inword) {
+      if (wq && wval ~ /[[:space:];&|<>()`$]/ && needle(wval)) rec("Q", wstart, endp, prefix(wstart), wval)
+      nw++
+      if (nw == 1) { first = base(wval); skipping = 1 }
+      else if (skipping && ((first == "echo" && wval ~ /^-[neE]+$/) || (first == "printf" && wval == "--"))) { }
+      else if (length(args) < 65536) { skipping = 0; if (argstart < 0) argstart = wstart; args = (args == "" ? wval : args " " wval); argend = endp }
+    }
+    inword = 0; wval = ""; wb = ""; wq = 0
+  }
+  function endcmd(term, endp,   v) {
+    emitword(endp)
+    if (pend) { rec("P", ps, pe, ctext, pv); pend = 0 }
+    if (term == "|" && (first == "echo" || first == "printf") && argstart >= 0 && needle(args)) {
+      v = args; gsub(/\\n/, "\n", v); pend = 1; ps = argstart; pe = argend; pv = v
+    }
+    nw = 0; first = ""; argstart = -1; args = ""; skipping = 0; ctext = ""; clen = 0; cstart = endp + 1
+  }
+  BEGIN { off = 0; st = 0; esc = 0; inword = 0; argstart = -1; cstart = 0; ctext = ""; clen = 0; nh = 0; hq = 0; nrec = 0 }
+  {
+    line = $0; L = length(line)
+    if (nh > hq && !(st == 0 && hdpend)) {
+      t = line; if (hs[hq + 1]) sub(/^\t+/, "", t)
+      if (t == hd[hq + 1]) { hq++; st = 0; esc = 0; inword = 0; wval = ""; wb = ""; endcmd(";", off + L); off += L + 1; next }
+    }
+    hdpend = 0
+    for (i = 1; i <= L + 1; i++) {
+      c = (i <= L) ? substr(line, i, 1) : "\n"
+      pos = off + i - 1
+      if (st == 1) { addc(" "); if (c == "\047") st = 0; else wadd(c); continue }
+      if (st == 2 || st == 3) {
+        addc(" ")
+        if (esc) {
+          esc = 0
+          if (st == 2) { if (c == "\n") continue; if (index("$`\"\\", c)) wadd(c); else wadd("\\" c) }
+          else if (c == "n") wadd("\n"); else if (c == "t") wadd("\t"); else wadd(c)
+          continue
+        }
+        if (c == "\\") { esc = 1; continue }
+        if ((st == 2 && c == "\"") || (st == 3 && c == "\047")) { st = 0; continue }
+        wadd(c); continue
+      }
+      if (st == 4) { if (c == "\n") { st = 0; endcmd(";", pos) } continue }
+      if (esc) {
+        esc = 0; addc(" ")
+        if (c == "\n") continue
+        startw(pos - 1); wadd(c); if (c ~ /[[:space:]]/) wq = 1
+        continue
+      }
+      if (c == "\\") { esc = 1; addc(" "); continue }
+      if (c == "\047") { startw(pos); st = 1; wq = 1; addc(" "); continue }
+      if (c == "\"") { startw(pos); st = 2; wq = 1; addc(" "); continue }
+      if (c == "$" && i < L) {
+        n2 = substr(line, i + 1, 1)
+        if (n2 == "\047" || n2 == "\"") { startw(pos); st = (n2 == "\"") ? 2 : 3; wq = 1; addc("  "); i++; continue }
+        if (n2 == "(") { endcmd(";", pos + 1); i++; continue }
+      }
+      if (c == "#" && !inword) { st = 4; continue }
+      if (c == " " || c == "\t") { emitword(pos); addc(c); continue }
+      if (c == "|") {
+        if (i < L && substr(line, i + 1, 1) == "|") { endcmd(";", pos + 1); i++ }
+        else if (i < L && substr(line, i + 1, 1) == "&") { endcmd("|", pos + 1); i++ }
+        else endcmd("|", pos)
+        continue
+      }
+      if (c == "\n" || c == ";" || c == "&" || c == "(" || c == ")" || c == "`") { endcmd(";", pos); continue }
+      if (c == "<" && substr(line, i + 1, 1) == "<" && substr(line, i + 2, 1) != "<") {
+        emitword(pos); addc("<<"); i += 2; strip = 0
+        if (substr(line, i, 1) == "-") { strip = 1; i++ }
+        while (i <= L && (substr(line, i, 1) == " " || substr(line, i, 1) == "\t")) i++
+        dl = ""
+        while (i <= L && substr(line, i, 1) !~ /[[:space:];&|<>()]/) dl = dl substr(line, i++, 1)
+        gsub(/[\047"\\]/, "", dl)
+        if (dl != "") { hd[++nh] = dl; hs[nh] = strip; hdpend = 1 }
+        i--; continue
+      }
+      if (c == "<" || c == ">") {
+        emitword(pos); addc(c)
+        while (i < L && index("<>&|", substr(line, i + 1, 1))) { i++; addc(substr(line, i, 1)) }
+        continue
+      }
+      startw(pos); wadd(c); addc(c)
+    }
+    off += L + 1
+  }
+  END { if (done) exit; if (inword) emitword(off); endcmd(";", off) }
+  '
+}
+_OUT_SW_SH='(/[^[:space:]]*/)?(ba|z|da|k|mk|a|fi|tc|c|y)?sh'
+_OUT_SW_SHELL_RE='^(.*[[:space:]])?'"$_OUT_SW_SH"'(('"$_OUT_SEP"'-[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"'-[A-Za-z]*c[A-Za-z]*('"$_OUT_SEP"'-[^[:space:]]*)*'"$_OUT_SEP"'|('"$_OUT_SEP"'-[^[:space:]]*)*[[:space:]]*<<<[[:space:]]*)$'
+_OUT_SW_WORDS='('"$_OUT_SEP"'[^[:space:]]+)*'"$_OUT_SEP"
+_OUT_SW_CMDPOS_RE='^[[:space:]]*(([{!]|if|while|until|then|do|else|elif)[[:space:]]+)*('"$_OUT_WRAPPER_WORD"'[[:space:]]+)*((('"$_OUT_PATH_PREFIX"')?'"$_OUT_WRAPPER_WORD$_OUT_FLAG_RUN"')|(('"$_OUT_PATH_PREFIX"')?'"$_OUT_PRIV_WORD"'))*('"$_OUT_PATH_PREFIX"')?(eval('"$_OUT_SEP"'--)?'"$_OUT_SEP"'|trap('"$_OUT_SEP"'--)?'"$_OUT_SEP"'|(ssh|autossh|slogin|rsh)'"$_OUT_FLAG_RUN"'('"$_OUT_ARGWRAP_POSWORD$_OUT_FLAG_RUN"')?|mosh'"$_OUT_SW_WORDS"'--'"$_OUT_SEP"'|(su|runuser|flock)'"$_OUT_SW_WORDS"'(-c|--command)'"$_OUT_SEP"'|script'"$_OUT_SW_WORDS"'(-[A-Za-z]*c|--command)'"$_OUT_SEP"'|env'"$_OUT_SW_WORDS"'(-[A-Za-z]*S|--split-string)'"$_OUT_SEP"'|watch'"$_OUT_FLAG_RUN"'|nodemon'"$_OUT_SW_WORDS"'(-x|--exec)'"$_OUT_SEP"'|(parallel|sem)('"$_OUT_SEP"'-[^[:space:]]*)*'"$_OUT_SEP"':::'"$_OUT_SW_WORDS"'|(tmux|screen)'"$_OUT_SW_WORDS"')$'
+_OUT_SW_PIPE_RE='^[[:space:]]*('"$_OUT_WRAPPER_WORD"'[[:space:]]+)*((('"$_OUT_PATH_PREFIX"')?'"$_OUT_WRAPPER_WORD$_OUT_FLAG_RUN"')|(('"$_OUT_PATH_PREFIX"')?'"$_OUT_PRIV_WORD"'))*('"$_OUT_SW_SH"'|('"$_OUT_PATH_PREFIX"')?(parallel|sem))'"$_OUT_POS_SUFFIX"
+_out_sw_depth=${_OUT_SW_DEPTH:-0}
+[[ "$_out_sw_depth" =~ ^[0-9]+$ ]] || _out_sw_depth=0
+if [[ "$CMD" == *[\'\"\\]* || "$CMD" == *'|'* ]]; then
+  if [[ "$CMD" == *[$'\001\002']* ]]; then
+    deny "guard-outward-cli: this command holds a \\001 or \\002 control character, which the string-wrapper scan uses as its own separator, so it cannot read what a quoted string here would run. Failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
+  fi
+  # Cheap filters first, the big regex last: a command-position match costs about 1.5 ms, so
+  # 7000 quoted words took 11.6 s before these. The scan lists only bodies holding a needle of
+  # the fast path, and stops with an X record past 2000 of them; a context equal to the one before reuses its answer (no
+  # associative arrays: bash 3.2 on macOS); a context longer than 4096 bytes counts as a
+  # wrapper (the safe direction: the copy denies only for an outward body); a context naming
+  # none of the command-position wrappers skips that regex. Past 400 regex evaluations this
+  # denies rather than run past the timeout.
+  _out_sw_lastkey=""
+  _out_sw_lastok=0
+  _out_sw_evals=0
+  _out_sw_hits=0
+  _out_sw_keep=()
+  while IFS= read -r -d $'\001' _out_sw_rec; do
+    _out_sw_v=$_out_sw_rec
+    _out_sw_t=${_out_sw_v%%$'\002'*}; _out_sw_v=${_out_sw_v#*$'\002'}
+    _out_sw_s=${_out_sw_v%%$'\002'*}; _out_sw_v=${_out_sw_v#*$'\002'}
+    _out_sw_e=${_out_sw_v%%$'\002'*}; _out_sw_v=${_out_sw_v#*$'\002'}
+    _out_sw_ctx=${_out_sw_v%%$'\002'*}; _out_sw_v=${_out_sw_v#*$'\002'}
+    if [ "$_out_sw_t" = X ]; then
+      deny "guard-outward-cli: this command holds more than 2000 quoted strings that name an outward-facing CLI word, more than the hook can read for a wrapper that runs them inside its timeout. Failing closed. Write the script to a file and run it, or bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
+    fi
+    _out_sw_key="$_out_sw_t"$'\002'"$_out_sw_ctx"
+    if [ "$_out_sw_ctx" = LONG ]; then
+      _out_sw_ok=1
+    elif [ "$_out_sw_key" = "$_out_sw_lastkey" ]; then
+      _out_sw_ok=$_out_sw_lastok
+    else
+      _out_sw_ok=0
+      if [ "$_out_sw_t" = Q ]; then
+        if [[ "$_out_sw_ctx" =~ $_OUT_SW_SHELL_RE ]]; then
+          _out_sw_ok=1
+        else
+          case "$_out_sw_ctx" in
+            *eval*|*trap*|*sh*|*su*|*runuser*|*flock*|*script*|*env*|*watch*|*nodemon*|*parallel*|*sem*|*tmux*|*screen*)
+              _out_sw_evals=$((_out_sw_evals + 1))
+              [[ "$_out_sw_ctx" =~ $_OUT_SW_CMDPOS_RE ]] && _out_sw_ok=1 ;;
+          esac
+        fi
+      else
+        _out_sw_evals=$((_out_sw_evals + 1))
+        [[ "$_out_sw_ctx" =~ $_OUT_SW_PIPE_RE ]] && _out_sw_ok=1
+      fi
+      _out_sw_lastkey=$_out_sw_key; _out_sw_lastok=$_out_sw_ok
+      if [ "$_out_sw_evals" -gt 400 ]; then
+        deny "guard-outward-cli: this command holds more quoted strings near a command wrapper than the hook can read inside its timeout, and they name an outward-facing CLI word. Failing closed. Write the script to a file and run it, or bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
+      fi
+    fi
+    [ "$_out_sw_ok" = 1 ] || continue
+    _out_sw_keep+=("$_out_sw_s" "$_out_sw_e" "$_out_sw_v")
+    _out_sw_hits=$((_out_sw_hits + 1))
+  done < <(printf '%s\n' "$CMD" | _out_sw_scan)
+  # The child reads the bodies alone, one per line: each is a command list of its own, and a
+  # copy of the whole command would make the child repeat every pass this hook makes on it.
+  _out_sw_new=""
+  for ((_out_sw_i = 2; _out_sw_i < ${#_out_sw_keep[@]}; _out_sw_i += 3)); do
+    _out_sw_new+="${_out_sw_keep[_out_sw_i]}"$'\n'
+  done
+  if [ "$_out_sw_hits" -gt 0 ]; then
+    if [ "$_out_sw_depth" -ge 2 ]; then
+      deny "guard-outward-cli: this command nests quoted strings that a wrapper runs as code (bash -c, eval, ssh HOST, ...) more than two levels deep, past what the hook reads, so it cannot see what the innermost one runs. Failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
+    fi
+    _out_sw_out=$(printf '%s' "$_out_sw_new" | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | _OUT_SW_DEPTH=$((_out_sw_depth + 1)) bash "${BASH_SOURCE[0]}" 2>/dev/null)
+    case "$_out_sw_out" in
+      *'"permissionDecision": "deny"'*)
+        _out_sw_r=$(printf '%s' "$_out_sw_out" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null)
+        # The inner reason comes first, so the deny carries the fingerprint of the check that
+        # fired in the child (the corpus attributes every row by its first 72 bytes).
+        deny "guard-outward-cli: ${_out_sw_r#guard-outward-cli: } (Read inside a quoted string that a wrapper runs as a command: bash -c, eval, ssh HOST, su -c, a pipe into a shell, ...)"
+        ;;
+    esac
+  fi
+fi
+
 # A THIRD rendering, and the INVERSE operation to WORDS_DEEP: every construct
 # PROVABLY capable of expanding to the empty string is DELETED, so a verb SPLIT
 # by a vanishing sigil rejoins into the word bash actually builds (`me` +

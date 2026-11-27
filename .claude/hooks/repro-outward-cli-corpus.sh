@@ -2231,6 +2231,14 @@ add lp-site-railsvcdel   DENY 'npx railway service delete foo'
 # Single-quoted so the `$( )` is inert text: the corpus feeds command STRINGS, it never runs them.
 add lp-site-interpexp    DENY 'node $(echo --run update:production)'
 
+# axis: DENY-SITE COVERAGE (2026-11-27, string wrappers). One row per new deny site that command
+# text can reach: the child's verdict on a quoted body a wrapper runs, a third nesting level,
+# and a command holding the scan's own \001/\002 field separators. The two count caps (2000
+# listed bodies, 400 wrapper contexts) are exempt in _pin_exempt_sites instead.
+add lp-site-strwrap      DENY "bash -c 'eas update'"
+add lp-site-swnest       DENY "bash -c \"bash -c \\\"bash -c 'npm test'\\\"\""
+add lp-site-swctl        DENY "$(printf "echo 'npm x' \001")"
+
 # axis: AMBIGUOUS-TARGET LAUNCHER FLAGS (2026-09-16, round-2 security review of
 # this PR). --package/-p (npx/npm exec's own --package/-p invocation form) and
 # -c/--call (whose argument sits inside a quoted string this guard's own
@@ -3193,7 +3201,9 @@ fi
 # `_pin_sites` reported "the guard can emit a deny NO corpus row reaches", which is the state in
 # which a future deletion of that check is invisible to every other check in this pin. The row,
 # not the count, is the fix -- the failure text says so explicitly.
-EXPECTED_ROWS=2160
+# 2160 -> 2163 (2026-11-27, string wrappers): +3, the DENY-SITE COVERAGE rows `lp-site-strwrap`,
+# `lp-site-swnest` and `lp-site-swctl`.
+EXPECTED_ROWS=2163
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
@@ -3438,7 +3448,8 @@ EXPECTED_ROWS=2160
 # now deny as `npm publish`, so the four `npm pub...` rows below start denying on the precise path, and 16 brace-split
 # `npm pub{...}ish` rows that still deny now attribute to the npm publish check instead of
 # the brace RANGE/LIST checks (the verb's first three letters are themselves a publish). MEASURED by the aggregate on that commit.
-EXPECTED_DENY_ATTRIB_ROWS=1925
+# 1925 -> 1928 (2026-11-27, string wrappers): +3, the three new DENY-SITE COVERAGE rows.
+EXPECTED_DENY_ATTRIB_ROWS=1928
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -3609,7 +3620,10 @@ EXPECTED_PRECISE_GAPS=58
 # actually proves that -- a net total could hold while rows swapped.
 # 356 -> 352 (2026-11-26, npm's publish abbreviations): -4, the same four rows. `npm pu`/`pub`/`publ`/`publi`/`publis`
 # now deny as `npm publish`, so they were `p=ALLOW j=DENY l=DENY a=DENY` and now deny on all four paths. MEASURED by the aggregate on that commit.
-EXPECTED_ALLPATH_GAPS=352
+# 352 -> 354 (2026-11-27, string wrappers): +2, `lp-site-swnest` and `lp-site-swctl` at
+# p=DENY j=ALLOW l=ALLOW a=ALLOW (the degraded paths cannot run the scan). `lp-site-strwrap`
+# denies on every path: its body is also visible to the crude smell test.
+EXPECTED_ALLPATH_GAPS=354
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -4026,6 +4040,8 @@ vft-fd p=ALLOW j=DENY l=DENY a=DENY
 vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
 lp-site-interpexp p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-site-swctl p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-site-swnest p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -5895,6 +5911,9 @@ lp-site-npmrunota  : 'npm run update:preview/update:production' (and the yarn/pn
 lp-site-railvar    : 'railway variable/vars/var set/delete' reached through a launcher or a p
 lp-site-railsvcdel : 'railway service/environment delete' reached through a launcher or a pat
 lp-site-interpexp  : an interpreter (node/bun/deno) sits in command position with an EXPANSIO
+lp-site-strwrap    : command-position 'eas update/publish/submit' publishes an OTA update or
+lp-site-swnest     : this command nests quoted strings that a wrapper runs as code (bash -c,
+lp-site-swctl      : this command holds a \\001 or \\002 control character, which the string-
 lp-af-npx-pkgeq    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-pkgsp    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-peq      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
@@ -6036,6 +6055,16 @@ ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-
 #       row on four paths, and the table prints each row's command. A 20000-line row
 #       would swamp both, and the row would test only the cap.
 #       test-guard-outward-cli.sh rows ND5d own it.
+#   - this command holds more than 2000 quoted strings ...   (2026-11-27)
+#   - this command holds more quoted strings near a command wrapper ...   (2026-11-27)
+#       the string-wrapper scan's two count caps. A row would need 2001 quoted bodies or 401
+#       distinct wrapper contexts (40-60 KB), and like the line cap it would swamp the
+#       per-row table and test only the cap. test-guard-outward-cli.sh rows SW own both.
+#   - ${_out_sw_r#guard-outward-cli: } (Read inside a quoted string ...   (2026-11-27)
+#       the string-wrapper child's verdict. Its text STARTS with the reason of the check that
+#       fired in the child, so a row reaching it is attributed to that check (rows
+#       `lp-site-strwrap`, `lp-site-swnest`); no row can carry the literal. Deleting the child
+#       call flips `lp-site-strwrap` to ALLOW, which the precise manifest sees.
 # Adding to this list is how you disable a coverage requirement, so it is a
 # deliberate, dated, reviewable edit like any other pin -- never the way to make
 # a red gate green.
@@ -6050,6 +6079,9 @@ the hook envelope's .tool_name could not be read (malformed JSON or a ch
 the quote-aware rendering came back empty for a non-empty command - eith
 the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is mis
 GH_API_RE_SEPSAFE is no longer built from BOTH _OUT_GH_GLOBALS_SEPSAFE a
+this command holds more than 2000 quoted strings that name an outward-fa
+this command holds more quoted strings near a command wrapper than the h
+${_out_sw_r#guard-outward-cli: } (Read inside a quoted string that a wra
 PIN_EXEMPT_EOF
 }
 # 28 as of 2026-09-15, and BOTH SIDES OF THE MERGE THAT PRODUCED IT SAID 27 -- which is
@@ -6120,7 +6152,10 @@ PIN_EXEMPT_EOF
 # gate that reads a broken count as 0, so it could never fire.) No row's verdict moved on any
 # of the 4 paths.
 # 46 -> 47 (2026-11-25, the line cap): +1 site, in _pin_exempt_sites above with its reason.
-EXPECTED_EMIT_SITES=47
+# 47 -> 52 (2026-11-27, string wrappers): +5 sites. Two have DENY-SITE COVERAGE rows
+# (`lp-site-swnest`, `lp-site-swctl`); the two count caps and the child's verdict (whose text
+# is the inner check's) are in _pin_exempt_sites above with their reasons.
+EXPECTED_EMIT_SITES=52
 
 PIN_FAIL=0
 
