@@ -169,7 +169,8 @@ const logFoodItemCardDefinition = (): ChatCompletionTool => ({
       properties: {
         items: {
           type: "array",
-          description: "Each food the user ate (1 to 8).",
+          description:
+            "Each food the user ate, one item per food (1 to 8): 'half an avocado on toast' is two items.",
           items: {
             type: "object",
             properties: {
@@ -179,16 +180,18 @@ const logFoodItemCardDefinition = (): ChatCompletionTool => ({
               },
               count: {
                 type: "integer",
-                description: "How many units they had (1 to 20).",
+                description:
+                  "How many units they had, a whole number (1 to 20). For part of a unit or a mixed amount of this food, use 1 and put the amount in unitLabel; never round to a whole unit.",
               },
               unitLabel: {
                 type: "string",
-                description: "The unit counted, e.g. 'egg', 'slice', 'cup'.",
+                description:
+                  "The unit counted, e.g. 'egg', 'slice', 'cup'. For part of a unit, the amount they had, e.g. 'half avocado', '1.5 cups'.",
               },
               estimate: {
                 type: "object",
                 description:
-                  "Your estimate for ONE unit; the server prefers a nutrition lookup when it finds one.",
+                  "Your estimate for ONE unit as named in unitLabel ('half avocado' = half an avocado); the server prefers a nutrition lookup when it finds one.",
                 properties: {
                   calories: { type: "number" },
                   protein: { type: "number" },
