@@ -663,3 +663,96 @@ describe("memory_refs block", () => {
     ).toBe(false);
   });
 });
+
+describe("day_progress block (Coach roadmap T3)", () => {
+  const block = {
+    type: "day_progress",
+    date: "2026-11-26",
+    snapshot: {
+      totals: { calories: 1420, protein: 82, carbs: 150, fat: 48 },
+      goals: { calories: 2000, protein: 150, carbs: 250, fat: 67 },
+    },
+  };
+
+  it("stores the day it reads, with the numbers as they were", () => {
+    expect(coachBlockSchema.safeParse(block).success).toBe(true);
+  });
+
+  it("needs a calendar date, not a word or a time", () => {
+    for (const date of ["today", "2026-11-26T10:00:00Z", "2026-13-01"]) {
+      expect(coachBlockSchema.safeParse({ ...block, date }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("rejects a snapshot with a missing or negative number", () => {
+    const { fat: _fat, ...noFat } = block.snapshot.totals;
+    expect(
+      coachBlockSchema.safeParse({
+        ...block,
+        snapshot: { ...block.snapshot, totals: noFat },
+      }).success,
+    ).toBe(false);
+    expect(
+      coachBlockSchema.safeParse({
+        ...block,
+        snapshot: {
+          ...block.snapshot,
+          totals: { ...block.snapshot.totals, calories: -1 },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("is not the model's request form, which names only the day", () => {
+    expect(
+      coachBlockSchema.safeParse({ type: "day_progress", day: "today" })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("week_progress block (Coach roadmap T3)", () => {
+  const block = {
+    type: "week_progress",
+    endDate: "2026-11-26",
+    snapshot: {
+      calories: [1800, 2100, 0, 1950, 2300, 1700, 1420],
+      calorieGoal: 2000,
+    },
+  };
+
+  it("stores the last day it reads, with the seven days as they were", () => {
+    expect(coachBlockSchema.safeParse(block).success).toBe(true);
+  });
+
+  it("needs a calendar date for its last day", () => {
+    for (const endDate of ["today", "2026-11-26T10:00:00Z", "2026-02-30"]) {
+      expect(coachBlockSchema.safeParse({ ...block, endDate }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("needs exactly seven days, none negative, and a goal above 0", () => {
+    const withSnapshot = (snapshot: object) =>
+      coachBlockSchema.safeParse({ ...block, snapshot }).success;
+    expect(
+      withSnapshot({ ...block.snapshot, calories: [1, 2, 3, 4, 5, 6] }),
+    ).toBe(false);
+    expect(
+      withSnapshot({ ...block.snapshot, calories: [1, 2, 3, 4, 5, 6, 7, 8] }),
+    ).toBe(false);
+    expect(
+      withSnapshot({ ...block.snapshot, calories: [1, 2, 3, 4, 5, 6, -7] }),
+    ).toBe(false);
+    expect(withSnapshot({ ...block.snapshot, calorieGoal: 0 })).toBe(false);
+  });
+
+  it("is not the model's request form, which names nothing", () => {
+    expect(coachBlockSchema.safeParse({ type: "week_progress" }).success).toBe(
+      false,
+    );
+  });
+});

@@ -1,7 +1,9 @@
+import { ApiError } from "@/lib/api-error";
 import {
   CHAT_GENERIC_ERROR,
   CHAT_LIMIT_ERROR,
   chatRequestErrorCopy,
+  conversationCreateErrorCopy,
   parseErrorCode,
 } from "../chat-error-copy";
 
@@ -52,5 +54,31 @@ describe("chatRequestErrorCopy", () => {
   it("falls back to generic copy for any other or missing code", () => {
     expect(chatRequestErrorCopy("SERVER_ERROR")).toBe(CHAT_GENERIC_ERROR);
     expect(chatRequestErrorCopy(undefined)).toBe(CHAT_GENERIC_ERROR);
+  });
+});
+
+// L59: creating a chat fails on the route's own codes, never on message text.
+describe("conversationCreateErrorCopy", () => {
+  it("a rate limit says to wait, not that the daily limit is reached", () => {
+    expect(
+      conversationCreateErrorCopy(new ApiError("429: x", "RATE_LIMITED", 429)),
+    ).toBe("You're sending messages too fast. Wait a moment and try again.");
+  });
+  it("too many chats says to delete some", () => {
+    expect(
+      conversationCreateErrorCopy(new ApiError("409: x", "LIMIT_REACHED", 409)),
+    ).toBe("You have the most chats allowed. Delete some to start a new one.");
+  });
+  it("a daily limit keeps its upgrade line", () => {
+    expect(
+      conversationCreateErrorCopy(
+        new ApiError("429: x", "DAILY_LIMIT_REACHED", 429),
+      ),
+    ).toBe("Daily limit reached. Upgrade to Premium for unlimited messages.");
+  });
+  it("never reads the message text", () => {
+    expect(
+      conversationCreateErrorCopy(new Error("429 DAILY_LIMIT_REACHED")),
+    ).toBe("Could not send message. Please try again.");
   });
 });

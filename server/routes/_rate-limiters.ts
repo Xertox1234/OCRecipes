@@ -358,6 +358,17 @@ export const subscriptionRateLimit = createRateLimiter({
   message: "Too many subscription requests. Please wait.",
 });
 
+/**
+ * The Coach's week card (one request reads seven days). Its own count, not
+ * pantryRateLimit's: that one is shared with logging food, which a card's
+ * refresh after every log must never use up.
+ */
+export const weekSummaryRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many week summary requests. Please wait.",
+});
+
 export const pantryRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 30,

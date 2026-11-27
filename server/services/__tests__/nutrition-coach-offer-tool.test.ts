@@ -3,6 +3,7 @@ import { generateCoachProResponse } from "../nutrition-coach";
 import type { CoachContext } from "../coach-prompt";
 import { aiChat } from "../../lib/ai-client";
 import { executeToolCall } from "../coach-tools";
+import { getBlocksSystemPrompt } from "../coach-blocks";
 
 vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({ OPENAI_TIMEOUT_STREAM_MS: 30_000 }));
@@ -223,13 +224,24 @@ describe("Coach Pro offer_recipe terminal tool", () => {
         { finish_reason: "stop" },
       ]) as unknown as Awaited<ReturnType<typeof aiChat>>,
     );
-    await run({ offerRecipe: true });
+    // The prompt the turn built, as for an app with quick log and the day
+    // progress card: the offer swaps one rule and keeps the app's others.
+    const opts = { writeCards: true, quickLog: true, dayProgress: true };
+    await run({ offerRecipe: true }, undefined, {
+      ...CONTEXT,
+      blocksPrompt: getBlocksSystemPrompt(true, opts),
+    });
     expect(sentBody().tools.map((t) => t.function.name)).toEqual([
       "lookup_nutrition",
       "offer_recipe",
     ]);
-    expect(sentBody().messages[0].content).toContain("offer_recipe tool");
-    expect(sentBody().messages[0].content).not.toContain("DEFAULT_BLOCKS");
+    const system = sentBody().messages[0].content;
+    expect(system).toContain(
+      getBlocksSystemPrompt(true, { ...opts, offer: true }),
+    );
+    expect(system).toContain("offer_recipe tool");
+    expect(system).toMatch(/already logged/);
+    expect(system).toContain("day_progress");
   });
 
   it("offerRecipe false or absent: no offer tool, caller's prompt untouched", async () => {

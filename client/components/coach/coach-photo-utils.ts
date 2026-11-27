@@ -60,6 +60,9 @@ export function coachPhotoFailure(
           maybeSaved: false,
         };
       case ErrorCode.IMAGE_TOO_LARGE:
+      // The Coach photo routes use the shared 1 MB multer upload, whose 400
+      // keeps multer's own code (server/routes/_upload.ts handleUploadError).
+      case "LIMIT_FILE_SIZE":
         return {
           atDailyLimit: false,
           message: "This photo is too large to send. Please try another.",

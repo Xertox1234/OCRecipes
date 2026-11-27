@@ -1434,7 +1434,7 @@ describe("Pro tier prompt differentiation", () => {
     // Visible memory: recall only confirmed entries, no time claims.
     expect(prompt).toContain("WHAT YOU CAN MENTION");
     expect(prompt).not.toContain("Last week you mentioned");
-    expect(prompt).toContain("inline_chart");
+    expect(prompt).toContain("chart block of goal vs. actual");
   });
 
   it("keeps the free prompt without the Pro persona lines", async () => {
@@ -1444,7 +1444,7 @@ describe("Pro tier prompt differentiation", () => {
     const prompt = capturedSystemPrompt();
     expect(prompt).not.toContain("advice builds week over week");
     expect(prompt).not.toContain("WHAT YOU CAN MENTION");
-    expect(prompt).not.toContain("inline_chart");
+    expect(prompt).not.toContain("chart block of goal vs. actual");
   });
 
   it("tells the model never to write markdown images or links, in both tiers", async () => {

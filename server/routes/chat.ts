@@ -50,6 +50,21 @@ const listQuerySchema = z.object({
     .optional(),
 });
 
+/**
+ * Card kinds beyond the first three that an app can declare (spec
+ * 2026-11-16). The list's own length caps the array, so a new kind can't
+ * leave the cap a step behind.
+ */
+const CARD_KINDS = [
+  "pantry",
+  "goals",
+  "allergy",
+  "plan_shop",
+  "quick_log",
+  "day_progress",
+  "week_progress",
+] as const;
+
 export function register(app: Express): void {
   // GET /api/chat/conversations - List conversations
   app.get(
@@ -346,10 +361,8 @@ export function register(app: Express): void {
           // that cannot draw a kind does not list it, and the coach is then
           // never given the tool that makes that card.
           cardKinds: z
-            .array(
-              z.enum(["pantry", "goals", "allergy", "plan_shop", "quick_log"]),
-            )
-            .max(5)
+            .array(z.enum(CARD_KINDS))
+            .max(CARD_KINDS.length)
             .optional(),
           liveCard: z
             .object({

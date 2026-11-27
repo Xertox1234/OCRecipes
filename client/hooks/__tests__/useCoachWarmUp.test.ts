@@ -153,6 +153,77 @@ describe("useCoachWarmUp", () => {
     });
   });
 
+  // M17 (audit 2026-11-24): a warm-up still in flight at reset() belongs to
+  // the message just sent; its id must not ride on the next one.
+  describe("reset while a warm-up is in flight", () => {
+    it("drops the late reply instead of attaching it to the next message", async () => {
+      vi.useFakeTimers();
+      let answer!: (r: Response) => void;
+      mockApiRequest.mockReturnValue(
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+      );
+      const { result } = renderHook(() => useCoachWarmUp(42));
+      act(() => {
+        result.current.sendTextWarmUp("what should I eat");
+      });
+      await act(() => vi.advanceTimersByTimeAsync(600));
+      expect(mockApiRequest).toHaveBeenCalledTimes(1);
+
+      act(() => result.current.reset());
+      await act(async () => {
+        answer(new Response(JSON.stringify({ warmUpId: "stale-1" })));
+      });
+
+      let id: string | null = "unset";
+      act(() => {
+        id = result.current.getWarmUpId();
+      });
+      expect(id).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it("a stale failure does not clear a newer warm-up's id", async () => {
+      vi.useFakeTimers();
+      let fail!: (e: Error) => void;
+      mockApiRequest
+        .mockReturnValueOnce(
+          new Promise<Response>((_, reject) => {
+            fail = reject;
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ warmUpId: "fresh-2" })),
+        );
+      const { result } = renderHook(() => useCoachWarmUp(42));
+      act(() => result.current.sendTextWarmUp("first draft"));
+      await act(() => vi.advanceTimersByTimeAsync(600));
+      act(() => result.current.reset());
+      act(() => result.current.sendTextWarmUp("second draft"));
+      await act(() => vi.advanceTimersByTimeAsync(600));
+      await act(async () => {
+        fail(new TypeError("offline"));
+      });
+      let id: string | null = null;
+      act(() => {
+        id = result.current.getWarmUpId();
+      });
+      expect(id).toBe("fresh-2");
+      vi.useRealTimers();
+    });
+  });
+
+  it("clears a pending debounce timer on unmount", () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useCoachWarmUp(42));
+    act(() => result.current.sendTextWarmUp("hello coach"));
+    unmount();
+    vi.advanceTimersByTime(600);
+    expect(mockApiRequest).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   // R48: warm-up is a best-effort prefetch, so offline / 4xx misses stay
   // quiet, but a server error (systematic 5xx, contract break) is reported.
   describe("failure reporting (R48)", () => {

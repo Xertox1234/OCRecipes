@@ -203,6 +203,18 @@ describe("CoachOverlayContent — focus on open", () => {
 // The sheet never shows why the Coach tab dot is lit, so a send here must
 // not clear that reason (opening-brief spec, 2026-11-08).
 describe("CoachOverlayContent — reminders", () => {
+  // The ScrollView mock is a bare <div> with no scrollToEnd, and the sheet
+  // scrolls when its first message appears.
+  const proto = HTMLElement.prototype as unknown as {
+    scrollToEnd?: () => void;
+  };
+  beforeAll(() => {
+    proto.scrollToEnd = vi.fn();
+  });
+  afterAll(() => {
+    delete proto.scrollToEnd;
+  });
+
   it("never wires the reminder clear", async () => {
     renderComponent(
       <CoachOverlayContent
@@ -587,6 +599,18 @@ function boxOf(label: string): Record<string, unknown> {
 
 // Coach chat audit 2026-11-24 L7 and L8.
 describe("CoachOverlayContent — failure and dismiss controls", () => {
+  // The ScrollView mock is a bare <div> with no scrollToEnd, and the sheet
+  // scrolls when its first message appears.
+  const proto = HTMLElement.prototype as unknown as {
+    scrollToEnd?: () => void;
+  };
+  beforeAll(() => {
+    proto.scrollToEnd = vi.fn();
+  });
+  afterAll(() => {
+    delete proto.scrollToEnd;
+  });
+
   const renderIt = () =>
     renderComponent(
       <CoachOverlayContent

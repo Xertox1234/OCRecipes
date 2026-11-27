@@ -1,3 +1,4 @@
+import { ErrorCode } from "@shared/constants/error-codes";
 import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
 import {
@@ -56,6 +57,19 @@ describe("labels", () => {
 });
 
 describe("saveErrorMessage", () => {
+  // L54: only a request that got no answer is a connection problem.
+  it("tells a rate-limited user to wait, not to check the connection", () => {
+    expect(
+      saveErrorMessage(new ApiError("429: x", ErrorCode.RATE_LIMITED, 429)),
+    ).toBe("Too many saves at once. Please wait a moment and try again.");
+  });
+  it.each([
+    ["a server error", new ApiError("500: x", undefined, 500)],
+    ["an unmapped refusal", new ApiError("409: x", "SOMETHING_ELSE", 409)],
+  ])("does not blame the connection for %s", (_label, err) => {
+    expect(saveErrorMessage(err)).toBe("Couldn't save. Please try again.");
+  });
+
   it("speaks to the cause", () => {
     expect(saveErrorMessage(new ApiError("409: x", "CARD_LOCKED", 409))).toBe(
       "This card was replaced by a newer one.",

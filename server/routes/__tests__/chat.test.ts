@@ -882,6 +882,51 @@ describe("Chat Routes", () => {
       expect(vi.mocked(getBlocksSystemPrompt).mock.calls.at(-1)?.[1]).toEqual(
         expect.objectContaining({ writeCards: true, quickLog: true }),
       );
+      // 'day_progress' (T3): the living day card, with every other kind.
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect(
+        (
+          await send({
+            cardKinds: [
+              "pantry",
+              "goals",
+              "allergy",
+              "plan_shop",
+              "quick_log",
+              "day_progress",
+            ],
+          })
+        ).status,
+      ).toBe(200);
+      expect(vi.mocked(getBlocksSystemPrompt).mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({ writeCards: true, dayProgress: true }),
+      );
+      // 'week_progress' (T3): the living week card, with every other kind.
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect(
+        (
+          await send({
+            cardKinds: [
+              "pantry",
+              "goals",
+              "allergy",
+              "plan_shop",
+              "quick_log",
+              "day_progress",
+              "week_progress",
+            ],
+          })
+        ).status,
+      ).toBe(200);
+      expect(vi.mocked(getBlocksSystemPrompt).mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({
+          writeCards: true,
+          dayProgress: true,
+          weekProgress: true,
+        }),
+      );
     });
 
     it("rejects a card kind it does not know (400)", async () => {

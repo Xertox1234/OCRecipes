@@ -6,6 +6,7 @@ import {
   BLOCKS_SYSTEM_PROMPT,
   getBlocksSystemPrompt,
   dropCommitmentCards,
+  withOfferRecipeRule,
 } from "../coach-blocks";
 import {
   coachBlockSchema,
@@ -458,5 +459,159 @@ describe("commitment cards while Coach's notes are paused", () => {
     expect(dropCommitmentCards(blocks).map((b) => b.type)).toEqual([
       "quick_replies",
     ]);
+  });
+});
+
+// Coach roadmap T3: the day progress card is a query the server resolves.
+describe("day_progress requests", () => {
+  const fence = (blocks: unknown[]) =>
+    "You're doing well.\n```coach_blocks\n" + JSON.stringify(blocks) + "\n```";
+  const QR = {
+    type: "quick_replies",
+    options: [
+      { label: "A", message: "a" },
+      { label: "B", message: "b" },
+    ],
+  };
+
+  it("hands back the day asked for and keeps no model-written block", () => {
+    const parsed = parseBlocksFromContent(
+      fence([{ type: "day_progress", day: "today" }, QR]),
+    );
+    expect(parsed.dayProgress).toBe("today");
+    expect(parsed.blocks.map((b) => b.type)).toEqual(["quick_replies"]);
+  });
+
+  it("drops a model-written block with numbers of its own", () => {
+    const forged = {
+      type: "day_progress",
+      date: "2026-11-26",
+      snapshot: {
+        totals: { calories: 1, protein: 1, carbs: 1, fat: 1 },
+        goals: { calories: 2000, protein: 150, carbs: 250, fat: 67 },
+      },
+    };
+    expect(validateBlocks([forged])).toEqual([]);
+    expect(parseBlocksFromContent(fence([forged])).dayProgress).toBeUndefined();
+  });
+
+  it("takes the first request when the model asks twice", () => {
+    expect(
+      parseBlocksFromContent(
+        fence([
+          { type: "day_progress", day: "yesterday" },
+          { type: "day_progress", day: "today" },
+        ]),
+      ).dayProgress,
+    ).toBe("yesterday");
+  });
+
+  it("has no request in a reply without one", () => {
+    expect(parseBlocksFromContent(fence([QR])).dayProgress).toBeUndefined();
+    expect(parseBlocksFromContent("Plain text.").dayProgress).toBeUndefined();
+  });
+
+  it("is offered in the prompt only to an app that can draw it", () => {
+    const on = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      dayProgress: true,
+    });
+    expect(on).toContain('- day_progress: { type: "day_progress", day:');
+    expect(on).toMatch(/use one day_progress block, not an inline_chart/);
+    // The card's numbers move on; the reply's words should not pin them.
+    expect(on).toMatch(/say in words how the day is going/);
+    // A week or a trend is still an inline_chart.
+    expect(on).toContain("- inline_chart:");
+    expect(getBlocksSystemPrompt(false, { writeCards: true })).not.toContain(
+      "day_progress",
+    );
+    expect(getBlocksSystemPrompt(false)).not.toContain("day_progress");
+  });
+});
+
+describe("withOfferRecipeRule", () => {
+  it("is the offer prompt for every option the turn built its prompt with", () => {
+    for (const opts of [
+      {},
+      { writeCards: true },
+      { writeCards: true, quickLog: true },
+      { writeCards: true, dayProgress: true, notesPaused: true },
+    ]) {
+      expect(withOfferRecipeRule(getBlocksSystemPrompt(true, opts))).toBe(
+        getBlocksSystemPrompt(true, { ...opts, offer: true }),
+      );
+    }
+  });
+});
+
+describe("week_progress requests", () => {
+  const fence = (blocks: unknown[]) =>
+    "A steady week.\n```coach_blocks\n" + JSON.stringify(blocks) + "\n```";
+
+  it("hands back the request and keeps no model-written block", () => {
+    const parsed = parseBlocksFromContent(fence([{ type: "week_progress" }]));
+    expect(parsed.weekProgress).toBe(true);
+    expect(parsed.blocks).toEqual([]);
+  });
+
+  it("drops a model-written block with numbers of its own", () => {
+    const forged = {
+      type: "week_progress",
+      endDate: "2026-11-26",
+      snapshot: { calories: [1, 1, 1, 1, 1, 1, 1], calorieGoal: 2000 },
+    };
+    expect(validateBlocks([forged])).toEqual([]);
+    // The request form ignores what the model added: the server still reads
+    // the week itself.
+    expect(parseBlocksFromContent(fence([forged])).weekProgress).toBe(true);
+  });
+
+  it("has no request in a reply without one", () => {
+    expect(
+      parseBlocksFromContent(fence([{ type: "day_progress", day: "today" }]))
+        .weekProgress,
+    ).toBeUndefined();
+    expect(parseBlocksFromContent("Plain text.").weekProgress).toBeUndefined();
+  });
+
+  it("is offered in the prompt only to an app that can draw it", () => {
+    const on = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      weekProgress: true,
+    });
+    expect(on).toContain('- week_progress: { type: "week_progress" }');
+    expect(on).toMatch(/use one week_progress block, not an inline_chart/);
+    expect(on).toMatch(/say in words how the week went/);
+    // It is the last seven days, and the model never saw the card's numbers.
+    expect(on).toMatch(/call it the last seven days, not this week/);
+    expect(on).toMatch(/only from the days your tools or context showed you/);
+    expect(on).toMatch(/rather than guessing how the week went/);
+    expect(on).not.toContain("day_progress");
+    expect(
+      getBlocksSystemPrompt(false, { writeCards: true, dayProgress: true }),
+    ).not.toContain("week_progress");
+  });
+
+  it("with the day card too, no longer sends a week to inline_chart", () => {
+    const both = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      dayProgress: true,
+      weekProgress: true,
+    });
+    expect(both).toContain("- day_progress:");
+    expect(both).toContain("- week_progress:");
+    expect(both).not.toMatch(/such as a week or a trend/);
+    expect(both).toMatch(/such as a longer trend/);
+    // Without the week card the day rule is as it was.
+    expect(
+      getBlocksSystemPrompt(false, { writeCards: true, dayProgress: true }),
+    ).toMatch(/such as a week or a trend/);
+  });
+
+  it("keeps the offer prompt equal to a rebuilt one", () => {
+    const opts = { writeCards: true, dayProgress: true, weekProgress: true };
+    expect(withOfferRecipeRule(getBlocksSystemPrompt(true, opts))).toBe(
+      getBlocksSystemPrompt(true, { ...opts, offer: true }),
+    );
   });
 });

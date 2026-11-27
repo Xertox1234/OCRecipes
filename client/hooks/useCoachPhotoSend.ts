@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform, type AlertButton } from "react-native";
 import {
   pickCoachPhoto,
+  recoverCoachCameraPhoto,
   type CoachPhotoSource,
 } from "@/lib/coach-photo-picker";
 import {
@@ -124,11 +125,11 @@ function discardFront(picked: Picked): void {
 
 /** Pick, send and settle one turn. Never rejects on a send failure. */
 async function runPhotoSend(
-  source: CoachSendSource,
+  getPicked: () => Promise<Picked | null>,
   latest: () => Args,
   setSending: (sending: boolean) => void,
 ): Promise<void> {
-  const picked = await pick(source, latest);
+  const picked = await getPicked();
   if (!picked) return;
   try {
     await sendPicked(picked, latest, setSending);
@@ -236,12 +237,12 @@ export function useCoachPhotoSend(args: Args) {
     [],
   );
 
-  const send = useCallback(
-    (source: CoachSendSource) => {
+  const start = useCallback(
+    (getPicked: () => Promise<Picked | null>) => {
       if (blocked()) return Promise.resolve();
       sendingRef.current = true;
       return runPhotoSend(
-        source,
+        getPicked,
         () => argsRef.current,
         setIsSendingPhoto,
       ).finally(() => {
@@ -251,6 +252,43 @@ export function useCoachPhotoSend(args: Args) {
     },
     [blocked],
   );
+
+  const send = useCallback(
+    (source: CoachSendSource) =>
+      start(() => pick(source, () => argsRef.current)),
+    [start],
+  );
+
+  // Android may destroy the app while the camera is open; the photo then
+  // comes back only after the restart (audit 2026-11-24, L28). It is never
+  // sent unasked: a send is a paid turn, and this may be another chat.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    void recoverCoachCameraPhoto().then((uri) => {
+      if (!uri) return;
+      Alert.alert(
+        "Send the photo you just took?",
+        "The app closed while the camera was open, but your photo was saved.",
+        [
+          { text: "Discard", style: "cancel" },
+          {
+            text: "Send",
+            onPress: () => {
+              // The chat this asked from may have closed since.
+              if (!mountedRef.current) return;
+              void start(() =>
+                Promise.resolve<Picked>({ kind: "photo", value: uri }),
+              );
+            },
+          },
+        ],
+      );
+    });
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [start]);
 
   const openPhotoChooser = useCallback(() => {
     if (blocked()) return;

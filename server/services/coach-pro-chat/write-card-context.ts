@@ -37,12 +37,16 @@ export async function applyWriteCardContext(
     userId: string;
     liveCard?: { cardId: string; edits: Record<string, unknown> };
     quickLog?: boolean;
+    dayProgress?: boolean;
+    weekProgress?: boolean;
   },
 ): Promise<void> {
   context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled(), {
     writeCards: true,
     notesPaused: context.notesPaused,
     ...(a.quickLog && { quickLog: true }),
+    ...(a.dayProgress && { dayProgress: true }),
+    ...(a.weekProgress && { weekProgress: true }),
   });
   if (a.liveCard) {
     const card = await storage.getWriteCard(a.liveCard.cardId, a.userId);

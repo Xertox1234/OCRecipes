@@ -4,6 +4,8 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import ActionCard from "./ActionCard";
 import SuggestionList from "./SuggestionList";
 import InlineChart from "./InlineChart";
+import DayProgress from "./DayProgress";
+import WeekProgress from "./WeekProgress";
 import CommitmentCard from "./CommitmentCard";
 import QuickReplies from "./QuickReplies";
 import FormBlock from "./FormBlock";
@@ -112,6 +114,10 @@ function renderBlock(
       return <SuggestionList block={block} onAction={onAction} />;
     case "inline_chart":
       return <InlineChart block={block} />;
+    case "day_progress":
+      return <DayProgress block={block} />;
+    case "week_progress":
+      return <WeekProgress block={block} />;
     case "commitment_card":
       return <CommitmentCard block={block} />;
     case "quick_replies":

@@ -16,6 +16,11 @@ import { extractAndStoreNotebook } from "./notebook";
 import type { TurnContext } from "./load-turn-context";
 import type { ReplyResult } from "./stream-reply";
 import type { CoachChatEvent, CoachChatParams } from "./types";
+import { buildDayProgressBlock } from "../day-progress";
+import { buildWeekProgressBlock } from "../week-progress";
+import { createServiceLogger, toError } from "../../lib/logger";
+
+const log = createServiceLogger("coach-pro-chat");
 
 interface ReplyBlocks {
   textContent: string;
@@ -26,6 +31,29 @@ interface ReplyBlocks {
 /** The free tier's reply is plain text: no blocks, no card, no trail. */
 function freeReplyBlocks(reply: ReplyResult): ReplyBlocks {
   return { textContent: reply.fullResponse, blocks: [], wroteCard: false };
+}
+
+/**
+ * Coach roadmap T3: a progress card the reply asked for (the day's or the
+ * week's), placed before its quick replies. One that can't be read is left
+ * off; the reply still says how it is going.
+ */
+async function withProgressCard(
+  blocks: CoachBlock[],
+  build: () => Promise<CoachBlock>,
+  what: "Day" | "Week",
+): Promise<CoachBlock[]> {
+  let card: CoachBlock;
+  try {
+    card = await build();
+  } catch (err) {
+    log.warn({ err: toError(err) }, `${what} progress card could not be built`);
+    return blocks;
+  }
+  const at = blocks.findIndex((b) => b.type === "quick_replies");
+  return at === -1
+    ? [...blocks, card]
+    : [...blocks.slice(0, at), card, ...blocks.slice(at)];
 }
 
 /** Coach Pro: parse blocks, build the write card, lead with the trail. */
@@ -61,6 +89,32 @@ async function proReplyBlocks(
     // Coach's notes are paused: accepting a commitment card would save
     // nothing, so a card the model wrote anyway never reaches the screen.
     if (turn.context.notesPaused) blocks = dropCommitmentCards(blocks);
+    // Only for an app that declared the card (its prompt offered it), and
+    // not under a safety message that replaced the reply.
+    const cardsShown =
+      params.writeCards && !reply.safetyOverridden && !isAborted();
+    const { dayProgress } = parsedBlocks;
+    if (cardsShown && dayProgress && params.dayProgressCard) {
+      blocks = await withProgressCard(
+        blocks,
+        () =>
+          buildDayProgressBlock(dayProgress, {
+            userId,
+            tz: turn.tz,
+            user: params.user,
+          }),
+        "Day",
+      );
+    }
+    // After the day card, so a reply with both reads today, then the week.
+    if (cardsShown && parsedBlocks.weekProgress && params.weekProgressCard) {
+      blocks = await withProgressCard(
+        blocks,
+        () =>
+          buildWeekProgressBlock({ userId, tz: turn.tz, user: params.user }),
+        "Week",
+      );
+    }
   }
 
   // The write card is built (and its row created) only for a client still

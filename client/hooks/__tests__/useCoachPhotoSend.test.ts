@@ -3,7 +3,10 @@ import { act, renderHook } from "@testing-library/react";
 import { Alert, Platform, type AlertButton } from "react-native";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { ApiError } from "@/lib/api-error";
-import { pickCoachPhoto } from "@/lib/coach-photo-picker";
+import {
+  pickCoachPhoto,
+  recoverCoachCameraPhoto,
+} from "@/lib/coach-photo-picker";
 import {
   uploadBarcodeFrontToCoach,
   uploadPhotoToCoach,
@@ -19,7 +22,10 @@ import { preReadLabel, sendLabelToCoach } from "@/lib/coach-label-pre-read";
 import { recognizeTextFromPhoto } from "@/camera/utils/recognizeTextFromPhoto";
 import { useCoachPhotoSend } from "../useCoachPhotoSend";
 
-vi.mock("@/lib/coach-photo-picker", () => ({ pickCoachPhoto: vi.fn() }));
+vi.mock("@/lib/coach-photo-picker", () => ({
+  pickCoachPhoto: vi.fn(),
+  recoverCoachCameraPhoto: vi.fn(),
+}));
 vi.mock("@/lib/photo-upload", () => ({
   uploadPhotoToCoach: vi.fn(),
   uploadBarcodeFrontToCoach: vi.fn(),
@@ -70,6 +76,75 @@ describe("useCoachPhotoSend", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    vi.mocked(recoverCoachCameraPhoto).mockResolvedValue(null);
+  });
+
+  describe("a camera photo Android closed the app on (L28)", () => {
+    /** Mount, let the recovery read settle, return the recovery alert. */
+    async function mountWithRecovered(uri: string | null) {
+      vi.mocked(recoverCoachCameraPhoto).mockResolvedValue(uri);
+      const alertSpy = vi.spyOn(Alert, "alert");
+      const hook = setup();
+      await act(async () => {});
+      const call = alertSpy.mock.calls.find(
+        (c) => c[0] === "Send the photo you just took?",
+      );
+      return { ...hook, call };
+    }
+
+    it("asks before sending, and sends nothing on its own", async () => {
+      const { call, args } = await mountWithRecovered("file:///lost.jpg");
+      expect(call).toBeDefined();
+      const buttons = (call?.[2] ?? []) as AlertButton[];
+      expect(buttons.map((b) => b.text)).toEqual(["Discard", "Send"]);
+      expect(args.onStart).not.toHaveBeenCalled();
+      expect(uploadPhotoToCoach).not.toHaveBeenCalled();
+    });
+
+    it("sends the recovered photo like a picked one on Send", async () => {
+      vi.mocked(uploadPhotoToCoach).mockResolvedValue("I found 1 food.");
+      const { call, args, result } =
+        await mountWithRecovered("file:///lost.jpg");
+      const send = ((call?.[2] ?? []) as AlertButton[]).find(
+        (b) => b.text === "Send",
+      );
+      await act(async () => {
+        await send?.onPress?.();
+      });
+      expect(pickCoachPhoto).not.toHaveBeenCalled();
+      expect(args.onStart).toHaveBeenCalledExactlyOnceWith("photo");
+      expect(uploadPhotoToCoach).toHaveBeenCalledWith(
+        "file:///lost.jpg",
+        7,
+        undefined,
+      );
+      expect(args.onSettled).toHaveBeenCalledWith(
+        7,
+        null,
+        false,
+        "I found 1 food.",
+      );
+      expect(result.current.isSendingPhoto).toBe(false);
+    });
+
+    it("sends nothing on Send once the chat has gone", async () => {
+      const { call, args, unmount } =
+        await mountWithRecovered("file:///lost.jpg");
+      unmount();
+      const send = ((call?.[2] ?? []) as AlertButton[]).find(
+        (b) => b.text === "Send",
+      );
+      await act(async () => {
+        await send?.onPress?.();
+      });
+      expect(args.onStart).not.toHaveBeenCalled();
+      expect(uploadPhotoToCoach).not.toHaveBeenCalled();
+    });
+
+    it("shows nothing when no photo was lost", async () => {
+      const { call } = await mountWithRecovered(null);
+      expect(call).toBeUndefined();
+    });
   });
 
   it("offers the camera, the library and a way out", () => {

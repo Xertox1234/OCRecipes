@@ -19,7 +19,9 @@ export interface CoachStreamExtras {
  * The server gives Coach a card's tool only when its kind is listed, so a
  * build without the card is never told one is on screen. "quick_log" (Coach
  * roadmap T2): this build shows a food card that arrives already logged,
- * with Undo, so a small typed log is applied at once.
+ * with Undo, so a small typed log is applied at once. "day_progress" (T3):
+ * this build draws the day card that re-reads its numbers. "week_progress"
+ * (T3): the seven-day card that does the same.
  */
 const EXTRA_CARD_KINDS = [
   "pantry",
@@ -27,6 +29,8 @@ const EXTRA_CARD_KINDS = [
   "allergy",
   "plan_shop",
   "quick_log",
+  "day_progress",
+  "week_progress",
 ] as const;
 
 /** The POST body for a coach message; unset extras are left out. */

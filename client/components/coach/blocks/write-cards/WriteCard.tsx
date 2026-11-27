@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AccessibilityInfo, Platform } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -30,6 +30,13 @@ import {
   WriteCardStatus,
 } from "@shared/schemas/coach-write-cards";
 import { WriteCardShell } from "./WriteCardShell";
+import {
+  effectiveCardStatus,
+  getWriteCardSession,
+  updateWriteCardSession,
+  useWriteCardSession,
+  type WriteCardSession,
+} from "./write-card-session";
 import { AllergyWriteCard } from "./AllergyWriteCard";
 import { FoodWriteCard } from "./FoodWriteCard";
 import { GoalsWriteCard } from "./GoalsWriteCard";
@@ -134,84 +141,84 @@ export default function WriteCard({
   // What this device just did (saved / undone). It wins over the block's
   // status until a refetch catches up — except that a newer card locking
   // this one (replaced / expired) always wins.
-  const [localStatus, setStatus] = useState<WriteCardStatus | null>(null);
-  const [localReceipt, setReceipt] = useState<string | undefined>(undefined);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [undoError, setUndoError] = useState<string | null>(null);
-  const [undoVisible, setUndoVisible] = useState(false);
-  // Undo on a log applied at once (T2) was tapped, came back too late, or
-  // the user sent the next message.
-  const [atOnceClosed, setAtOnceClosed] = useState(false);
+  // What this device did (saving, saved, undone, an error) lives in a store
+  // keyed by cardId, so it survives the footer-to-saved-row remount (L34).
+  const session = useWriteCardSession(block.cardId);
+  const update = (patch: Partial<WriteCardSession>) =>
+    updateWriteCardSession(block.cardId, patch);
   // A card that mounts already saved (a log applied at once, the saved copy
   // taking over from the streamed one, a reopened chat) does not fade in:
   // only a save made on this card does.
-  const [mountedSaved] = useState(block.status === "saved");
-  const busyRef = useRef(false);
-  // Sending the next message ends Undo. Adjusted during render when the
-  // prop flips (React's "adjust state when a prop changes" pattern).
-  const [prevReplyInFlight, setPrevReplyInFlight] = useState(replyInFlight);
-  if (prevReplyInFlight !== replyInFlight) {
-    setPrevReplyInFlight(replyInFlight);
+  const [mountedSaved] = useState(
+    () =>
+      effectiveCardStatus(block.status, getWriteCardSession(block.cardId)) ===
+      "saved",
+  );
+  // Sending the next message ends Undo, also for a log applied at once (a
+  // failed send does not bring it back).
+  useEffect(() => {
     if (replyInFlight) {
-      setUndoVisible(false);
-      // Also for a log applied at once: a failed send does not bring it back.
-      setAtOnceClosed(true);
+      updateWriteCardSession(block.cardId, {
+        undoVisible: false,
+        atOnceClosed: true,
+      });
     }
-  }
+  }, [replyInFlight, block.cardId]);
 
   const handleSave = async () => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setSaving(true);
-    setError(null);
+    // Read the store, not this render: another copy may have started a save.
+    if (getWriteCardSession(block.cardId).busy) return;
+    update({ busy: true, saving: true, error: null });
+    const actedOn = block.status;
     try {
       const result = await save(edits as Record<string, unknown>);
-      setReceipt(result.receipt);
-      setStatus("saved");
+      update({ receipt: result.receipt, status: "saved", actedOn });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(result.receipt);
       }
-      setUndoVisible(true);
+      update({ undoVisible: true });
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      setError(saveErrorMessage(err));
+      update({ error: saveErrorMessage(err) });
     }
     // No `finally`: React Compiler cannot lower try/finally and would skip
     // this whole component (check-react-compiler-bailouts.js).
-    busyRef.current = false;
-    setSaving(false);
+    update({ busy: false, saving: false });
   };
 
   const handleUndo = async () => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setUndoVisible(false);
-    setAtOnceClosed(true);
-    setUndoError(null);
+    if (getWriteCardSession(block.cardId).busy) return;
+    update({
+      busy: true,
+      undoVisible: false,
+      atOnceClosed: true,
+      undoError: null,
+    });
+    const actedOn = effectiveCardStatus(
+      block.status,
+      getWriteCardSession(block.cardId),
+    );
     try {
       const result = await undo();
-      setStatus(result.status);
+      update({ status: result.status, actedOn });
       // Both platforms: the receipt's live region unmounts with the undo, so
       // nothing else tells TalkBack (and focus goes with the Undo button).
       AccessibilityInfo.announceForAccessibility("Undone");
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      setUndoError(saveErrorMessage(err));
+      update({ undoError: saveErrorMessage(err) });
       // Too late is final; anything else (a dropped connection) can retry.
       if (!(err instanceof ApiError && err.code === "UNDO_EXPIRED")) {
-        setUndoVisible(true);
+        update({ undoVisible: true });
       }
     }
-    busyRef.current = false;
+    update({ busy: false });
   };
 
-  const status: WriteCardStatus =
-    block.status === "replaced" || block.status === "expired"
-      ? block.status
-      : (localStatus ?? block.status);
-  const receipt = localReceipt ?? block.receipt;
+  const status: WriteCardStatus = effectiveCardStatus(block.status, session);
+  const receipt = session.receipt ?? block.receipt;
+  const { saving, error, undoError, undoVisible, atOnceClosed } = session;
   const state = cardUiState(status, { saving, error });
   // A food log the Coach applied at once (T2) arrives saved: Undo with no
   // Save tap, on the newest reply only.

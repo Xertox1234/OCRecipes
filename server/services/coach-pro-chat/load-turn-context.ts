@@ -60,6 +60,10 @@ export async function loadTurnContext(
     writeCards: boolean;
     /** A small typed food log is applied at once (T2). */
     quickLog?: boolean;
+    /** The app can draw a day progress card (T3). */
+    dayProgressCard?: boolean;
+    /** The app can draw a week progress card (T3). */
+    weekProgressCard?: boolean;
     intent: CoachIntent;
     /** History the finder gate already read, if any. */
     finderHistory?: ChatMessage[];
@@ -135,6 +139,8 @@ export async function loadTurnContext(
       userId,
       liveCard,
       quickLog: a.quickLog,
+      dayProgress: a.dayProgressCard,
+      weekProgress: a.weekProgressCard,
     });
   }
 

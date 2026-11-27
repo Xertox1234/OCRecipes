@@ -28,7 +28,12 @@ interface ChatBubbleProps {
   animateEntry?: boolean;
 }
 
-export function ChatBubble({
+/**
+ * Memoized: its props are plain values, and a streaming chat re-renders its
+ * parent about 20 times a second. Without it every saved bubble re-parsed its
+ * markdown on each tick (coach chat audit 2026-11-24, L37).
+ */
+export const ChatBubble = React.memo(function ChatBubble({
   role,
   content,
   onSpeak,
@@ -127,7 +132,7 @@ export function ChatBubble({
       </Animated.View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   bubbleRow: {
