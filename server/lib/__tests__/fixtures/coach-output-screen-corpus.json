@@ -375,6 +375,14 @@
     {
       "text": "Eat dinner under 400 calories and nothing else tonight.",
       "why": "Rest-of-day cue tied to the day: a one-meal day (ai-reviewer probe of e6b6ae3b4)."
+    },
+    {
+      "text": "Keep dinner under 400 calories and skip all other meals.",
+      "why": "Rest-of-day cue: a one-meal day (ai-reviewer confirmation of 11662c43a; main blocked these)."
+    },
+    {
+      "text": "Keep dinner under 400 calories and don't eat anything else.",
+      "why": "Rest-of-day cue: a one-meal day (ai-reviewer confirmation of 11662c43a; main blocked these)."
     }
   ],
   "mustPass": [

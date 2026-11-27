@@ -330,7 +330,7 @@ const ONLY_SLOT_BEFORE_RE =
  * breakfast" does not.
  */
 const REST_OF_DAY_AFTER_RE =
-  /\b(?:skip|fast)\s+(?:the\s+rest|everything\s+else|(?:the\s+|your\s+)?other\s+meals)\b|\b(?:and|but)\s+nothing\s+else\b/i;
+  /\b(?:skip|fast)\s+(?:the\s+rest|everything\s+else|(?:the\s+|your\s+|all\s+(?:the\s+)?)?other\s+meals)\b|\b(?:and|but)\s+(?:nothing\s+else|(?:don['’]?t|do\s+not)\s+eat\s+anything\s+else)\b/i;
 
 /**
  * The figure sizes one named slot of a normal day. Not when the sentence
