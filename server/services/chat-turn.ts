@@ -74,6 +74,7 @@ export interface TurnInput {
       | "quick_log"
       | "day_progress"
       | "week_progress"
+      | "more_charts"
     )[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
@@ -506,6 +507,8 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     // Coach roadmap T3: the app draws a day progress card and keeps it current.
     dayProgressCard: !!ctx.body.cardKinds?.includes("day_progress"),
     weekProgressCard: !!ctx.body.cardKinds?.includes("week_progress"),
+    // Coach roadmap T4: the app draws ring, sparkline and heatmap charts.
+    moreCharts: !!ctx.body.cardKinds?.includes("more_charts"),
     liveCard: ctx.body.liveCard,
     turnKey: coachTurnKey,
     isCoachPro: !!features.coachPro,

@@ -8,9 +8,11 @@ import {
   dropCommitmentCards,
   withOfferRecipeRule,
 } from "../coach-blocks";
+import { dropMoreCharts } from "../more-charts";
 import {
   coachBlockSchema,
   mealPlanCardSchema,
+  type CoachBlock,
 } from "@shared/schemas/coach-blocks";
 import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 import { logger } from "../../lib/logger";
@@ -610,6 +612,69 @@ describe("week_progress requests", () => {
 
   it("keeps the offer prompt equal to a rebuilt one", () => {
     const opts = { writeCards: true, dayProgress: true, weekProgress: true };
+    expect(withOfferRecipeRule(getBlocksSystemPrompt(true, opts))).toBe(
+      getBlocksSystemPrompt(true, { ...opts, offer: true }),
+    );
+  });
+});
+
+describe("more chart kinds (Coach roadmap T4)", () => {
+  const ring = {
+    type: "inline_chart",
+    chartType: "ring",
+    title: "This week's averages",
+    data: [{ label: "Protein", value: 120, target: 150 }],
+  };
+  const bar = { ...ring, chartType: "bar" };
+
+  it("offers ring, sparkline and heatmap only to an app that can draw them", () => {
+    const on = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      moreCharts: true,
+    });
+    expect(on).toContain(
+      'chartType: "bar"|"progress"|"stat_row"|"ring"|"sparkline"|"heatmap"',
+    );
+    expect(on).toMatch(
+      /ring: one to four values, never more, each with its own target above zero/,
+    );
+    expect(on).toMatch(/put it as target on the last point only/);
+    expect(on).toMatch(/heatmap: one square per day, oldest first, at most 35/);
+    expect(on).toMatch(
+      /for today or yesterday against the goals use day_progress/,
+    );
+    // It has no multi-day or weight history: no data, no chart.
+    expect(on).toMatch(
+      /Every value, label and hit must come from a tool result or your context/,
+    );
+    expect(on).toMatch(/do not draw the chart/);
+    expect(on).toMatch(/never estimate or fill in a missing day/);
+    expect(on).not.toMatch(/weight over a month|week's average/);
+
+    const off = getBlocksSystemPrompt(false, { writeCards: true });
+    expect(off).not.toMatch(/sparkline|heatmap|"ring"/);
+    expect(off).toContain('chartType: "bar"|"progress"|"stat_row",');
+  });
+
+  it("still places the progress cards next to inline_chart", () => {
+    const all = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      dayProgress: true,
+      weekProgress: true,
+      moreCharts: true,
+    });
+    expect(all).toMatch(
+      /"heatmap", title, data: \[[^\n]*\n- day_progress:[^\n]*\n- week_progress:/,
+    );
+  });
+
+  it("drops the new kinds for an app that did not ask for them", () => {
+    expect(dropMoreCharts([ring, bar] as CoachBlock[])).toEqual([bar]);
+    expect(dropMoreCharts([bar] as CoachBlock[])).toEqual([bar]);
+  });
+
+  it("keeps the offer prompt equal to a rebuilt one", () => {
+    const opts = { writeCards: true, moreCharts: true };
     expect(withOfferRecipeRule(getBlocksSystemPrompt(true, opts))).toBe(
       getBlocksSystemPrompt(true, { ...opts, offer: true }),
     );

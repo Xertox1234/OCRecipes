@@ -64,6 +64,8 @@ export async function loadTurnContext(
     dayProgressCard?: boolean;
     /** The app can draw a week progress card (T3). */
     weekProgressCard?: boolean;
+    /** The app draws ring, sparkline and heatmap charts (T4). */
+    moreCharts?: boolean;
     intent: CoachIntent;
     /** History the finder gate already read, if any. */
     finderHistory?: ChatMessage[];
@@ -141,6 +143,7 @@ export async function loadTurnContext(
       quickLog: a.quickLog,
       dayProgress: a.dayProgressCard,
       weekProgress: a.weekProgressCard,
+      moreCharts: a.moreCharts,
     });
   }
 

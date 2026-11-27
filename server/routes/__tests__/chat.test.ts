@@ -928,6 +928,28 @@ describe("Chat Routes", () => {
           weekProgress: true,
         }),
       );
+      // 'more_charts' (T4): ring, sparkline and heatmap, with every other kind.
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect(
+        (
+          await send({
+            cardKinds: [
+              "pantry",
+              "goals",
+              "allergy",
+              "plan_shop",
+              "quick_log",
+              "day_progress",
+              "week_progress",
+              "more_charts",
+            ],
+          })
+        ).status,
+      ).toBe(200);
+      expect(vi.mocked(getBlocksSystemPrompt).mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({ writeCards: true, moreCharts: true }),
+      );
     });
 
     it("rejects a card kind it does not know (400)", async () => {

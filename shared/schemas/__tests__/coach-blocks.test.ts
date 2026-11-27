@@ -150,6 +150,22 @@ describe("Coach Block Schemas", () => {
     expect(inlineChartSchema.parse(chart)).toEqual(chart);
   });
 
+  it.each(["ring", "sparkline", "heatmap"])(
+    "validates a %s chart (Coach roadmap T4)",
+    (chartType) => {
+      const chart = {
+        type: "inline_chart",
+        chartType,
+        title: "Last 4 weeks",
+        data: [
+          { label: "Nov 1", value: 82.4, target: 80 },
+          { label: "Nov 8", value: 81.9, hit: false },
+        ],
+      };
+      expect(inlineChartSchema.parse(chart)).toEqual(chart);
+    },
+  );
+
   it("validates a commitment card", () => {
     const card = {
       type: "commitment_card",
