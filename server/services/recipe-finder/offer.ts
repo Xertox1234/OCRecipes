@@ -23,6 +23,9 @@ import {
  * "this is a recipe ask". Shared by the production coach and the probe so the
  * measured description is the shipped one.
  */
+const STATED_ONLY =
+  "Only when the user stated it in this conversation; otherwise omit it (the app fills it from their profile).";
+
 export const OFFER_RECIPE_TOOL: ChatCompletionTool = {
   type: "function",
   function: {
@@ -38,13 +41,30 @@ export const OFFER_RECIPE_TOOL: ChatCompletionTool = {
           description:
             "True when the dish came from earlier in the chat rather than this message.",
         },
-        servings: { type: "integer", minimum: 1, maximum: 20 },
-        spice: { type: "string", enum: [...spiceLevelSchema.options] },
-        time: { type: "string", enum: [...COOKING_TIME_IDS] },
+        // Audit L79: a filled value is taken as stated by the user and wins
+        // over their profile (adjust.ts), so each one says to leave it out.
+        servings: {
+          type: "integer",
+          minimum: 1,
+          maximum: 20,
+          description: STATED_ONLY,
+        },
+        spice: {
+          type: "string",
+          enum: [...spiceLevelSchema.options],
+          description: STATED_ONLY,
+        },
+        time: {
+          type: "string",
+          enum: [...COOKING_TIME_IDS],
+          description: STATED_ONLY,
+        },
         ingredients: {
           type: "array",
           items: { type: "string" },
           maxItems: 15,
+          description:
+            "Only ingredients the user asked to use; omit if none. Do not list the dish's usual ingredients.",
         },
       },
       required: ["dish", "from_conversation"],
