@@ -33,6 +33,62 @@ describe("buildFinderGenerationMessages — adjusted", () => {
     });
   });
 
+  // Audit 2026-11-24 (M44): the clarifying answers and typed refinements
+  // live in flow.request, which the adjusted prompt used to drop, so a
+  // "Vegan" and "Thai" answer never reached the recipe.
+  it("adds what the user asked and answered when it says more than the dish", () => {
+    const msgs = buildFinderGenerationMessages({
+      mode: "adjusted",
+      dish: "Curry",
+      request: "curry. Any diet to follow? Vegan; Any cuisine? Thai",
+      details: { ingredients: [], fromConversation: false },
+      settings: { servings: 2, spice: "mild", time: "moderate" },
+      answers: [],
+      history: [],
+    });
+    const content = msgs.at(-1)!.content;
+    expect(content).toContain(
+      "What the user asked for and answered so far (the lines above win if they conflict): curry. Any diet to follow? Vegan; Any cuisine? Thai",
+    );
+    expect(content.indexOf("Time available")).toBeLessThan(
+      content.indexOf("What the user asked"),
+    );
+  });
+
+  it.each(["Curry", "  curry ", "CURRY."])(
+    "skips the request line when it is just the dish (%s)",
+    (request) => {
+      const msgs = buildFinderGenerationMessages({
+        mode: "adjusted",
+        dish: "Curry",
+        request,
+        details: { ingredients: [], fromConversation: false },
+        settings: { servings: 2, spice: "mild", time: "moderate" },
+        answers: [],
+        history: [],
+      });
+      expect(msgs.at(-1)!.content).not.toContain("What the user asked");
+    },
+  );
+
+  it("caps the request line at 600 characters", () => {
+    const msgs = buildFinderGenerationMessages({
+      mode: "adjusted",
+      dish: "Curry",
+      request: `curry. ${"x".repeat(1500)}`,
+      details: { ingredients: [], fromConversation: false },
+      settings: { servings: 2, spice: "mild", time: "moderate" },
+      answers: [],
+      history: [],
+    });
+    const line = msgs
+      .at(-1)!
+      .content.split("\n")
+      .find((l) => l.startsWith("What the user asked"))!;
+    const text = line.slice(line.indexOf(": ") + 2);
+    expect(text.length).toBeLessThanOrEqual(600);
+  });
+
   it("omits the ingredients line when there are none", () => {
     const msgs = buildFinderGenerationMessages({
       mode: "adjusted",
