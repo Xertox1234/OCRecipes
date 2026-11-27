@@ -126,4 +126,8 @@ const bottomSheetMethods = {
 };
 export const useBottomSheet = () => bottomSheetMethods;
 
+/** Config builders return their input; the mock sheet never animates. */
+export const useBottomSheetSpringConfigs = (config: Record<string, unknown>) =>
+  config;
+
 export default {};

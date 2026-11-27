@@ -1,0 +1,79 @@
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  .story { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; }
+  .cap { font-size: 12.5px; opacity: .8; margin: 8px 0 0; line-height: 1.4; width: 224px; }
+  .phone { width: 224px; height: 470px; border-radius: 32px; background: #FAF6F0; position: relative; overflow: hidden;
+           font-family: Poppins, sans-serif; color: #1C1410; box-shadow: 0 8px 26px rgba(0,0,0,.35); border: 6px solid #222; }
+  .hero { position:absolute; left:0; right:0; top:0; height: 220px; background: linear-gradient(180deg, #5b4636 0%, #8a6a4f 60%, #FAF6F0 100%); }
+  .hero .ph { position:absolute; left: 70px; top: 70px; width: 84px; height: 46px; border-radius: 8px; background:#111; transform: rotate(-8deg); box-shadow: 0 6px 14px rgba(0,0,0,.4) }
+  .hero .pl { position:absolute; left: 60px; top: 140px; width: 110px; height: 40px; border-radius: 50%; background: #f1e9db }
+  .body { position:absolute; top: 214px; left: 0; right: 0; padding: 0 18px; }
+  .body h4 { text-align:center; font-size: 15px; font-weight: 700; margin: 0 0 12px }
+  .li { display:flex; gap: 10px; align-items:center; font-size: 12px; margin: 9px 0 }
+  .li b { width: 22px; text-align:center; font-size: 14px; color:#B5451C }
+  .dots { text-align:center; margin: 12px 0 }
+  .dots i { display:inline-block; width:6px; height:6px; border-radius:50%; background:#E2D7CA; margin:0 3px }
+  .dots i.on { background:#1C1410 }
+  .cta { position:absolute; left: 14px; right: 14px; bottom: 20px; background: #B5451C; color:#fff; border-radius: 999px; padding: 11px 0; text-align:center; font-size: 13px; font-weight: 600 }
+  /* camera + sheet */
+  .cam { background:#000; color:#fff }
+  .feed { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, #3b342e 0%, #15110e 70%); }
+  .top { position: absolute; top: 14px; left: 10px; right: 10px; display: flex; justify-content: space-between; }
+  .rbtn { width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .rbtn.hl { box-shadow: 0 0 0 2px #E07050 }
+  .sheet { position:absolute; left:0; right:0; bottom:0; background:#2C2420; border-radius: 22px 22px 0 0; padding: 10px 16px 18px; color:#F5EFE6 }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background:#5a4a40; margin: 0 auto 10px }
+  .sheet h5 { font-size: 13px; margin: 0 0 4px }
+  .sheet .s { font-size: 10.5px; color:#B8A898; margin-bottom: 8px }
+  .sheet .li { font-size: 11px; margin: 7px 0 } .sheet .li b { color:#E07050 }
+  .sheet .hr { height:1px; background:#3C302A; margin: 10px 0 }
+  .sheet .link { font-size: 11px; color:#E07050; font-weight:600 }
+</style>
+
+<h2>General scanning tips: where should they live?</h2>
+<p class="subtitle">Your screenshots also had a "Get the best scan" carousel (hold still, use lots of light…). Each flow now has its own example card, so these general tips would partly repeat them. Two ways to keep them:</p>
+
+<div class="options">
+
+<div class="option" data-choice="carousel" onclick="toggleSelect(this)">
+  <div class="letter">A</div>
+  <div class="content">
+    <h3>A one-time tips carousel before your very first scan</h3>
+    <p>Shown once ever, before the first example card. 2–3 pages, then "Scan now".</p>
+    <div class="story"><div>
+      <div class="phone"><div class="hero"><div class="pl"></div><div class="ph"></div></div>
+        <div class="body"><h4>Get the best scan</h4>
+          <div class="li"><b>◎</b>Hold still for a moment</div>
+          <div class="li"><b>☀</b>Use plenty of light</div>
+          <div class="li"><b>⤢</b>Fill the frame, nothing cut off</div>
+          <div class="dots"><i class="on"></i><i></i><i></i></div></div>
+        <div class="cta">Next</div></div>
+      <p class="cap">Light screen (app theme), like your screenshots. One more thing to tap through on day one.</p>
+    </div></div>
+  </div>
+</div>
+
+<div class="option" data-choice="help" onclick="toggleSelect(this)">
+  <div class="letter">B</div>
+  <div class="content">
+    <h3>Tips inside the "?" sheet, no carousel</h3>
+    <p>"?" opens a sheet: the current step's example again, plus the general tips. Nothing extra on day one. <b>My pick</b>: the example cards already teach the first scans.</p>
+    <div class="story"><div>
+      <div class="phone cam"><div class="feed"></div>
+        <div class="top"><div class="rbtn">✕</div><div class="rbtn hl">?</div></div>
+        <div class="sheet"><div class="grab"></div>
+          <h5>Scanning the nutrition label</h5><div class="s">Fit the whole Nutrition Facts panel in the frame.</div>
+          <div class="link">Show the example again →</div>
+          <div class="hr"></div>
+          <h5>Tips for every scan</h5>
+          <div class="li"><b>◎</b>Hold still for a moment</div>
+          <div class="li"><b>☀</b>Use plenty of light, or tap ⚡</div>
+          <div class="li"><b>⤢</b>Fill the frame, nothing cut off</div>
+          <div class="li"><b>⌨︎</b>Barcode won't read? Type the number</div>
+        </div></div>
+      <p class="cap">Help is there when someone is stuck, not before.</p>
+    </div></div>
+  </div>
+</div>
+
+</div>

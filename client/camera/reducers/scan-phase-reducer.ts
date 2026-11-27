@@ -1,4 +1,9 @@
-import type { ScanPhase, ScanAction } from "../types/scan-phase";
+import {
+  MANUAL_ENTRY_BOUNDS,
+  type ResumablePhase,
+  type ScanPhase,
+  type ScanAction,
+} from "../types/scan-phase";
 
 /**
  * Collapse every "the recognizer gave us nothing usable" shape — `undefined`,
@@ -11,6 +16,44 @@ import type { ScanPhase, ScanAction } from "../types/scan-phase";
 function normalizeOcrText(raw: string | undefined): string | null {
   const trimmed = raw?.trim();
   return trimmed ? trimmed : null;
+}
+
+/**
+ * Copy the nutrition photo / OCR text forward only when present, so a skipped
+ * nutrition step stays a skipped step (absent keys, not `undefined` values).
+ */
+function nutritionFields(source: {
+  nutritionImageUri?: string;
+  ocrText?: string | null;
+}): { nutritionImageUri?: string; ocrText?: string | null } {
+  return {
+    ...(source.nutritionImageUri !== undefined && {
+      nutritionImageUri: source.nutritionImageUri,
+    }),
+    ...(source.ocrText !== undefined && { ocrText: source.ocrText }),
+  };
+}
+
+type LockBounds = typeof MANUAL_ENTRY_BOUNDS;
+
+/**
+ * Shared by BARCODE_LOCKED and MANUAL_BARCODE_ENTERED: a redo detour that finds
+ * the same barcode again returns to the phase it left. Any other barcode is a
+ * fresh lock that still carries the resume, so "Not this" can return to the
+ * detour; committing to the new product (any forward action) drops it.
+ */
+function lockOrResume(
+  barcode: string,
+  bounds: LockBounds,
+  resume: ResumablePhase | undefined,
+): ScanPhase {
+  if (resume && resume.barcode === barcode) return resume;
+  return {
+    type: "BARCODE_LOCKED",
+    barcode,
+    bounds,
+    ...(resume && { resume }),
+  };
 }
 
 export function scanPhaseReducer(
@@ -29,6 +72,7 @@ export function scanPhaseReducer(
         barcode: action.barcode,
         bounds: action.bounds,
         frameCount: 1,
+        ...(state.resume && { resume: state.resume }),
       };
 
     case "BARCODE_UPDATED":
@@ -41,11 +85,46 @@ export function scanPhaseReducer(
 
     case "BARCODE_LOCKED":
       if (state.type !== "BARCODE_TRACKING") return state;
+      return lockOrResume(state.barcode, state.bounds, state.resume);
+
+    case "MANUAL_BARCODE_ENTERED":
+      if (state.type !== "HUNTING" && state.type !== "BARCODE_TRACKING")
+        return state;
+      return lockOrResume(action.barcode, MANUAL_ENTRY_BOUNDS, state.resume);
+
+    case "RESCAN":
+      if (state.type !== "BARCODE_LOCKED") return state;
+      return state.resume
+        ? { type: "HUNTING", resume: state.resume }
+        : { type: "HUNTING" };
+
+    case "REDO_STEP":
+      if (state.type !== "LABEL_PROMPTED" && state.type !== "STEP2_CONFIRMED")
+        return state;
+      if (action.step === "barcode") return { type: "HUNTING", resume: state };
+      if (state.type !== "STEP2_CONFIRMED") return state;
       return {
-        type: "BARCODE_LOCKED",
+        type: "LABEL_PROMPTED",
         barcode: state.barcode,
-        bounds: state.bounds,
+        product: state.product,
       };
+
+    case "SKIP_STEP":
+      if (state.type === "LABEL_PROMPTED") {
+        return {
+          type: "STEP2_CONFIRMED",
+          barcode: state.barcode,
+          product: state.product,
+        };
+      }
+      if (state.type === "STEP2_CONFIRMED") {
+        return {
+          type: "SESSION_COMPLETE",
+          barcode: state.barcode,
+          ...nutritionFields(state),
+        };
+      }
+      return state;
 
     case "PRODUCT_LOADED":
       if (state.type !== "BARCODE_LOCKED" || state.barcode !== action.barcode)
@@ -54,7 +133,9 @@ export function scanPhaseReducer(
 
     case "BARCODE_LOST":
       if (state.type !== "BARCODE_TRACKING") return state;
-      return { type: "HUNTING" };
+      return state.resume
+        ? { type: "HUNTING", resume: state.resume }
+        : { type: "HUNTING" };
 
     case "CONFIRM_PRODUCT":
       if (state.type === "BARCODE_LOCKED") {
@@ -64,16 +145,14 @@ export function scanPhaseReducer(
         return {
           type: "SESSION_COMPLETE",
           barcode: state.barcode,
-          nutritionImageUri: state.nutritionImageUri,
-          ocrText: state.ocrText,
+          ...nutritionFields(state),
         };
       }
       if (state.type === "STEP3_REVIEWING") {
         return {
           type: "SESSION_COMPLETE",
           barcode: state.barcode,
-          nutritionImageUri: state.nutritionImageUri,
-          ocrText: state.ocrText,
+          ...nutritionFields(state),
           frontImageUri: state.frontImageUri,
         };
       }
@@ -109,8 +188,7 @@ export function scanPhaseReducer(
           type: "STEP3_REVIEWING",
           barcode: state.barcode,
           product: state.product,
-          nutritionImageUri: state.nutritionImageUri,
-          ocrText: state.ocrText,
+          ...nutritionFields(state),
           frontImageUri: action.imageUri,
         };
       }
@@ -141,8 +219,7 @@ export function scanPhaseReducer(
           type: "STEP2_CONFIRMED",
           barcode: state.barcode,
           product: state.product,
-          nutritionImageUri: state.nutritionImageUri,
-          ocrText: state.ocrText,
+          ...nutritionFields(state),
         };
       }
       return state;

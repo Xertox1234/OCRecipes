@@ -1021,7 +1021,7 @@ describe("ChatScreen — teaching and Pro prompts", () => {
       ),
     );
     fireEvent.click(screen.getByLabelText("Open camera"));
-    expect(mockNavigate).toHaveBeenCalledWith("Scan");
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", { intent: "log" });
   });
 
   it("opens the upgrade from the Pro answer without sending a message", () => {

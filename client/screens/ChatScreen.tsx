@@ -775,7 +775,7 @@ function PlainChatScreen() {
 
   const [showUpgrade, setShowUpgrade] = useState(false);
   const handleOpenCamera = useCallback(() => {
-    navigation.navigate("Scan");
+    navigation.navigate("Scan", { intent: "log" });
   }, [navigation]);
   const handleShowUpgrade = useCallback(() => setShowUpgrade(true), []);
 

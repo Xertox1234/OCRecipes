@@ -3,6 +3,19 @@ import type { ScanPhase } from "../types/scan-phase";
 
 export const BARCODE_RETICLE = { width: 260, height: 160 } as const;
 export const LABEL_RETICLE = { width: 200, height: 270 } as const;
+export type FrameShape = "barcode" | "label" | "front" | "photo";
+
+// Step-shaped reticle frames: each guided step frames what it asks for.
+export const FRAME_SIZES: Record<
+  FrameShape,
+  { width: number; height: number }
+> = {
+  barcode: BARCODE_RETICLE,
+  label: LABEL_RETICLE,
+  front: { width: 240, height: 260 },
+  photo: { width: 280, height: 300 },
+};
+
 // Shared with scan-screen-utils' lock decision — the reticle's confidence ring
 // and the actual barcode-lock math must derive from the same frame budget.
 export const LOCK_THRESHOLD_FRAMES = 7;
@@ -33,8 +46,12 @@ export function getReticleTarget(
   phase: ScanPhase,
   screenWidth: number,
   screenHeight: number,
+  shape?: FrameShape,
 ): ReticleTarget {
   const center = { cx: screenWidth / 2, cy: screenHeight / 2 };
+  if (shape && phase.type !== "BARCODE_TRACKING") {
+    return { ...center, ...FRAME_SIZES[shape] };
+  }
   switch (phase.type) {
     case "BARCODE_TRACKING": {
       const { cx, cy } = boundsToTarget(
@@ -84,5 +101,30 @@ export function getConfidenceFromPhase(phase: ScanPhase): number {
     case "SMART_CONFIRMED":
     case "SMART_ERROR":
       return 1.0;
+  }
+}
+
+/**
+ * Confidence for a step-shaped (guided) frame: white at rest on the live
+ * photo steps, green only once something is caught (a found barcode, a
+ * captured photo). `getConfidenceFromPhase` keeps every post-lock phase green,
+ * which read as "done" on steps still waiting for a photo.
+ */
+export function getShapedFrameConfidence(phase: ScanPhase): number {
+  switch (phase.type) {
+    case "LABEL_PROMPTED":
+    case "STEP2_CONFIRMED":
+      return 0;
+    case "IDLE":
+    case "HUNTING":
+    case "BARCODE_TRACKING":
+    case "BARCODE_LOCKED":
+    case "STEP2_REVIEWING":
+    case "STEP3_REVIEWING":
+    case "SESSION_COMPLETE":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
+      return getConfidenceFromPhase(phase);
   }
 }

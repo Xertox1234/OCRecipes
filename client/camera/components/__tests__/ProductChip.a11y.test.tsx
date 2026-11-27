@@ -16,7 +16,7 @@
  * here. See docs/rules/accessibility.md.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import * as RN from "react-native";
 import { ProductChip } from "../ProductChip";
 import type { ScanPhase } from "../../types/scan-phase";
@@ -32,6 +32,7 @@ const handlers = {
   onRetakeStep3: noop,
   onSmartPhotoConfirm: noop,
   onRetry: noop,
+  onRescan: noop,
 };
 
 const barcodeLock: ScanPhase = {
@@ -75,6 +76,12 @@ const idle: ScanPhase = { type: "IDLE" };
 
 const PLATFORMS = ["ios", "android"] as const;
 
+// The variant announce goes through announceTogether (batched, next tick).
+const flushAnnounce = () =>
+  act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
 describe("ProductChip — announce model (rework)", () => {
   const originalOS = RN.Platform.OS;
   let announceSpy: ReturnType<typeof vi.spyOn>;
@@ -99,26 +106,32 @@ describe("ProductChip — announce model (rework)", () => {
     expect(container.querySelector("[aria-live]")).toBeNull();
   });
 
-  it.each(PLATFORMS)("announces the variant on appear (%s)", (os) => {
+  it.each(PLATFORMS)("announces the variant on appear (%s)", async (os) => {
     RN.Platform.OS = os;
     render(<ProductChip phase={barcodeLock} {...handlers} />);
+    await flushAnnounce();
     expect(announceSpy).toHaveBeenCalledWith(
-      "Product found, choose how to continue",
+      "Barcode found, choose how to continue",
     );
   });
 
   // The regression-critical case: non-null→non-null transitions were announced
   // ONLY by the Android live region before (iOS heard nothing). Both platforms
   // must now announce, and no variant may go silent.
-  it.each(PLATFORMS)("announces a non-null→non-null transition (%s)", (os) => {
-    RN.Platform.OS = os;
-    const { rerender } = render(
-      <ProductChip phase={step2Review} {...handlers} />,
-    );
-    announceSpy.mockClear(); // drop the appear announce; isolate the transition
-    rerender(<ProductChip phase={step2Confirmed} {...handlers} />);
-    expect(announceSpy).toHaveBeenCalledWith("Nutrition values confirmed");
-  });
+  it.each(PLATFORMS)(
+    "announces a non-null→non-null transition (%s)",
+    async (os) => {
+      RN.Platform.OS = os;
+      const { rerender } = render(
+        <ProductChip phase={step2Review} {...handlers} />,
+      );
+      await flushAnnounce();
+      announceSpy.mockClear(); // drop the appear announce; isolate the transition
+      rerender(<ProductChip phase={step2Confirmed} {...handlers} />);
+      await flushAnnounce();
+      expect(announceSpy).toHaveBeenCalledWith("Nutrition values confirmed");
+    },
+  );
 
   it.each(PLATFORMS)(
     "announces the smart-confirm busy edge once and stays silent on clear (%s)",
@@ -167,7 +180,7 @@ describe("ProductChip — announce model (rework)", () => {
       const { rerender } = render(
         <ProductChip phase={barcodeLock} {...handlers} />,
       );
-      announceSpy.mockClear(); // drop the "Product found…" appear announce
+      announceSpy.mockClear(); // drop the "Barcode found…" appear announce
       // PRODUCT_LOADED: same variant, product now present.
       rerender(<ProductChip phase={barcodeLockWithProduct} {...handlers} />);
       expect(announceSpy).toHaveBeenCalledWith("Test Cola");

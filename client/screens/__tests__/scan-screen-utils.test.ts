@@ -11,6 +11,8 @@ import {
   buildNutritionDetailParams,
   getCapturePlan,
   getShutterBlockedReason,
+  getScanFlow,
+  getGenericFlowView,
 } from "../scan-screen-utils";
 import type { CapturePlan } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
@@ -605,12 +607,12 @@ describe("scan-screen-utils", () => {
 
     const CASES: [ScanPhase, CapturePlan][] = [
       [{ type: "IDLE" }, { capture: false, runStepOcr: false, route: "step" }],
-      // Smart scan / label mode — captures, but runs its own OCR into
-      // localOCRText rather than the STEP_PHOTO_CAPTURED payload. The only
-      // "smart" route: onShutterPress's classification/LabelAnalysis branch.
+      // The barcode flow's step 1 (no mode, no intent): it scans by itself,
+      // so the shutter press is a deliberate no-op. With a mode or an intent
+      // HUNTING captures (see "capture mode routing" below).
       [
         { type: "HUNTING" },
-        { capture: true, runStepOcr: false, route: "smart" },
+        { capture: false, runStepOcr: false, route: "smart" },
       ],
       [
         {
@@ -699,6 +701,26 @@ describe("scan-screen-utils", () => {
     // opposite of what happened. That is the same drift class that shipped
     // LABEL_PROMPTED as a dead end, so it is pinned rather than trusted.
     describe("getShutterBlockedReason agrees with the capture gate", () => {
+      // Every phase × {barcode flow (no mode), an intent (generic flow)}: the
+      // mode changes HUNTING's answer, so both must take it.
+      const MODES = [
+        ["barcode flow", {}],
+        ["intent", { hasIntent: true }],
+      ] as const;
+      it.each(
+        CASES.flatMap(([phase]) =>
+          MODES.map(([label, mode]) => [label, phase, mode] as const),
+        ),
+      )("matches getCapturePlan (%s, %o)", (_label, phase, mode) => {
+        const plan = getCapturePlan(phase, mode);
+        const reason = getShutterBlockedReason(phase, mode);
+        if (plan.capture) {
+          expect(reason).toBeNull();
+        } else {
+          expect(reason?.trim().length).toBeGreaterThan(0);
+        }
+      });
+
       it.each(CASES)(
         "explains %o iff the gate drops the press",
         (phase, plan) => {
@@ -731,6 +753,7 @@ describe("scan-screen-utils", () => {
           // The phase the original device report was taken in: a barcode is
           // in frame, the scan is running itself, and the shutter is dead BY
           // DESIGN.
+          HUNTING: "Scanning the barcode automatically. No photo needed.",
           BARCODE_TRACKING:
             "Scanning the barcode automatically. No photo needed.",
           IDLE: "Camera is still starting.",
@@ -808,6 +831,23 @@ describe("scan-screen-utils", () => {
         expect(getCapturePlan(HUNTING, mode).route).toBe(route);
       });
 
+      it("getCapturePlan HUNTING without mode or intent → capture false", () => {
+        expect(getCapturePlan(HUNTING).capture).toBe(false);
+        expect(getCapturePlan(HUNTING, {}).capture).toBe(false);
+        // verifyBarcode alone is still the barcode flow.
+        expect(
+          getCapturePlan(HUNTING, { hasVerifyBarcode: true }).capture,
+        ).toBe(false);
+      });
+
+      it("getCapturePlan HUNTING with hasIntent → capture true, route smart", () => {
+        expect(getCapturePlan(HUNTING, { hasIntent: true })).toEqual({
+          capture: true,
+          runStepOcr: false,
+          route: "smart",
+        });
+      });
+
       it("keeps capture/runStepOcr unchanged by the mode", () => {
         expect(getCapturePlan(HUNTING, { isLabelMode: true })).toEqual({
           capture: true,
@@ -868,5 +908,63 @@ describe("getRouteForPickedIntent", () => {
       screen: "CookSessionCapture",
       params: { initialPhotoUri: "file://p" },
     });
+  });
+});
+
+describe("getScanFlow", () => {
+  it.each([
+    ["no params", undefined, "barcode"],
+    ["empty params", {}, "barcode"],
+    ["returnAfterLog", { returnAfterLog: true }, "barcode"],
+    ["verifyBarcode", { verifyBarcode: "06772408" }, "barcode"],
+    ["label mode", { mode: "label" }, "generic"],
+    [
+      "front-label mode",
+      { mode: "front-label", verifyBarcode: "06772408" },
+      "generic",
+    ],
+    ["intent log", { intent: "log" }, "generic"],
+    ["intent menu", { intent: "menu" }, "generic"],
+    // CoachChat casts model params: an unknown or null mode is not a
+    // generic mode — it must not open a camera that neither scans nor shoots.
+    ["unknown mode", { mode: "scan" as unknown as "label" }, "barcode"],
+    ["null mode", { mode: null as unknown as "label" }, "barcode"],
+    [
+      "intent with returnAfterLog",
+      { intent: "log", returnAfterLog: true },
+      "generic",
+    ],
+  ] as const)("%s → %s", (_label, params, flow) => {
+    expect(getScanFlow(params)).toBe(flow);
+  });
+});
+
+describe("getGenericFlowView", () => {
+  it("names the flow in the title pill and uses the photo frame with a shutter", () => {
+    const view = getGenericFlowView({ intent: "log" });
+    expect(view.title).toBe("Photo food log");
+    expect(view.frame).toBe("photo");
+    expect(view.showShutter).toBe(true);
+    expect(view.tabs).toEqual([]);
+    expect(view.exampleKey).toBeNull();
+  });
+
+  it("uses the label frame and hint for label mode", () => {
+    const view = getGenericFlowView({ mode: "label" });
+    expect(view.title).toBe("Nutrition label");
+    expect(view.frame).toBe("label");
+    expect(view.hint).toBe("Fit the whole panel in the frame");
+  });
+
+  it("uses the front frame for front-label mode", () => {
+    expect(
+      getGenericFlowView({ mode: "front-label", verifyBarcode: "1" }).frame,
+    ).toBe("front");
+  });
+
+  it("falls back to a plain title for an unknown intent", () => {
+    expect(
+      getGenericFlowView({ intent: "bogus" as unknown as "log" }).title,
+    ).toBe("Photo");
   });
 });

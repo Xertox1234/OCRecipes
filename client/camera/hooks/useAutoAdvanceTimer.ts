@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 import type { ScanPhase, ScanAction } from "../types/scan-phase";
 
-const AUTO_ADVANCE_MS = 1000;
+const AUTO_ADVANCE_MS = 1500;
 
 /**
- * Auto-advances out of a step-review phase ~1s after capture, unless a screen
+ * Auto-advances out of a step-review phase ~1.5s after capture, unless a screen
  * reader is active — the budget assumes sighted-user reaction speed and
  * doesn't hold for VoiceOver/TalkBack's hear-then-locate-then-act loop.
  * ProductChip falls back to explicit Confirm/Retake buttons in that mode.

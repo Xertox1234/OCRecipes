@@ -43,10 +43,11 @@ describe("ProductChip top flag badge", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
-    // The chip renders "⚠ {title}".
-    expect(getByText("⚠ Contains Tree Nuts")).toBeTruthy();
+    // The found card renders ScanFlagBadge (icon + bare title).
+    expect(getByText("Contains Tree Nuts")).toBeTruthy();
   });
 
   it("renders no flag row when there is no safety flag", () => {
@@ -60,16 +61,17 @@ describe("ProductChip top flag badge", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
     expect(queryByText(/Contains/)).toBeNull();
   });
 
-  // Guards the flex-trap: `styles.productRow` is `flexDirection: "row"`, so a
+  // Guards the flex-trap: the found card's name row (`styles.foundRow`) is `flexDirection: "row"`, so a
   // badge accidentally nested inside it would render squished beside the name
-  // instead of as a full-width banner above it. `getByText` alone can't catch
+  // instead of on its own line below it. `getByText` alone can't catch
   // this (it passes either way) — assert the DOM containment directly.
-  it("renders the badge as a sibling ABOVE the product row, not nested inside it", () => {
+  it("renders the badge as a sibling of the product row, not nested inside it", () => {
     const { getByText, container } = renderComponent(
       <ProductChip
         phase={lockedPhase({
@@ -86,9 +88,10 @@ describe("ProductChip top flag badge", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
-    const badgeText = getByText("⚠ Contains Tree Nuts");
+    const badgeText = getByText("Contains Tree Nuts");
     const productRow = container.querySelector(
       '[style*="flex-direction: row"]',
     );
@@ -135,6 +138,7 @@ describe("ProductChip top flag badge — accessibility", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
     announceSpy.mockClear(); // drop the appear/name announces from mount
@@ -148,6 +152,7 @@ describe("ProductChip top flag badge — accessibility", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
     expect(announceSpy).toHaveBeenCalledWith("Contains Tree Nuts");
@@ -165,6 +170,7 @@ describe("ProductChip top flag badge — accessibility", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
     announceSpy.mockClear();
@@ -178,6 +184,7 @@ describe("ProductChip top flag badge — accessibility", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
     expect(announceSpy).not.toHaveBeenCalled();
@@ -210,9 +217,10 @@ describe("ProductChip top flag badge — accessibility", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
-    announceSpy.mockClear(); // drop the mount-time "Product found…" announce
+    announceSpy.mockClear(); // drop the mount-time "Barcode found…" announce
     rerender(
       <ProductChip
         phase={lockedPhase(dangerFlag)}
@@ -223,6 +231,7 @@ describe("ProductChip top flag badge — accessibility", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
     expect(announceSpy).toHaveBeenCalledWith("Trail Mix. Contains Tree Nuts");
@@ -243,6 +252,7 @@ describe("ProductChip top flag badge — accessibility", () => {
         onRetakeStep3={noop}
         onSmartPhotoConfirm={noop}
         onRetry={noop}
+        onRescan={noop}
       />,
     );
     expect(announceSpy).toHaveBeenCalledWith("Trail Mix");
