@@ -1195,6 +1195,9 @@ export default function ScanScreen() {
       shutter={shutter}
       right={rightControl}
       chromeHidden={productChipVisible}
+      // The feed holds (dims) behind the green frame until the user acts on
+      // the found card; "Not this" (RESCAN) leaves BARCODE_LOCKED and lifts it.
+      feedHeld={scanPhase.type === "BARCODE_LOCKED"}
       controlsMuted={exampleCardKey !== null}
       obscured={teachingUp}
       staticUIImportance={staticUIImportance}

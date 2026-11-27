@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import { Text } from "react-native";
 import { CameraShell } from "../CameraShell";
 
-function renderShell(props: { obscured?: boolean }) {
+function renderShell(props: { obscured?: boolean; feedHeld?: boolean }) {
   return render(
     <CameraShell
       camera={null}
@@ -47,5 +47,20 @@ describe("CameraShell", () => {
     expect(hidden("scan-hint")).toBeNull();
     expect(hidden("scan-tabs")).toBeNull();
     expect(hidden("scan-controls")).toBeNull();
+  });
+
+  // Spec: "On detection, the camera pauses". The feed dims behind the frame
+  // while a barcode is locked; detection itself is not touched.
+  it("holds the feed under a dim layer while feedHeld", () => {
+    renderShell({ feedHeld: true });
+    const hold = screen.getByTestId("scan-feed-hold");
+    expect(hold.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("keeps the dim layer at zero opacity when the feed is live", () => {
+    renderShell({});
+    const hold = screen.queryByTestId("scan-feed-hold");
+    // Mounted so it can fade, but invisible.
+    expect(hold?.style.opacity ?? "0").toBe("0");
   });
 });

@@ -4,11 +4,17 @@
 // (left · shutter or spacer · right). Layout only: the screen supplies every
 // control and decides what each one does. `children` render last, above it
 // all (found / captured cards, sheets, modals).
-import React, { type ReactNode } from "react";
+import React, { useEffect, type ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { ViewProps } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import { contentRevealTimingConfig } from "@/constants/animations";
 import {
   CameraColors,
   FontFamily,
@@ -48,6 +54,11 @@ interface CameraShellProps {
    * from both screen readers; the card's own button is the way out.
    */
   obscured?: boolean;
+  /**
+   * A barcode is locked: the feed dims and holds behind the frame until the
+   * user acts on the found card. Visual only; detection is gated elsewhere.
+   */
+  feedHeld?: boolean;
   /** Dim the controls row and ignore its taps (an example card is up). */
   controlsMuted?: boolean;
   /** Android TalkBack trap for the static camera UI (getScanOverlayA11y). */
@@ -71,10 +82,17 @@ export function CameraShell({
   chromeHidden = false,
   controlsMuted = false,
   obscured = false,
+  feedHeld = false,
   staticUIImportance,
   children,
 }: CameraShellProps) {
   const insets = useSafeAreaInsets();
+  // A colour change only, so reduced motion keeps it as is.
+  const hold = useSharedValue(feedHeld ? 1 : 0);
+  useEffect(() => {
+    hold.value = withTiming(feedHeld ? 1 : 0, contentRevealTimingConfig);
+  }, [feedHeld, hold]);
+  const holdStyle = useAnimatedStyle(() => ({ opacity: hold.value }));
   const chromeImportance = obscured
     ? "no-hide-descendants"
     : staticUIImportance;
@@ -83,6 +101,13 @@ export function CameraShell({
   return (
     <View style={styles.root} accessibilityViewIsModal>
       {camera}
+      <Animated.View
+        testID="scan-feed-hold"
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, styles.feedHold, holdStyle]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      />
       {frame}
       {overlay}
 
@@ -186,6 +211,7 @@ export function CameraShell({
 }
 
 const styles = StyleSheet.create({
+  feedHold: { backgroundColor: CameraColors.feedHold },
   root: { flex: 1, backgroundColor: CameraColors.background },
   top: {
     position: "absolute",

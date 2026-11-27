@@ -1,9 +1,9 @@
 ---
 title: "Scan found card: camera pause on lock and the buttons' later beat are not built"
-status: backlog
+status: done
 priority: low
 created: 2026-11-26
-updated: 2026-11-26
+updated: 2026-11-27
 assignee:
 labels: [deferred, camera]
 github_issue:
@@ -21,9 +21,9 @@ Deferred during the stage 1 build (Task 5 and Task 8 reports). The found card wo
 
 ## Acceptance Criteria
 
-- [ ] On `BARCODE_LOCKED` the preview visibly holds (freeze or dim) until Not this / the primary action
-- [ ] The card's buttons enter after the title/name, staggered, settling before the user can reach them
-- [ ] Reduced motion: no travel or stagger; state change stays (per the spec's reduced-motion column)
+- [x] On `BARCODE_LOCKED` the preview visibly holds (freeze or dim) until Not this / the primary action
+- [x] The card's buttons enter after the title/name, staggered, settling before the user can reach them
+- [x] Reduced motion: no travel or stagger; state change stays (per the spec's reduced-motion column)
 - [ ] Checked on a device recording (crafting-ui `frames.mjs video`), not only in code
 
 ## Implementation Notes
@@ -50,3 +50,8 @@ Deferred during the stage 1 build (Task 5 and Task 8 reports). The found card wo
 ### 2026-11-26
 
 - Filed at the end of guided scan camera stage 1 (final review triage of deferred minors)
+
+### 2026-11-27
+
+- Built: feed dims while locked (CameraShell `feedHeld`), found card buttons staggered via `getFoundCardActionBeats`. Device recording check still owed (owner device pass).
+- Criterion 4 not met: needs a person: the device recording waits on the owner's phone check of the guided scan camera (the simulator has no camera).

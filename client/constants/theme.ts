@@ -355,6 +355,8 @@ export const CameraColors = {
   textMuted: "#B8A898",
   /** Scrim over the camera feed behind a scan example card (warm, near-opaque so the art reads) */
   exampleScrim: "rgba(30,24,20,0.94)",
+  /** Dim over the camera feed while a barcode is locked (the feed holds; the green frame stays bright above it) */
+  feedHold: "rgba(30,24,20,0.55)",
   /** Example art: kraft package front, the warm amber of a cereal box */
   exampleArtPackage: "#D9A441",
   /** Example art: shaded side of the package front */
