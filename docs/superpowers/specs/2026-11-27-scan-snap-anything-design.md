@@ -1,6 +1,6 @@
 # Snap anything: the auto-sorting camera returns (short design)
 
-Status: DRAFT, awaiting owner approval
+Status: APPROVED by the owner 2026-11-27 ("write the plan")
 Date: 2026-11-27
 Builds on: `docs/superpowers/specs/2026-11-26-scan-guided-camera-design.md` (stage 1 merged #2088, motion beats #2092)
 Closes: `todos/P3-2026-11-26-smart-scan-auto-classify-unused.md` (owner chose "revive")
@@ -35,7 +35,7 @@ The owner wants the "one photo, the app works out what it is" camera back as a r
   - **Number read:** "Looks like a barcode ✓", with the number in the sub-line. Continue replaces the screen with the barcode flow carrying that number. It enters through the same path as the type-the-number keypad (`MANUAL_BARCODE_ENTERED` from HUNTING, plus the product lookup), so you land on "Barcode found ✓" with the product, then **Next: nutrition →** and the Front step.
   - **Barcode seen, number unreadable:** "Looks like a barcode", with the sub-line "Let's scan it live". Continue replaces the screen with the barcode camera (`Scan` with no params) to scan it live. It no longer falls to "Couldn't tell".
   - `navigation.replace`, not `navigate`, so Back doesn't return to the snap photo.
-- **Couldn't tell** (`SMART_ERROR`, or `non_food`): "Couldn't tell what this is", with **Retake** and a "Pick it myself" link. The link opens the existing PhotoIntent chooser (my call).
+- **Couldn't tell** (`SMART_ERROR`, or `non_food`): "Couldn't tell what this is", with **Retake** and a "Pick it myself" link. The link opens the existing PhotoIntent chooser **with this photo** (`PhotoIntent { imageUri }`, which it already accepts), so nothing is re-snapped (my call).
 - **Accessibility:**
   - Each card announces through `announceTogether`.
   - The result card waits for a tap anyway, so screen reader users need no special path.
