@@ -121,14 +121,14 @@ runEvalSuite(testCases, {
 
   generateResponse: async (testCase: EvalTestCase) => {
     const start = Date.now();
-    const { text } = await coachShownReply(
+    const { text, modelCalled } = await coachShownReply(
       testCase.userMessage ?? "",
       testCase.context as CoachContext,
       caseClock(testCase),
     );
     const latencyMs = Date.now() - start;
     const wordCount = text.split(/\s+/).filter(Boolean).length;
-    return { text, latencyMs, wordCount };
+    return { text, latencyMs, wordCount, noModelCall: !modelCalled };
   },
 
   formatInput: (testCase: EvalTestCase) => {

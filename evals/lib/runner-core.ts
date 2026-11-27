@@ -57,6 +57,12 @@ export interface SuiteConfig {
     structuredData?: unknown;
     latencyMs: number;
     wordCount: number;
+    /**
+     * The server answered without a model (the coach's crisis reply). The
+     * sample is then checked for having made NO call, instead of for which
+     * model answered.
+     */
+    noModelCall?: boolean;
   }>;
 
   /** Format the test case as a readable 3-5 line summary for the judge */
@@ -94,7 +100,11 @@ async function evaluateCase(
     config.generateResponse(testCase),
   );
   const { text, structuredData, latencyMs, wordCount } = generated;
-  const aiCallViolations = checkCallRecords(aiCtx.calls, overrides);
+  const aiCallViolations = generated.noModelCall
+    ? aiCtx.calls.length === 0
+      ? []
+      : [`expected no AI call, but ${aiCtx.calls.length} were recorded`]
+    : checkCallRecords(aiCtx.calls, overrides);
 
   // 2. Hard assertions — text + structural
   const textResult = runAssertions(text, testCase.assertions);
