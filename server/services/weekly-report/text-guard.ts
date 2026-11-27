@@ -13,9 +13,29 @@ import {
  * that fails is replaced by templateContent, which costs nothing.
  */
 
-/** Words no written field may contain (whole word, any case). */
-const BANNED_RE =
-  /\b(missed|failed|only|broken|behind|skipped|didn['’]t eat|deficit|weight|lose|streak)\b/i;
+/**
+ * Words no written field may contain (whole word, any case). The writer's
+ * prompt lists these same words (writer.ts), so the two cannot drift
+ * (audit 2026-11-24, L135).
+ */
+export const BANNED_WORDS = [
+  "missed",
+  "failed",
+  "only",
+  "broken",
+  "behind",
+  "skipped",
+  "didn't eat",
+  "deficit",
+  "weight",
+  "lose",
+  "streak",
+] as const;
+// A straight apostrophe in the list also matches a curly one in the text.
+const BANNED_RE = new RegExp(
+  `\\b(${BANNED_WORDS.map((w) => w.replace(/'/g, "['’]")).join("|")})\\b`,
+  "i",
+);
 const LAST_WEEK_RE = /\blast week\b/i;
 const BEST_RE = /\b(best|record)\b/i;
 const CALORIE_RE = /\b(calorie|calories|kcal|cals?)\b/i;

@@ -646,3 +646,50 @@ describe("chat quota — a deleted Coach tap does not hand its slot back", () =>
     expect(await typed(conv.id, 1, { excludeFinderTaps: true })).not.toBeNull();
   });
 });
+
+// L137: one count for the Coach daily limit, used by both the typed path
+// (createChatMessageWithLimitCheck) and the tap path (createFinderUserMessage).
+describe("countCoachMessagesToday", () => {
+  beforeEach(async () => {
+    tx = await setupTestTransaction();
+    testUser = await createTestUser(tx);
+  });
+
+  afterEach(async () => {
+    await rollbackTestTransaction();
+  });
+
+  // The helper runs inside the caller's locked transaction; here, a savepoint.
+  const count = (excludeFinderTaps: boolean) =>
+    tx.transaction((t) =>
+      quotaModule.countCoachMessagesToday(t, testUser.id, {
+        excludeFinderTaps,
+      }),
+    );
+
+  it("counts today's user rows in Coach chats only, taps included unless left out", async () => {
+    const coach = await createChatConversation(testUser.id, "Coach", "coach");
+    const recipe = await createChatConversation(testUser.id, "Chef", "recipe");
+    await createChatMessage(coach.id, testUser.id, "user", "typed");
+    await createChatMessage(coach.id, testUser.id, "assistant", "reply");
+    await createChatMessage(recipe.id, testUser.id, "user", "other chat");
+    const t = await createFinderUserMessage(coach.id, testUser.id, "tap", {});
+    if (t.status !== "created") throw new Error("expected created");
+    expect(await count(false)).toBe(2);
+    expect(await count(true)).toBe(1);
+  });
+
+  it("never counts below today's claims", async () => {
+    const coach = await createChatConversation(testUser.id, "Coach", "coach");
+    const sent = await createChatMessageWithLimitCheck(
+      coach.id,
+      testUser.id,
+      "typed",
+      5,
+      "coach",
+    );
+    if (!sent) throw new Error("expected a message");
+    expect(await deleteChatMessage(sent.id, testUser.id)).toBe(true);
+    expect(await count(true)).toBe(1);
+  });
+});

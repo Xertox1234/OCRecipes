@@ -13,6 +13,7 @@ import {
 } from "@shared/schemas/coach-weekly-report";
 import {
   applyGuards,
+  BANNED_WORDS,
   isBestWeek,
   templateContent,
   validateContent,
@@ -34,7 +35,7 @@ Rules:
 - A count of days ("5 days", "5 of 7 days") must be the FACTS count for that exact thing: daysActive for days logged, proteinDaysMet for protein, caloriesDaysMet or carbsDaysMet for those goals. Never put a meal or recipe count in front of "days".
 - Lead with wins: what went well comes first, and the headline is the most encouraging true thing about the week.
 - A missing log is not a skipped meal. Say "no lunch logged", never that they skipped or missed it.
-- Never use these words, even in ordinary phrases: missed, failed, only, broken, behind, skipped, "didn't eat", deficit, weight, lose, streak. For example, write "just" or "1 day" instead of "only", and "keep it going" instead of "don't lose momentum".
+- Never use these words, even in ordinary phrases: ${BANNED_WORDS.map((w) => (w.includes(" ") ? `"${w}"` : w)).join(", ")}. For example, write "just" or "1 day" instead of "only", and "keep it going" instead of "don't lose momentum".
 - No weight, body shape, deficits or restriction. Never suggest eating less. No medical advice.
 - Mention last week only if FACTS.lastWeek is not null. Use the words "best" or "record" only if FACTS.bestWeek is true; otherwise say "strongest" or "most".
 - Use FACTS.patterns for "watch" items, worded as neutral observations, never as faults.
