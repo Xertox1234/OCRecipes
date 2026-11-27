@@ -74,7 +74,13 @@ export function getEaters(
  * not yet derived) and an eater has an allergy.
  */
 export function getMealClashes(
-  item: Pick<MealPlanItemWithRelations, "recipe" | "scannedItem">,
+  item: {
+    recipe: Pick<
+      NonNullable<MealPlanItemWithRelations["recipe"]>,
+      "allergens"
+    > | null;
+    scannedItem: unknown;
+  },
   eaters: Eater[],
 ): MealClash[] | "unknown" {
   const anyAllergy = eaters.some((e) => e.allergies.length > 0);

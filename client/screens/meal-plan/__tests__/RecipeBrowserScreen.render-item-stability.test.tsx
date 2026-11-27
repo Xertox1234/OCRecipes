@@ -142,6 +142,14 @@ vi.mock("@/context/PremiumContext", () => ({
 // Fresh wrapper object every call (faithful to real useMutation), but a
 // stable `mutateAsync` inside it — handleRecipePress must destructure
 // mutateAsync specifically, never depend on the whole mutation object.
+// The pick-time allergen check is covered by its own tests.
+const { stableConfirmPick } = vi.hoisted(() => ({
+  stableConfirmPick: async () => ({ proceed: true, note: null }),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => stableConfirmPick,
+}));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
     mutateAsync: mockMutateAsync,

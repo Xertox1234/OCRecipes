@@ -70,6 +70,16 @@ vi.mock("@/hooks/useSpeechToText", () => ({
   }),
 }));
 
+const { mockConfirmPick } = vi.hoisted(() => ({
+  mockConfirmPick: vi.fn(async () => ({
+    proceed: true,
+    note: null as string | null,
+  })),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => mockConfirmPick,
+}));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
     mutateAsync: mockAddItem,
@@ -133,6 +143,50 @@ describe("QuickAddSheet", () => {
       expect(mockNotification).not.toHaveBeenCalled();
       expect(mockImpact).toHaveBeenCalledWith(
         Haptics.ImpactFeedbackStyle.Light,
+      );
+    });
+
+    // Owner decision 2026-11-20: the allergen check runs before the add.
+    it("checks the recipe's allergens for this slot before adding", async () => {
+      mockAddItem.mockResolvedValue({ id: 1 });
+      renderComponent(
+        <QuickAddSheetContent {...defaultProps} plannedDate="2026-09-02" />,
+      );
+      fireEvent.click(screen.getByLabelText("Add Oats to breakfast"));
+      await waitFor(() => expect(mockAddItem).toHaveBeenCalled());
+      expect(mockConfirmPick).toHaveBeenCalledWith({
+        slot: { plannedDate: "2026-09-02", mealType: "breakfast" },
+        meal: { recipeId: 5 },
+      });
+    });
+
+    it("adds nothing when the user cancels at the allergy warning", async () => {
+      mockConfirmPick.mockResolvedValueOnce({ proceed: false, note: null });
+      renderComponent(<QuickAddSheetContent {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("Add Oats to breakfast"));
+      await waitFor(() => expect(mockConfirmPick).toHaveBeenCalled());
+      expect(mockAddItem).not.toHaveBeenCalled();
+      expect(defaultProps.onDismiss).not.toHaveBeenCalled();
+      // The sheet stays usable for another pick.
+      mockAddItem.mockResolvedValue({ id: 1 });
+      fireEvent.click(screen.getByLabelText("Add Oats to breakfast"));
+      await waitFor(() => expect(mockAddItem).toHaveBeenCalledOnce());
+    });
+
+    it("says in the success toast when allergens could not be checked", async () => {
+      mockConfirmPick.mockResolvedValueOnce({
+        proceed: true,
+        note: "Allergens not checked",
+      });
+      mockAddItem.mockResolvedValue({ id: 1 });
+      renderComponent(
+        <QuickAddSheetContent {...defaultProps} plannedDate="2026-09-02" />,
+      );
+      fireEvent.click(screen.getByLabelText("Add Oats to breakfast"));
+      await waitFor(() =>
+        expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+          "Added to Wednesday Breakfast. Allergens not checked",
+        ),
       );
     });
 

@@ -40,6 +40,11 @@ import {
   invalidateMealPlanItems,
   refreshMealPlanItemsForPendingPicture,
 } from "@/hooks/useMealPlan";
+import { useConfirmPlanPick } from "@/hooks/useConfirmPlanPick";
+import {
+  UNCHECKED_MEAL,
+  withAllergenNote,
+} from "@/components/meal-plan/pick-allergen-utils";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { ApiError } from "@/lib/api-error";
@@ -142,6 +147,7 @@ function SimpleEntrySheetContentInner(
   const parseFoodText = useParseFoodText();
   const createRecipe = useCreateMealPlanRecipe();
   const addItem = useAddMealPlanItem();
+  const confirmPick = useConfirmPlanPick();
 
   const hasVoiceLogging = usePremiumFeature("voiceLogging");
   const {
@@ -368,6 +374,13 @@ function SimpleEntrySheetContentInner(
     const session = sessionRef.current;
     const isCurrent = () => session === sessionRef.current;
     try {
+      // The allergen check comes first. A quick entry keeps no ingredients,
+      // so it cannot be checked: it is never a clash, only a note.
+      const pick = await confirmPick({
+        slot: { plannedDate, mealType },
+        meal: UNCHECKED_MEAL,
+      });
+      if (!pick.proceed) return;
       let recipeId: number;
       let hasPicture: boolean;
       if (createdRecipeRef.current?.key === key) {
@@ -405,7 +418,12 @@ function SimpleEntrySheetContentInner(
       // refreshes and the toast (which fires its own Success) confirms it.
       invalidateMealPlanItems(queryClient);
       if (!hasPicture) refreshMealPlanItemsForPendingPicture(queryClient);
-      toast.success(formatPlanAddSuccess(plannedDate, mealType));
+      toast.success(
+        withAllergenNote(
+          formatPlanAddSuccess(plannedDate, mealType),
+          pick.note,
+        ),
+      );
       if (!isCurrent()) return;
       createdRecipeRef.current = null;
       onDismiss();

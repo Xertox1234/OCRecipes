@@ -63,6 +63,14 @@ vi.mock("@/hooks/useSpeechToText", () => {
   return { useSpeechToText: () => speech };
 });
 // Fresh wrapper per call, stable mutateAsync inside — faithful to useMutation.
+// The pick-time allergen check is covered by its own tests.
+const { stableConfirmPick } = vi.hoisted(() => ({
+  stableConfirmPick: async () => ({ proceed: true, note: null }),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => stableConfirmPick,
+}));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({ mutateAsync: mockAddItem, isPending: false }),
 }));

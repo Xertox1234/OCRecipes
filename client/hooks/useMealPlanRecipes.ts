@@ -51,13 +51,20 @@ export function useUnifiedRecipes(params?: {
   });
 }
 
-export function useMealPlanRecipeDetail(recipeId: number) {
-  return useQuery<RecipeWithIngredients>({
-    queryKey: ["/api/meal-plan/recipes", recipeId],
-    queryFn: async () => {
+/** One meal-plan recipe with its ingredients; shared by the detail screen and the pick-time allergen check. */
+export function mealPlanRecipeDetailQueryOptions(recipeId: number) {
+  return {
+    queryKey: ["/api/meal-plan/recipes", recipeId] as const,
+    queryFn: async (): Promise<RecipeWithIngredients> => {
       const res = await apiRequest("GET", `/api/meal-plan/recipes/${recipeId}`);
       return res.json();
     },
+  };
+}
+
+export function useMealPlanRecipeDetail(recipeId: number) {
+  return useQuery<RecipeWithIngredients>({
+    ...mealPlanRecipeDetailQueryOptions(recipeId),
     enabled: recipeId > 0,
   });
 }

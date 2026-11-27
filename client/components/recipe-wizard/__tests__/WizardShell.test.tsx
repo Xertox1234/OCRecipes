@@ -2,7 +2,7 @@
 import React from "react";
 import { Alert } from "react-native";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 
@@ -194,6 +194,16 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
       return createIsPending;
     },
   }),
+}));
+
+const { mockConfirmPick } = vi.hoisted(() => ({
+  mockConfirmPick: vi.fn(async () => ({
+    proceed: true,
+    note: null as string | null,
+  })),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => mockConfirmPick,
 }));
 
 vi.mock("@/hooks/useMealPlan", () => ({
@@ -533,6 +543,52 @@ describe("WizardShell", () => {
         "Added to Wednesday Dinner",
       );
       expect(mockNotification).not.toHaveBeenCalled();
+    });
+
+    // Owner decision 2026-11-20: the allergen check runs before anything is
+    // saved, on the ingredients the server will derive allergens from.
+    it("checks the recipe's ingredients for this slot before saving", async () => {
+      mutateCreate.mockResolvedValue({ id: 77 });
+      mutateAddItem.mockResolvedValue({ id: 9 });
+      const onSaveComplete = vi.fn();
+      saveFromPlan(onSaveComplete);
+      await waitFor(() => expect(onSaveComplete).toHaveBeenCalled());
+      expect(mockConfirmPick).toHaveBeenCalledWith({
+        slot: { plannedDate: "2026-09-02", mealType: "dinner" },
+        meal: { allergens: expect.any(Array) },
+      });
+      expect(mockConfirmPick.mock.invocationCallOrder[0]).toBeLessThan(
+        mutateCreate.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("saves and adds nothing, and stays open, when the user cancels at the allergy warning", async () => {
+      mockConfirmPick.mockResolvedValueOnce({ proceed: false, note: null });
+      mutateCreate.mockClear();
+      mutateAddItem.mockClear();
+      const onSaveComplete = vi.fn();
+      saveFromPlan(onSaveComplete);
+      await waitFor(() => expect(mockConfirmPick).toHaveBeenCalled());
+      await act(async () => {});
+      expect(mutateCreate).not.toHaveBeenCalled();
+      expect(mutateAddItem).not.toHaveBeenCalled();
+      expect(onSaveComplete).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Save Recipe" })).toBeDefined();
+    });
+
+    it("says in the success toast when allergens could not be checked", async () => {
+      mockConfirmPick.mockResolvedValueOnce({
+        proceed: true,
+        note: "Allergens not checked",
+      });
+      mutateCreate.mockResolvedValue({ id: 77 });
+      mutateAddItem.mockResolvedValue({ id: 9 });
+      const onSaveComplete = vi.fn();
+      saveFromPlan(onSaveComplete);
+      await waitFor(() => expect(onSaveComplete).toHaveBeenCalled());
+      expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+        "Added to Wednesday Dinner. Allergens not checked",
+      );
     });
 
     // The recipe already exists at that point, so retrying Save would make a
