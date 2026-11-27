@@ -6974,6 +6974,13 @@ nd_only_deny && nd_reason_has 'Read inside a quoted string' && nd_reason_has 'ea
 nd_body 'eas whoami'
 n="ND5f control: the same body ending in a read-only command: allowed in under 8 s"
 nd_silent && [ "$ND_SECS" -lt 8 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+# ND5g. A printf format of 3000 characters with 200 arguments, piped onward (confirmation review
+#      of SW2): the format filler re-read it per argument and took 8.9 s with mawk; capped now.
+ND_OUT=$(awk 'BEGIN { printf "printf %ceas update %%s ", 39; for (i = 0; i < 3000; i++) printf "a"; printf "%c", 39; for (i = 0; i < 200; i++) printf " b"; print " | cat" }' \
+  | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | { t0=$(date +%s); LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null; echo "@$(( $(date +%s) - t0 ))"; })
+ND_SECS=${ND_OUT##*@}; ND_OUT=${ND_OUT%@*}; ND_RC=0; ND_ERR=""
+n="ND5g a 3000-character printf format with 200 arguments piped to cat: allowed in under 5 s"
+nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -7654,6 +7661,38 @@ assert_allow "SW2 control: gh pr create --title x --body 'deny bash -c 'npm publ
 assert_allow "SW2 control: bash -c 'echo npm \' ; echo done" "$(jsonc $'bash -c \'echo npm \\\' ; echo done')"
 assert_allow "SW2 control: echo 'eas update' | cat" "$(jsonc $'echo \'eas update\' | cat')"
 
+# SW3 (confirmation review of SW2, each a regression from the first SW commit or, for the last
+# four deny rows, a needle the fast path sees and the scan did not): heredoc bodies read only
+# when the `<<` named a shell missed `cat <<EOF | sh`, `<<EOF bash`, `sudo -s`, `su` and a script
+# written then run; `<<` inside `${ }`, `$[ ]` or `$(( ))`, a `$'EOF'` delimiter and a continued
+# `<<` line opened heredocs bash never opens; `$((`/`((` that bash runs as commands were skipped;
+# a word glued after `)` or a backtick was dropped.
+assert_deny "SW3 cat <<EOF | sh / bash -c 'eas update' / EOF" "$(jsonc $'cat <<EOF | sh\nbash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW3 cat <<EOF | bash / eval 'eas update' / EOF" "$(jsonc $'cat <<EOF | bash\neval \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW3 <<EOF bash / bash -c 'eas update' / EOF" "$(jsonc $'<<EOF bash\nbash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW3 sudo -s <<EOF / bash -c 'eas update' / EOF" "$(jsonc $'sudo -s <<EOF\nbash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW3 su ci <<EOF / bash -c 'eas update' / EOF" "$(jsonc $'su ci <<EOF\nbash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW3 cat > /tmp/x.sh <<EOF / bash -c 'eas update' / EOF / bash /tmp/x.sh" "$(jsonc $'cat > /tmp/x.sh <<EOF\nbash -c \'eas update\'\nEOF\nbash /tmp/x.sh')" "eas update/publish/submit"
+assert_deny "SW3 echo {x/<<A/} / bash -c 'eas update'" "$(jsonc $'echo ${x/<<A/}\nbash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW3 echo {x:-<<A} / bash -c 'eas update'" "$(jsonc $'echo ${x:-<<A}\nbash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW3 echo [1<<2] / bash -c 'eas update'" "$(jsonc $'echo $[1<<2]\nbash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW3 cat <<'EOF' / hi / EOF / bash -c 'eas update'" "$(jsonc $'cat <<$\'EOF\'\nhi\nEOF\nbash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW3 cat <<EOF  / && bash -c 'eas update' / body / EOF" "$(jsonc $'cat <<EOF \\\n&& bash -c \'eas update\'\nbody\nEOF')" "eas update/publish/submit"
+assert_deny "SW3 echo ((echo a); bash -c 'eas update')" "$(jsonc $'echo $((echo a); bash -c \'eas update\')')" "eas update/publish/submit"
+assert_deny "SW3 ((echo a); bash -c 'eas update')" "$(jsonc $'((echo a); bash -c \'eas update\')')" "eas update/publish/submit"
+assert_deny "SW3 (true)bash -c 'eas update'" "$(jsonc $'$(true)bash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW3 truebash -c 'eas update'" "$(jsonc $'`true`bash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW3 '(true)'eval 'eas update'" "$(jsonc $'"$(true)"eval \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW3 case x in x)bash -c 'eas update';; esac" "$(jsonc $'case x in x)bash -c \'eas update\';; esac')" "eas update/publish/submit"
+assert_deny "SW3 case x in x)eval 'eas update';; esac" "$(jsonc $'case x in x)eval \'eas update\';; esac')" "eas update/publish/submit"
+assert_deny "SW3 bash -c 'e / as update --branch preview'" "$(jsonc $'bash -c \'e\\\nas update --branch preview\'')" "eas update/publish/submit"
+assert_deny "SW3 bash -c 'e{U}as update --branch preview'" "$(jsonc $'bash -c \'e${U}as update --branch preview\'')" "eas update/publish/submit"
+assert_deny "SW3 bash -c 'e()as update --branch preview'" "$(jsonc $'bash -c \'e$()as update --branch preview\'')" "eas update/publish/submit"
+assert_deny "SW3 bash -c 'bash -c 'echo ea 0 / echo ea 1 / eas update''" "$(jsonc $'bash -c "bash -c \'echo ea 0\necho ea 1\neas update\'"')" "eas update/publish/submit"
+assert_allow "SW3 control: git commit -F - <<EOF / docs: mention bash -c 'eas update' example / EOF" "$(jsonc $'git commit -F - <<EOF\ndocs: mention bash -c \'eas update\' example\nEOF')"
+assert_allow "SW3 control: echo ((1<<2)) / bash -c 'npm test'" "$(jsonc $'echo $((1<<2))\nbash -c \'npm test\'')"
+assert_allow "SW3 control: cat <<EOF | sh / bash -c 'npm test' / EOF" "$(jsonc $'cat <<EOF | sh\nbash -c \'npm test\'\nEOF')"
+
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
 # 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
@@ -7683,7 +7722,8 @@ assert_allow "SW2 control: echo 'eas update' | cat" "$(jsonc $'echo \'eas update
 # caps, and ND5f, a timed deny row and its control.
 # 1724 -> 1780 (review of SW): +56 = SW2, 44 deny rows, 7 controls, and 5 cap rows (the 400 and 2000
 # boundaries, the 100-body and 64 KB caps, a 2100-row seed heredoc).
-EXPECTED_TOTAL=1780
+# 1780 -> 1806 (confirmation review of SW2): +26 = SW3, 22 deny rows and 3 controls, and ND5g.
+EXPECTED_TOTAL=1806
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

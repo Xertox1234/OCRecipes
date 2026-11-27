@@ -3848,8 +3848,12 @@ WORDS_DEEP=$(cmd_words_deep "$CMD")
 # Quoted and escaped wrapper names count (`'bash' -c`, `ev''al`): the context is quote-removed
 # words. `$'...'` bodies are decoded as bash does (`\x20`, `\145`, `\u`), printf formats are
 # filled, and a pipe is followed through filters to a shell (`| tee x | sh`, `| (bash)`,
-# `| source /dev/stdin`). Heredoc bodies are scanned only when the heredoc feeds a shell,
-# ssh, eval or source; any other heredoc body (a commit message, a file) is text. Bodies are
+# `| source /dev/stdin`). Heredoc bodies are read as code when the command names a shell or a
+# runner anywhere (`cat <<EOF | sh`, `<<EOF bash`, `sudo -s <<EOF`, a script written then run) or
+# when a heredoc never closes; otherwise they are text (a commit message, a file). `<<` inside
+# `${ }`, `$[ ]` or arithmetic opens no heredoc, and a continued `<<` line starts its body after
+# the continuation. A word glued after `)` or a backtick is judged both as a command word and
+# not. The needle test drops `${...}`, `$(...)`, backticks and backslash-newlines. Bodies are
 # judged at most two levels deep; past that, past 100 bodies or 64 KB of them, for a body that
 # does not parse on its own, or for a command holding the scan's \001/\002 separators, this
 # denies. The child does not honour the inline bypass. Not read: an option glued to its value
@@ -3863,8 +3867,9 @@ _out_sw_scan() {
   # words of its simple command before it, its value) and P (an echo/printf/yes argument list
   # piped onward: start, end, a later command of the pipeline, the text it prints). X: past
   # 2000 records. Words in the context are quote-removed, spaces inside one word become x.
-  # A word begun right after a closing `)` or backtick is glued to the substitution before it
-  # (`x=$(true)# eval ...`: `#` ends that word, `eval` runs): it is not a command word here.
+  # A word begun right after a closing `)` or backtick is glued to the substitution before it.
+  # Bash may run it (`$(true)bash -c ...`) or not (`x=$(true)# eval ...`), so a body after it is
+  # judged in both contexts: ctx has every word, ctxg leaves glued words out.
   function startw(p) { if (!inword) { inword = 1; wstart = p; wval = ""; wb = ""; wq = 0; glued = !cb } }
   function base(w) { sub(/.*\//, "", w); return w }
   # Appends go through a 1 KB buffer: `s = s c` copies s in mawk and BSD awk, so a 150 KB
@@ -3898,40 +3903,52 @@ _out_sw_scan() {
   }
   # printf FORMAT ARGS: each conversion takes the next argument (%b decoding it), and the
   # format repeats while arguments remain, as printf does.
-  function pfmt(   r, k, n, c, a, f, g) {
-    f = av[1]; n = length(f); a = 2; r = ""
-    for (g = 0; g < 1000; g++) {
+  # Capped: the format is read at most 200000 characters in all and the output stops at 64 KB
+  # (a 3 KB printf with 1000 arguments ran past the timeout with mawk), appends buffered.
+  function pfmt(   r, rb, k, n, c, a, f, g, rd) {
+    f = av[1]; n = length(f); a = 2; r = ""; rb = ""; rd = 0
+    for (g = 0; g < 1000 && rd < 200000 && length(r) < 65536; g++) {
       for (k = 1; k <= n; k++) {
         c = substr(f, k, 1)
         if (c == "%" && k < n) {
           c = substr(f, ++k, 1)
-          if (c == "%") { r = r "%"; continue }
+          if (c == "%") { rb = rb "%"; continue }
           while (k < n && c ~ /[-+ #0-9.]/) c = substr(f, ++k, 1)
-          if (c == "b") r = r unesc((a <= na) ? av[a++] : "")
-          else r = r ((a <= na) ? av[a++] : "")
-        } else if (c == "\\" && k < n) { r = r unesc(substr(f, k, 2)); k++ }
-        else r = r c
+          if (c == "b") rb = rb unesc((a <= na) ? av[a++] : "")
+          else rb = rb ((a <= na) ? av[a++] : "")
+        } else if (c == "\\" && k < n) { rb = rb unesc(substr(f, k, 2)); k++ }
+        else rb = rb c
+        if (length(rb) > 1024) { r = r rb; rb = "" }
       }
+      rd += n
       if (a > na || a == 2) break
     }
-    return r
+    return r rb
   }
   function needle(v,   t) {
-    t = tolower(v); gsub(/[\047"\\]/, "", t)
+    t = tolower(v); gsub(/\$\{[^}]*\}/, "", t); gsub(/\$\([^)]*\)/, "", t); gsub(/`[^`]*`/, "", t)
+    gsub(/\\\n/, "", t); gsub(/[\047"\\]/, "", t)
     return (t ~ /(^|[^a-z0-9_])(eas|railway|npm|pnpm|yarn|gh|npx|bun|bunx)([^a-z0-9_]|$)/ || t ~ /update:(preview|production)/)
   }
   function rec(t, a, b, x, v) {
     if (++nrec > 2000) { printf "X\002\002\002\002\001"; done = 1; exit }
     printf "%s\002%d\002%d\002%s\002%s\001", t, a, b, x, v
   }
-  function ctxadd(x) { if (length(ctx) <= 4096) ctx = (ctx == "") ? x : ctx " " x }
+  function ctxadd(x, g) {
+    if (length(ctx) <= 4096) ctx = (ctx == "") ? x : ctx " " x
+    if (!g && length(ctxg) <= 4096) ctxg = (ctxg == "") ? x : ctxg " " x
+  }
   function emitword(endp,   r) {
     if (wb != "") { wval = wval wb; wb = "" }
     if (inword) {
-      if (wq && wval ~ /[[:space:];&|<>()`$]/ && needle(wval)) rec("Q", wstart, endp, (length(ctx) > 4096) ? "LONG" : ctx, wval)
-      if (glued) { inword = 0; wval = ""; wb = ""; wq = 0; glued = 0; return }
-      r = wval; gsub(/[[:space:]]/, "x", r); ctxadd(r)
-      if (base(wval) ~ /^(r?ba|z|da|k|mk|a|fi|tc|c|y)?sh$|^(ssh|eval|source|\.)$/) hasshell = 1
+      if (wq && wval ~ /[[:space:];&|<>()`$]/ && needle(wval)) {
+        rec("Q", wstart, endp, (length(ctx) > 4096) ? "LONG" : ctx, wval)
+        if (ctxg != ctx) rec("Q", wstart, endp, (length(ctxg) > 4096) ? "LONG" : ctxg, wval)
+      }
+      # In the context a substitution counts as empty (`"$(true)"eval` runs eval).
+      r = wval; gsub(/\$\([^()]*\)/, "", r); gsub(/`[^`]*`/, "", r); gsub(/[[:space:]]/, "x", r)
+      ctxadd(r, glued); glued = 0
+      if (base(r) ~ RUNNER) anyshell = 1
       if (first == "" && (wval == "command" || wval == "builtin")) { }
       else if (first == "") { first = base(wval); skipping = 1 }
       else if (skipping && ((first == "echo" && wval ~ /^-[neE]+$/) || (first == "printf" && wval == "--"))) { }
@@ -3950,24 +3967,18 @@ _out_sw_scan() {
       if (first == "printf") v = pfmt(); else { v = av[1]; for (k = 2; k <= na; k++) v = v " " av[k] }
       if (needle(v)) { pend = 1; ps = argstart; pe = argend; pv = v }
     }
-    nw = 0; na = 0; alen = 0; first = ""; argstart = -1; skipping = 0; ctx = ""; hasshell = 0
+    nw = 0; na = 0; alen = 0; first = ""; argstart = -1; skipping = 0; ctx = ""; ctxg = ""
     cb = 1
   }
-  BEGIN { off = 0; st = 0; esc = 0; inword = 0; argstart = -1; ctx = ""; nh = 0; hq = 0; nrec = 0; sd = 0; cb = 1
+  # A word naming a shell or a runner anywhere in the command: heredoc bodies are then code.
+  BEGIN { RUNNER = "^(r?ba|z|da|k|mk|a|fi|tc|c|y)?sh$|^(ssh|autossh|slogin|rsh|mosh|eval|source|\\.|sudo|doas|su|runuser|script|parallel|sem|at|batch|xargs|env|exec|docker|podman|kubectl|nsenter|chroot|expect|tmux|screen)$"
+          off = 0; st = 0; esc = 0; inword = 0; argstart = -1; ctx = ""; ctxg = ""; nh = 0; hq = 0; nrec = 0; sd = 0; cb = 1; nb = 0
           for (k = 1; k < 256; k++) ORD[sprintf("%c", k)] = k }
-  {
-    line = $0; L = length(line)
-    # A heredoc body starts on the line after its `<<`. Its delimiter line ends it and resets
-    # the quote state. The body of a heredoc fed to a shell (or ssh, eval, source) is code and
-    # is scanned; any other body is text and is skipped.
-    if (nh > hq && NR > hl[hq + 1]) {
-      t = line; if (hs[hq + 1]) sub(/^\t+/, "", t)
-      if (t == hd[hq + 1]) { hq++; st = 0; sd = 0; esc = 0; inword = 0; wval = ""; wb = ""; endcmd(";", off + L); off += L + 1; next }
-      if (!hx[hq + 1]) { off += L + 1; next }
-    }
+  function scanline(line, L, off0,   i, c, pos, n2, d, op) {
+    endcont = 0
     for (i = 1; i <= L + 1; i++) {
       c = (i <= L) ? substr(line, i, 1) : "\n"
-      pos = off + i - 1
+      pos = off0 + i - 1
       if (st == 1) { if (c == "\047") st = 0; else wadd(c); continue }
       if (st == 3) {
         if (esc) { esc = 0; araw = araw c; continue }
@@ -3975,7 +3986,6 @@ _out_sw_scan() {
         if (c == "\047") { st = 0; wadd(unesc(araw)); continue }
         araw = araw c; continue
       }
-      if (st == 6) { if (c == "(") ad++; else if (c == ")" && --ad == 0) st = 0; continue }
       if (st == 2) {
         # Inside double quotes, with $( ), backticks and their own quotes nested: sk[] holds
         # D (double quotes), S ($( )), B (backticks), Q (single quotes inside S or B).
@@ -4003,7 +4013,7 @@ _out_sw_scan() {
       if (st == 4) { if (c == "\n") { st = 0; endcmd(";", pos) } continue }
       if (esc) {
         esc = 0; cb = 0
-        if (c == "\n") continue
+        if (c == "\n") { endcont = 1; continue }
         startw(pos - 1); wadd(c); wq = 1
         continue
       }
@@ -4014,10 +4024,10 @@ _out_sw_scan() {
         n2 = substr(line, i + 1, 1)
         if (n2 == "\047") { startw(pos); st = 3; araw = ""; wq = 1; i++; cb = 0; continue }
         if (n2 == "\"") { startw(pos); st = 2; sd = 1; sk[1] = "D"; wq = 1; i++; cb = 0; continue }
-        if (n2 == "(" && substr(line, i + 2, 1) == "(") { startw(pos); wadd("0"); st = 6; ad = 2; i += 2; cb = 0; continue }
-        if (n2 == "(") { endcmd(";", pos + 1); i++; continue }
+        if (n2 == "(") { endcmd(";", pos + 1); i++; if (ar > 0) ar++; else if (substr(line, i + 1, 1) == "(") ar = 1; continue }
+        if (n2 == "{") { startw(pos); wadd("${"); i++; bd++; cb = 0; continue }
+        if (n2 == "[") { startw(pos); wadd("$["); i++; bk++; cb = 0; continue }
       }
-      if (c == "(" && !inword && substr(line, i + 1, 1) == "(") { st = 6; ad = 2; i++; continue }
       # `#` opens a comment only where a word may begin: not after `)` or a backtick
       # (`echo $(true)#x` is one word to bash).
       if (c == "#" && !inword && cb) { st = 4; continue }
@@ -4028,11 +4038,11 @@ _out_sw_scan() {
         else endcmd("|", pos)
         continue
       }
-      if (c == "(") { endcmd("(", pos); continue }
-      if (c == ")") { endcmd(")", pos); cb = 0; continue }
+      if (c == "(") { if (ar > 0) ar++; else if (!inword && substr(line, i + 1, 1) == "(") ar = 1; endcmd("(", pos); continue }
+      if (c == ")") { if (ar > 0) ar--; endcmd(")", pos); cb = 0; continue }
       if (c == "`") { endcmd(";", pos); inbt = !inbt; cb = inbt; continue }
       if (c == "\n" || c == ";" || c == "&") { endcmd(";", pos); continue }
-      if (c == "<" && substr(line, i + 1, 1) == "<" && substr(line, i + 2, 1) != "<") {
+      if (c == "<" && substr(line, i + 1, 1) == "<" && substr(line, i + 2, 1) != "<" && ar == 0 && bd == 0 && bk == 0) {
         emitword(pos); ctxadd("<<"); i += 2; strip = 0
         if (substr(line, i, 1) == "-") { strip = 1; i++ }
         while (i <= L && (substr(line, i, 1) == " " || substr(line, i, 1) == "\t")) i++
@@ -4041,10 +4051,11 @@ _out_sw_scan() {
           d = substr(line, i, 1)
           if (d == "\047" || d == "\"") { i++; while (i <= L && substr(line, i, 1) != d) dl = dl substr(line, i++, 1); i++; continue }
           if (d == "\\") { dl = dl substr(line, i + 1, 1); i += 2; continue }
+          if (d == "$" && (substr(line, i + 1, 1) == "\047" || substr(line, i + 1, 1) == "\"")) { i++; continue }
           if (d ~ /[[:space:];&|<>()]/) break
           dl = dl d; i++
         }
-        if (dl != "") { hd[++nh] = dl; hs[nh] = strip; hl[nh] = NR; hx[nh] = hasshell }
+        if (dl != "") { hd[++nh] = dl; hs[nh] = strip; hl[nh] = NR }
         i--; cb = 1; continue
       }
       if (c == "<" || c == ">") {
@@ -4053,11 +4064,40 @@ _out_sw_scan() {
         ctxadd(op); cb = 1
         continue
       }
+      if (bd > 0) { if (c == "{") bd++; else if (c == "}") bd-- }
+      if (bk > 0) { if (c == "[") bk++; else if (c == "]") bk-- }
       startw(pos); wadd(c); cb = 0
     }
+  }
+  {
+    line = $0; L = length(line)
+    # A heredoc body starts on the line after its `<<`, or after the logical line when that
+    # line is continued with a backslash; its delimiter line ends it. Bodies are kept and read
+    # at the end, as code, when the command names a shell or a runner anywhere (`cat <<EOF |
+    # sh`, `<<EOF bash`, `cat > x.sh <<EOF ... bash x.sh`) or when a heredoc never closes (it
+    # may be one bash never opened); otherwise they are text (a commit message, a file).
+    if (prevcont) for (k = hq + 1; k <= nh; k++) if (hl[k] == NR - 1) hl[k] = NR
+    if (nh > hq && NR > hl[hq + 1]) {
+      t = line; if (hs[hq + 1]) sub(/^\t+/, "", t)
+      if (t == hd[hq + 1]) { hq++; prevcont = 0; off += L + 1; next }
+      bl[++nb] = line; bo[nb] = off; bg[nb] = hq + 1
+      prevcont = 0; off += L + 1; next
+    }
+    scanline(line, L, off); prevcont = endcont
     off += L + 1
   }
-  END { if (done) exit; if (inword) emitword(off); endcmd(";", off) }
+  END {
+    if (done) exit
+    if (inword) emitword(off); endcmd(";", off)
+    if (nb > 0 && (anyshell || nh > hq)) {
+      for (k = 1; k <= nb; k++) {
+        if (k == 1 || bg[k] != bg[k - 1]) { st = 0; sd = 0; esc = 0; inword = 0; wval = ""; wb = ""; endcmd(";", bo[k]) }
+        scanline(bl[k], length(bl[k]), bo[k])
+        if (done) exit
+      }
+      if (inword) emitword(off); endcmd(";", off)
+    }
+  }
   '
 }
 _OUT_SW_SH='(/[^[:space:]]*/)?(r?ba|z|da|k|mk|a|fi|tc|c|y)?sh'

@@ -995,10 +995,18 @@ swallowed the bodies after it (each body must now parse on its own, `bash -n`), 
 quotes inside a double-quoted `$( )`, an empty heredoc and `<<` inside `$(( ))`, a quoted
 heredoc delimiter holding a space or `;`, ssh joining its trailing words
 (`ssh host true '&&' '...'`) and `-o ProxyCommand=...`/`LocalCommand`, quoted or escaped wrapper
-names (`'bash' -c`, `ev''al`), `bash +e -c` and `rbash`; and two false positives: heredoc text
-(a commit message or a file written with `cat`) is no longer scanned unless the heredoc feeds a
-shell, ssh, eval or source, and needles match as words, so `chicken breast` and `peas` no longer
-count. The review also measured a child and a grandchild on 190 KB at 12.9 s with mawk; bodies
+names (`'bash' -c`, `ev''al`), `bash +e -c` and `rbash`; and two false positives: needles match
+as words, so `chicken breast` and `peas` no longer count, and heredoc text (a commit message, a
+file written with `cat`) is not read as code. The confirmation review of that found the first
+heredoc rule (read a body only when its own command named a shell) failing open, and fixed with
+it (rows `SW3`): bodies are now read as code whenever the command names a shell or runner
+anywhere (`cat <<EOF | sh`, `<<EOF bash`, `sudo -s <<EOF`, a script written then run) or a
+heredoc never closes; `<<` inside `${ }`, `$[ ]` or arithmetic, a `$'EOF'` delimiter and a
+continued `<<` line no longer open a heredoc bash never opens; `$((echo a); ...)` is lexed as
+the commands bash runs; a word glued after `)` or a backtick (`$(true)bash -c`, `case x in x)eval`)
+is judged both ways; the needle test drops `${...}`, `$(...)`, backticks and backslash-newlines
+(`e${U}as update`); and the printf format filler is capped (a 3 KB format with 1000 arguments ran
+past the timeout with mawk, row `ND5g`). The review also measured a child and a grandchild on 190 KB at 12.9 s with mawk; bodies
 are now capped at 64 KB and 100 per command. Fails closed: a third nesting level, more than
 2000 listed bodies, more than 400 wrapper-context evaluations, more than 100 bodies or 64 KB of
 them, a body that does not parse, and the scan's `\001`/`\002` separators in the command. Cost:
