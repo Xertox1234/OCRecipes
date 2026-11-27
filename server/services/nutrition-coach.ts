@@ -507,7 +507,7 @@ export async function* generateCoachProResponse(
       // truncated or empty reply. Yielding a short wrap-up keeps the
       // conversation coherent and signals why we stopped. (H6 — 2026-04-18)
       const truncationMsg =
-        "\n\n*I've run out of tool-call budget for this response. Please ask a follow-up and I'll continue.*";
+        "\n\n*That's as many lookups as I can do in one reply. Ask a follow-up and I'll pick up from here.*";
       fullResponse += truncationMsg;
       yield { type: "content", content: truncationMsg };
       break;
