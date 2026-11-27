@@ -185,6 +185,14 @@ describe("coach step labels (show-the-work spec 2026-11-09)", () => {
     );
   });
 
+  it("the reminders card has a step label and a trail entry (A3)", () => {
+    expect(toolStep(call("set_reminders", {}), { writeCards: true })).toEqual({
+      label: "Preparing a reminders card…",
+      trail: "reminders card",
+    });
+    expect(plainStatusLabel("set_reminders")).toBe("Preparing your reminders…");
+  });
+
   it("plainStatusLabel keeps today's labels for read tools", () => {
     expect(plainStatusLabel("get_pantry_items")).toBe("Checking your pantry…");
     expect(plainStatusLabel("get_grocery_lists")).toBe(

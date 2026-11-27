@@ -10,6 +10,7 @@ import {
   pantryKept,
   pantryRowAmount,
   PANTRY_ACTION_LABEL,
+  remindersValues,
 } from "../coach-write-card-math";
 import type {
   FoodCardPayload,
@@ -18,6 +19,7 @@ import type {
   PlanRecipeRef,
   PantryCardPayload,
 } from "../../schemas/coach-write-cards";
+import { REMINDER_LABELS } from "../../schemas/coach-write-cards";
 
 const per = (calories: number) => ({ calories, protein: 6, carbs: 0, fat: 5 });
 
@@ -299,6 +301,31 @@ describe("pantry card", () => {
     expect(writeCardReceipt("goals", goals, { values: [2100, 150] })).toBe(
       "✓ Goals updated · 2,100 cal · 150 g protein",
     );
+  });
+});
+
+describe("reminders card (Coach roadmap A3)", () => {
+  const reminders = {
+    changes: [
+      { key: "meal-log" as const, on: false },
+      { key: "daily-checkin" as const, on: true },
+    ],
+  };
+
+  it("each row holds the user's switch, else the proposal", () => {
+    expect(remindersValues(reminders, {})).toEqual([false, true]);
+    expect(remindersValues(reminders, { on: [true] })).toEqual([true, true]);
+  });
+
+  it("button and receipt name each reminder and where it ends up", () => {
+    expect(writeCardButtonLabel("reminders", reminders, {})).toBe(
+      "Update reminders",
+    );
+    expect(writeCardReceipt("reminders", reminders, {})).toBe(
+      "✓ Reminders updated · Meal logging nudges off · Daily check-in on",
+    );
+    expect(REMINDER_LABELS["pantry-expiring"]).toBe("Expiring food");
+    expect(REMINDER_LABELS.commitment).toBe("Commitment follow-ups");
   });
 });
 

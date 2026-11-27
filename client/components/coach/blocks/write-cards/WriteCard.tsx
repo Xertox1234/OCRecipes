@@ -9,6 +9,7 @@ import {
   groceryKept,
   pantryKept,
   planKept,
+  remindersValues,
   writeCardButtonLabel,
 } from "@shared/lib/coach-write-card-math";
 import {
@@ -25,6 +26,9 @@ import {
   PantryCardPayload,
   PlanCardEdits,
   PlanCardPayload,
+  REMINDER_LABELS,
+  type RemindersCardEdits,
+  type RemindersCardPayload,
   WriteCardBlock,
   WriteCardEdits,
   WriteCardStatus,
@@ -43,6 +47,7 @@ import { GoalsWriteCard } from "./GoalsWriteCard";
 import { GroceryWriteCard } from "./GroceryWriteCard";
 import { PantryWriteCard } from "./PantryWriteCard";
 import { PlanWriteCard } from "./PlanWriteCard";
+import { RemindersWriteCard } from "./RemindersWriteCard";
 import {
   atOnceUndoShown,
   cardUiState,
@@ -95,6 +100,14 @@ function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
     // The severity is the user's to choose; there is nothing to save before.
     case "allergy":
       return (edits as AllergyCardEdits).severity !== undefined;
+    // At least one switch left the way the Coach proposed: a card with every
+    // row switched back would change nothing.
+    case "reminders": {
+      const p = block.payload as RemindersCardPayload;
+      return remindersValues(p, edits as RemindersCardEdits).some(
+        (v, i) => v === p.changes[i].on,
+      );
+    }
   }
 }
 
@@ -117,6 +130,11 @@ function lockedSummary(block: WriteCardBlock): string {
   if (block.kind === "goals") {
     const n = (block.payload as GoalsCardPayload).rows.length;
     return `${n} daily goal${n === 1 ? "" : "s"}`;
+  }
+  if (block.kind === "reminders") {
+    return (block.payload as RemindersCardPayload).changes
+      .map((c) => REMINDER_LABELS[c.key])
+      .join(", ");
   }
   const n = (block.payload as PlanCardPayload).rows.length;
   return `${n} planned meal${n === 1 ? "" : "s"}`;
@@ -273,6 +291,12 @@ export default function WriteCard({
         <GoalsWriteCard
           payload={block.payload as GoalsCardPayload}
           edits={edits as GoalsCardEdits}
+          onEdit={onEdit}
+        />
+      ) : block.kind === "reminders" ? (
+        <RemindersWriteCard
+          payload={block.payload as RemindersCardPayload}
+          edits={edits as RemindersCardEdits}
           onEdit={onEdit}
         />
       ) : (

@@ -129,3 +129,29 @@ export function atOnceUndoShown(a: {
     !a.closed
   );
 }
+
+/**
+ * The reminders card's words for one row (Coach roadmap A3): how the
+ * reminder is now and what Save does to it, as a short caption and as the
+ * switch's screen-reader hint. `proposed` is the Coach's switch: the card
+ * only holds reminders that would change, so the reminder is now the other
+ * way. `value` is the switch as the user left it.
+ */
+export function reminderRowText(
+  proposed: boolean,
+  value: boolean,
+): { caption: string; hint: string } {
+  const now = proposed ? "off" : "on";
+  const Now = proposed ? "Off" : "On";
+  const after = value ? "on" : "off";
+  if (value === !proposed) {
+    return {
+      caption: `${Now} now · no change`,
+      hint: `${Now} now. Saving the card leaves it ${now}.`,
+    };
+  }
+  return {
+    caption: `${Now} now · turns ${after}`,
+    hint: `${Now} now. Saving the card turns it ${after}.`,
+  };
+}

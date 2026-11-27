@@ -1624,6 +1624,79 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(onWriteCardProposal).not.toHaveBeenCalled();
   });
 
+  it("set_reminders is offered, and run, only when the app can show the reminders card (A3)", async () => {
+    expect(toolNames({ writeCards: true })).not.toContain("set_reminders");
+    expect(toolNames({ remindersCard: true })).not.toContain("set_reminders");
+    expect(toolNames({ writeCards: true, remindersCard: true })).toContain(
+      "set_reminders",
+    );
+    const onWriteCardProposal = vi.fn();
+    await expect(
+      executeToolCall(
+        "set_reminders",
+        { mealLog: false },
+        "user-1",
+        null,
+        "UTC",
+        { writeCards: true, onWriteCardProposal },
+      ),
+    ).rejects.toThrow(/Unknown tool/);
+    expect(onWriteCardProposal).not.toHaveBeenCalled();
+  });
+
+  it("set_reminders proposes a card and tells the coach what it shows", async () => {
+    const onWriteCardProposal = vi.fn().mockResolvedValue({
+      kind: "reminders",
+      shown: true,
+      rows: "Meal logging nudges off on the card (now on)",
+    });
+    const result = await executeToolCall(
+      "set_reminders",
+      { mealLog: false },
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true, remindersCard: true, onWriteCardProposal },
+    );
+    expect(onWriteCardProposal).toHaveBeenCalledWith({
+      kind: "reminders",
+      args: { mealLog: false },
+    });
+    expect(result).toMatchObject({ card_shown: true });
+    expect(JSON.stringify(result)).toMatch(/Meal logging nudges off/);
+    expect(JSON.stringify(result)).toMatch(/Nothing has been saved/);
+  });
+
+  it("set_reminders says when no card was made, and refuses empty arguments", async () => {
+    const result = await executeToolCall(
+      "set_reminders",
+      { mealLog: true },
+      "user-1",
+      null,
+      "UTC",
+      {
+        writeCards: true,
+        remindersCard: true,
+        onWriteCardProposal: async () => ({
+          kind: "reminders" as const,
+          shown: false,
+          rows: "",
+        }),
+      },
+    );
+    expect(result).toMatchObject({ card_shown: false });
+    expect(JSON.stringify(result)).toMatch(/already/);
+    const onWriteCardProposal = vi.fn();
+    expect(
+      await executeToolCall("set_reminders", {}, "user-1", null, "UTC", {
+        writeCards: true,
+        remindersCard: true,
+        onWriteCardProposal,
+      }),
+    ).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    expect(onWriteCardProposal).not.toHaveBeenCalled();
+  });
+
   it("update_pantry rejects arguments that do not parse", async () => {
     const onWriteCardProposal = vi.fn();
     const result = await executeToolCall(

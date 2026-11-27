@@ -24,7 +24,8 @@ export interface CoachStreamExtras {
  * (T3): the seven-day card that does the same. "more_charts" (T4): this
  * build draws ring, sparkline and heatmap charts. "label_compare" (T4): two
  * scanned products side by side. "weekly_report" (A3): the user's weekly
- * report as a card that opens the full report.
+ * report as a card that opens the full report. "reminders" (A3): a card that
+ * switches the Coach Reminders types on and off.
  */
 const EXTRA_CARD_KINDS = [
   "pantry",
@@ -37,6 +38,7 @@ const EXTRA_CARD_KINDS = [
   "more_charts",
   "label_compare",
   "weekly_report",
+  "reminders",
 ] as const;
 
 /** The POST body for a coach message; unset extras are left out. */

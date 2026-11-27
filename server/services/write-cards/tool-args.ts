@@ -5,6 +5,7 @@ import {
   writeCardDaySchema,
   writeCardMealTypeSchema,
   type GoalKey,
+  type ReminderKey,
 } from "@shared/schemas/coach-write-cards";
 import type { AllergenId } from "@shared/constants/allergens";
 import { containsUnsafeCoachAdvice } from "../../lib/ai-safety";
@@ -148,12 +149,41 @@ export const setGoalsCardArgsSchema = z
   });
 export type SetGoalsCardArgs = z.infer<typeof setGoalsCardArgsSchema>;
 
+/**
+ * Reminders card (Coach roadmap A3): each reminder type the user wants on
+ * (true) or off (false), by the tool's plain names.
+ */
+export const REMINDER_ARG_KEYS = {
+  mealLog: "meal-log",
+  commitment: "commitment",
+  dailyCheckin: "daily-checkin",
+  expiringFood: "pantry-expiring",
+} as const satisfies Record<string, ReminderKey>;
+type ReminderArgKey = keyof typeof REMINDER_ARG_KEYS;
+
+export const setRemindersCardArgsSchema = z
+  .object({
+    mealLog: z.boolean().optional(),
+    commitment: z.boolean().optional(),
+    dailyCheckin: z.boolean().optional(),
+    expiringFood: z.boolean().optional(),
+  })
+  .refine(
+    (a) =>
+      (Object.keys(REMINDER_ARG_KEYS) as ReminderArgKey[]).some(
+        (k) => a[k] !== undefined,
+      ),
+    { message: "Give at least one reminder." },
+  );
+export type SetRemindersCardArgs = z.infer<typeof setRemindersCardArgsSchema>;
+
 /** A write tool call in write-card mode, args already validated. */
 export type WriteCardProposal =
   | { kind: "food"; args: LogFoodCardArgs }
   | { kind: "grocery"; args: AddGroceryCardArgs }
   | { kind: "pantry"; args: UpdatePantryCardArgs }
   | { kind: "goals"; args: SetGoalsCardArgs }
+  | { kind: "reminders"; args: SetRemindersCardArgs }
   /** No tool: the server turns the Coach's add_allergy action card into it. */
   | { kind: "allergy"; args: { allergen: AllergenId } }
   | {
@@ -179,6 +209,8 @@ export type WriteCardOutcome =
   | { kind: "pantry"; shown: boolean; rows: string[]; dropped: number }
   /** goals: `rows` is the card's own line (goal names and numbers only). */
   | { kind: "goals"; shown: boolean; rows: string }
+  /** reminders: `rows` is the card's own line (reminder names, on or off). */
+  | { kind: "reminders"; shown: boolean; rows: string }
   /**
    * plan: `meals` are the card's rows ("2026-11-25 dinner: Lentil stew") and
    * `dropped` counts the asked-for meals whose recipe could not be used.

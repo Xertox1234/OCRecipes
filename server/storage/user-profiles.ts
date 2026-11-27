@@ -285,6 +285,26 @@ export async function withdrawHealthConsent(
   });
 }
 
+type RemindersExecutor = Pick<typeof db, "select" | "insert">;
+
+/**
+ * One user's reminder mutes ({} with no profile row yet). Pass a transaction
+ * and `forUpdate` to read them inside a save (the Coach's reminders card), so
+ * a change made meanwhile on the settings screen is not written over.
+ */
+export async function getUserReminderMutes(
+  userId: string,
+  executor: RemindersExecutor = db,
+  opts: { forUpdate?: boolean } = {},
+): Promise<ReminderMutes> {
+  const query = executor
+    .select({ reminderMutes: userProfiles.reminderMutes })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId));
+  const [row] = await (opts.forUpdate ? query.for("update") : query);
+  return row?.reminderMutes ?? {};
+}
+
 /**
  * Merges reminder mutes into the user's profile, creating a bare profile row
  * (every other column defaults) when none exists yet — a plain UPDATE would
@@ -294,8 +314,9 @@ export async function withdrawHealthConsent(
 export async function saveReminderMutes(
   userId: string,
   mutes: Partial<ReminderMutes>,
+  executor: RemindersExecutor = db,
 ): Promise<ReminderMutes> {
-  const [row] = await db
+  const [row] = await executor
     .insert(userProfiles)
     .values({ userId, reminderMutes: mutes })
     .onConflictDoUpdate({

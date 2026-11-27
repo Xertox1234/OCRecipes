@@ -77,6 +77,7 @@ export interface TurnInput {
       | "more_charts"
       | "label_compare"
       | "weekly_report"
+      | "reminders"
     )[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
@@ -502,6 +503,8 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
       !!ctx.body.cardKinds?.includes("pantry") && !!features.pantryTracking,
     // The goals card needs only an app that can draw it.
     goalsCard: !!ctx.body.cardKinds?.includes("goals"),
+    // Coach roadmap A3: the reminders card needs only an app that draws it.
+    remindersCard: !!ctx.body.cardKinds?.includes("reminders"),
     allergyCard: !!ctx.body.cardKinds?.includes("allergy"),
     planShopCard: !!ctx.body.cardKinds?.includes("plan_shop"),
     // Coach roadmap T2: the app shows a food log applied at once, with Undo.

@@ -27,6 +27,7 @@ const KINDS: WriteCardKind[] = [
   "pantry",
   "goals",
   "allergy",
+  "reminders",
 ];
 
 describe("readCardPayload", () => {

@@ -406,6 +406,7 @@ export {
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,
+  getUserReminderMutes,
   getReminderMutes,
   setFamilyPlanningEnabled,
   upsertProfileWithOnboarding,

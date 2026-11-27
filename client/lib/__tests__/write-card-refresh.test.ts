@@ -51,6 +51,12 @@ describe("writeCardRefreshKeys", () => {
     ]);
   });
 
+  it("a reminders card refreshes the profile the Coach Reminders screen reads (A3)", () => {
+    expect(writeCardRefreshKeys("reminders")).toEqual([
+      ["/api/user/dietary-profile"],
+    ]);
+  });
+
   it("an unknown kind refreshes nothing extra", () => {
     expect(writeCardRefreshKeys(undefined)).toEqual([]);
   });

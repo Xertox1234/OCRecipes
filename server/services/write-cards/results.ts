@@ -12,6 +12,7 @@ export const WRITE_CARD_TOOL_NAMES: ReadonlySet<string> = new Set([
   "add_to_grocery_list",
   "update_pantry",
   "set_nutrition_goals",
+  "set_reminders",
 ]);
 
 /**
@@ -178,6 +179,27 @@ export function goalsCardResult(outcome: void | WriteCardOutcome) {
       card_shown: false,
       message:
         "No goals card was made: these are already the user's goals, and nothing has changed. Do not tell the user to tap a card.",
+    };
+  }
+  return {
+    card_shown: true,
+    message: `${CARD_SHOWN_MESSAGE} The card shows: ${outcome.rows}.`,
+  };
+}
+
+/**
+ * The reminders card's result (Coach roadmap A3). The line holds only the
+ * settings screen's reminder names and on or off, so it needs no sanitizing.
+ */
+export function remindersCardResult(outcome: void | WriteCardOutcome) {
+  if (!outcome || outcome.kind !== "reminders") {
+    return { card_shown: true, message: CARD_SHOWN_MESSAGE };
+  }
+  if (!outcome.shown) {
+    return {
+      card_shown: false,
+      message:
+        "No reminders card was made: these reminders are already set that way, and nothing has changed. Tell the user they are already that way, and do not call set_reminders again for them or tell the user to tap a card.",
     };
   }
   return {

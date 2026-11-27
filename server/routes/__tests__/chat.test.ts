@@ -868,6 +868,14 @@ describe("Chat Routes", () => {
       const goalsOpts = vi.mocked(generateCoachProResponse).mock.calls[0][7];
       expect(goalsOpts).toMatchObject({ goalsCard: true });
       expect(goalsOpts).not.toHaveProperty("pantryCard");
+      // The reminders card (A3) likewise needs only the app to declare it.
+      vi.mocked(generateCoachProResponse).mockClear();
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect((await send({ cardKinds: ["reminders"] })).status).toBe(200);
+      expect(
+        vi.mocked(generateCoachProResponse).mock.calls[0][7],
+      ).toMatchObject({ remindersCard: true });
       // 'allergy' is a known kind too (it has no tool; the turn reads it).
       mockStreamingSetup();
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
@@ -945,6 +953,7 @@ describe("Chat Routes", () => {
               "more_charts",
               "label_compare",
               "weekly_report",
+              "reminders",
             ],
           })
         ).status,

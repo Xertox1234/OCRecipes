@@ -9,6 +9,7 @@ import {
   saveErrorMessage,
   stackCardRow,
   stepCount,
+  reminderRowText,
 } from "../write-card-utils";
 
 describe("stackCardRow", () => {
@@ -121,5 +122,26 @@ describe("atOnceUndoShown", () => {
   it("ends once undone, or once the server said it is too late", () => {
     expect(atOnceUndoShown({ ...shown, status: "live" })).toBe(false);
     expect(atOnceUndoShown({ ...shown, closed: true })).toBe(false);
+  });
+});
+
+describe("reminderRowText (Coach roadmap A3)", () => {
+  it("says how a reminder is now and what Save does to it", () => {
+    // The Coach proposes on, so it is off now.
+    expect(reminderRowText(true, true)).toEqual({
+      caption: "Off now · turns on",
+      hint: "Off now. Saving the card turns it on.",
+    });
+    expect(reminderRowText(false, false)).toEqual({
+      caption: "On now · turns off",
+      hint: "On now. Saving the card turns it off.",
+    });
+  });
+
+  it("says a row switched back will not change", () => {
+    expect(reminderRowText(true, false)).toEqual({
+      caption: "Off now · no change",
+      hint: "Off now. Saving the card leaves it off.",
+    });
   });
 });
