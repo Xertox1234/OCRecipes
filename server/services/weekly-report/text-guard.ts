@@ -33,7 +33,7 @@ export const BANNED_WORDS = [
 ] as const;
 // A straight apostrophe in the list also matches a curly one in the text.
 const BANNED_RE = new RegExp(
-  `\\b(${BANNED_WORDS.map((w) => w.replace("'", "['’]")).join("|")})\\b`,
+  `\\b(${BANNED_WORDS.map((w) => w.replace(/'/g, "['’]")).join("|")})\\b`,
   "i",
 );
 const LAST_WEEK_RE = /\blast week\b/i;
