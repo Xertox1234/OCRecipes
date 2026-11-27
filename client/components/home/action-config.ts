@@ -17,6 +17,9 @@ export function navigateAction(
 ) {
   switch (action.id) {
     // Camera & Scanning
+    case "snap-anything":
+      navigation.navigate("Scan", { mode: "smart" });
+      break;
     case "scan-barcode":
       navigation.navigate("Scan");
       break;
@@ -24,7 +27,7 @@ export function navigateAction(
       navigation.navigate("ReceiptCapture");
       break;
     case "scan-menu":
-      navigation.navigate("PhotoIntent");
+      navigation.navigate("Scan", { intent: "menu" });
       break;
     case "photo-food-log":
       navigation.navigate("Scan", { intent: "log" });
@@ -80,6 +83,13 @@ export function navigateAction(
 
 export const HOME_ACTIONS: HomeAction[] = [
   // Camera & Scanning
+  {
+    id: "snap-anything",
+    group: "scanning",
+    icon: "aperture",
+    label: "Snap anything",
+    subtitle: "We'll work out what it is",
+  },
   {
     id: "scan-barcode",
     group: "scanning",
