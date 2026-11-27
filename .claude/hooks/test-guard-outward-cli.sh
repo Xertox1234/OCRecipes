@@ -7592,7 +7592,7 @@ assert_deny "SW a third level of nesting fails closed" "$(jsonc "bash -c \"bash 
 # Heredocs: an apostrophe in a heredoc body does not open a quote past its delimiter.
 assert_allow "SW control: an apostrophe in a heredoc body" "$(jsonc "$(printf "cat <<'EOF' > notes.md\nwe don't ship it, it's fine\nnpm test\nEOF\necho done")")"
 assert_deny "SW a wrapper after a heredoc with an apostrophe" "$(jsonc "$(printf "cat <<'EOF' > n.md\nwe don't ship\nEOF\nbash -c 'eas update'")")" "eas update/publish/submit"
-# The caps: more than 2000 listed bodies, or more than 400 command-position evaluations, deny.
+# The caps: more than 5000 listed bodies, or more than 400 command-position evaluations, deny.
 sw_many=$(awk 'BEGIN { for (i = 0; i < 5001; i++) printf "echo sh %cnpm run %d%c; ", 39, i, 39; print "true" }')
 assert_deny "SW more than 5000 quoted strings naming a gated word fail closed" "$(jsonc "$sw_many")" "more than 5000 quoted strings"
 sw_many=$(awk 'BEGIN { for (i = 0; i < 401; i++) printf "env A=%d %cnpm run x%c; ", i, 39, 39; print "true" }')
