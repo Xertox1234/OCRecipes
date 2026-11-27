@@ -10,8 +10,8 @@ import type { CoachIntent } from "../coach-intent-classifier";
 describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
-  it("matches the pinned value (last intended edit: the chart rule names either chart block, 2026-11-26)", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("35676056fb3759be");
+  it("matches the pinned value (last intended edit: the chart rule names progress cards too, 2026-11-26)", () => {
+    expect(getSystemPromptTemplateVersion()).toBe("3a098f321cad1e6b");
   });
 });
 

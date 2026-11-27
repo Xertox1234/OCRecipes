@@ -22,6 +22,7 @@ describe("buildCoachStreamBody", () => {
         "plan_shop",
         "quick_log",
         "day_progress",
+        "week_progress",
       ],
       liveCard: {
         cardId: "11111111-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
@@ -62,6 +63,7 @@ describe("buildCoachStreamBody", () => {
         "plan_shop",
         "quick_log",
         "day_progress",
+        "week_progress",
       ],
     });
     expect(buildCoachStreamBody("hi", "tk", {})).not.toHaveProperty(

@@ -92,8 +92,20 @@ Then re-rank.
       minutes). Bigger logs, photo, label and barcode reads, and every other
       card kind still wait on Save. Left for later: the same for small
       grocery adds, and a setting to turn it off.
-- [ ] **T3. Living blocks.** A block stores a query instead of a snapshot and
+- [x] **T3. Living blocks.** A block stores a query instead of a snapshot and
       re-reads it, so an old card shows current numbers. Value: medium. Size: M.
+      Two cards. PR #2078: the day card (`day_progress`, today or yesterday:
+      calories, protein, carbs and fat against the goals). This PR: the week
+      card (`week_progress`, the last seven days' calories against the
+      calorie goal, with the average of the days logged before today). The
+      model asks for one by name and never writes its numbers; the server
+      stores the date with the numbers as they were, and the app re-reads
+      them (the day card: the day summary and goals Home reads; the week
+      card: `GET /api/daily-summary/week`, one request) under the day
+      summary's cache key, so a log anywhere updates the card. Until
+      the reads arrive (or when one fails) the card shows the reply's numbers
+      and says so. Left for later: other living cards (a week of protein,
+      the weight trend).
 - [ ] **T4. More chart kinds and a compare block.** Ring, sparkline, heatmap,
       and two scanned labels side by side. Value: medium. Size: S.
 
