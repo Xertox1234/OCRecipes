@@ -179,8 +179,9 @@ export async function coachProShownReply(
         goalsCard: !!flags.goalsCard && intent !== "safety_refusal",
         // Recorded, not built: the tool result is the default "card shown"
         // wording, which is what the model reads in production.
-        onWriteCardProposal: async (p) => {
+        onWriteCardProposal: (p) => {
           proposals.push({ kind: p.kind, args: p.args });
+          return Promise.resolve();
         },
         planRecipePool: [],
       }),
