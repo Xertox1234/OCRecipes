@@ -968,7 +968,65 @@ counts as one word), `chroot DIR CMD`, and the flag-only runners `strace`, `ltra
 `nsenter`, `pkexec`, `rlwrap`, `dbus-run-session`, `firejail`, `systemd-run`, `xvfb-run` and
 `parallel` (its command template first: `parallel eas update ::: a`). The `find` words stop at
 `;`, `&` and `|`, so `find . -name x; echo -exec eas update` stays allowed. Same over-read as
-the other wrappers, the safe direction: `ssh -t host echo eas update` denies. Still open:
-`ssh host 'eas update'` (the quoted remote command, the usual spelling, is the string-wrapper
-class, like `find . -exec sh -c 'eas update' \;`); `parallel ::: 'eas update'` and
-`echo eas update | parallel` (the command comes from arguments or stdin); a `gh pr merge {} --auto` behind `find -exec` or `parallel` denies (the safe direction: a `{}` argument already denied bare and behind `xargs -I{}`). Found by the review of that change and fixed with it (rows `RN2`): a `faketime` time word that starts with `-` (`faketime -1d eas update`, `faketime -- eas update`: faketime takes the first word it does not know as the time), and the relatives `cross-env A=1`, `dotenv -e .env --`, `env-cmd -f .env`, `doppler run`, `infisical run`, `nodemon --exec`, `sshpass -p pw ssh HOST`, `autossh`, `slogin` and `sem`. Also found and fixed (row `ND5e`): under a UTF-8 locale the wider regex took 13.8 s on a 199 KB command of `ssh 'h'` words, past the 10 s timeout (7.7 s on `main`); the hook now pins `LC_ALL=C`, 1.4 s. Still open, an open class measured ALLOW on `main` and here: runners not on the list, among them `rsh`, `mosh`, `ssh-agent`, `busybox`, `niceload`, `env_parallel`, `fakeroot`, `fakechroot`, `proot`, `schroot`, `bwrap`, `run0`, `runuser`, `setpriv`, `tmux`, `screen`, `dbus-launch`, `systemd-inhibit`, `torify`, `tsocks`, `aws-vault exec`, `chamber exec`, `n exec`, `nodenv exec`, `uv run`, `poetry run`, `pipenv run`, `conda run`, `pixi run`, `devbox run`, `nix run`/`nix develop -c`, `watchexec`, `entr`, `git submodule foreach`, `git bisect run`, `docker exec`, `kubectl exec`, `perf stat`, `gdb --args`, `lldb --`, `heaptrack`, `prlimit`, `setarch`, `cgexec`, `trickle`, `sandbox-exec`, `ifne`, `lckdo`, `chpst` and `nvm run`.
+the other wrappers, the safe direction: `ssh -t host echo eas update` denies. `ssh host 'eas update'` (the quoted remote command), `parallel ::: 'eas update'` and
+`echo eas update | parallel` were left open here and closed by the string-wrapper change below.
+Still open: a `gh pr merge {} --auto` behind `find -exec` or `parallel` denies (the safe direction: a `{}` argument already denied bare and behind `xargs -I{}`). Found by the review of that change and fixed with it (rows `RN2`): a `faketime` time word that starts with `-` (`faketime -1d eas update`, `faketime -- eas update`: faketime takes the first word it does not know as the time), and the relatives `cross-env A=1`, `dotenv -e .env --`, `env-cmd -f .env`, `doppler run`, `infisical run`, `nodemon --exec`, `sshpass -p pw ssh HOST`, `autossh`, `slogin` and `sem`. Also found and fixed (row `ND5e`): under a UTF-8 locale the wider regex took 13.8 s on a 199 KB command of `ssh 'h'` words, past the 10 s timeout (7.7 s on `main`); the hook now pins `LC_ALL=C`, 1.4 s. Still open, an open class measured ALLOW on `main` and here: runners not on the list, among them `rsh`, `mosh`, `ssh-agent`, `busybox`, `niceload`, `env_parallel`, `fakeroot`, `fakechroot`, `proot`, `schroot`, `bwrap`, `run0`, `runuser`, `setpriv`, `tmux`, `screen`, `dbus-launch`, `systemd-inhibit`, `torify`, `tsocks`, `aws-vault exec`, `chamber exec`, `n exec`, `nodenv exec`, `uv run`, `poetry run`, `pipenv run`, `conda run`, `pixi run`, `devbox run`, `nix run`/`nix develop -c`, `watchexec`, `entr`, `git submodule foreach`, `git bisect run`, `docker exec`, `kubectl exec`, `perf stat`, `gdb --args`, `lldb --`, `heaptrack`, `prlimit`, `setarch`, `cgexec`, `trickle`, `sandbox-exec`, `ifne`, `lckdo`, `chpst` and `nvm run`.
+
+`guard-outward-cli.sh` STRING WRAPPERS, FIXED 2026-11-27 (rows `SW`, `SW2` and `ND5f` in
+`test-guard-outward-cli.sh`): a quoted string that a wrapper runs as code was one word to every
+rendering (`cmd_bare` blanks it, `cmd_words` turns its spaces into `x`), so the outward command
+inside was invisible. Measured ALLOW on `main`: `bash -c 'eas update'`, `sh -c "npm publish"`,
+`eval 'eas update'`, `ssh host 'eas update'`, `su ci -c 'eas update'`, `script -q -c '...'`,
+`env -S '...'`, `watch -n 60 'railway up'`, `flock F -c '...'`, `nodemon --exec '...'`,
+`find . -exec sh -c '...' \;`, `parallel ::: '...'`, `trap '...' EXIT`, `bash <<< '...'`,
+`echo 'eas update' | bash`, `echo eas update | sh`, `docker exec app sh -c '...'`,
+`tmux send-keys '...' Enter` and nesting (`bash -c "ssh host 'eas update'"`). The hook now lists,
+in one awk pass over the command as written, each quoted word whose value holds a space or an
+operator and names a fast-path needle as a word, decides in bash whether a wrapper runs it, and
+judges the bodies with itself in a child, two levels deep. The child can only add a deny, its
+reason leads with the inner check's own text, and it does not honour the inline bypass.
+
+Found by the review of that change and fixed with it (rows `SW2`): `$'...'` escapes
+(`$'eas\x20update'`, `\145`), printf formats (`printf %s '...' | sh`,
+`printf 'eas %s\n' update | bash`), pipes through filters and groups (`| tee x | sh`, `| (sh)`,
+`| { sh; }`, `| source /dev/stdin`, `yes '...' | head -1 | bash`), an unbalanced body that
+swallowed the bodies after it (each body must now parse on its own, `bash -n`), an inline
+`ALLOW_OUTWARD_CLI=1` inside a body, `#` glued after `)` or a backtick (`echo $(true)#; ...`),
+quotes inside a double-quoted `$( )`, an empty heredoc and `<<` inside `$(( ))`, a quoted
+heredoc delimiter holding a space or `;`, ssh joining its trailing words
+(`ssh host true '&&' '...'`) and `-o ProxyCommand=...`/`LocalCommand`, quoted or escaped wrapper
+names (`'bash' -c`, `ev''al`), `bash +e -c` and `rbash`; and two false positives: needles match
+as words, so `chicken breast` and `peas` no longer count, and heredoc text (a commit message, a
+file written with `cat`) is not read as code. The confirmation review of that found the first
+heredoc rule (read a body only when its own command named a shell) failing open, and fixed with
+it (rows `SW3`): bodies are now read as code whenever the command names a shell or runner
+anywhere (`cat <<EOF | sh`, `<<EOF bash`, `sudo -s <<EOF`, a script written then run) or a
+heredoc never closes; `<<` inside `${ }`, `$[ ]` or arithmetic, a `$'EOF'` delimiter and a
+continued `<<` line no longer open a heredoc bash never opens; `$((echo a); ...)` is lexed as
+the commands bash runs; a word glued after `)` or a backtick (`$(true)bash -c`, `case x in x)eval`)
+is judged both ways; the needle test drops `${...}`, `$(...)`, backticks and backslash-newlines
+(`e${U}as update`); and the printf format filler is capped (a 3 KB format with 1000 arguments ran
+past the timeout with mawk, row `ND5g`). A third review, which the owner asked for, found more
+and they are fixed with it (rows `SW4`, `ND5h`): the needle test dropped a substitution inside
+a body (`bash -c 'echo $(eas update)'`; it now matches the text as written or stripped); `$${`
+and `$$[` stuck the brace counters; `#` after a subshell or case `)`, `a[1<<2]=5`, an ANSI-C
+delimiter (`<<$'E\x4fF'`) and a heredoc line ending inside a quote or `$(` opened heredocs bash
+never opens; an empty expansion between a wrapper and its body (`bash -c $(true) '...'`,
+`bash -c $NOPE '...'`); `$( )` in the body of an unquoted-delimiter heredoc, which runs whatever
+the quotes; a script run as `./x.sh`, through `$SHELL` or `$BASH`; an unclosed `${` repeated
+40000 times (16 s with mawk) and 10000 heredocs on a continued line (11 s); and an over-denial:
+a 1700-line script written to a file tripped the record cap, which now counts only strings in a
+wrapper context (and is 5000). Still open from it: a run-time shell name
+(`| "$(command -v bash)"`). The review also measured a child and a grandchild on 190 KB at 12.9 s with mawk; bodies
+are now capped at 64 KB and 100 per command. Fails closed: a third nesting level, more than
+2000 listed bodies, more than 400 wrapper-context evaluations, more than 100 bodies or 64 KB of
+them, a body that does not parse, and the scan's `\001`/`\002` separators in the command. Cost:
+a 55 KB `bash -c` body takes 1.4 s with gawk and 1.7 s with mawk. Over-reads, the safe
+direction: a shell `-c` is read after any words of its simple command (`echo bash -c '...'`
+denies), a pipe into a shell whatever its flags (`| bash -n`), and an ssh body after any words
+(`ssh host echo '...'`). Still open: an option glued to its value (`su --command='...'`,
+`bash -c'...'`), a body built at run time (`bash -c "$CMD"`, `eval "$(cat f)"`,
+`sh -c '"$@"' _ eas update`), a wrapper inside a double-quoted substitution
+(`echo "$(bash -c '...')"`), process substitution (`bash <(echo ...)`), an encoding the fast path
+cannot see (`echo -e '\x65as update' | bash`, base64), `git -c core.sshCommand=...`,
+`GIT_SSH_COMMAND`, `rsync -e`, Tcl bodies (`expect -c 'spawn ...'`), and runners not on the list.
