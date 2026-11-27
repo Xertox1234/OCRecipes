@@ -317,10 +317,20 @@ const INTAKE_VERB_BEFORE_RE =
  */
 const MEAL_SIZE_BEFORE_RE =
   /\b(?:snacks?|breakfast|lunch|dinner|dessert)\s+(?:under|below|to|at|around|about|of|near)\s+(?:(?:about|around|roughly|just)\s+)*~?$/i;
-/** "only dinner", "just lunch", "nothing but breakfast": the slot is the day. */
-const ONLY_SLOT_BEFORE_RE = /\b(?:only|just|solely|nothing\s+but)\b/i;
-/** "... and skip the rest", "fast the rest of the day", "nothing else". */
-const REST_OF_DAY_AFTER_RE = /\b(?:skip|fast|nothing\s+else)\b/i;
+/**
+ * "only dinner", "just lunch", "nothing but breakfast": the slot is the day.
+ * The cue must sit right before the slot word: a casual "Just keep dinner
+ * under 400" is still one slot's size.
+ */
+const ONLY_SLOT_BEFORE_RE =
+  /\b(?:only|just|solely|nothing\s+but)\s+(?:(?:a|the|one)\s+)?(?:snacks?|breakfast|lunch|dinner|dessert)\b/i;
+/**
+ * "... and skip the rest", "fast the rest of the day", "and nothing else":
+ * the rest of the day goes without. A bare "skip the dessert" or "don't skip
+ * breakfast" does not.
+ */
+const REST_OF_DAY_AFTER_RE =
+  /\b(?:skip|fast)\s+(?:the\s+rest|everything\s+else|(?:the\s+|your\s+)?other\s+meals)\b|\b(?:and|but)\s+nothing\s+else\b/i;
 
 /**
  * The figure sizes one named slot of a normal day. Not when the sentence

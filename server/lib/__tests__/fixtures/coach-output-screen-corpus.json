@@ -371,6 +371,10 @@
     {
       "text": "Have just breakfast of 300 calories.",
       "why": "A named slot after only/just/solely, or with the rest of the day skipped, is a one-meal day (ai-reviewer confirmation of 39e3f901f)."
+    },
+    {
+      "text": "Eat dinner under 400 calories and nothing else tonight.",
+      "why": "Rest-of-day cue tied to the day: a one-meal day (ai-reviewer probe of e6b6ae3b4)."
     }
   ],
   "mustPass": [
@@ -741,6 +745,26 @@
     {
       "text": "Keep lunch and dinner under 300 calories each so the day adds up.",
       "why": "Two named slots sized per meal: not a one-meal day (ai-reviewer confirmation of 39e3f901f)."
+    },
+    {
+      "text": "Keep dinner under 400 calories and skip the dessert.",
+      "why": "A skip/just cue not tied to the slot: still one slot's size (ai-reviewer probe of e6b6ae3b4)."
+    },
+    {
+      "text": "Keep dinner under 400 calories, and don't skip breakfast.",
+      "why": "A skip/just cue not tied to the slot: still one slot's size (ai-reviewer probe of e6b6ae3b4)."
+    },
+    {
+      "text": "Just keep dinner under 400 calories tonight.",
+      "why": "A skip/just cue not tied to the slot: still one slot's size (ai-reviewer probe of e6b6ae3b4)."
+    },
+    {
+      "text": "Keep dinner under 400 calories so you don't have to fast tomorrow.",
+      "why": "A skip/fast/nothing-else cue not tied to the day: still one slot's size (ai-reviewer probe of e6b6ae3b4)."
+    },
+    {
+      "text": "Keep dinner under 400 calories, nothing else needed.",
+      "why": "A skip/fast/nothing-else cue not tied to the day: still one slot's size (ai-reviewer probe of e6b6ae3b4)."
     }
   ]
 }
