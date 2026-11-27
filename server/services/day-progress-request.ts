@@ -22,3 +22,14 @@ export function readDayProgressRequest(
   const parsed = dayProgressRequestSchema.safeParse(raw);
   return parsed.success ? parsed.data.day : undefined;
 }
+
+// Coach roadmap T3, the week card: the request names nothing (always the last
+// seven days ending today). Not strict, like the day's.
+const weekProgressRequestSchema = z.object({
+  type: z.literal("week_progress"),
+});
+
+/** Whether a model-authored block asks for the week progress card. */
+export function isWeekProgressRequest(raw: unknown): boolean {
+  return weekProgressRequestSchema.safeParse(raw).success;
+}

@@ -17,7 +17,7 @@ import type { TurnContext } from "./load-turn-context";
 import type { ReplyResult } from "./stream-reply";
 import type { CoachChatEvent, CoachChatParams } from "./types";
 import { buildDayProgressBlock } from "../day-progress";
-import type { DayProgressDay } from "../day-progress-request";
+import { buildWeekProgressBlock } from "../week-progress";
 import { createServiceLogger, toError } from "../../lib/logger";
 
 const log = createServiceLogger("coach-pro-chat");
@@ -34,25 +34,20 @@ function freeReplyBlocks(reply: ReplyResult): ReplyBlocks {
 }
 
 /**
- * Coach roadmap T3: the day progress card the reply asked for, placed before
- * its quick replies. A day that can't be read leaves the card off; the reply
- * still says how the day is going.
+ * Coach roadmap T3: a progress card the reply asked for (the day's or the
+ * week's), placed before its quick replies. One that can't be read is left
+ * off; the reply still says how it is going.
  */
-async function withDayProgressCard(
+async function withProgressCard(
   blocks: CoachBlock[],
-  day: DayProgressDay,
-  params: CoachChatParams,
-  tz: string,
+  build: () => Promise<CoachBlock>,
+  what: "Day" | "Week",
 ): Promise<CoachBlock[]> {
   let card: CoachBlock;
   try {
-    card = await buildDayProgressBlock(day, {
-      userId: params.userId,
-      tz,
-      user: params.user,
-    });
+    card = await build();
   } catch (err) {
-    log.warn({ err: toError(err) }, "Day progress card could not be built");
+    log.warn({ err: toError(err) }, `${what} progress card could not be built`);
     return blocks;
   }
   const at = blocks.findIndex((b) => b.type === "quick_replies");
@@ -96,18 +91,28 @@ async function proReplyBlocks(
     if (turn.context.notesPaused) blocks = dropCommitmentCards(blocks);
     // Only for an app that declared the card (its prompt offered it), and
     // not under a safety message that replaced the reply.
-    if (
-      parsedBlocks.dayProgress &&
-      params.writeCards &&
-      params.dayProgressCard &&
-      !reply.safetyOverridden &&
-      !isAborted()
-    ) {
-      blocks = await withDayProgressCard(
+    const cardsShown =
+      params.writeCards && !reply.safetyOverridden && !isAborted();
+    const { dayProgress } = parsedBlocks;
+    if (cardsShown && dayProgress && params.dayProgressCard) {
+      blocks = await withProgressCard(
         blocks,
-        parsedBlocks.dayProgress,
-        params,
-        turn.tz,
+        () =>
+          buildDayProgressBlock(dayProgress, {
+            userId,
+            tz: turn.tz,
+            user: params.user,
+          }),
+        "Day",
+      );
+    }
+    // After the day card, so a reply with both reads today, then the week.
+    if (cardsShown && parsedBlocks.weekProgress && params.weekProgressCard) {
+      blocks = await withProgressCard(
+        blocks,
+        () =>
+          buildWeekProgressBlock({ userId, tz: turn.tz, user: params.user }),
+        "Week",
       );
     }
   }

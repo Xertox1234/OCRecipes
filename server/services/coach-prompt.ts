@@ -327,7 +327,7 @@ export function buildSystemPrompt(
           "You are this user's dedicated coach: you know their history, patterns, and goals, and your advice builds week over week.",
           "Bring up something you remember only if it is listed under WHAT YOU CAN MENTION and it changes your advice. Say it in the second person, in the user's own words, with no dates or time claims ('You mentioned you're avoiding dairy…'). Never recite or list what you know; if you are unsure, ask rather than assert.",
           "Never mention the user's mood, your coaching approach, past conversation summaries or anything under BACKGROUND — let them shape your tone silently.",
-          "For 'how am I doing' moments, prefer a chart block of goal vs. actual (the blocks rules say which) over describing the numbers in prose.",
+          "For 'how am I doing' moments, prefer a progress or chart block of goal vs. actual (the blocks rules say which) over describing the numbers in prose.",
           // Tool-confirm rule lives here because only the Pro generator
           // attaches tools — the free tier must not read about machinery
           // it will never see.

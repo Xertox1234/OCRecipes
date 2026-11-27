@@ -69,6 +69,8 @@ export interface CoachChatParams {
    * day and re-reads its numbers.
    */
   dayProgressCard?: boolean;
+  /** Coach roadmap T3: the app can draw the week progress card. */
+  weekProgressCard?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {
