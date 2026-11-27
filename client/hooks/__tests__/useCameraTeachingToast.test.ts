@@ -76,7 +76,7 @@ describe("useCameraTeachingToast", () => {
       }),
     );
     mockInfo.mock.calls[0][1].action.onPress();
-    expect(mockNavigate).toHaveBeenCalledWith("Scan");
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", { intent: "log" });
   });
 
   it("does not count spoken logs", async () => {
