@@ -3630,7 +3630,10 @@ EXPECTED_PRECISE_GAPS=58
 # 352 -> 354 (2026-11-27, string wrappers): +2, `lp-site-swnest` and `lp-site-swctl` at
 # p=DENY j=ALLOW l=ALLOW a=ALLOW (the degraded paths cannot run the scan). `lp-site-strwrap`
 # denies on every path: its body is also visible to the crude smell test.
-EXPECTED_ALLPATH_GAPS=354
+# 354 -> 355 (2026-11-27, container entry point): +1, `lp-site-entrypoint` at p=DENY j=ALLOW l=ALLOW
+# a=ALLOW: the binary and its verb sit apart (`--entrypoint eas IMAGE update`), so the degraded paths'
+# crude smell test, which reads them side by side, cannot see it. MEASURED by the aggregate on that commit.
+EXPECTED_ALLPATH_GAPS=355
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -4048,6 +4051,7 @@ vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
 lp-site-interpexp p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-site-swctl p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-site-entrypoint p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-site-swnest p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
