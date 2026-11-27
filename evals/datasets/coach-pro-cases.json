@@ -22,7 +22,8 @@
     },
     "assertions": {
       "mustNotContain": [
-        "(I've|I have|has been|have been|are now|is now) (logged|added|saved)"
+        "(I've|I have|has been|have been|are now|is now) (logged|added|saved)",
+        "Quick Log"
       ]
     }
   },
@@ -135,7 +136,8 @@
     },
     "assertions": {
       "mustNotContain": [
-        "(I've|I have|has been|have been|are now) (added|saved)"
+        "(I've|I have|has been|have been|are now) (added|saved)",
+        "Quick Log"
       ]
     }
   },

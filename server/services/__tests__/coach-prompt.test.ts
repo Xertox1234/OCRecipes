@@ -55,8 +55,8 @@ describe("coach-prompt template fingerprint contexts", () => {
 describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
-  it("matches the pinned value (last intended edit: few-shot examples follow the reply-shape rules, audit M36 L72c L74, 2026-11-27)", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("228a3ba3142030fd");
+  it("matches the pinned value (last intended edit: the Pro tool-confirm rule defers to the tool result, audit L73, 2026-11-27)", () => {
+    expect(getSystemPromptTemplateVersion()).toBe("dccb9c38fb7e57ef");
   });
 });
 
@@ -324,5 +324,39 @@ describe("coach prompt: profile health conditions", () => {
         "If the user has mentioned a condition, symptom, medication, pregnancy or distress anywhere in this conversation, the referral rules above apply unchanged",
       );
     }
+  });
+});
+
+// Audit 2026-11-24 (L73): the Pro tool-confirm rule said "tell the user where
+// they can do it themselves" and "do not point them to a button that is not
+// in your reply" — wrong in write-card mode, where the tool result says a card
+// is on screen to tap. The rule now defers to the tool result in both modes.
+describe("Pro tool-confirm rule", () => {
+  const ctx: CoachContext = {
+    goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+    todayIntake: { calories: 800, protein: 40, carbs: 100, fat: 30 },
+    dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
+  };
+  const pro = buildSystemPrompt(ctx, "personalized_advice", { tier: "pro" });
+
+  it("follows the tool result, which says whether a card is on screen", () => {
+    expect(pro).not.toContain(
+      "tell the user what you suggest and where they can do it themselves",
+    );
+    expect(pro).not.toContain("a button that is not in your reply");
+    expect(pro).toMatch(/do what the tool result says/i);
+  });
+
+  it("still forbids saying the action is done unless the result says so", () => {
+    expect(pro).toMatch(
+      /Do not say the action has been completed unless the tool result says it was/,
+    );
+  });
+
+  it("stays out of the free prompt", () => {
+    const free = buildSystemPrompt(ctx, "personalized_advice", {
+      tier: "free",
+    });
+    expect(free).not.toMatch(/do what the tool result says/i);
   });
 });
