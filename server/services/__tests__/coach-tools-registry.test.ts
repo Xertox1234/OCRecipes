@@ -21,6 +21,8 @@ const OPTION_SETS = [
   { remindersCard: true },
   { writeCards: true, remindersCard: true },
   { writeCards: true, pantryCard: true, goalsCard: true, remindersCard: true },
+  { familyCard: true },
+  { writeCards: true, familyCard: true },
 ];
 
 const ALL_TOOL_NAMES = [
@@ -41,6 +43,7 @@ const ALL_TOOL_NAMES = [
   "update_pantry",
   "set_nutrition_goals",
   "set_reminders",
+  "add_family_member",
 ];
 
 function offeredNames(opts: {
@@ -48,6 +51,7 @@ function offeredNames(opts: {
   pantryCard?: boolean;
   goalsCard?: boolean;
   remindersCard?: boolean;
+  familyCard?: boolean;
 }) {
   return getToolDefinitions(opts).map((t) =>
     "function" in t ? t.function.name : "",
@@ -103,7 +107,23 @@ describe("coach tool registry: offered and executable are one rule", () => {
         goalsCard: true,
         remindersCard: true,
       }),
+    ).toEqual(ALL_TOOL_NAMES.slice(0, 17));
+    expect(
+      offeredNames({
+        writeCards: true,
+        pantryCard: true,
+        goalsCard: true,
+        remindersCard: true,
+        familyCard: true,
+      }),
     ).toEqual(ALL_TOOL_NAMES);
+    expect(offeredNames({ writeCards: true, familyCard: true })).toEqual([
+      ...ALL_TOOL_NAMES.slice(0, 14),
+      "add_family_member",
+    ]);
+    expect(offeredNames({ familyCard: true })).toEqual(
+      ALL_TOOL_NAMES.slice(0, 10),
+    );
     expect(offeredNames({ writeCards: true, remindersCard: true })).toEqual([
       ...ALL_TOOL_NAMES.slice(0, 14),
       "set_reminders",

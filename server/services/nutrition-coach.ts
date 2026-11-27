@@ -49,7 +49,7 @@ export const PANTRY_CARD_TOOL_DEFINITIONS = Object.freeze(
 );
 /**
  * Write-card lists for the extra card kinds (the goals card, Coach roadmap T1;
- * the reminders card, A3), alone or together with the pantry card: built once
+ * the reminders and family cards, A3), alone or together with the pantry card: built once
  * per combination, then shared like the lists above.
  */
 const writeCardToolLists = new Map<string, readonly ChatCompletionTool[]>();
@@ -59,13 +59,14 @@ function writeCardToolList(
   pantryCard: boolean,
   goalsCard: boolean,
   remindersCard: boolean,
+  familyCard: boolean,
 ): readonly ChatCompletionTool[] {
-  if (!goalsCard && !remindersCard) {
+  if (!goalsCard && !remindersCard && !familyCard) {
     return pantryCard
       ? PANTRY_CARD_TOOL_DEFINITIONS
       : WRITE_CARD_TOOL_DEFINITIONS;
   }
-  const key = `${pantryCard}|${goalsCard}|${remindersCard}`;
+  const key = `${pantryCard}|${goalsCard}|${remindersCard}|${familyCard}`;
   let list = writeCardToolLists.get(key);
   if (!list) {
     list = Object.freeze(
@@ -74,6 +75,7 @@ function writeCardToolList(
         pantryCard,
         goalsCard,
         remindersCard,
+        familyCard,
       }),
     );
     writeCardToolLists.set(key, list);
@@ -275,6 +277,8 @@ export async function* generateCoachProResponse(
     goalsCard?: boolean;
     /** The app can show the reminders card (A3). */
     remindersCard?: boolean;
+    /** The app can show the family card and the plan has family profiles (A3). */
+    familyCard?: boolean;
     onWriteCardProposal?: ExecuteToolOptions["onWriteCardProposal"];
     planRecipePool?: ExecuteToolOptions["planRecipePool"];
     /** The prompt's clock; defaults to the real one. The Coach Pro eval pins it per case. */
@@ -325,6 +329,7 @@ export async function* generateCoachProResponse(
         !!options.pantryCard,
         !!options.goalsCard,
         !!options.remindersCard,
+        !!options.familyCard,
       );
   const baseTools = isRecipeFinderEnabled()
     ? toolList.filter(
@@ -611,6 +616,7 @@ export async function* generateCoachProResponse(
                   pantryCard: !!options.pantryCard,
                   goalsCard: !!options.goalsCard,
                   remindersCard: !!options.remindersCard,
+                  familyCard: !!options.familyCard,
                   onWriteCardProposal: options.onWriteCardProposal,
                   planRecipePool: options.planRecipePool,
                 },

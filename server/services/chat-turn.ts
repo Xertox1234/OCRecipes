@@ -78,6 +78,7 @@ export interface TurnInput {
       | "label_compare"
       | "weekly_report"
       | "reminders"
+      | "family"
     )[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
@@ -505,6 +506,10 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     goalsCard: !!ctx.body.cardKinds?.includes("goals"),
     // Coach roadmap A3: the reminders card needs only an app that draws it.
     remindersCard: !!ctx.body.cardKinds?.includes("reminders"),
+    // A3: the family card needs an app that draws it and a plan with family
+    // profiles, as the Family screen's create does.
+    familyCard:
+      !!ctx.body.cardKinds?.includes("family") && !!features.familyProfiles,
     allergyCard: !!ctx.body.cardKinds?.includes("allergy"),
     planShopCard: !!ctx.body.cardKinds?.includes("plan_shop"),
     // Coach roadmap T2: the app shows a food log applied at once, with Undo.

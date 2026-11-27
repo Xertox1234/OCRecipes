@@ -13,9 +13,12 @@ import { flatRefusalReplacement, freeReplyShownText } from "./visible-reply";
 import {
   buildGoalsPayload,
   buildRemindersPayload,
+  buildFamilyPayload,
   buildWriteCardPayload,
   describeGoals,
   describeReminders,
+  describeFamily,
+  FamilyCardRefused,
   pantryRowLine,
   planGroceryCard,
   planPantryCard,
@@ -65,6 +68,8 @@ interface StreamArgs {
   goalsCard: boolean;
   /** The app can draw the reminders card (A3). */
   remindersCard?: boolean;
+  /** The app can draw the family card and the plan has family profiles (A3). */
+  familyCard?: boolean;
   /** The app can draw the plan card's shopping section (A1). */
   planShopCard: boolean;
   /** A small typed food log is applied at once, with Undo (T2). */
@@ -190,6 +195,31 @@ async function* streamProReply(
             } catch (err) {
               if (err instanceof WriteCardEditError) {
                 return { kind: "reminders", shown: false, rows: "" };
+              }
+              throw err;
+            }
+          }
+          if (p.kind === "family") {
+            // Worked out now, so the model hears why no card was made (the
+            // family is full, the allergies need consent, or the name is
+            // taken) without ever seeing a stored profile.
+            try {
+              const payload = await buildFamilyPayload(p.args, userId);
+              reply.writeCardProposal = p;
+              reply.writeCardPrepared = payload;
+              return {
+                kind: "family",
+                shown: true,
+                rows: describeFamily(payload, {}),
+              };
+            } catch (err) {
+              if (err instanceof FamilyCardRefused) {
+                return {
+                  kind: "family",
+                  shown: false,
+                  rows: "",
+                  refused: err.reason,
+                };
               }
               throw err;
             }
@@ -346,6 +376,8 @@ async function* streamProReply(
         // Likewise the reminders card (A3).
         ...(a.remindersCard &&
           intent !== "safety_refusal" && { remindersCard: true }),
+        ...(a.familyCard &&
+          intent !== "safety_refusal" && { familyCard: true }),
       }),
     },
   )) {

@@ -7,7 +7,8 @@ import {
   type GoalKey,
   type ReminderKey,
 } from "@shared/schemas/coach-write-cards";
-import type { AllergenId } from "@shared/constants/allergens";
+import { allergenIdSchema, type AllergenId } from "@shared/constants/allergens";
+import { FAMILY_NAME_MAX } from "@shared/types/family";
 import { containsUnsafeCoachAdvice } from "../../lib/ai-safety";
 import { isValidCalendarDate } from "../../utils/date-validation";
 
@@ -177,6 +178,23 @@ export const setRemindersCardArgsSchema = z
   );
 export type SetRemindersCardArgs = z.infer<typeof setRemindersCardArgsSchema>;
 
+/**
+ * Family card (Coach roadmap A3; owner ruling 2026-11-27): one new family
+ * member, from what the user typed. Only the nine allergens the Family
+ * editor holds; the user picks each severity on the card.
+ */
+export const addFamilyMemberCardArgsSchema = z.object({
+  name: cardText(z.string().trim().min(1).max(FAMILY_NAME_MAX)),
+  allergens: z.array(allergenIdSchema).max(9).default([]),
+});
+export type AddFamilyMemberCardArgs = z.infer<
+  typeof addFamilyMemberCardArgsSchema
+>;
+
+/** Why no family card was made: the family is full, the allergies need the
+ *  health-data agreement, or someone of that name is already in it. */
+export type FamilyCardRefusal = "limit" | "consent" | "duplicate";
+
 /** A write tool call in write-card mode, args already validated. */
 export type WriteCardProposal =
   | { kind: "food"; args: LogFoodCardArgs }
@@ -184,6 +202,7 @@ export type WriteCardProposal =
   | { kind: "pantry"; args: UpdatePantryCardArgs }
   | { kind: "goals"; args: SetGoalsCardArgs }
   | { kind: "reminders"; args: SetRemindersCardArgs }
+  | { kind: "family"; args: AddFamilyMemberCardArgs }
   /** No tool: the server turns the Coach's add_allergy action card into it. */
   | { kind: "allergy"; args: { allergen: AllergenId } }
   | {
@@ -211,6 +230,16 @@ export type WriteCardOutcome =
   | { kind: "goals"; shown: boolean; rows: string }
   /** reminders: `rows` is the card's own line (reminder names, on or off). */
   | { kind: "reminders"; shown: boolean; rows: string }
+  /**
+   * family: `rows` is the card's own line (the name and allergens the model
+   * proposed); `refused` says why no card was made. Never stored profiles.
+   */
+  | {
+      kind: "family";
+      shown: boolean;
+      rows: string;
+      refused?: FamilyCardRefusal;
+    }
   /**
    * plan: `meals` are the card's rows ("2026-11-25 dinner: Lentil stew") and
    * `dropped` counts the asked-for meals whose recipe could not be used.

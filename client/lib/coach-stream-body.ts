@@ -25,7 +25,8 @@ export interface CoachStreamExtras {
  * build draws ring, sparkline and heatmap charts. "label_compare" (T4): two
  * scanned products side by side. "weekly_report" (A3): the user's weekly
  * report as a card that opens the full report. "reminders" (A3): a card that
- * switches the Coach Reminders types on and off.
+ * switches the Coach Reminders types on and off. "family" (A3): a card that
+ * adds one family member the user named.
  */
 const EXTRA_CARD_KINDS = [
   "pantry",
@@ -39,6 +40,7 @@ const EXTRA_CARD_KINDS = [
   "label_compare",
   "weekly_report",
   "reminders",
+  "family",
 ] as const;
 
 /** The POST body for a coach message; unset extras are left out. */

@@ -1697,6 +1697,77 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(onWriteCardProposal).not.toHaveBeenCalled();
   });
 
+  it("add_family_member is offered, and run, only when the app can show the family card (A3)", async () => {
+    expect(toolNames({ writeCards: true })).not.toContain("add_family_member");
+    expect(toolNames({ writeCards: true, familyCard: true })).toContain(
+      "add_family_member",
+    );
+    const onWriteCardProposal = vi.fn();
+    await expect(
+      executeToolCall(
+        "add_family_member",
+        { name: "Sam" },
+        "user-1",
+        null,
+        "UTC",
+        { writeCards: true, onWriteCardProposal },
+      ),
+    ).rejects.toThrow(/Unknown tool/);
+    expect(onWriteCardProposal).not.toHaveBeenCalled();
+  });
+
+  it("add_family_member proposes a card and tells the coach only what it shows", async () => {
+    const onWriteCardProposal = vi.fn().mockResolvedValue({
+      kind: "family",
+      shown: true,
+      rows: "Sam, allergies: peanuts",
+    });
+    const result = await executeToolCall(
+      "add_family_member",
+      { name: "Sam", allergens: ["peanuts"] },
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true, familyCard: true, onWriteCardProposal },
+    );
+    expect(onWriteCardProposal).toHaveBeenCalledWith({
+      kind: "family",
+      args: { name: "Sam", allergens: ["peanuts"] },
+    });
+    expect(result).toMatchObject({ card_shown: true });
+    expect(JSON.stringify(result)).toMatch(/Sam, allergies: peanuts/);
+    expect(JSON.stringify(result)).toMatch(/severity/);
+  });
+
+  it.each([
+    ["limit", /up to 8/],
+    ["consent", /health/],
+    ["duplicate", /already/],
+  ] as const)(
+    "add_family_member says why no card was made (%s)",
+    async (refused, says) => {
+      const result = await executeToolCall(
+        "add_family_member",
+        { name: "Sam" },
+        "user-1",
+        null,
+        "UTC",
+        {
+          writeCards: true,
+          familyCard: true,
+          onWriteCardProposal: async () => ({
+            kind: "family" as const,
+            shown: false,
+            rows: "",
+            refused,
+          }),
+        },
+      );
+      expect(result).toMatchObject({ card_shown: false });
+      expect(JSON.stringify(result)).toMatch(says);
+    },
+  );
+
   it("update_pantry rejects arguments that do not parse", async () => {
     const onWriteCardProposal = vi.fn();
     const result = await executeToolCall(

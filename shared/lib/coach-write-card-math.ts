@@ -15,6 +15,7 @@ import {
   PlanCardPayload,
   planRecipeKey,
   REMINDER_LABELS,
+  type FamilyCardPayload,
   type RemindersCardEdits,
   type RemindersCardPayload,
   WriteCardEdits,
@@ -231,6 +232,8 @@ export function writeCardButtonLabel(
       return "Add to allergies";
     case "reminders":
       return "Update reminders";
+    case "family":
+      return "Add to your family";
   }
 }
 
@@ -268,5 +271,7 @@ export function writeCardReceipt(
       return `✓ Goals updated · ${goalsSummary(p as GoalsCardPayload, e as GoalsCardEdits)}`;
     case "reminders":
       return `✓ Reminders updated · ${remindersSummary(p as RemindersCardPayload, e as RemindersCardEdits)}`;
+    case "family":
+      return `✓ ${(p as FamilyCardPayload).name} added to your family`;
   }
 }

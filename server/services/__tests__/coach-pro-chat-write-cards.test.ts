@@ -13,6 +13,7 @@ import { getBlocksSystemPrompt, parseBlocksFromContent } from "../coach-blocks";
 import {
   buildGoalsPayload,
   buildRemindersPayload,
+  buildFamilyPayload,
   buildWriteCardPayload,
   performWriteCardSave,
   planGroceryCard,
@@ -93,6 +94,7 @@ vi.mock("../write-cards", async (orig) => ({
   planPantryCard: vi.fn(),
   buildGoalsPayload: vi.fn(),
   buildRemindersPayload: vi.fn(),
+  buildFamilyPayload: vi.fn(),
   performWriteCardSave: vi.fn(),
 }));
 
@@ -667,6 +669,42 @@ describe("handleCoachChat with write cards", () => {
     });
     expect(storage.createWriteCard).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "reminders", payload: remindersPayload }),
+    );
+  });
+
+  it("a family card is worked out during the tool call, only for an app that declared it (A3)", async () => {
+    const familyPayload = { name: "Sam", allergens: ["peanuts" as const] };
+    vi.mocked(buildFamilyPayload).mockResolvedValue(familyPayload);
+    const seen: { outcome?: unknown } = {};
+    vi.mocked(generateCoachProResponse).mockImplementation(async function* (
+      ...args: Parameters<typeof generateCoachProResponse>
+    ): AsyncGenerator<CoachProChunk> {
+      seen.outcome = await args[7]?.onWriteCardProposal?.({
+        kind: "family",
+        args: { name: "Sam", allergens: ["peanuts"] },
+      });
+      const chunk: CoachProChunk = { type: "content", content: "Here." };
+      yield chunk;
+    });
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+    expect(
+      vi.mocked(generateCoachProResponse).mock.calls[0][7],
+    ).not.toHaveProperty("familyCard");
+    vi.mocked(generateCoachProResponse).mockClear();
+    vi.mocked(storage.createWriteCard).mockClear();
+    await collect(
+      handleCoachChat(makeParams({ writeCards: true, familyCard: true })),
+    );
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][7]).toMatchObject({
+      familyCard: true,
+    });
+    expect(seen.outcome).toEqual({
+      kind: "family",
+      shown: true,
+      rows: "Sam, allergies: peanuts",
+    });
+    expect(storage.createWriteCard).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "family", payload: familyPayload }),
     );
   });
 

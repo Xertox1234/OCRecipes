@@ -44,6 +44,10 @@ user data.
   headcount; the client's per-person clash warning is the safety net. Grocery items derived from
   family-only meals reaching the coach's grocery tool is accepted. Any new AI reader of family
   data needs a fresh ruling.
+- **Coach family card** (2026-11-27): the Coach may propose adding ONE new family member from what
+  the user typed in the chat (a name and the nine common allergens; the user picks each severity and
+  taps Save). Stored family profiles are still never sent to the AI; the Coach knows only how many
+  there are. Editing or reading existing profiles from the chat needs another ruling.
 - **Coach food card** (2026-11-15): counted units ("egg", "slice") keep the coach's own estimate;
   don't add a per-unit weight to the `log_food_item` tool.
 - **Keep the current design** (2026-10-29). No identity pass or redesign; don't borrow ideas from

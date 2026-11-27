@@ -74,6 +74,12 @@ export interface ExecuteToolOptions {
    * the kind. set_reminders is refused without it.
    */
   remindersCard?: boolean;
+  /**
+   * The family card is on for this turn (Coach roadmap A3): the app listed
+   * the kind and the plan has family profiles. add_family_member is refused
+   * without it.
+   */
+  familyCard?: boolean;
   /** Receives each validated write-tool call in write-card mode. */
   onWriteCardProposal?: (
     p: WriteCardProposal,

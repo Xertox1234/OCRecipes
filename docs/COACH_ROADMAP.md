@@ -143,7 +143,7 @@ Then re-rank.
       reminders turns it off. Left for later: more triggers, and the
       notification spec's quiet hours and one-nudge-a-day choice across all
       categories (this trigger enforces its own cap).
-- [ ] **A3. Fill the coverage gaps.** Family profiles, reminders, and the
+- [x] **A3. Fill the coverage gaps.** Family profiles, reminders, and the
       weekly report as a block. Value: medium. Size: M each. Needs T1.
       Part 1, the weekly report as a block: a `get_weekly_reports` tool
       (the latest six reports, and one in detail) and a `weekly_report`
@@ -155,7 +155,14 @@ Then re-rank.
       commitment follow-ups, the daily check-in, expiring food) on and off,
       as the settings screen does; nothing changes until Save, and Undo puts
       them back. Reminders the user sets for a time of their own are not in
-      the app yet, so the Coach says so. Left: family profiles.
+      the app yet, so the Coach says so.
+      Part 3, family profiles (owner ruling 2026-11-27): an
+      `add_family_member` tool and a `family` write card that adds one
+      person the user named, with the nine common allergens; the user picks
+      each severity and taps Save, and Undo removes the person. Stored
+      profiles are never sent to the model, which hears only why no card was
+      made (the family is full, the allergies need consent, or the name is
+      taken). Editing someone stays on the Family screen.
 
 ## Speak: the road to rung 10
 

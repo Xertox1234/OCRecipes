@@ -6,6 +6,7 @@ import {
   type AllergenId,
 } from "../constants/allergens";
 import type { ReminderMutes } from "../types/reminders";
+import { FAMILY_NAME_MAX } from "../types/family";
 
 /**
  * Coach write cards (spec docs/superpowers/specs/2026-11-09-coach-write-cards-design.md).
@@ -25,6 +26,7 @@ export const WRITE_CARD_KINDS = [
   "goals",
   "allergy",
   "reminders",
+  "family",
 ] as const;
 export type WriteCardKind = (typeof WRITE_CARD_KINDS)[number];
 
@@ -249,6 +251,23 @@ export const remindersCardPayloadSchema = z.object({
 });
 export type RemindersCardPayload = z.infer<typeof remindersCardPayloadSchema>;
 
+/**
+ * The family card (Coach roadmap A3; owner ruling 2026-11-27): one new
+ * family member from what the user typed, a name and the common allergens
+ * the Family editor holds. The severities are the user's to pick on the
+ * card, so they live in the edits. Never built from stored profiles.
+ */
+export const familyCardPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(FAMILY_NAME_MAX),
+  allergens: z
+    .array(allergenIdSchema)
+    .max(9)
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: "Each allergen once.",
+    }),
+});
+export type FamilyCardPayload = z.infer<typeof familyCardPayloadSchema>;
+
 /** "tree nuts" for `tree_nuts`: the allergen as a word in a sentence. */
 export const allergenWord = (id: AllergenId) => id.replace(/_/g, " ");
 
@@ -312,6 +331,13 @@ export const remindersEditsSchema = z
   .strict();
 export type RemindersCardEdits = z.infer<typeof remindersEditsSchema>;
 
+/** The severity the user picked for each allergen, by row; null: not yet. */
+export const familyEditsSchema = z
+  .object({ severities: z.array(allergySeveritySchema.nullable()).max(9) })
+  .partial()
+  .strict();
+export type FamilyCardEdits = z.infer<typeof familyEditsSchema>;
+
 export const WRITE_CARD_EDITS_SCHEMAS = {
   food: foodEditsSchema,
   grocery: groceryEditsSchema,
@@ -320,6 +346,7 @@ export const WRITE_CARD_EDITS_SCHEMAS = {
   goals: goalsEditsSchema,
   allergy: allergyEditsSchema,
   reminders: remindersEditsSchema,
+  family: familyEditsSchema,
 } as const;
 
 export const WRITE_CARD_PAYLOAD_SCHEMAS = {
@@ -330,6 +357,7 @@ export const WRITE_CARD_PAYLOAD_SCHEMAS = {
   goals: goalsCardPayloadSchema,
   allergy: allergyCardPayloadSchema,
   reminders: remindersCardPayloadSchema,
+  family: familyCardPayloadSchema,
 } as const;
 
 export type WriteCardPayload =
@@ -339,7 +367,8 @@ export type WriteCardPayload =
   | PantryCardPayload
   | GoalsCardPayload
   | AllergyCardPayload
-  | RemindersCardPayload;
+  | RemindersCardPayload
+  | FamilyCardPayload;
 export type WriteCardEdits =
   | FoodCardEdits
   | GroceryCardEdits
@@ -347,7 +376,8 @@ export type WriteCardEdits =
   | PantryCardEdits
   | GoalsCardEdits
   | AllergyCardEdits
-  | RemindersCardEdits;
+  | RemindersCardEdits
+  | FamilyCardEdits;
 
 // ── Block ───────────────────────────────────────────────────────────
 
@@ -369,6 +399,7 @@ export const writeCardBlockObjectSchema = z.object({
     goalsCardPayloadSchema,
     allergyCardPayloadSchema,
     remindersCardPayloadSchema,
+    familyCardPayloadSchema,
   ]),
   status: z.enum(WRITE_CARD_STATUSES),
   replacesCardId: z.string().uuid().optional(),

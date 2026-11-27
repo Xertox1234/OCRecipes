@@ -6,6 +6,8 @@ import {
   goalsEditsSchema,
   groceryEditsSchema,
   planEditsSchema,
+  familyCardPayloadSchema,
+  familyEditsSchema,
   remindersCardPayloadSchema,
   remindersEditsSchema,
   writeCardBlockSchema,
@@ -288,5 +290,56 @@ describe("reminders write card (Coach roadmap A3)", () => {
       remindersEditsSchema.safeParse({ on: [true, true, true, true, true] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("family write card (Coach roadmap A3)", () => {
+  const familyBlock = {
+    type: "write_card",
+    cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+    kind: "family",
+    status: "live",
+    payload: { name: "Sam", allergens: ["peanuts", "milk"] },
+  };
+
+  it("a family block passes the coach block schema, so the app does not drop it", () => {
+    expect(coachBlockSchema.safeParse(familyBlock).success).toBe(true);
+    expect(writeCardBlockSchema.safeParse(familyBlock).success).toBe(true);
+    expect(
+      familyCardPayloadSchema.safeParse({ name: "Sam", allergens: [] }).success,
+    ).toBe(true);
+  });
+
+  it("a family payload under another kind is refused", () => {
+    expect(
+      writeCardBlockSchema.safeParse({ ...familyBlock, kind: "allergy" })
+        .success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["a blank name", { name: "  ", allergens: [] }],
+    ["a name past 50 characters", { name: "x".repeat(51), allergens: [] }],
+    [
+      "an allergen the editor does not hold",
+      { name: "Sam", allergens: ["kiwi"] },
+    ],
+    ["the same allergen twice", { name: "Sam", allergens: ["milk", "milk"] }],
+  ])("refuses a payload with %s", (_name, payload) => {
+    expect(familyCardPayloadSchema.safeParse(payload).success).toBe(false);
+  });
+
+  it("edits are strict: one severity (or none yet) per allergen", () => {
+    expect(
+      familyEditsSchema.safeParse({ severities: ["mild", null] }).success,
+    ).toBe(true);
+    expect(familyEditsSchema.safeParse({}).success).toBe(true);
+    expect(
+      familyEditsSchema.safeParse({ severities: ["mild"], name: "Tom" })
+        .success,
+    ).toBe(false);
+    expect(familyEditsSchema.safeParse({ severities: ["awful"] }).success).toBe(
+      false,
+    );
   });
 });

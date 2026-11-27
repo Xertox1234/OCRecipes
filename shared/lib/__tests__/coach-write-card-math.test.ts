@@ -329,6 +329,19 @@ describe("reminders card (Coach roadmap A3)", () => {
   });
 });
 
+describe("family card (Coach roadmap A3)", () => {
+  const family = { name: "Sam", allergens: ["peanuts" as const] };
+
+  it("button and receipt name the person", () => {
+    expect(writeCardButtonLabel("family", family, {})).toBe(
+      "Add to your family",
+    );
+    expect(writeCardReceipt("family", family, { severities: ["severe"] })).toBe(
+      "✓ Sam added to your family",
+    );
+  });
+});
+
 describe("plan card with a shopping section (A1)", () => {
   const combined: PlanCardPayload = {
     ...plan,

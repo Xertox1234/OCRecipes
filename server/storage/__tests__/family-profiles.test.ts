@@ -32,6 +32,7 @@ const {
   getFamilyProfile,
   countFamilyProfiles,
   createFamilyProfile,
+  createFamilyProfileIn,
   updateFamilyProfile,
   deleteFamilyProfile,
   clearFamilyHealthData,
@@ -115,6 +116,38 @@ describe("family profiles storage", () => {
       expect(await createFamilyProfile(otherUser.id, input("Fine"))).not.toBe(
         "limit",
       );
+    });
+  });
+
+  describe("createFamilyProfileIn (the Coach's family card)", () => {
+    it("creates inside the caller's transaction, under the same cap", async () => {
+      const created = await createFamilyProfileIn(
+        tx,
+        testUser.id,
+        input("Sam"),
+      );
+      expect(created).toMatchObject({ name: "Sam", userId: testUser.id });
+      for (let i = 1; i < MAX_FAMILY_PROFILES; i++) {
+        await createFamilyProfileIn(tx, testUser.id, input(`Kid ${i}`));
+      }
+      expect(
+        await createFamilyProfileIn(tx, testUser.id, input("One too many")),
+      ).toBe("limit");
+      expect(await countFamilyProfiles(testUser.id)).toBe(MAX_FAMILY_PROFILES);
+    });
+
+    it("a profile it made is deleted through the caller's transaction too", async () => {
+      const created = await createFamilyProfileIn(
+        tx,
+        testUser.id,
+        input("Sam"),
+      );
+      if (created === "limit") throw new Error("unexpected limit");
+      expect(await deleteFamilyProfile(created.id, otherUser.id, tx)).toBe(
+        false,
+      );
+      expect(await deleteFamilyProfile(created.id, testUser.id, tx)).toBe(true);
+      expect(await countFamilyProfiles(testUser.id)).toBe(0);
     });
   });
 
