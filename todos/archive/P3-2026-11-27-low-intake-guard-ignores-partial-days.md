@@ -1,6 +1,6 @@
 ---
 title: "The low-intake guard skips days with one log, so a user logging one tiny entry a day never trips it"
-status: backlog
+status: done
 priority: low
 created: 2026-11-27
 updated: 2026-11-27
@@ -35,5 +35,9 @@ look at false positives.
 
 ## Acceptance Criteria
 
-- [ ] Seven days of one tiny log each trips the guard in both the weekly report and get_intake_history.
-- [ ] A normal week with a couple of one-item days does not.
+- [x] Seven days of one tiny log each trips the guard in both the weekly report and get_intake_history.
+- [x] A normal week with a couple of one-item days does not.
+
+## Updates
+
+- 2026-11-27: Done. `isLowIntake` now also holds when at least four logged days, partial ones included, are mostly under the safe line. The four-day minimum keeps one stray small day from setting it. Accepted by the security review: a user who logs one normal item a day also trips it, because the guard only hides numbers and praise; three or fewer tiny days in a week stay under the minimum. The get_intake_history description now says `sensitive` can also mean thinly logged days, and tells the model never to imply the user ate too little.
