@@ -680,3 +680,87 @@ describe("more chart kinds (Coach roadmap T4)", () => {
     );
   });
 });
+
+describe("label_compare requests (Coach roadmap T4)", () => {
+  const fence = (blocks: unknown[]) =>
+    "Here they are.\n```coach_blocks\n" + JSON.stringify(blocks) + "\n```";
+
+  it("is read from the reply, and the model's block itself is dropped", () => {
+    const parsed = parseBlocksFromContent(
+      fence([{ type: "label_compare", scanIds: [4, 9] }]),
+    );
+    expect(parsed.labelCompare).toEqual([4, 9]);
+    expect(parsed.blocks).toEqual([]);
+  });
+
+  it("drops a model-authored card that carries its own numbers", () => {
+    const forged = {
+      type: "label_compare",
+      items: [
+        {
+          scanId: 1,
+          name: "A",
+          brand: null,
+          servingSize: null,
+          calories: 1,
+          protein: 1,
+          carbs: 1,
+          fat: 1,
+          fiber: null,
+          sugar: null,
+          sodium: null,
+        },
+        {
+          scanId: 2,
+          name: "B",
+          brand: null,
+          servingSize: null,
+          calories: 1,
+          protein: 1,
+          carbs: 1,
+          fat: 1,
+          fiber: null,
+          sugar: null,
+          sodium: null,
+        },
+      ],
+    };
+    expect(validateBlocks([forged])).toEqual([]);
+    expect(parseBlocksFromContent("Plain text.").labelCompare).toBeUndefined();
+  });
+
+  it("is offered in the prompt only to an app that can draw it", () => {
+    const on = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      labelCompare: true,
+    });
+    expect(on).toContain(
+      '- label_compare: { type: "label_compare", scanIds: [id, id] }',
+    );
+    expect(on).toMatch(
+      /call get_recent_scans \(without a limit\), then use one label_compare block/,
+    );
+    expect(on).toMatch(/each per its own serving/);
+    expect(on).toMatch(/say so when the servings differ/);
+    // Reviewed 2026-11-27: no guessed ids, no numbers that disagree with
+    // the card, no health claims.
+    expect(on).toMatch(/never guess an id/);
+    expect(on).toMatch(/fewer than two scans[^.]*write no label_compare block/);
+    expect(on).toMatch(/do not repeat its numbers, convert them to per 100 g/);
+    expect(on).toMatch(
+      /A blank value means the label did not list it, not zero/,
+    );
+    expect(on).toMatch(/no medical claims/);
+    expect(on).toMatch(/never say a product is safe for an allergy/);
+    expect(getBlocksSystemPrompt(false, { writeCards: true })).not.toContain(
+      "label_compare",
+    );
+  });
+
+  it("keeps the offer prompt equal to a rebuilt one", () => {
+    const opts = { writeCards: true, labelCompare: true, moreCharts: true };
+    expect(withOfferRecipeRule(getBlocksSystemPrompt(true, opts))).toBe(
+      getBlocksSystemPrompt(true, { ...opts, offer: true }),
+    );
+  });
+});

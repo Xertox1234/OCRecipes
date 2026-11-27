@@ -106,15 +106,21 @@ Then re-rank.
       the reads arrive (or when one fails) the card shows the reply's numbers
       and says so. Left for later: other living cards (a week of protein,
       the weight trend).
-- [ ] **T4. More chart kinds and a compare block.** Ring, sparkline, heatmap,
+- [x] **T4. More chart kinds and a compare block.** Ring, sparkline, heatmap,
       and two scanned labels side by side. Value: medium. Size: S.
       Part 1 (the chart kinds) done: inline_chart takes "ring" (one to four
       values, each against its own target), "sparkline" (one number over
       time, with an optional goal line) and "heatmap" (one square per day,
       up to 35, a met day marked). They are offered, and kept, only for an
       app that sends the "more_charts" card kind, since an older build drops
-      a chart it cannot read. Left: the compare block (two scanned labels
-      side by side), which needs a way for the Coach to read past scans.
+      a chart it cannot read. Part 2 (the compare block): a read-only
+      get_recent_scans tool lists the latest scans, and the Coach asks for
+      `{ type: "label_compare", scanIds: [a, b] }`; the server reads both
+      scans for the user and builds the card from the stored numbers, each
+      per its own serving with both serving sizes shown (nothing is scaled).
+      Offered only for an app that sends the "label_compare" card kind.
+      Left for later: a tool that returns several days of intake at once
+      (todo P2-2026-11-27), so trend charts have real data.
 
 ## Act: the Coach does more on its own (rung 9)
 

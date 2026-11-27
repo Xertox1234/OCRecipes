@@ -23,6 +23,7 @@ import { WriteCardEditError } from "../write-cards/errors";
 import {
   createMockChatMessage,
   createMockCoachWriteCard,
+  createMockScannedItem,
   createMockUserProfile,
 } from "../../__tests__/factories";
 
@@ -30,6 +31,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getUserProfile: vi.fn(),
     getDailySummary: vi.fn(),
+    getScannedItemsByIds: vi.fn(),
     getChatMessages: vi.fn(),
     getDailyLogsInRange: vi.fn(),
     getMostEatenFoods: vi.fn(),
@@ -1737,6 +1739,77 @@ describe("the T4 chart kinds", () => {
     expect(getBlocksSystemPrompt).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ moreCharts: true }),
+    );
+  });
+});
+
+describe("the label compare card (Coach roadmap T4)", () => {
+  const quick = {
+    type: "quick_replies" as const,
+    options: [{ label: "Ok", message: "Ok" }],
+  };
+  const types = (events: CoachChatEvent[]) =>
+    blocksEvent(events)?.blocks.map((b) => b.type);
+
+  beforeEach(() => {
+    vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+      text: t,
+      blocks: [quick],
+      labelCompare: [4, 9] as [number, number],
+    }));
+    vi.mocked(storage.getScannedItemsByIds).mockResolvedValue([
+      createMockScannedItem({ id: 4, productName: "Oat bar" }),
+      createMockScannedItem({ id: 9, productName: "Nut bar" }),
+    ]);
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      async function* (): AsyncGenerator<CoachProChunk> {
+        yield { type: "content", content: "The oat bar has less sugar." };
+      },
+    );
+  });
+
+  it("is built from the user's two scans, before the quick replies", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, labelCompareCard: true })),
+    );
+    expect(types(events)).toEqual(["label_compare", "quick_replies"]);
+    expect(storage.getScannedItemsByIds).toHaveBeenCalledWith(
+      [4, 9],
+      expect.any(String),
+    );
+    const card = blocksEvent(events)?.blocks[0];
+    expect(card).toMatchObject({
+      type: "label_compare",
+      items: [
+        { scanId: 4, name: "Oat bar" },
+        { scanId: 9, name: "Nut bar" },
+      ],
+    });
+    expect(getBlocksSystemPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ labelCompare: true }),
+    );
+  });
+
+  it("is left out when a scan is not the user's", async () => {
+    vi.mocked(storage.getScannedItemsByIds).mockResolvedValue([
+      createMockScannedItem({ id: 4 }),
+    ]);
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, labelCompareCard: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+  });
+
+  it("is not built, or offered, for an app that did not declare it", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+    expect(storage.getScannedItemsByIds).not.toHaveBeenCalled();
+    expect(getBlocksSystemPrompt).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ labelCompare: true }),
     );
   });
 });

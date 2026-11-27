@@ -6,6 +6,7 @@ import SuggestionList from "./SuggestionList";
 import InlineChart from "./InlineChart";
 import DayProgress from "./DayProgress";
 import WeekProgress from "./WeekProgress";
+import LabelCompare from "./LabelCompare";
 import CommitmentCard from "./CommitmentCard";
 import QuickReplies from "./QuickReplies";
 import FormBlock from "./FormBlock";
@@ -118,6 +119,8 @@ function renderBlock(
       return <DayProgress block={block} />;
     case "week_progress":
       return <WeekProgress block={block} />;
+    case "label_compare":
+      return <LabelCompare block={block} />;
     case "commitment_card":
       return <CommitmentCard block={block} />;
     case "quick_replies":

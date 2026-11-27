@@ -18,6 +18,9 @@
  *   8. add_to_grocery_list   — create a new grocery list with items
  *   9. get_substitutions     — suggest ingredient swaps
  *  10. get_grocery_lists     — recent grocery lists with the items still to buy
+ *
+ * With write cards, also: get_my_recipes, find_plan_recipes, get_recent_scans
+ * (the latest scans, for the compare card), and the card-gated write tools.
  */
 
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -30,6 +33,7 @@ import { NUTRITION_TOOLS } from "./coach-tools/nutrition";
 import { PANTRY_TOOLS } from "./coach-tools/pantry";
 import { PLAN_TOOLS } from "./coach-tools/plan";
 import { RECIPE_TOOLS } from "./coach-tools/recipes";
+import { SCAN_TOOLS } from "./coach-tools/scans";
 import {
   invalidArgs,
   type CoachToolEntry,
@@ -61,6 +65,7 @@ const ALL_TOOLS: CoachToolEntry[] = [
   ...GROCERY_TOOLS,
   ...PLAN_TOOLS,
   ...GOALS_TOOLS,
+  ...SCAN_TOOLS,
 ];
 
 const TOOL_ORDER = [
@@ -76,6 +81,7 @@ const TOOL_ORDER = [
   "get_substitutions",
   "get_my_recipes",
   "find_plan_recipes",
+  "get_recent_scans",
   "update_pantry",
   "set_nutrition_goals",
 ] as const;

@@ -24,6 +24,7 @@ describe("buildCoachStreamBody", () => {
         "day_progress",
         "week_progress",
         "more_charts",
+        "label_compare",
       ],
       liveCard: {
         cardId: "11111111-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
@@ -66,6 +67,7 @@ describe("buildCoachStreamBody", () => {
         "day_progress",
         "week_progress",
         "more_charts",
+        "label_compare",
       ],
     });
     expect(buildCoachStreamBody("hi", "tk", {})).not.toHaveProperty(

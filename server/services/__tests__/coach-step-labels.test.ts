@@ -152,6 +152,13 @@ describe("coach step labels (show-the-work spec 2026-11-09)", () => {
     });
   });
 
+  it("the recent scans read has a step label and a trail entry (T4)", () => {
+    expect(
+      toolStep(call("get_recent_scans", {}), { writeCards: true }),
+    ).toEqual({ label: "Checking your scans…", trail: "your scans" });
+    expect(plainStatusLabel("get_recent_scans")).toBe("Checking your scans…");
+  });
+
   it("the pantry card has a step label and a trail entry", () => {
     expect(toolStep(call("update_pantry", {}), { writeCards: true })).toEqual({
       label: "Preparing a pantry card…",

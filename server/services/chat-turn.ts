@@ -75,6 +75,7 @@ export interface TurnInput {
       | "day_progress"
       | "week_progress"
       | "more_charts"
+      | "label_compare"
     )[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
@@ -509,6 +510,8 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     weekProgressCard: !!ctx.body.cardKinds?.includes("week_progress"),
     // Coach roadmap T4: the app draws ring, sparkline and heatmap charts.
     moreCharts: !!ctx.body.cardKinds?.includes("more_charts"),
+    // T4: the app draws two scanned products side by side.
+    labelCompareCard: !!ctx.body.cardKinds?.includes("label_compare"),
     liveCard: ctx.body.liveCard,
     turnKey: coachTurnKey,
     isCoachPro: !!features.coachPro,

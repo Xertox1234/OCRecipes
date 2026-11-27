@@ -19,6 +19,7 @@ import type { CoachChatEvent, CoachChatParams } from "./types";
 import { buildDayProgressBlock } from "../day-progress";
 import { buildWeekProgressBlock } from "../week-progress";
 import { dropMoreCharts } from "../more-charts";
+import { buildLabelCompareBlock } from "../label-compare";
 import { createServiceLogger, toError } from "../../lib/logger";
 
 const log = createServiceLogger("coach-pro-chat");
@@ -42,13 +43,13 @@ function freeReplyBlocks(reply: ReplyResult): ReplyBlocks {
 async function withProgressCard(
   blocks: CoachBlock[],
   build: () => Promise<CoachBlock>,
-  what: "Day" | "Week",
+  what: "Day progress" | "Week progress" | "Label compare",
 ): Promise<CoachBlock[]> {
   let card: CoachBlock;
   try {
     card = await build();
   } catch (err) {
-    log.warn({ err: toError(err) }, `${what} progress card could not be built`);
+    log.warn({ err: toError(err) }, `${what} card could not be built`);
     return blocks;
   }
   const at = blocks.findIndex((b) => b.type === "quick_replies");
@@ -109,7 +110,7 @@ async function proReplyBlocks(
             tz: turn.tz,
             user: params.user,
           }),
-        "Day",
+        "Day progress",
       );
     }
     // After the day card, so a reply with both reads today, then the week.
@@ -118,7 +119,16 @@ async function proReplyBlocks(
         blocks,
         () =>
           buildWeekProgressBlock({ userId, tz: turn.tz, user: params.user }),
-        "Week",
+        "Week progress",
+      );
+    }
+    // Coach roadmap T4: the two scans the reply named, read for this user.
+    const { labelCompare } = parsedBlocks;
+    if (cardsShown && labelCompare && params.labelCompareCard) {
+      blocks = await withProgressCard(
+        blocks,
+        () => buildLabelCompareBlock(labelCompare, userId),
+        "Label compare",
       );
     }
   }
