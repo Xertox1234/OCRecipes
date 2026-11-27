@@ -22,6 +22,7 @@ import {
   scannedItems,
   dailyLogs,
   familyProfiles,
+  recipeIngredients,
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
@@ -335,6 +336,44 @@ describe("meal-plan-items storage", () => {
       expect(withRecipe?.recipe?.title).toBe("Pasta");
       const withScanned = items.find((i) => i.scannedItemId === scanned.id);
       expect(withScanned?.scannedItem?.productName).toBe("Cheese");
+    });
+
+    // A recipe saved with no ingredients is stored as `allergens: []`, which
+    // reads as "checked, none found". Nothing was checked, so the plan screen
+    // gets null ("not checked") for it instead.
+    it("returns null allergens for a recipe with no ingredients", async () => {
+      const recipe = await createRecipe(testUser.id, { allergens: [] });
+      await addItem({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "dinner",
+      });
+      const [item] = await getMealPlanItems(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-22",
+      );
+      expect(item.recipe?.allergens).toBeNull();
+    });
+
+    it("keeps an empty allergen list for a recipe with ingredients (control)", async () => {
+      const recipe = await createRecipe(testUser.id, { allergens: [] });
+      await tx
+        .insert(recipeIngredients)
+        .values({ recipeId: recipe.id, name: "rice" });
+      await addItem({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "dinner",
+      });
+      const [item] = await getMealPlanItems(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-22",
+      );
+      expect(item.recipe?.allergens).toEqual([]);
     });
 
     it("excludes items outside the date range", async () => {

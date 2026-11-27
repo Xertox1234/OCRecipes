@@ -8,6 +8,7 @@ import {
   dailyLogs,
   mealPlanRecipes,
   mealPlanItems,
+  recipeIngredients,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, gte, lte, lt, ne, sql, inArray, isNull } from "drizzle-orm";
@@ -90,7 +91,30 @@ export async function getMealPlanItems(
       : Promise.resolve([]),
   ]);
 
-  for (const r of recipes) recipesMap.set(r.id, r);
+  // A recipe saved with no ingredients is stored as `allergens: []`, which
+  // reads as "checked, none found". Nothing was checked, so it goes out as
+  // null ("not checked") and the plan screen says so for an eater with an
+  // allergy. Same guard as recipe search's "safe for me".
+  const withIngredients = new Set<number>();
+  if (recipes.length > 0) {
+    const rows = await db
+      .selectDistinct({ recipeId: recipeIngredients.recipeId })
+      .from(recipeIngredients)
+      .where(
+        inArray(
+          recipeIngredients.recipeId,
+          recipes.map((r) => r.id),
+        ),
+      );
+    for (const row of rows) withIngredients.add(row.recipeId);
+  }
+
+  for (const r of recipes) {
+    recipesMap.set(
+      r.id,
+      withIngredients.has(r.id) ? r : { ...r, allergens: null },
+    );
+  }
   for (const s of scanned) scannedItemsMap.set(s.id, s);
 
   return items.map((item) => ({
