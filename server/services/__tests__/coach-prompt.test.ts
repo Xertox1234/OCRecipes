@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSystemPrompt,
+  buildUserContextLines,
   formatAboutUserLines,
   getSystemPromptTemplateVersion,
   type CoachContext,
@@ -12,6 +13,98 @@ describe("coach-prompt template version", () => {
   // an intentional prompt edit updates this pin on purpose.
   it("matches the pinned value (last intended edit: the chart rule names progress cards too, 2026-11-26)", () => {
     expect(getSystemPromptTemplateVersion()).toBe("3a098f321cad1e6b");
+  });
+});
+
+// Audit 2026-11-24 (M38, L45a): a macro goal the user never set is stored as
+// 0, and intake sums are floats. Neither may reach the prompt as a fake "0g"
+// goal, a negative "remaining" or float noise.
+describe("coach prompt: goals and remaining lines", () => {
+  const lines = (ctx: Pick<CoachContext, "goals" | "todayIntake">) =>
+    buildUserContextLines({
+      ...ctx,
+      dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
+    } as CoachContext).filter((l) =>
+      /^(Daily goals|Today's intake|Remaining today)/.test(l),
+    );
+
+  it("leaves out macro goals that were never set", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 0, carbs: 0, fat: 0 },
+        todayIntake: { calories: 1400, protein: 95, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal",
+      "Today's intake: 1400 cal, 95g protein, 170g carbs, 45g fat",
+      "Remaining today: 600 cal",
+    ]);
+  });
+
+  it("shows only the macros that have a goal", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 0, fat: 0 },
+        todayIntake: { calories: 1400, protein: 95, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein",
+      "Today's intake: 1400 cal, 95g protein, 170g carbs, 45g fat",
+      "Remaining today: 600 cal, 55g protein",
+    ]);
+  });
+
+  it("rounds intake and remaining to whole numbers", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+        todayIntake: {
+          calories: 1234.1,
+          protein: 40.35,
+          carbs: 100.6,
+          fat: 29.999999,
+        },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein, 250g carbs, 65g fat",
+      "Today's intake: 1234 cal, 40g protein, 101g carbs, 30g fat",
+      "Remaining today: 766 cal, 110g protein, 149g carbs, 35g fat",
+    ]);
+  });
+
+  it("says 'over by' for a macro past its goal while calories are under", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 150, fat: 65 },
+        todayIntake: { calories: 1400, protein: 95, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein, 150g carbs, 65g fat",
+      "Today's intake: 1400 cal, 95g protein, 170g carbs, 45g fat",
+      "Remaining today: 600 cal, 55g protein, over by 20g carbs, 20g fat",
+    ]);
+  });
+
+  it("keeps the calories-over wording and skips unset macros there too", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 0, fat: 0 },
+        todayIntake: { calories: 2100.4, protein: 160, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein",
+      "Today's intake: 2100 cal, 160g protein, 170g carbs, 45g fat",
+      "Remaining today: OVER by 100 cal, over by 10g protein",
+    ]);
+  });
+
+  it("prints no goal lines when there are no goals", () => {
+    expect(
+      lines({
+        goals: null,
+        todayIntake: { calories: 300, protein: 10, carbs: 20, fat: 5 },
+      }),
+    ).toEqual(["Today's intake: 300 cal, 10g protein, 20g carbs, 5g fat"]);
   });
 });
 

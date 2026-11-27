@@ -382,32 +382,51 @@ export function buildUserContextLines(
 ): string[] {
   const parts: string[] = [];
 
+  // Intake sums are floats (2000 - 1234.1 = 765.9000000000001), so every
+  // number is rounded before it is printed or subtracted (audit L45a).
+  const intake = {
+    calories: Math.round(context.todayIntake.calories),
+    protein: Math.round(context.todayIntake.protein),
+    carbs: Math.round(context.todayIntake.carbs),
+    fat: Math.round(context.todayIntake.fat),
+  };
+  // A macro goal the user never set is stored as 0 (the context builder
+  // coerces null), so 0 means "no goal": it is left out rather than shown as
+  // a 0g goal with a negative remainder (audit M38).
+  const macros = (["protein", "carbs", "fat"] as const).filter(
+    (m) => context.goals && Math.round(context.goals[m]) > 0,
+  );
+
   if (context.goals) {
     parts.push(
-      `Daily goals: ${context.goals.calories} cal, ${context.goals.protein}g protein, ${context.goals.carbs}g carbs, ${context.goals.fat}g fat`,
+      `Daily goals: ${[
+        `${Math.round(context.goals.calories)} cal`,
+        ...macros.map((m) => `${Math.round(context.goals![m])}g ${m}`),
+      ].join(", ")}`,
     );
   }
   parts.push(
-    `Today's intake: ${context.todayIntake.calories} cal, ${context.todayIntake.protein}g protein, ${context.todayIntake.carbs}g carbs, ${context.todayIntake.fat}g fat`,
+    `Today's intake: ${intake.calories} cal, ${intake.protein}g protein, ${intake.carbs}g carbs, ${intake.fat}g fat`,
   );
 
   // Pre-compute remaining macros so the model doesn't have to do arithmetic
   if (context.goals) {
-    const rem = {
-      cal: context.goals.calories - context.todayIntake.calories,
-      protein: context.goals.protein - context.todayIntake.protein,
-      carbs: context.goals.carbs - context.todayIntake.carbs,
-      fat: context.goals.fat - context.todayIntake.fat,
-    };
-    if (rem.cal >= 0) {
-      parts.push(
-        `Remaining today: ${rem.cal} cal, ${rem.protein}g protein, ${rem.carbs}g carbs, ${rem.fat}g fat`,
-      );
-    } else {
-      parts.push(
-        `Remaining today: OVER by ${Math.abs(rem.cal)} cal, ${rem.protein >= 0 ? `${rem.protein}g protein needed` : `over by ${Math.abs(rem.protein)}g protein`}, ${rem.carbs >= 0 ? `${rem.carbs}g carbs left` : `over by ${Math.abs(rem.carbs)}g carbs`}, ${rem.fat >= 0 ? `${rem.fat}g fat left` : `over by ${Math.abs(rem.fat)}g fat`}`,
-      );
-    }
+    const goals = context.goals;
+    const remCal = Math.round(goals.calories) - intake.calories;
+    const calOver = remCal < 0;
+    // Under the calorie goal a macro left reads "55g protein"; over it, the
+    // older wording ("needed" / "left") stays. A macro past its own goal
+    // always reads "over by".
+    const leftWord = { protein: "needed", carbs: "left", fat: "left" };
+    const macroParts = macros.map((m) => {
+      const rem = Math.round(goals[m]) - intake[m];
+      if (rem < 0) return `over by ${Math.abs(rem)}g ${m}`;
+      return calOver ? `${rem}g ${m} ${leftWord[m]}` : `${rem}g ${m}`;
+    });
+    const calPart = calOver
+      ? `OVER by ${Math.abs(remCal)} cal`
+      : `${remCal} cal`;
+    parts.push(`Remaining today: ${[calPart, ...macroParts].join(", ")}`);
   }
 
   if (context.mealPatternSummary) {
