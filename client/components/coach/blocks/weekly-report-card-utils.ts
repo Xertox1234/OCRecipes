@@ -25,12 +25,23 @@ export function reportEyebrow(block: WeeklyReportBlock): string {
   return `Your week · ${formatWeekRange(block.weekStart, block.weekEnd)}`;
 }
 
-/** The whole card as one spoken button. */
+/**
+ * The whole card as one spoken button; what a tap does is its hint. A
+ * headline that already ends a sentence is not given a second full stop.
+ */
 export function reportSpoken(block: WeeklyReportBlock): string {
+  const headline = block.headline.trim();
   return [
-    `Your week, ${formatWeekRange(block.weekStart, block.weekEnd)}`,
-    block.headline,
-    ...reportStats(block),
-    "Opens the full report",
-  ].join(". ");
+    `Your week, ${formatWeekRange(block.weekStart, block.weekEnd)}. `,
+    /[.!?]$/.test(headline) ? `${headline} ` : `${headline}. `,
+    reportStats(block).join(". "),
+  ].join("");
+}
+
+/** Where a tap goes: the report on the Profile tab, as the root stack's "Main" params. */
+export function weeklyReportScreen(id: number) {
+  return {
+    screen: "ProfileTab" as const,
+    params: { screen: "WeeklyReport" as const, params: { id } },
+  };
 }

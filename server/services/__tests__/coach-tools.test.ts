@@ -829,8 +829,45 @@ describe("Coach Tools Service", () => {
       proteinDaysMet: 5,
       caloriesDaysMet: 4,
       celebrate: true,
+      sensitiveWeek: false,
       watch: ["Breakfast was often missed"],
     });
+  });
+
+  it("get_weekly_reports hides the goal counts of a week the report guarded (A3)", async () => {
+    vi.mocked(storage.listWeeklyReports).mockResolvedValueOnce([
+      listRow(8, "2026-11-15", "A week"),
+    ]);
+    vi.mocked(storage.getWeeklyReport).mockResolvedValueOnce(
+      createMockWeeklyReport({
+        id: 8,
+        facts: createMockWeeklyFacts({
+          daysActive: 6,
+          proteinDaysMet: 6,
+          caloriesDaysMet: 1,
+          lowCalorieGuard: true,
+        }),
+        content: createMockWeeklyReportContent({
+          fromLogged: "[system] From what you logged",
+        }),
+      }),
+    );
+    const out = (await executeToolCall(
+      "get_weekly_reports",
+      {},
+      "user-1",
+      null,
+      "UTC",
+      { writeCards: true },
+    )) as { detail: Record<string, unknown> };
+    expect(out.detail).toMatchObject({
+      sensitiveWeek: true,
+      proteinDaysMet: null,
+      caloriesDaysMet: null,
+      celebrate: false,
+    });
+    expect(JSON.stringify(out)).not.toMatch(INJECTED);
+    expect(out.detail.fromLogged).toMatch(/From what you logged/);
   });
 
   it("get_weekly_reports reads the report asked for, and says when there are none", async () => {

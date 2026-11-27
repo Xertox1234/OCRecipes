@@ -38,9 +38,18 @@ describe("reportStats", () => {
 });
 
 describe("reportSpoken", () => {
-  it("speaks the week, the headline, the counts and what a tap does", () => {
+  it("speaks the week, the headline and the counts", () => {
     expect(reportSpoken(block)).toBe(
-      "Your week, Nov 15–21. Five days logged. 5 of 7 days logged. 14 meals. Protein goal met 4 days. Opens the full report",
+      "Your week, Nov 15–21. Five days logged. 5 of 7 days logged. 14 meals. Protein goal met 4 days",
+    );
+  });
+
+  it("does not double a full stop the headline already has", () => {
+    expect(reportSpoken({ ...block, headline: "A steady week." })).toContain(
+      "A steady week. 5 of 7",
+    );
+    expect(reportSpoken({ ...block, headline: "Nice work!" })).toContain(
+      "Nice work! 5 of 7",
     );
   });
 });

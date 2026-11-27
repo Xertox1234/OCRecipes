@@ -4,11 +4,11 @@ import { fireEvent, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import BlockRenderer from "../index";
-import { openWeeklyReport } from "@/components/weekly-report/open-weekly-report";
 import type { WeeklyReportBlock } from "@shared/schemas/coach-blocks";
 
-vi.mock("@/components/weekly-report/open-weekly-report", () => ({
-  openWeeklyReport: vi.fn(),
+const mockNavigate = vi.fn();
+vi.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
 const block: WeeklyReportBlock = {
@@ -35,6 +35,13 @@ describe("WeeklyReportCard", () => {
   it("opens the full report on a tap", () => {
     renderComponent(<BlockRenderer block={block} />);
     fireEvent.click(screen.getByTestId("weekly-report-card"));
-    expect(openWeeklyReport).toHaveBeenCalledWith(12);
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "Main",
+      {
+        screen: "ProfileTab",
+        params: { screen: "WeeklyReport", params: { id: 12 } },
+      },
+      { pop: true },
+    );
   });
 });

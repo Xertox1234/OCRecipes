@@ -811,6 +811,12 @@ describe("weekly_report requests (Coach roadmap A3)", () => {
     expect(on).toMatch(/no reports[^.]*write no weekly_report block/);
     expect(on).toMatch(/Sunday to Saturday/);
     expect(on).toMatch(/rather than repeating its numbers/);
+    // Reviewed: a guarded week is never cheered, and nothing is worked out.
+    expect(on).toMatch(/sensitiveWeek is true[^.]*never mention calories/);
+    expect(on).toMatch(/celebrate is false, do not cheer/);
+    expect(on).toMatch(/A blank count means there was no goal, not zero/);
+    expect(on).toMatch(/name it by its dates/);
+    expect(on).not.toMatch(/one is written each Sunday/);
     expect(getBlocksSystemPrompt(false, { writeCards: true })).not.toContain(
       "weekly_report",
     );

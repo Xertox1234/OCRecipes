@@ -29,6 +29,12 @@ export async function buildWeeklyReportBlock(
     headline: report.content.headline,
     daysActive: report.facts.daysActive,
     mealsLogged: report.facts.mealsLogged,
-    proteinDaysMet: report.facts.proteinDaysMet,
+    // A week the report guarded (very low intake, or a sign of distress)
+    // shows no goal count to be proud of, as the report itself cheers
+    // nothing that week.
+    proteinDaysMet:
+      report.facts.safetySignal || report.facts.lowCalorieGuard
+        ? null
+        : report.facts.proteinDaysMet,
   };
 }

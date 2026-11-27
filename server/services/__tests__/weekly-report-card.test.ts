@@ -84,6 +84,18 @@ describe("buildWeeklyReportBlock", () => {
     expect(block.proteinDaysMet).toBeNull();
   });
 
+  it("leaves out the protein goal days of a week the report guarded", async () => {
+    for (const guard of [{ lowCalorieGuard: true }, { safetySignal: true }]) {
+      vi.mocked(storage.getWeeklyReport).mockResolvedValueOnce(
+        createMockWeeklyReport({
+          facts: createMockWeeklyFacts({ proteinDaysMet: 6, ...guard }),
+        }),
+      );
+      const block = await buildWeeklyReportBlock(1, "user-1");
+      expect(block.proteinDaysMet).toBeNull();
+    }
+  });
+
   it("throws for a report that is not this user's (or does not parse)", async () => {
     vi.mocked(storage.getWeeklyReport).mockResolvedValue(null);
     await expect(buildWeeklyReportBlock(4, "user-1")).rejects.toThrow(

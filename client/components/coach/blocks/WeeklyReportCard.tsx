@@ -1,13 +1,16 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useTheme } from "@/hooks/useTheme";
 import { PressableScale } from "@/components/PressableScale";
-import { openWeeklyReport } from "@/components/weekly-report/open-weekly-report";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { WeeklyReportBlock } from "@shared/schemas/coach-blocks";
 import {
   reportEyebrow,
   reportSpoken,
   reportStats,
+  weeklyReportScreen,
 } from "./weekly-report-card-utils";
 
 interface Props {
@@ -17,19 +20,33 @@ interface Props {
 /**
  * The user's weekly report in the chat (Coach roadmap A3): the week, its
  * headline and three counts, read by the server from the stored report. A
- * report never changes once written, so the card needs no fresh read; a tap
- * opens the full report on the Profile tab.
+ * report never changes once written, so the card needs no fresh read. A tap
+ * opens the full report on the Profile tab, as the report popup does: from
+ * the Coach tab it switches tabs, and from the full-screen Coach it closes
+ * the chat (back from the report lands on Profile, not the conversation).
  */
+// The eyebrow keeps the chat cards' 1.2 cap; the headline, counts and the
+// call to action grow further, since this card is something to act on.
 const WeeklyReportCard = React.memo(function WeeklyReportCard({
   block,
 }: Props) {
   const { theme } = useTheme();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   return (
     <PressableScale
-      onPress={() => openWeeklyReport(block.reportId)}
+      // The root stack's nested form: a bare "WeeklyReport" is not
+      // delivered from another tab. `pop` returns to the existing Main
+      // instead of pushing a second one above the full-screen Coach.
+      onPress={() =>
+        navigation.navigate("Main", weeklyReportScreen(block.reportId), {
+          pop: true,
+        })
+      }
       scaleTo={0.97}
       accessibilityRole="button"
       accessibilityLabel={reportSpoken(block)}
+      accessibilityHint="Opens the full report"
       testID="weekly-report-card"
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
     >
@@ -41,7 +58,7 @@ const WeeklyReportCard = React.memo(function WeeklyReportCard({
       </Text>
       <Text
         style={[styles.headline, { color: theme.text }]}
-        maxFontSizeMultiplier={1.2}
+        maxFontSizeMultiplier={1.5}
       >
         {block.headline}
       </Text>
@@ -50,7 +67,7 @@ const WeeklyReportCard = React.memo(function WeeklyReportCard({
           <Text
             key={stat}
             style={[styles.stat, { color: theme.text }]}
-            maxFontSizeMultiplier={1.2}
+            maxFontSizeMultiplier={1.5}
           >
             {stat}
           </Text>
@@ -58,7 +75,7 @@ const WeeklyReportCard = React.memo(function WeeklyReportCard({
       </View>
       <Text
         style={[styles.cta, { color: theme.link }]}
-        maxFontSizeMultiplier={1.2}
+        maxFontSizeMultiplier={1.5}
       >
         Read your week
       </Text>

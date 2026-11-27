@@ -448,7 +448,7 @@ export const weeklyReportBlockSchema = z.object({
   headline: z.string().min(1).max(120),
   daysActive: weekCount,
   mealsLogged: z.number().int().min(0),
-  /** Null when the user had no protein goal that week. */
+  /** Null when the user had no protein goal that week, or the report guarded it. */
   proteinDaysMet: weekCount.nullable(),
 });
 export type WeeklyReportBlock = z.infer<typeof weeklyReportBlockSchema>;
