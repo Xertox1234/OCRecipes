@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "@/hooks/useTheme";
 import { useWeekCalories } from "@/hooks/useWeekCalories";
 import { GOALS_QUERY_KEY } from "@/hooks/useCalorieGoal";
-import { toLocalDateString } from "@shared/lib/date";
+import { useLocalToday } from "@/hooks/useLocalToday";
 import type { WeekProgressBlock } from "@shared/schemas/coach-blocks";
 import type { GoalsResponse } from "@/types/api";
 import { liveGoals } from "./day-progress-utils";
@@ -34,6 +34,7 @@ const WeekProgress = React.memo(function WeekProgress({ block }: Props) {
   const dates = useMemo(() => weekDates(block.endDate), [block.endDate]);
   const week = useWeekCalories(block.endDate);
   const goalsQuery = useQuery<GoalsResponse>({ queryKey: GOALS_QUERY_KEY });
+  const today = useLocalToday();
 
   const liveCalories = liveWeek(week.data, week.isError, block.endDate);
   const liveGoal = liveGoals(goalsQuery.data)?.calories;
@@ -44,7 +45,6 @@ const WeekProgress = React.memo(function WeekProgress({ block }: Props) {
     live && liveCalories ? liveCalories : block.snapshot.calories;
   const goal = live && liveGoal ? liveGoal : block.snapshot.calorieGoal;
 
-  const today = toLocalDateString(new Date());
   const bars = weekBars(calories, goal, dates, today);
   const summary = weekSummary(calories, goal, block.endDate === today);
   const title = weekTitle(block.endDate, today);
