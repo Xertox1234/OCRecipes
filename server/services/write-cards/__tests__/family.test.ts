@@ -102,11 +102,11 @@ describe("buildFamilyPayload", () => {
     ).toEqual({ name: "Sam", allergens: ["peanuts", "milk"] });
   });
 
-  it("refuses a name already in the family, any case", async () => {
+  it("does not tell the model a name is taken: that is checked at save", async () => {
     await addProfile("Sam");
-    await expect(
-      buildFamilyPayload({ name: "sam", allergens: [] }, user.id),
-    ).rejects.toMatchObject({ reason: "duplicate" });
+    expect(
+      await buildFamilyPayload({ name: "sam", allergens: [] }, user.id),
+    ).toEqual({ name: "sam", allergens: [] });
   });
 
   it("refuses a full family", async () => {
@@ -149,7 +149,29 @@ describe("performFamilySave", () => {
       ],
       note: null,
     });
-    expect(refs).toEqual({ familyProfileId: row.id });
+    expect(refs).toEqual({
+      familyAdded: {
+        id: row.id,
+        name: "Sam",
+        allergies: [
+          { name: "peanuts", severity: "severe" },
+          { name: "milk", severity: "mild" },
+        ],
+      },
+    });
+  });
+
+  it("refuses a name already in the family, any case, and adds no one", async () => {
+    await addProfile("SAM ");
+    await expect(
+      performFamilySave(
+        tx,
+        cardFor({ name: "sam", allergens: [] }),
+        {},
+        { userId: user.id },
+      ),
+    ).rejects.toThrow(/already in your family/);
+    expect(await profilesOf()).toHaveLength(1);
   });
 
   it.each([
@@ -207,26 +229,63 @@ describe("performFamilySave", () => {
 });
 
 describe("revertFamilySave", () => {
+  const added = (id: number) => ({
+    familyAdded: {
+      id,
+      name: "Sam",
+      allergies: [{ name: "peanuts", severity: "severe" as const }],
+    },
+  });
+  const insertSam = async (userId = user.id) =>
+    (
+      await tx
+        .insert(schema.familyProfiles)
+        .values({
+          userId,
+          name: "Sam",
+          allergies: [{ name: "peanuts", severity: "severe" }],
+        })
+        .returning()
+    )[0];
+  const samCard = (refs: object) =>
+    cardFor({ name: "Sam", allergens: ["peanuts"] }, refs);
+
   it("removes the person the card added, for this user only", async () => {
-    const [mine] = await tx
-      .insert(schema.familyProfiles)
-      .values({ userId: user.id, name: "Sam", allergies: [] })
-      .returning();
+    const mine = await insertSam();
     const other = await createTestUser(tx, { username: "other_family_user" });
-    const [theirs] = await tx
-      .insert(schema.familyProfiles)
-      .values({ userId: other.id, name: "Sam", allergies: [] })
-      .returning();
-    await revertFamilySave(
-      tx,
-      cardFor({ name: "Sam", allergens: [] }, { familyProfileId: theirs.id }),
-    );
+    const theirs = await insertSam(other.id);
+    await revertFamilySave(tx, samCard(added(theirs.id)));
     expect(await profilesOf(other.id)).toHaveLength(1);
-    await revertFamilySave(
-      tx,
-      cardFor({ name: "Sam", allergens: [] }, { familyProfileId: mine.id }),
-    );
+    await revertFamilySave(tx, samCard(added(mine.id)));
     expect(await profilesOf()).toEqual([]);
+  });
+
+  it("keeps a person the user has changed since", async () => {
+    const mine = await insertSam();
+    await tx
+      .update(schema.familyProfiles)
+      .set({ note: "Loves pasta" })
+      .where(eq(schema.familyProfiles.id, mine.id));
+    await revertFamilySave(tx, samCard(added(mine.id)));
+    expect(await profilesOf()).toHaveLength(1);
+  });
+
+  it("keeps a person who already has planned meals", async () => {
+    const mine = await insertSam();
+    const [recipe] = await tx
+      .insert(schema.mealPlanRecipes)
+      .values({ userId: user.id, title: "Pasta" })
+      .returning();
+    await tx.insert(schema.mealPlanItems).values({
+      userId: user.id,
+      recipeId: recipe.id,
+      plannedDate: "2026-11-28",
+      mealType: "dinner",
+      audience: "profile",
+      familyProfileId: mine.id,
+    });
+    await revertFamilySave(tx, samCard(added(mine.id)));
+    expect(await profilesOf()).toHaveLength(1);
   });
 });
 

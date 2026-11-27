@@ -191,9 +191,10 @@ export type AddFamilyMemberCardArgs = z.infer<
   typeof addFamilyMemberCardArgsSchema
 >;
 
-/** Why no family card was made: the family is full, the allergies need the
- *  health-data agreement, or someone of that name is already in it. */
-export type FamilyCardRefusal = "limit" | "consent" | "duplicate";
+/** Why no family card was made: the family is full, or the allergies need
+ *  the health-data agreement. (A taken name is checked at save, so the
+ *  model never learns which names exist.) */
+export type FamilyCardRefusal = "limit" | "consent";
 
 /** A write tool call in write-card mode, args already validated. */
 export type WriteCardProposal =

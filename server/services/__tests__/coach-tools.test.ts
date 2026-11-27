@@ -1742,7 +1742,6 @@ describe("write-card mode (spec 2026-11-09)", () => {
   it.each([
     ["limit", /up to 8/],
     ["consent", /health/],
-    ["duplicate", /already/],
   ] as const)(
     "add_family_member says why no card was made (%s)",
     async (refused, says) => {

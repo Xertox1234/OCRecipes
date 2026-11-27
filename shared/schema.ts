@@ -1614,10 +1614,15 @@ export interface CoachWriteCardSavedRefs {
   /** Allergy card: the allergy the save added. Undo removes it only while
    *  the profile still holds it with this severity. */
   allergyAdded?: { name: string; severity: "mild" | "moderate" | "severe" };
+  /** Family card: the profile the save created, as saved. Undo deletes it
+   *  only while it is unchanged and has no planned meals. */
+  familyAdded?: {
+    id: number;
+    name: string;
+    allergies: { name: string; severity: "mild" | "moderate" | "severe" }[];
+  };
   /** Reminders card: each reminder type the save switched, as mutes before
    *  and after. Undo restores a type only while it still holds `after`. */
-  /** Family card: the profile the save created (Undo deletes it). */
-  familyProfileId?: number;
   remindersRestore?: {
     key: "meal-log" | "commitment" | "daily-checkin" | "pantry-expiring";
     before: boolean;

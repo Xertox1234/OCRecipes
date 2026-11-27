@@ -1,4 +1,9 @@
-import { type FamilyProfile, familyProfiles } from "@shared/schema";
+import {
+  type Allergy,
+  type FamilyProfile,
+  familyProfiles,
+  mealPlanItems,
+} from "@shared/schema";
 import {
   MAX_FAMILY_PROFILES,
   type FamilyProfileInput,
@@ -16,8 +21,9 @@ type DbExecutor = Pick<typeof db, "update">;
 /** Profiles in the order the user created them. */
 export async function getFamilyProfiles(
   userId: string,
+  executor: Pick<typeof db, "select"> = db,
 ): Promise<FamilyProfile[]> {
-  return db
+  return executor
     .select()
     .from(familyProfiles)
     .where(eq(familyProfiles.userId, userId))
@@ -117,6 +123,49 @@ export async function deleteFamilyProfile(
     .where(and(eq(familyProfiles.id, id), eq(familyProfiles.userId, userId)))
     .returning({ id: familyProfiles.id });
   return result.length > 0;
+}
+
+/**
+ * Undo for the Coach's family card: deletes the profile only while it is
+ * exactly what the card saved (name, allergies, no note) and has no planned
+ * meals of its own, which the delete would take with it. Otherwise it is
+ * left alone: "kept". Runs on the card's transaction; the row is locked.
+ */
+export async function deleteFamilyProfileIfUnchanged(
+  executor: Pick<typeof db, "select" | "delete">,
+  userId: string,
+  added: { id: number; name: string; allergies: Allergy[] },
+): Promise<"removed" | "kept" | "gone"> {
+  const [row] = await executor
+    .select()
+    .from(familyProfiles)
+    .where(
+      and(eq(familyProfiles.id, added.id), eq(familyProfiles.userId, userId)),
+    )
+    .for("update");
+  if (!row) return "gone";
+  const unchanged =
+    row.name === added.name &&
+    row.note === null &&
+    JSON.stringify(row.allergies) === JSON.stringify(added.allergies);
+  if (!unchanged) return "kept";
+  const [meal] = await executor
+    .select({ id: mealPlanItems.id })
+    .from(mealPlanItems)
+    .where(
+      and(
+        eq(mealPlanItems.familyProfileId, added.id),
+        eq(mealPlanItems.userId, userId),
+      ),
+    )
+    .limit(1);
+  if (meal) return "kept";
+  await executor
+    .delete(familyProfiles)
+    .where(
+      and(eq(familyProfiles.id, added.id), eq(familyProfiles.userId, userId)),
+    );
+  return "removed";
 }
 
 /**

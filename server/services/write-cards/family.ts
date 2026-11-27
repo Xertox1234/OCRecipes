@@ -8,7 +8,7 @@ import {
 import { MAX_FAMILY_PROFILES } from "@shared/types/family";
 import {
   createFamilyProfileIn,
-  deleteFamilyProfile,
+  deleteFamilyProfileIfUnchanged,
   getFamilyProfiles,
 } from "../../storage/family-profiles";
 import { getProfileAllergies } from "../../storage/user-profiles";
@@ -29,7 +29,9 @@ export {
  * family member the user named in the chat, with the rules the Family
  * screen keeps (at most eight people, allergies only with the health-data
  * agreement). Stored profiles are read here to check those rules and never
- * leave the server: the model hears only why a card was not made.
+ * leave the server: the model hears only why a card was not made (the
+ * family is full, or the allergies need consent). Whether a name is already
+ * taken is checked at save, so the model never learns which names exist.
  */
 
 /** No card, and why (the tool tells the model the reason, nothing more). */
@@ -49,9 +51,6 @@ export async function buildFamilyPayload(
 ): Promise<FamilyCardPayload> {
   const allergens = [...new Set(args.allergens)];
   const profiles = await getFamilyProfiles(userId);
-  if (profiles.some((p) => sameName(p.name, args.name))) {
-    throw new FamilyCardRefused("duplicate");
-  }
   if (profiles.length >= MAX_FAMILY_PROFILES) {
     throw new FamilyCardRefused("limit");
   }
@@ -113,36 +112,52 @@ export async function performFamilySave(
   // A nested transaction only to reach the full transaction client the
   // family storage needs (its advisory lock is held until the card's own
   // transaction commits), as the pantry card does.
-  const created = await tx.transaction((inner) =>
-    createFamilyProfileIn(inner, ctx.userId, {
+  const allergies = payload.allergens.map((name, i) => ({
+    name,
+    severity: severities[i],
+  }));
+  const created = await tx.transaction(async (inner) => {
+    const made = await createFamilyProfileIn(inner, ctx.userId, {
       name: payload.name,
-      allergies: payload.allergens.map((name, i) => ({
-        name,
-        severity: severities[i],
-      })),
+      allergies,
       note: null,
-    }),
-  );
+    });
+    if (made === "limit") return made;
+    // Under the family lock the create took: a name added meanwhile (on the
+    // Family screen, or by another card) is seen. The user hears it on the
+    // card; the model is never told which names exist.
+    const others = (await getFamilyProfiles(ctx.userId, inner)).filter(
+      (p) => p.id !== made.id,
+    );
+    if (others.some((p) => sameName(p.name, payload.name))) {
+      throw new WriteCardEditError(
+        `${payload.name} is already in your family.`,
+      );
+    }
+    return made;
+  });
   if (created === "limit") {
     throw new WriteCardEditError(
       `You can add up to ${MAX_FAMILY_PROFILES} people.`,
     );
   }
-  return { familyProfileId: created.id };
+  return {
+    familyAdded: { id: created.id, name: created.name, allergies },
+  };
 }
 
 /**
- * Removes the person this card added. Their own planned meals go with them
- * (the profile's foreign key), as when the Family screen deletes one; Undo
- * is open only for a minute after the save.
+ * Removes the person this card added, only while they are exactly as saved
+ * and have no planned meals (deleting a profile takes its meals with it).
+ * Someone the user has changed or planned for since is kept.
  */
 export async function revertFamilySave(
   tx: WriteCardTx,
   card: CoachWriteCard,
 ): Promise<void> {
-  const id = card.savedRefs?.familyProfileId;
-  if (id === undefined) return;
-  await deleteFamilyProfile(id, card.userId, tx);
+  const added = card.savedRefs?.familyAdded;
+  if (!added) return;
+  await deleteFamilyProfileIfUnchanged(tx, card.userId, added);
 }
 
 /**

@@ -216,9 +216,7 @@ const FAMILY_REFUSED: Record<
   limit:
     "No family card was made: the user already has 8 family profiles, the most the app holds. Nothing has changed. Tell them they can add up to 8 people and remove one in Profile, Family first.",
   consent:
-    "No family card was made: allergies can be saved only after the user agrees to store health details, which they do in their dietary profile, never in the chat. Nothing has changed. Tell them so; you may offer to add the person without allergies.",
-  duplicate:
-    "No family card was made: someone of that name is already in the user's family. Nothing has changed. Tell them so, and that they can change that person in Profile, Family.",
+    "No family card was made: allergies can be saved only after the user agrees to store health details, which they do in their dietary profile, never in the chat. Nothing has changed. Tell them so, and do not call add_family_member again with allergies. If they want the person added without them, call it with no allergens and say plainly that no allergies will be recorded for that person until they agree.",
 };
 
 /**
@@ -238,6 +236,6 @@ export function familyCardResult(outcome: void | WriteCardOutcome) {
   }
   return {
     card_shown: true,
-    message: `${CARD_SHOWN_MESSAGE} The card shows: ${sanitizeUserInput(outcome.rows)}. The user picks each allergy's severity on the card; never guess one.`,
+    message: `${CARD_SHOWN_MESSAGE} The card shows: ${sanitizeUserInput(outcome.rows)}. The user picks each allergy's severity on the card; never guess one. If the user named an allergy that is not on the card, say it is not recorded and can be added in Profile, Family.`,
   };
 }

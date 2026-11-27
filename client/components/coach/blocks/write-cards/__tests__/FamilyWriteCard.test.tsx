@@ -44,11 +44,13 @@ describe("FamilyWriteCard", () => {
     expect(screen.getByText("Add Sam to your family")).toBeDefined();
     for (const allergy of ["Peanuts", "Dairy/Milk"]) {
       const g = group(`How severe is Sam's ${allergy} allergy?`);
-      for (const name of ["Mild", "Moderate", "Severe"]) {
+      for (const level of ["Mild", "Moderate", "Severe"]) {
         expect(
-          (within(g).getByRole("radio", { name }) as HTMLElement).getAttribute(
-            "aria-checked",
-          ),
+          (
+            within(g).getByRole("radio", {
+              name: `${level}, ${allergy} allergy`,
+            }) as HTMLElement
+          ).getAttribute("aria-checked"),
         ).not.toBe("true");
       }
     }
@@ -64,7 +66,7 @@ describe("FamilyWriteCard", () => {
     renderComponent(<Harness />);
     fireEvent.click(
       within(group("How severe is Sam's Peanuts allergy?")).getByRole("radio", {
-        name: "Severe",
+        name: "Severe, Peanuts allergy",
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Add to your family" }));
@@ -72,7 +74,7 @@ describe("FamilyWriteCard", () => {
     fireEvent.click(
       within(group("How severe is Sam's Dairy/Milk allergy?")).getByRole(
         "radio",
-        { name: "Mild" },
+        { name: "Mild, Dairy/Milk allergy" },
       ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Add to your family" }));
@@ -83,6 +85,26 @@ describe("FamilyWriteCard", () => {
     await waitFor(() =>
       expect(screen.getByText("✓ Sam added to your family")).toBeDefined(),
     );
+  });
+
+  it("names the allergy on each severity, and says how many are left to pick", () => {
+    renderComponent(<Harness />);
+    expect(
+      screen.getAllByRole("radio", { name: "Mild, Peanuts allergy" }),
+    ).toHaveLength(1);
+    expect(
+      screen.getByText("Choose a severity for each allergy (2 left)"),
+    ).toBeDefined();
+    fireEvent.click(
+      screen.getByRole("radio", { name: "Severe, Dairy/Milk allergy" }),
+    );
+    expect(
+      screen.getByText("Choose a severity for each allergy (1 left)"),
+    ).toBeDefined();
+    fireEvent.click(
+      screen.getByRole("radio", { name: "Mild, Peanuts allergy" }),
+    );
+    expect(screen.queryByText(/Choose a severity/)).toBeNull();
   });
 
   it("says when the person has no allergies listed", () => {

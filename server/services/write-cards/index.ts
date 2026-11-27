@@ -309,6 +309,9 @@ export function describeLiveCard(card: CoachWriteCard): string | null {
   if (card.kind === "allergy") {
     return `${shown} The user picks the severity and saves it on the card.`;
   }
+  if (card.kind === "family") {
+    return `${shown} The user picks each severity on the card. To change the name or the allergies, call ${TOOL_FOR_KIND.family} again with the full updated contents.`;
+  }
   return `${shown} To change it, call ${TOOL_FOR_KIND[card.kind]} again with the full updated contents.`;
 }
 

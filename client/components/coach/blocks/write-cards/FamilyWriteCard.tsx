@@ -38,6 +38,7 @@ export function FamilyWriteCard({ payload, edits, onEdit }: Props) {
   const severities = payload.allergens.map(
     (_, i) => edits.severities?.[i] ?? null,
   );
+  const left = severities.filter((s) => s === null).length;
 
   return (
     <View>
@@ -71,10 +72,13 @@ export function FamilyWriteCard({ payload, edits, onEdit }: Props) {
                   <Chip
                     key={severity}
                     label={SEVERITY_LABEL[severity]}
+                    // Up to nine groups of the same three words: each
+                    // names its allergy, so a screen reader can tell them
+                    // apart on both platforms.
+                    accessibilityLabel={`${SEVERITY_LABEL[severity]}, ${label} allergy`}
                     variant="filter"
                     selected={severities[i] === severity}
                     accessibilityRole="radio"
-                    style={styles.chip}
                     onPress={() => {
                       const next = [...severities];
                       next[i] = severity;
@@ -87,6 +91,16 @@ export function FamilyWriteCard({ payload, edits, onEdit }: Props) {
           );
         })
       )}
+      {/* Why Save is not ready yet: with several allergies, which ones are
+          still to pick is not obvious. */}
+      {left > 0 ? (
+        <ThemedText
+          type="caption"
+          style={[styles.left, { color: theme.textSecondary }]}
+        >
+          Choose a severity for each allergy ({left} left)
+        </ThemedText>
+      ) : null}
     </View>
   );
 }
@@ -94,5 +108,5 @@ export function FamilyWriteCard({ payload, edits, onEdit }: Props) {
 const styles = StyleSheet.create({
   group: { marginTop: Spacing.sm, gap: Spacing.xs },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.xs },
-  chip: { minHeight: 44, justifyContent: "center" },
+  left: { marginTop: Spacing.sm },
 });

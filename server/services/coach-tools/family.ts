@@ -14,7 +14,7 @@ const addFamilyMemberTool = defineTool({
     function: {
       name: "add_family_member",
       description:
-        "Show the user a card to add one person to their family profiles, the people they plan meals for. Nothing is saved until the user taps Save on the card. Call this only when the user asks to add a family member and gives their name. Use the name exactly as the user gave it. List only the allergies the user said this person has, from the nine below; the user picks each severity on the card, so never ask for or guess one. You cannot see or change the user's existing family profiles: to change or remove someone, tell them to use Profile, Family.",
+        "Show the user a card to add one person to their family profiles, the people they plan meals for. Nothing is saved until the user taps Save on the card. Call this only when the user asks to add someone and gives their name, used exactly as given. If they give only a relation (\"my wife\") or no name, ask what to call the person; never use the relation word or make up a name. Not for the user themselves, and not for a pet. A family member's allergies go only in this tool's allergens, never in an add_allergy card, which is for the user's own allergies. The user picks each severity on the card, so never ask for or guess one. You cannot see the user's existing family profiles: if asked who is in their family or about someone's allergies, say you cannot see that and point to Profile, Family, where they also change or remove someone; never guess.",
       parameters: {
         type: "object",
         properties: {
@@ -27,7 +27,7 @@ const addFamilyMemberTool = defineTool({
             type: "array",
             items: { type: "string", enum: [...allergenIds] },
             description:
-              "The allergies the user said this person has. Leave out an allergy that is not one of these; say it can be added in Profile, Family.",
+              'The allergies the user said this person has, from these nine only. "Nuts" alone is ambiguous: ask whether they mean peanuts, tree nuts (almonds, walnuts, cashews) or both before calling. Never swap in a nearby allergen for one that is not listed: leave it out, and say in your reply that it is not recorded and can be added in Profile, Family.',
           },
         },
         required: ["name"],

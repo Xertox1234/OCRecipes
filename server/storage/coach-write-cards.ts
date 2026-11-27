@@ -21,11 +21,12 @@ export type WriteCardTx = Pick<
 >;
 
 /**
- * Health-data consent withdrawn: closes every allergy card the user has and
- * blanks the severity they chose (edits, saved refs). An allergy card is a
- * structured allergy record; no other kind holds health data. Runs on the
- * withdrawal's own transaction. The allergen stays in the payload, as it
- * does in the chat text around the card.
+ * Health-data consent withdrawn: closes every allergy and family card the
+ * user has and blanks the severities they chose (edits, saved refs). Both
+ * are structured allergy records (the family card's for another person,
+ * Coach roadmap A3); no other kind holds health data. Runs on the
+ * withdrawal's own transaction. The allergens stay in the payload, as they
+ * do in the chat text around the card.
  */
 export async function expireAllergyCards(
   userId: string,
@@ -37,7 +38,7 @@ export async function expireAllergyCards(
     .where(
       and(
         eq(coachWriteCards.userId, userId),
-        eq(coachWriteCards.kind, "allergy"),
+        inArray(coachWriteCards.kind, ["allergy", "family"]),
       ),
     );
 }

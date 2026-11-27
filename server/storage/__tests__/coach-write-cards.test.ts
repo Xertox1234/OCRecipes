@@ -422,7 +422,7 @@ describe("coach-write-cards storage", () => {
   // Health-data consent withdrawn: an allergy card is a structured allergy
   // record (allergen in the payload, severity in the edits and refs), so the
   // withdrawal closes every allergy card and blanks what the user chose.
-  it("withdrawing health consent expires allergy cards and clears their severity", async () => {
+  it("withdrawing health consent expires allergy and family cards and clears their severities", async () => {
     const { withdrawHealthConsent } = await import("../user-profiles");
     await tx.insert(schema.userProfiles).values({
       userId: user.id,
@@ -447,6 +447,20 @@ describe("coach-write-cards storage", () => {
     );
     const { card: liveCard } = await allergy();
     await setWriteCardEdits(liveCard.id, user.id, { severity: "mild" });
+    // A family card (A3) holds another person's allergies and the severities
+    // the user chose, so it is closed the same way.
+    const { card: familyCard } = await createWriteCard({
+      userId: user.id,
+      conversationId: (
+        await tx
+          .insert(schema.chatConversations)
+          .values({ userId: user.id, title: "Family", type: "coach" })
+          .returning()
+      )[0].id,
+      kind: "family",
+      payload: { name: "Sam", allergens: ["peanuts"] },
+    });
+    await setWriteCardEdits(familyCard.id, user.id, { severities: ["severe"] });
     const { card: foodCard } = await createWriteCard({
       userId: user.id,
       conversationId: (
@@ -461,7 +475,7 @@ describe("coach-write-cards storage", () => {
 
     await withdrawHealthConsent(user.id);
 
-    for (const id of [savedCard.id, liveCard.id]) {
+    for (const id of [savedCard.id, liveCard.id, familyCard.id]) {
       const after = await getWriteCard(id, user.id);
       expect(after?.status).toBe("expired");
       expect(after?.edits).toEqual({});
