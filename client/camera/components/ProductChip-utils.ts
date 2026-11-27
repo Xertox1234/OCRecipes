@@ -224,3 +224,18 @@ export function getChipAnnounceText(
       return "Photo analyzed, tap to confirm";
   }
 }
+
+/**
+ * The found card's later beat (spec motion plan, "Found card": card body,
+ * then buttons a beat later). Delays are in ms from the card's own entry;
+ * `travel` is how far below its resting place each button group starts.
+ * Reduced motion keeps the fade with the card and drops stagger and travel.
+ */
+export function getFoundCardActionBeats(reducedMotion: boolean): {
+  rowDelay: number;
+  linkDelay: number;
+  travel: number;
+} {
+  if (reducedMotion) return { rowDelay: 0, linkDelay: 0, travel: 0 };
+  return { rowDelay: 120, linkDelay: 200, travel: 12 };
+}

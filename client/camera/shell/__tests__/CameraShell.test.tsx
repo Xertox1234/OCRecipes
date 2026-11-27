@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import { Text } from "react-native";
 import { CameraShell } from "../CameraShell";
 
-function renderShell(props: { obscured?: boolean }) {
+function renderShell(props: { obscured?: boolean; feedHeld?: boolean }) {
   return render(
     <CameraShell
       camera={null}
@@ -47,5 +47,20 @@ describe("CameraShell", () => {
     expect(hidden("scan-hint")).toBeNull();
     expect(hidden("scan-tabs")).toBeNull();
     expect(hidden("scan-controls")).toBeNull();
+  });
+
+  // Spec: "On detection, the camera pauses". The feed dims behind the frame
+  // while a barcode is locked; detection itself is not touched. The shared
+  // reanimated mock settles withTiming at once, so opacity is the end value.
+  it("dims the feed while feedHeld", () => {
+    renderShell({ feedHeld: true });
+    const hold = screen.getByTestId("scan-feed-hold");
+    expect(hold.style.opacity).toBe("1");
+    expect(hold.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("leaves the feed undimmed when it is live", () => {
+    renderShell({ feedHeld: false });
+    expect(screen.getByTestId("scan-feed-hold").style.opacity).toBe("0");
   });
 });

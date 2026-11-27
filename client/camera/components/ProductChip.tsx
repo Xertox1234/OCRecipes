@@ -13,6 +13,7 @@ import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
+  withDelay,
   withSpring,
   withTiming,
   useAnimatedStyle,
@@ -36,6 +37,7 @@ import {
   getSmartConfirmLabel,
   getChipConfidenceLabel,
   getChipConfidenceColor,
+  getFoundCardActionBeats,
 } from "./ProductChip-utils";
 
 // The card rises with the banner spring, clamped: it settles without the ~4%
@@ -142,6 +144,10 @@ export function ProductChip({
   const { reducedMotion } = useAccessibility();
   const translateY = useSharedValue(reducedMotion ? 0 : OFF_SCREEN_Y);
   const opacity = useSharedValue(0);
+  // The found card's buttons: 0 → 1 a beat after the card body (row, then link).
+  const actionRowIn = useSharedValue(0);
+  const actionLinkIn = useSharedValue(0);
+  const beats = getFoundCardActionBeats(reducedMotion);
   const phaseVariant = getProductChipVariant(phase);
   const variant =
     hideFrontPrompt && phaseVariant === "step2_confirmed" ? null : phaseVariant;
@@ -183,6 +189,20 @@ export function ProductChip({
       opacity.value = withTiming(1, contentRevealTimingConfig);
       // Reduced motion drops the travel and keeps the fade.
       translateY.value = reducedMotion ? 0 : withSpring(0, CHIP_SPRING);
+      if (variant === "barcode_lock") {
+        // Card body first, then the buttons. Under reduced motion both delays
+        // are 0 and the buttons simply fade in with the card.
+        actionRowIn.value = 0;
+        actionLinkIn.value = 0;
+        actionRowIn.value = withDelay(
+          beats.rowDelay,
+          withTiming(1, contentRevealTimingConfig),
+        );
+        actionLinkIn.value = withDelay(
+          beats.linkDelay,
+          withTiming(1, contentRevealTimingConfig),
+        );
+      }
       // Announce every transition INTO a non-null variant on BOTH platforms.
       // The chip no longer carries a container `accessibilityLiveRegion` (it
       // re-read the whole subtree on any descendant change, including the
@@ -211,7 +231,7 @@ export function ProductChip({
         translateY.value = withSpring(OFF_SCREEN_Y, CHIP_SPRING, hide);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY/opacity are stable useSharedValue refs; reducedMotion is read at the transition only (a live change applies on the next one); `phase` is read only to build the announce string for the current variant and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers a meaningful change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY/opacity/actionRowIn/actionLinkIn are stable useSharedValue refs; reducedMotion (and `beats`, derived from it) is read at the transition only (a live change applies on the next one); `phase` is read only to build the announce string for the current variant and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers a meaningful change).
   }, [variant]);
 
   // Announce the smart-confirm pending state on BOTH platforms on the idle→busy
@@ -289,6 +309,17 @@ export function ProductChip({
   const animStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
     transform: [{ translateY: translateY.value }],
+  }));
+  // The buttons stay pressable while they arrive: the beat is short and a
+  // press mid-fade must still land.
+  const travel = beats.travel;
+  const actionRowStyle = useAnimatedStyle(() => ({
+    opacity: actionRowIn.value,
+    transform: [{ translateY: (1 - actionRowIn.value) * travel }],
+  }));
+  const actionLinkStyle = useAnimatedStyle(() => ({
+    opacity: actionLinkIn.value,
+    transform: [{ translateY: (1 - actionLinkIn.value) * travel }],
   }));
 
   const barcodeLockActions = getBarcodeLockActions(
@@ -383,7 +414,7 @@ export function ProductChip({
               {/* The lookup failed: retry it or type the number, never a
                   silent return to the camera. The flow's own next step
                   stays reachable below. */}
-              <View style={styles.actionRow}>
+              <Animated.View style={[styles.actionRow, actionRowStyle]}>
                 <ChipButton
                   tone="ghost"
                   style={styles.actionFlex}
@@ -400,18 +431,20 @@ export function ProductChip({
                 >
                   Type it in
                 </ChipButton>
-              </View>
-              <ChipButton
-                tone="link"
-                onPress={runLockAction(barcodeLockActions.primary.intent)}
-                accessibilityLabel={barcodeLockActions.primary.label}
-              >
-                {barcodeLockActions.primary.label}
-              </ChipButton>
+              </Animated.View>
+              <Animated.View style={actionLinkStyle}>
+                <ChipButton
+                  tone="link"
+                  onPress={runLockAction(barcodeLockActions.primary.intent)}
+                  accessibilityLabel={barcodeLockActions.primary.label}
+                >
+                  {barcodeLockActions.primary.label}
+                </ChipButton>
+              </Animated.View>
             </>
           ) : (
             <>
-              <View style={styles.actionRow}>
+              <Animated.View style={[styles.actionRow, actionRowStyle]}>
                 <ChipButton
                   tone="ghost"
                   style={styles.actionFlex}
@@ -428,16 +461,18 @@ export function ProductChip({
                 >
                   {barcodeLockActions.primary.label}
                 </ChipButton>
-              </View>
+              </Animated.View>
               {/* Not in database: there is no database data to use. */}
               {productNotFound || !barcodeLockActions.secondary ? null : (
-                <ChipButton
-                  tone="link"
-                  onPress={runLockAction(barcodeLockActions.secondary.intent)}
-                  accessibilityLabel={barcodeLockActions.secondary.label}
-                >
-                  {barcodeLockActions.secondary.label}
-                </ChipButton>
+                <Animated.View style={actionLinkStyle}>
+                  <ChipButton
+                    tone="link"
+                    onPress={runLockAction(barcodeLockActions.secondary.intent)}
+                    accessibilityLabel={barcodeLockActions.secondary.label}
+                  >
+                    {barcodeLockActions.secondary.label}
+                  </ChipButton>
+                </Animated.View>
               )}
             </>
           )}

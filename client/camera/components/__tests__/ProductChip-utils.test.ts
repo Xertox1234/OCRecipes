@@ -8,6 +8,7 @@ import {
   getSmartConfirmLabel,
   getChipConfidenceLabel,
   getChipConfidenceColor,
+  getFoundCardActionBeats,
 } from "../ProductChip-utils";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import type { ScanPhase } from "../../types/scan-phase";
@@ -345,5 +346,30 @@ describe("getBarcodeLockActions", () => {
     expect(getChipAnnounceText("barcode_lock", phase)).toBe(
       "Barcode found, choose how to continue",
     );
+  });
+});
+
+describe("getFoundCardActionBeats", () => {
+  // Spec motion plan, "Found card": card body first, then the buttons a beat
+  // later; the reduced-motion column is "fade only".
+  it("brings the button row in after the card body, then the link", () => {
+    const beats = getFoundCardActionBeats(false);
+    expect(beats.rowDelay).toBeGreaterThan(0);
+    expect(beats.linkDelay).toBeGreaterThan(beats.rowDelay);
+    expect(beats.travel).toBeGreaterThan(0);
+  });
+
+  it("settles the last button within half a second of the card starting", () => {
+    // A thumb takes longer than this to reach the card, so the buttons are
+    // still before anyone can press them.
+    expect(getFoundCardActionBeats(false).linkDelay).toBeLessThanOrEqual(250);
+  });
+
+  it("drops the stagger and the travel under reduced motion", () => {
+    expect(getFoundCardActionBeats(true)).toEqual({
+      rowDelay: 0,
+      linkDelay: 0,
+      travel: 0,
+    });
   });
 });
