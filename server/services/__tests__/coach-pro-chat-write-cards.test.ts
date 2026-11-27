@@ -663,7 +663,7 @@ describe("handleCoachChat with write cards", () => {
     expect(seen.outcome).toEqual({
       kind: "reminders",
       shown: true,
-      rows: "Meal logging nudges off on the card (now on)",
+      rows: "Meal logging nudges: set to off on the card (on in the app until it is saved)",
     });
     expect(storage.createWriteCard).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "reminders", payload: remindersPayload }),

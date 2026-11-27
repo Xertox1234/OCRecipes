@@ -199,7 +199,7 @@ export function remindersCardResult(outcome: void | WriteCardOutcome) {
     return {
       card_shown: false,
       message:
-        "No reminders card was made: these reminders are already set that way, and nothing has changed. Do not tell the user to tap a card.",
+        "No reminders card was made: these reminders are already set that way, and nothing has changed. Tell the user they are already that way, and do not call set_reminders again for them or tell the user to tap a card.",
     };
   }
   return {

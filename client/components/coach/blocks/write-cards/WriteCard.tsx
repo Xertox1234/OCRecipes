@@ -9,6 +9,7 @@ import {
   groceryKept,
   pantryKept,
   planKept,
+  remindersValues,
   writeCardButtonLabel,
 } from "@shared/lib/coach-write-card-math";
 import {
@@ -25,6 +26,7 @@ import {
   PantryCardPayload,
   PlanCardEdits,
   PlanCardPayload,
+  REMINDER_LABELS,
   type RemindersCardEdits,
   type RemindersCardPayload,
   WriteCardBlock,
@@ -98,10 +100,14 @@ function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
     // The severity is the user's to choose; there is nothing to save before.
     case "allergy":
       return (edits as AllergyCardEdits).severity !== undefined;
-    // As goals: every row holds a switch, and the server refuses a save
-    // that changes nothing.
-    case "reminders":
-      return true;
+    // At least one switch left the way the Coach proposed: a card with every
+    // row switched back would change nothing.
+    case "reminders": {
+      const p = block.payload as RemindersCardPayload;
+      return remindersValues(p, edits as RemindersCardEdits).some(
+        (v, i) => v === p.changes[i].on,
+      );
+    }
   }
 }
 
@@ -126,8 +132,9 @@ function lockedSummary(block: WriteCardBlock): string {
     return `${n} daily goal${n === 1 ? "" : "s"}`;
   }
   if (block.kind === "reminders") {
-    const n = (block.payload as RemindersCardPayload).changes.length;
-    return `${n} reminder${n === 1 ? "" : "s"}`;
+    return (block.payload as RemindersCardPayload).changes
+      .map((c) => REMINDER_LABELS[c.key])
+      .join(", ");
   }
   const n = (block.payload as PlanCardPayload).rows.length;
   return `${n} planned meal${n === 1 ? "" : "s"}`;

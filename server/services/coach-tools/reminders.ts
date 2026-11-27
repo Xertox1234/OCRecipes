@@ -12,7 +12,7 @@ const setRemindersTool = defineTool({
     function: {
       name: "set_reminders",
       description:
-        "Show the user a card to switch the app's Coach reminders on or off, as the Coach Reminders settings do. Nothing changes until the user taps the card. Call this when the user asks to turn a reminder on or off, or to stop or start a kind of notification the app sends. Give only the reminders to change: true turns one on, false turns it off. These are the only reminders the app has; it cannot set a reminder for a time or a task of the user's choosing.",
+        'Show the user a card to switch the app\'s four Coach reminders on or off, as the Coach Reminders settings do. Nothing changes until the user taps Save on the card. Call this when the user asks to turn one of these reminders on or off. Give at least one, and only the ones to change: true turns one on, false turns it off. If the user does not say which ("stop the reminders", "too many notifications"), ask which of the four rather than switching several off on a guess; match their words, such as the noon nudge (mealLog) or the morning briefing (dailyCheckin). This tool does not control other notifications, such as the weekly report, or the phone\'s own notification settings, and the app has no reminder for a time or task of the user\'s choosing: say so instead of calling it. If the user seems upset, answer that first.',
       parameters: {
         type: "object",
         properties: {
@@ -24,7 +24,7 @@ const setRemindersTool = defineTool({
           commitment: {
             type: "boolean",
             description:
-              "Commitment follow-ups: a check-in on the day a commitment the user made in the chat is due.",
+              "Commitment follow-ups: a check-in on the day a commitment the user made in the chat is due. This only switches those follow-ups on or off; it does not make or remove a commitment.",
           },
           dailyCheckin: {
             type: "boolean",

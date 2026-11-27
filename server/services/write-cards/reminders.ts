@@ -78,6 +78,10 @@ export async function performRemindersSave(
     payload,
     parseRemindersEdits(payload, rawEdits),
   );
+  // Make the profile row first (an empty merge changes nothing), so the
+  // read below locks it even for a user who has never had one: otherwise a
+  // settings change made meanwhile could be recorded wrong for Undo.
+  await saveReminderMutes(ctx.userId, {}, tx);
   // The mutes as they are now, not as they were when the card was built.
   const before = await getUserReminderMutes(ctx.userId, tx, {
     forUpdate: true,
@@ -110,6 +114,8 @@ export async function revertRemindersSave(
 ): Promise<void> {
   const restore = card.savedRefs?.remindersRestore ?? [];
   if (restore.length === 0) return;
+  // A saved card made the profile row, so this read locks it. A type whose
+  // mute no longer equals `after` was switched since: it is left alone.
   const now = await getUserReminderMutes(card.userId, tx, { forUpdate: true });
   const back = restore.filter((r) => !!now[r.key] === r.after);
   if (back.length === 0) return;
@@ -122,7 +128,11 @@ export async function revertRemindersSave(
 
 const onOff = (on: boolean) => (on ? "on" : "off");
 
-/** The live card for the prompt: each switch on the card, and as it is now. */
+/**
+ * The live card for the prompt: each switch on the card, and the reminder as
+ * it is in the app until the card is saved. Only a live (unsaved) card gets
+ * this line.
+ */
 export function describeReminders(
   p: RemindersCardPayload,
   e: RemindersCardEdits,
@@ -131,7 +141,7 @@ export function describeReminders(
   return p.changes
     .map(
       (row, i) =>
-        `${REMINDER_LABELS[row.key]} ${onOff(values[i])} on the card (now ${onOff(!row.on)})`,
+        `${REMINDER_LABELS[row.key]}: set to ${onOff(values[i])} on the card (${onOff(!row.on)} in the app until it is saved)`,
     )
     .join("; ");
 }

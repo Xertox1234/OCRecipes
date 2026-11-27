@@ -108,6 +108,24 @@ describe("buildRemindersPayload", () => {
     ).rejects.toBeInstanceOf(WriteCardEditError);
   });
 
+  it("saves for a user with no profile row yet, making the row", async () => {
+    const other = await createTestUser(tx, { username: "first_save_user" });
+    const refs = await performRemindersSave(
+      tx,
+      cardFor({ changes: [{ key: "commitment", on: false }] }),
+      {},
+      { userId: other.id },
+    );
+    expect(refs.remindersRestore).toEqual([
+      { key: "commitment", before: false, after: true },
+    ]);
+    const [row] = await tx
+      .select({ reminderMutes: schema.userProfiles.reminderMutes })
+      .from(schema.userProfiles)
+      .where(eq(schema.userProfiles.userId, other.id));
+    expect(row.reminderMutes).toEqual({ commitment: true });
+  });
+
   it("reads a user with no profile row as every reminder on", async () => {
     const other = await createTestUser(tx, { username: "no_profile_user" });
     expect(
@@ -226,7 +244,7 @@ describe("describeReminders", () => {
         { on: [false] },
       ),
     ).toBe(
-      "Meal logging nudges off on the card (now off); Expiring food off on the card (now on)",
+      "Meal logging nudges: set to off on the card (off in the app until it is saved); Expiring food: set to off on the card (on in the app until it is saved)",
     );
   });
 });

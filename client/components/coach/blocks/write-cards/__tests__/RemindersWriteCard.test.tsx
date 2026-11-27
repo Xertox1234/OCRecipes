@@ -48,14 +48,39 @@ describe("RemindersWriteCard", () => {
   it("shows each reminder with the proposed switch and how it is now", () => {
     renderComponent(<Harness />);
     expect(screen.getByText("Meal logging nudges")).toBeDefined();
-    expect(screen.getByText("Now on")).toBeDefined();
+    expect(screen.getByText("On now · turns off")).toBeDefined();
     expect(screen.getByText("Daily check-in")).toBeDefined();
-    expect(screen.getByText("Now off")).toBeDefined();
+    expect(screen.getByText("Off now · turns on")).toBeDefined();
     expect(switchOf("Meal logging nudges").checked).toBe(false);
     expect(switchOf("Daily check-in").checked).toBe(true);
     expect(
       screen.getByRole("button", { name: "Update reminders" }),
     ).toBeDefined();
+  });
+
+  it("says a row flipped back will not change, and Save waits for a change", () => {
+    renderComponent(<Harness />);
+    fireEvent.click(switchOf("Meal logging nudges"));
+    expect(screen.getByText("On now · no change")).toBeDefined();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Update reminders",
+        }) as HTMLButtonElement
+      ).getAttribute("aria-disabled") === "true" ||
+        (
+          screen.getByRole("button", {
+            name: "Update reminders",
+          }) as HTMLButtonElement
+        ).disabled,
+    ).toBe(false);
+    fireEvent.click(switchOf("Daily check-in"));
+    expect(screen.getByText("Off now · no change")).toBeDefined();
+    const save = screen.getByRole("button", { name: "Update reminders" });
+    expect(
+      save.getAttribute("aria-disabled") === "true" ||
+        (save as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it("saves the switches as the user left them", async () => {
@@ -82,6 +107,10 @@ describe("RemindersWriteCard", () => {
 
   it("names the reminders on a replaced card", () => {
     renderComponent(<Harness b={{ ...block, status: "replaced" }} />);
-    expect(screen.getByLabelText("Replaced card: 2 reminders")).toBeDefined();
+    expect(
+      screen.getByLabelText(
+        "Replaced card: Meal logging nudges, Daily check-in",
+      ),
+    ).toBeDefined();
   });
 });
