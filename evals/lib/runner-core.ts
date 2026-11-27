@@ -67,6 +67,35 @@ export interface SuiteConfig {
 
   /** Format the test case as a readable 3-5 line summary for the judge */
   formatInput: (testCase: EvalTestCase) => string;
+
+  /**
+   * A suite's own hard checks on the generated output (the Coach Pro runner
+   * checks tool calls and blocks). Returns failure messages; [] passes.
+   */
+  extraAssertions?: (
+    testCase: EvalTestCase,
+    structuredData: unknown,
+  ) => string[];
+}
+
+/** A sample's hard assertions: text, structural, then the suite's own. */
+export function caseAssertions(a: {
+  testCase: EvalTestCase;
+  text: string;
+  structuredData: unknown;
+  extra?: SuiteConfig["extraAssertions"];
+}): { passed: boolean; failures: string[] } {
+  const textResult = runAssertions(a.text, a.testCase.assertions);
+  const structuralResult = runStructuralAssertions(
+    a.structuredData,
+    a.testCase.assertions,
+  );
+  const failures = [
+    ...textResult.failures,
+    ...structuralResult.failures,
+    ...(a.extra?.(a.testCase, a.structuredData) ?? []),
+  ];
+  return { passed: failures.length === 0, failures };
 }
 
 // ─── Case evaluation ──────────────────────────────────────────────────────────
@@ -107,15 +136,12 @@ async function evaluateCase(
     : checkCallRecords(aiCtx.calls, overrides);
 
   // 2. Hard assertions — text + structural
-  const textResult = runAssertions(text, testCase.assertions);
-  const structuralResult = runStructuralAssertions(
+  const assertionResult = caseAssertions({
+    testCase,
+    text,
     structuredData,
-    testCase.assertions,
-  );
-  const assertionResult = {
-    passed: textResult.passed && structuralResult.passed,
-    failures: [...textResult.failures, ...structuralResult.failures],
-  };
+    extra: config.extraAssertions,
+  });
 
   if (!assertionResult.passed) {
     log(`    ✗ ASSERTION FAILED: ${assertionResult.failures.join("; ")}`);
