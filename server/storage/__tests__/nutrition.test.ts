@@ -642,6 +642,26 @@ describe("nutrition storage", () => {
       expect(Number(summary.itemCount)).toBe(1);
     });
 
+    // Coach chat audit 2026-11-24 (L44): typed number, but Postgres SUM and
+    // COUNT arrive as strings unless mapped.
+    it("returns real numbers, not numeric strings", async () => {
+      const item = await insertScannedItem(testUser.id, {
+        calories: "200.5",
+        protein: "10",
+        carbs: "25",
+        fat: "8",
+      });
+      await insertDailyLog(testUser.id, {
+        scannedItemId: item.id,
+        servings: "1",
+      });
+
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
+      for (const v of Object.values(summary)) expect(typeof v).toBe("number");
+      expect(summary.totalCalories).toBeCloseTo(200.5, 1);
+      expect(summary.itemCount).toBe(1);
+    });
+
     it("multiplies nutrition by servings", async () => {
       const item = await insertScannedItem(testUser.id, {
         calories: "100",

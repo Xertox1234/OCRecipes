@@ -66,6 +66,13 @@ function writeCardToolList(pantryCard: boolean, goalsCard: boolean) {
  * safety_override SSE event so the client can reset and display the safe message.
  */
 export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
+/**
+ * Yielded (free tier) when the provider call fails or the stream breaks. The
+ * turn then ends as an error and hands the message back, instead of saving
+ * and caching an apology as Coach's reply (audit 2026-11-24, M13). Pro yields
+ * `{ type: "provider_failure" }` for the same thing.
+ */
+export const PROVIDER_FAILURE_SENTINEL = "\x00PROVIDER_FAILURE\x00";
 
 /**
  * Chunk yielded by generateCoachProResponse. A `tool_calls` chunk is yielded
@@ -90,7 +97,18 @@ export type CoachProChunk =
     }
   // offer_recipe is terminal: the round's other calls are dropped and the
   // generator returns. `args` is the raw accumulated arguments string.
-  | { type: "terminal_tool"; name: "offer_recipe"; args: string };
+  | { type: "terminal_tool"; name: "offer_recipe"; args: string }
+  // The provider failed or the stream broke (see PROVIDER_FAILURE_SENTINEL).
+  | { type: "provider_failure" };
+
+/**
+ * Longest stored reply that re-enters the prompt whole. A reply can run to
+ * max_completion_tokens (1500 tokens, about 6000 characters); the field
+ * default of 1500 characters cut the model's own earlier answer mid-list
+ * (audit 2026-11-24, L21). The history budget (chat-history-truncate) still
+ * bounds the total.
+ */
+const HISTORY_REPLY_MAX_CHARS = 8000;
 
 /** Sanitize all persisted roles before they enter a coach prompt. */
 function prepareCoachMessages(
@@ -99,7 +117,7 @@ function prepareCoachMessages(
   const clean = (m: (typeof messages)[number]) =>
     m.role === "user"
       ? sanitizeUserInput(m.content)
-      : sanitizeContextField(m.content);
+      : sanitizeContextField(m.content, HISTORY_REPLY_MAX_CHARS);
   return messages.map((m) => ({ role: m.role, content: clean(m) }));
 }
 
@@ -152,7 +170,7 @@ export async function* generateCoachResponse(
       return;
     }
     log.error({ err: toError(error) }, "coach API error");
-    yield "Sorry, I'm having trouble responding right now. Please try again.";
+    yield PROVIDER_FAILURE_SENTINEL;
     return;
   }
 
@@ -191,7 +209,7 @@ export async function* generateCoachResponse(
     }
     log.error({ err: toError(error) }, "coach streaming error");
     // Text after the last released sentence was never checked: it is dropped.
-    yield `${released > 0 ? " " : ""}Sorry, the response was interrupted. Please try again.`;
+    yield PROVIDER_FAILURE_SENTINEL;
     return;
   }
 
@@ -314,11 +332,7 @@ export async function* generateCoachProResponse(
         return;
       }
       log.error({ err: toError(error) }, "coach pro API error");
-      yield {
-        type: "content",
-        content:
-          "Sorry, I'm having trouble responding right now. Please try again.",
-      };
+      yield { type: "provider_failure" };
       return;
     }
 
@@ -397,10 +411,7 @@ export async function* generateCoachProResponse(
         return;
       }
       log.error({ err: toError(error) }, "coach pro streaming error");
-      yield {
-        type: "content",
-        content: "Sorry, the response was interrupted. Please try again.",
-      };
+      yield { type: "provider_failure" };
       return;
     }
 

@@ -28,7 +28,10 @@ import {
 import type { CoachProChunk } from "../nutrition-coach";
 import type { CoachContext } from "../coach-prompt";
 import { parseBlocksFromContent } from "../coach-blocks";
-import { EmptyCoachReplyError } from "../coach-pro-chat/empty-reply";
+import {
+  CoachProviderFailureError,
+  EmptyCoachReplyError,
+} from "../coach-pro-chat/empty-reply";
 import { consumeWarmUp } from "../coach-warm-up";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import {
@@ -87,6 +90,7 @@ vi.mock("../nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   generateCoachResponse: vi.fn(),
   SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
+  PROVIDER_FAILURE_SENTINEL: "\x00PROVIDER_FAILURE\x00",
 }));
 
 vi.mock("../coach-prompt", () => ({
@@ -1942,6 +1946,37 @@ describe("handleCoachChat", () => {
       expect(storage.createChatMessage).not.toHaveBeenCalled();
     });
 
+    // Coach chat audit 2026-11-24 (M13): a provider failure used to be saved,
+    // cached and replayed as Coach's reply ("Sorry, I'm having trouble...").
+    it("fails a Pro turn whose provider failed, and saves and caches nothing", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        (async function* () {
+          yield { type: "content" as const, content: "A first sentence." };
+          yield { type: "provider_failure" as const };
+        })(),
+      );
+
+      await expect(
+        collectEvents(handleCoachChat(makeParams({ isCoachPro: true }))),
+      ).rejects.toBeInstanceOf(CoachProviderFailureError);
+
+      expect(storage.createChatMessage).not.toHaveBeenCalled();
+      expect(storage.setCoachCachedResponse).not.toHaveBeenCalled();
+    });
+
+    it("fails a free turn whose provider failed, and saves and caches nothing", async () => {
+      vi.mocked(generateCoachResponse).mockReturnValue(
+        fakeStream(["A first sentence.", "\x00PROVIDER_FAILURE\x00"]),
+      );
+
+      await expect(
+        collectEvents(handleCoachChat(makeParams({ isCoachPro: false }))),
+      ).rejects.toBeInstanceOf(CoachProviderFailureError);
+
+      expect(storage.createChatMessage).not.toHaveBeenCalled();
+      expect(storage.setCoachCachedResponse).not.toHaveBeenCalled();
+    });
+
     it("does not fail an empty turn the client already left", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeProStream([]));
 
@@ -2340,6 +2375,41 @@ describe("buildMealPatternSummary", () => {
 
   it("returns null for empty logs", () => {
     expect(buildMealPatternSummary([])).toBeNull();
+  });
+
+  // Coach chat audit 2026-11-24 (M18): today is only logged up to now and the
+  // oldest day only from the cut-off on, so neither can show a skipped meal.
+  it("does not count the partial current and oldest days as skipped meals", () => {
+    const now = new Date("2026-05-08T10:00:00Z"); // 10 AM: only breakfast so far
+    const full = (day: string) => [
+      makeLog(day, 8),
+      makeLog(day, 12),
+      makeLog(day, 18),
+    ];
+    const logs = [
+      makeLog("2026-05-01", 18), // oldest day: window opened at 10 AM
+      ...full("2026-05-02"),
+      ...full("2026-05-03"),
+      makeLog("2026-05-08", 8), // today, before lunch
+    ];
+    // 4 active days, majority 2: the two partial days alone would make
+    // "lunch skipped 2/4 days".
+    const summary = buildMealPatternSummary(logs, "UTC", 7, now);
+    expect(summary ?? "").not.toMatch(/skipped/);
+  });
+
+  it("still reports a meal skipped on complete days", () => {
+    const now = new Date("2026-05-08T10:00:00Z");
+    const noBreakfast = (day: string) => [makeLog(day, 12), makeLog(day, 18)];
+    const logs = [
+      ...noBreakfast("2026-05-02"),
+      ...noBreakfast("2026-05-03"),
+      ...noBreakfast("2026-05-04"),
+      makeLog("2026-05-08", 8),
+    ];
+    expect(buildMealPatternSummary(logs, "UTC", 7, now)).toContain(
+      "breakfast skipped 3/3 days",
+    );
   });
 
   it("derives meal windows in the user's timezone, not server-local", () => {

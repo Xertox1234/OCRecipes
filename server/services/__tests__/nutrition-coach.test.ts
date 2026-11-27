@@ -3,6 +3,7 @@ import {
   generateCoachProResponse,
   generateCoachResponse,
   SAFETY_OVERRIDE_SENTINEL,
+  PROVIDER_FAILURE_SENTINEL,
 } from "../nutrition-coach";
 import type { CoachProChunk } from "../nutrition-coach";
 import type { CoachContext } from "../coach-prompt";
@@ -128,7 +129,9 @@ async function collectStream(
         ? chunk
         : chunk.type === "content"
           ? chunk.content
-          : "";
+          : chunk.type === "provider_failure"
+            ? PROVIDER_FAILURE_SENTINEL
+            : "";
   }
   return result;
 }
@@ -701,9 +704,9 @@ describe("generateCoachProResponse", () => {
       generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
     );
 
-    expect(result).toBe(
-      "Sorry, I'm having trouble responding right now. Please try again.",
-    );
+    // A failure marker, not an apology the turn would save as a reply
+    // (audit 2026-11-24, M13).
+    expect(result).toBe(PROVIDER_FAILURE_SENTINEL);
     // Control: a real (non-abort) failure still logs at ERROR.
     expect(mockLog.error).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
@@ -797,9 +800,7 @@ describe("generateCoachProResponse", () => {
       ),
     );
 
-    expect(result).toBe(
-      "Sorry, the response was interrupted. Please try again.",
-    );
+    expect(result).toBe(PROVIDER_FAILURE_SENTINEL);
     expect(result).not.toContain("Partial response");
     // Control: a real (non-abort) mid-stream failure still logs at ERROR.
     expect(mockLog.error).toHaveBeenCalledWith(
@@ -1031,6 +1032,12 @@ describe("generateCoachResponse", () => {
       { role: "assistant", content: "CTX:stored assistant payload" },
       { role: "user", content: "USER:Tell me about pizza" },
     ]);
+    // Coach chat audit 2026-11-24 (L21): a stored reply (up to 1500 tokens)
+    // must not be cut at the field default of 1500 characters.
+    expect(sanitizeContextField).toHaveBeenCalledWith(
+      "stored assistant payload",
+      8000,
+    );
   });
 
   // Audit 2026-11-24 (M46): the free tier releases a vetted sentence at a
@@ -1152,9 +1159,7 @@ describe("generateCoachResponse", () => {
       generateCoachResponse(messages, DEFAULT_CONTEXT),
     );
 
-    expect(result).toBe(
-      "Sorry, I'm having trouble responding right now. Please try again.",
-    );
+    expect(result).toBe(PROVIDER_FAILURE_SENTINEL);
     // Control: a real (non-abort) failure still logs at ERROR.
     expect(mockLog.error).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
@@ -1240,9 +1245,7 @@ describe("generateCoachResponse", () => {
 
     // The finished sentence was checked and released before the throw; the
     // unfinished "Partial " was never checked, so it is dropped.
-    expect(result).toBe(
-      "A finished sentence. Sorry, the response was interrupted. Please try again.",
-    );
+    expect(result).toBe(`A finished sentence.${PROVIDER_FAILURE_SENTINEL}`);
     // Control: a real (non-abort) mid-stream failure still logs at ERROR.
     expect(mockLog.error).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),

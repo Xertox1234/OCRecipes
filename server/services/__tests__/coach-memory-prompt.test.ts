@@ -249,3 +249,16 @@ describe("buildSystemPrompt — single-line profile values stay on one line", ()
     );
   });
 });
+
+// Coach chat audit 2026-11-24 (L45): a legacy dislikes row with a non-string
+// element used to throw in the sanitizer and fail every coach turn.
+describe("assembleCoachContext — dislikes", () => {
+  it("keeps string dislikes and drops anything else", () => {
+    const ctx = assemble({
+      profile: createMockUserProfile({
+        foodDislikes: ["cilantro", null, 3, "olives"] as unknown as string[],
+      }),
+    });
+    expect(ctx.dietaryProfile.dislikes).toEqual(["cilantro", "olives"]);
+  });
+});

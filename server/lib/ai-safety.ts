@@ -307,6 +307,14 @@ const MEAL_BEFORE_RE =
 /** A verb that sets an intake: "eat only 600 cal", "aim for 900 calories". */
 const INTAKE_VERB_BEFORE_RE =
   /\b(?:eat|consume|have|aim|target|stay|stick|keep|limit\s+yourself)\b[^.!?\d]{0,25}$/i;
+/**
+ * Before the figure, after the verb: the amount is one meal's or snack's size
+ * ("keep tonight's snack under 200 calories", "keep dinner around 600").
+ * Ordinary advice near the end of a day; it used to replace the whole reply
+ * with the safety message (eval baseline 2026-11-26).
+ */
+const MEAL_SIZE_BEFORE_RE =
+  /\b(?:snacks?|breakfast|lunch|dinner|meals?|dessert|treats?)\s+(?:under|below|to|at|around|about|of|near)\s+(?:(?:about|around|roughly|just)\s+)*~?$/i;
 /** After the figure: the amount belongs to a meal, or is a running total. */
 const PARTIAL_AFTER_RE =
   /^\s*(?:at|for|per|of|in|before|after|from|over|under|left|remaining|so\s+far|today|to\s+spare)\b/i;
@@ -338,7 +346,11 @@ function lowCalorieTargetSpan(sentence: string): [number, number] | null {
     }
     // No "per day": still a target when a verb sets it and nothing says the
     // amount is for one meal ("Aim for 900 calories." vs "... at dinner").
-    if (INTAKE_VERB_BEFORE_RE.test(before) && !PARTIAL_AFTER_RE.test(after)) {
+    if (
+      INTAKE_VERB_BEFORE_RE.test(before) &&
+      !PARTIAL_AFTER_RE.test(after) &&
+      !MEAL_SIZE_BEFORE_RE.test(before)
+    ) {
       return [start, end];
     }
   }

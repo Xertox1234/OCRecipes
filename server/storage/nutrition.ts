@@ -565,11 +565,24 @@ export async function getDailySummary(
 
   const result = await db
     .select({
-      totalCalories: sql<number>`COALESCE(SUM(${logNutrientSql("calories")}), 0)`,
-      totalProtein: sql<number>`COALESCE(SUM(${logNutrientSql("protein")}), 0)`,
-      totalCarbs: sql<number>`COALESCE(SUM(${logNutrientSql("carbs")}), 0)`,
-      totalFat: sql<number>`COALESCE(SUM(${logNutrientSql("fat")}), 0)`,
-      itemCount: sql<number>`COUNT(${dailyLogs.id})`,
+      // SUM over DECIMAL and COUNT arrive from pg as strings; map them so
+      // the declared number type is true (audit 2026-11-24, L44).
+      totalCalories:
+        sql<number>`COALESCE(SUM(${logNutrientSql("calories")}), 0)`.mapWith(
+          Number,
+        ),
+      totalProtein:
+        sql<number>`COALESCE(SUM(${logNutrientSql("protein")}), 0)`.mapWith(
+          Number,
+        ),
+      totalCarbs:
+        sql<number>`COALESCE(SUM(${logNutrientSql("carbs")}), 0)`.mapWith(
+          Number,
+        ),
+      totalFat: sql<number>`COALESCE(SUM(${logNutrientSql("fat")}), 0)`.mapWith(
+        Number,
+      ),
+      itemCount: sql<number>`COUNT(${dailyLogs.id})`.mapWith(Number),
     })
     .from(dailyLogs)
     .leftJoin(scannedItems, eq(dailyLogs.scannedItemId, scannedItems.id))
