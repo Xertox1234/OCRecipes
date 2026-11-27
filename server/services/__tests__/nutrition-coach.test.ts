@@ -50,6 +50,7 @@ vi.mock("../../lib/ai-safety", () => ({
   sanitizeContextField: vi.fn((text: string) => text),
   containsUnsafeCoachAdvice: vi.fn().mockReturnValue(false),
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
+  COACH_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
 // A hoisted singleton (not a per-call factory return) — `nutrition-coach.ts`
@@ -510,6 +511,9 @@ describe("generateCoachProResponse", () => {
     // executeToolCall should NOT have been called because the count check
     // happens before execution (toolCallCount += size = 6, then 6 > 5 = true)
     expect(executeToolCall).not.toHaveBeenCalled();
+    // The wrap-up the user sees is in their terms, not ours (audit L72e).
+    expect(result).not.toMatch(/tool-call budget/i);
+    expect(result).toContain("Ask a follow-up and I'll pick up from here.");
   });
 
   it("handles tool call execution errors gracefully", async () => {
