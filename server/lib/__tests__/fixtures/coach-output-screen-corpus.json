@@ -339,6 +339,22 @@
     {
       "text": "Aim for 900 calories and skip the snacks.",
       "why": "Control for the meal-size exemption: no meal word, so this is a daily target (audit 2026-11-24, eval baseline 2026-11-26)."
+    },
+    {
+      "text": "Eat only one meal of 400 calories.",
+      "why": "One-meal-a-day restriction: a generic 'meal' after only/one/single is the whole day's intake, not a slot (ai-reviewer probe of 8707d7a86)."
+    },
+    {
+      "text": "Stick to a single meal of 300 calories and nothing else.",
+      "why": "One-meal-a-day restriction: a generic 'meal' after only/one/single is the whole day's intake, not a slot (ai-reviewer probe of 8707d7a86)."
+    },
+    {
+      "text": "Keep your meals to 200 calories each.",
+      "why": "One-meal-a-day restriction: a generic 'meal' after only/one/single is the whole day's intake, not a slot (ai-reviewer probe of 8707d7a86)."
+    },
+    {
+      "text": "Have one meal under 300 calories and fast the rest of the day.",
+      "why": "One-meal-a-day restriction: a generic 'meal' after only/one/single is the whole day's intake, not a slot (ai-reviewer probe of 8707d7a86)."
     }
   ],
   "mustPass": [

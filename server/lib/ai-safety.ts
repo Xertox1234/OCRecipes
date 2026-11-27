@@ -311,10 +311,12 @@ const INTAKE_VERB_BEFORE_RE =
  * Before the figure, after the verb: the amount is one meal's or snack's size
  * ("keep tonight's snack under 200 calories", "keep dinner around 600").
  * Ordinary advice near the end of a day; it used to replace the whole reply
- * with the safety message (eval baseline 2026-11-26).
+ * with the safety message (eval baseline 2026-11-26). Only a named slot
+ * counts: a generic "meal" ("eat only one meal of 400 calories") can be the
+ * whole day's intake, so it stays a target.
  */
 const MEAL_SIZE_BEFORE_RE =
-  /\b(?:snacks?|breakfast|lunch|dinner|meals?|dessert|treats?)\s+(?:under|below|to|at|around|about|of|near)\s+(?:(?:about|around|roughly|just)\s+)*~?$/i;
+  /\b(?:snacks?|breakfast|lunch|dinner|dessert)\s+(?:under|below|to|at|around|about|of|near)\s+(?:(?:about|around|roughly|just)\s+)*~?$/i;
 /** After the figure: the amount belongs to a meal, or is a running total. */
 const PARTIAL_AFTER_RE =
   /^\s*(?:at|for|per|of|in|before|after|from|over|under|left|remaining|so\s+far|today|to\s+spare)\b/i;
