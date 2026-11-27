@@ -9,7 +9,10 @@ import type { CoachProChunk } from "../nutrition-coach";
 import type { CoachContext } from "../coach-prompt";
 import { aiChat } from "../../lib/ai-client";
 import { executeToolCall } from "../coach-tools";
-import { ONE_CARD_PER_REPLY_RESULT } from "../write-cards/results";
+import {
+  ONE_CARD_PER_REPLY_RESULT,
+  foodCardResult,
+} from "../write-cards/results";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -974,7 +977,8 @@ describe("generateCoachProResponse", () => {
       );
     }
 
-    it("runs only the last write call and tells the earlier one no card shows", async () => {
+    const SHOWN = { card_shown: true, message: "on screen" };
+    const runCardTurn = async () => {
       vi.mocked(aiChat)
         .mockResolvedValueOnce(twoWrites() as any)
         .mockResolvedValueOnce(
@@ -983,8 +987,6 @@ describe("generateCoachProResponse", () => {
             { finish_reason: "stop" },
           ]) as any,
         );
-      vi.mocked(executeToolCall).mockResolvedValue({ ok: true });
-
       await collectStream(
         generateCoachProResponse(
           [{ role: "user", content: "log 2 eggs and add milk" }],
@@ -997,13 +999,79 @@ describe("generateCoachProResponse", () => {
           { writeCards: true },
         ),
       );
+    };
 
-      const ran = vi.mocked(executeToolCall).mock.calls.map((c) => c[0]);
-      expect(ran).toEqual(["lookup_nutrition", "add_to_grocery_list"]);
+    it("runs write calls one at a time in call order", async () => {
+      const order: string[] = [];
+      let inFlight = 0;
+      let overlapped = false;
+      vi.mocked(executeToolCall).mockImplementation(async (name) => {
+        if (name !== "lookup_nutrition") {
+          inFlight++;
+          if (inFlight > 1) overlapped = true;
+          // The first write is the slow one: in parallel it would finish last.
+          await new Promise((r) =>
+            setTimeout(r, name === "log_food_item" ? 20 : 0),
+          );
+          inFlight--;
+          order.push(name);
+        }
+        return SHOWN;
+      });
+      await runCardTurn();
+      expect(overlapped).toBe(false);
+      expect(order).toEqual(["log_food_item", "add_to_grocery_list"]);
+    });
+
+    it("tells an earlier shown card it was replaced by the later one", async () => {
+      vi.mocked(executeToolCall).mockResolvedValue(SHOWN);
+      await runCardTurn();
       const results = toolMessages();
       expect(JSON.parse(results.call_food)).toEqual(ONE_CARD_PER_REPLY_RESULT);
-      expect(JSON.parse(results.call_grocery)).toEqual({ ok: true });
-      expect(JSON.parse(results.call_look)).toEqual({ ok: true });
+      expect(JSON.parse(results.call_grocery)).toEqual(SHOWN);
+      expect(JSON.parse(results.call_look)).toEqual(SHOWN);
+    });
+
+    it("keeps the earlier card when the later write call shows none", async () => {
+      vi.mocked(executeToolCall).mockImplementation(async (name) =>
+        name === "add_to_grocery_list"
+          ? { card_shown: false, message: "pantry has it" }
+          : SHOWN,
+      );
+      await runCardTurn();
+      const results = toolMessages();
+      expect(JSON.parse(results.call_food)).toEqual(SHOWN);
+      expect(JSON.parse(results.call_grocery)).toEqual({
+        card_shown: false,
+        message: "pantry has it",
+      });
+    });
+
+    it("a food logged at once neither replaces nor is replaced by a card", async () => {
+      const LOGGED = {
+        card_shown: true,
+        message: foodCardResult({
+          kind: "food",
+          shown: true,
+          loggedAtOnce: true,
+        }).message,
+      };
+      vi.mocked(executeToolCall).mockImplementation(async (name) =>
+        name === "log_food_item" ? LOGGED : SHOWN,
+      );
+      await runCardTurn();
+      const results = toolMessages();
+      expect(JSON.parse(results.call_food)).toEqual(LOGGED);
+      expect(JSON.parse(results.call_grocery)).toEqual(SHOWN);
+    });
+
+    it("keeps the earlier card when the later write call fails", async () => {
+      vi.mocked(executeToolCall).mockImplementation(async (name) => {
+        if (name === "add_to_grocery_list") throw new Error("db down");
+        return SHOWN;
+      });
+      await runCardTurn();
+      expect(JSON.parse(toolMessages().call_food)).toEqual(SHOWN);
     });
 
     it("control: without write-card mode both calls run", async () => {

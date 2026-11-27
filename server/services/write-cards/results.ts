@@ -129,6 +129,17 @@ const LOGGED_AT_ONCE_MESSAGE =
   "This food is already logged; its card shows Undo. Do not call log_food_item again for it, even to change it: that would log it twice.";
 
 /**
+ * True when a write tool's result put this turn's card on screen. A food
+ * logged at once is already saved and leaves the turn's card alone, so it
+ * is not one (L19: only a card can replace, or be replaced by, a card).
+ */
+export function isCardOnScreen(result: unknown): boolean {
+  if (typeof result !== "object" || result === null) return false;
+  const r = result as { card_shown?: unknown; message?: unknown };
+  return r.card_shown === true && r.message !== LOGGED_AT_ONCE_MESSAGE;
+}
+
+/**
  * The pantry card's result. The row lines carry pantry item names, which the
  * user typed, so each passes the prompt sanitizer before the model sees it.
  */

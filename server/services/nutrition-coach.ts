@@ -23,6 +23,7 @@ import { releasableLength } from "./coach-sentence-release";
 import {
   ONE_CARD_PER_REPLY_RESULT,
   WRITE_CARD_TOOL_NAMES,
+  isCardOnScreen,
 } from "./write-cards/results";
 import type { UserProfile } from "@shared/schema";
 
@@ -502,97 +503,109 @@ export async function* generateCoachProResponse(
 
     // A reply shows one card and the last write call wins. In a parallel
     // round the winner used to be whichever call finished last, and every
-    // call was told its card was on screen; now only the last write call in
-    // call order runs (audit 2026-11-24, L19).
-    const lastWriteIndex = options?.writeCards
-      ? toolCallsArray.findLastIndex((tc) =>
-          WRITE_CARD_TOOL_NAMES.has(tc.function.name),
-        )
-      : -1;
+    // call was told its card was on screen (audit 2026-11-24, L19). Write
+    // calls now run one at a time in call order, so the last card shown is
+    // the last one asked for, and below, an earlier card that a later one
+    // replaced is told so. A later call that shows no card (it failed, or
+    // the pantry already has it) leaves the earlier card standing.
+    const isCardWrite = (tc: (typeof toolCallsArray)[number]) =>
+      !!options?.writeCards && WRITE_CARD_TOOL_NAMES.has(tc.function.name);
+    let writeChain: Promise<unknown> = Promise.resolve();
 
-    // Execute tool calls in parallel — preserve order when appending results
+    const runTool = async (tc: (typeof toolCallsArray)[number]) => {
+      // Parse JSON args explicitly so malformed/truncated argument strings
+      // (e.g. when finish_reason === "length") are surfaced as their own
+      // failure mode rather than falling through the generic outer catch
+      // below. (M15 — 2026-05-11)
+      let args: unknown;
+      try {
+        args = JSON.parse(tc.function.arguments);
+      } catch (error) {
+        log.warn(
+          {
+            err: toError(error),
+            tool: tc.function.name,
+            argsLength: tc.function.arguments?.length,
+          },
+          "Tool call arguments JSON parse failed",
+        );
+        return {
+          tc,
+          result: serviceUnavailable(tc.function.name),
+        };
+      }
+      // Per-tool Zod schemas inside executeToolCall validate fields, but
+      // they assume the top-level value is an object. Reject primitives /
+      // arrays explicitly so `as Record<string, unknown>` never lies. (M15)
+      if (typeof args !== "object" || args === null || Array.isArray(args)) {
+        log.warn(
+          {
+            tool: tc.function.name,
+            argsType: Array.isArray(args)
+              ? "array"
+              : args === null
+                ? "null"
+                : typeof args,
+          },
+          "Tool call arguments not a plain object",
+        );
+        return {
+          tc,
+          result: serviceUnavailable(tc.function.name),
+        };
+      }
+      try {
+        const result = await executeToolCall(
+          tc.function.name,
+          args as Record<string, unknown>,
+          userId,
+          preloadedProfile,
+          tz,
+          // Only in write-card mode, so the call is unchanged without it.
+          ...(options?.writeCards
+            ? [
+                {
+                  writeCards: true,
+                  pantryCard: !!options.pantryCard,
+                  goalsCard: !!options.goalsCard,
+                  onWriteCardProposal: options.onWriteCardProposal,
+                  planRecipePool: options.planRecipePool,
+                },
+              ]
+            : []),
+        );
+        return { tc, result };
+      } catch (error) {
+        log.warn(
+          { err: toError(error), tool: tc.function.name },
+          "Tool call failed",
+        );
+        return {
+          tc,
+          result: serviceUnavailable(tc.function.name),
+        };
+      }
+    };
+
+    // Execute tool calls in parallel (write-card calls in sequence) —
+    // preserve order when appending results
     const toolResults = await Promise.all(
-      toolCallsArray.map(async (tc, index) => {
-        if (
-          index < lastWriteIndex &&
-          WRITE_CARD_TOOL_NAMES.has(tc.function.name)
-        ) {
-          return { tc, result: ONE_CARD_PER_REPLY_RESULT };
-        }
-        // Parse JSON args explicitly so malformed/truncated argument strings
-        // (e.g. when finish_reason === "length") are surfaced as their own
-        // failure mode rather than falling through the generic outer catch
-        // below. (M15 — 2026-05-11)
-        let args: unknown;
-        try {
-          args = JSON.parse(tc.function.arguments);
-        } catch (error) {
-          log.warn(
-            {
-              err: toError(error),
-              tool: tc.function.name,
-              argsLength: tc.function.arguments?.length,
-            },
-            "Tool call arguments JSON parse failed",
-          );
-          return {
-            tc,
-            result: serviceUnavailable(tc.function.name),
-          };
-        }
-        // Per-tool Zod schemas inside executeToolCall validate fields, but
-        // they assume the top-level value is an object. Reject primitives /
-        // arrays explicitly so `as Record<string, unknown>` never lies. (M15)
-        if (typeof args !== "object" || args === null || Array.isArray(args)) {
-          log.warn(
-            {
-              tool: tc.function.name,
-              argsType: Array.isArray(args)
-                ? "array"
-                : args === null
-                  ? "null"
-                  : typeof args,
-            },
-            "Tool call arguments not a plain object",
-          );
-          return {
-            tc,
-            result: serviceUnavailable(tc.function.name),
-          };
-        }
-        try {
-          const result = await executeToolCall(
-            tc.function.name,
-            args as Record<string, unknown>,
-            userId,
-            preloadedProfile,
-            tz,
-            // Only in write-card mode, so the call is unchanged without it.
-            ...(options?.writeCards
-              ? [
-                  {
-                    writeCards: true,
-                    pantryCard: !!options.pantryCard,
-                    goalsCard: !!options.goalsCard,
-                    onWriteCardProposal: options.onWriteCardProposal,
-                    planRecipePool: options.planRecipePool,
-                  },
-                ]
-              : []),
-          );
-          return { tc, result };
-        } catch (error) {
-          log.warn(
-            { err: toError(error), tool: tc.function.name },
-            "Tool call failed",
-          );
-          return {
-            tc,
-            result: serviceUnavailable(tc.function.name),
-          };
-        }
+      toolCallsArray.map((tc) => {
+        if (!isCardWrite(tc)) return runTool(tc);
+        const run = writeChain.then(() => runTool(tc));
+        writeChain = run.catch(() => undefined);
+        return run;
       }),
     );
+    const lastShown = toolResults.findLastIndex(
+      (r) => isCardWrite(r.tc) && isCardOnScreen(r.result),
+    );
+    for (let i = 0; i < lastShown; i++) {
+      const r = toolResults[i];
+      if (isCardWrite(r.tc) && isCardOnScreen(r.result)) {
+        toolResults[i] = { tc: r.tc, result: ONE_CARD_PER_REPLY_RESULT };
+      }
+    }
 
     for (const { tc, result } of toolResults) {
       conversation.push({
