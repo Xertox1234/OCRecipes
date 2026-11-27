@@ -1,0 +1,172 @@
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  .flow { margin-bottom: 34px; }
+  .flow h3 { margin-bottom: 2px; }
+  .flow > p { margin: 0 0 10px; font-size: 13px; opacity: .8; }
+  .story { display: flex; gap: 18px; flex-wrap: wrap; }
+  .cap { font-size: 12.5px; opacity: .8; margin: 8px 0 0; line-height: 1.4; width: 224px; }
+  .phone { width: 224px; height: 470px; border-radius: 32px; background: #000; position: relative; overflow: hidden;
+           font-family: Poppins, sans-serif; color: #fff; box-shadow: 0 8px 26px rgba(0,0,0,.35); border: 6px solid #222; }
+  .feed { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, #3b342e 0%, #15110e 70%); }
+  .dim { position: absolute; inset: 0; background: #1E1814; }
+  .top { position: absolute; top: 14px; left: 10px; right: 10px; display: flex; justify-content: space-between; align-items:center }
+  .rbtn { width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .dim ~ .top .rbtn { background: #2C2420; }
+  .title { font-size: 11px; font-weight: 600; background: rgba(0,0,0,.55); padding: 5px 11px; border-radius: 999px }
+  .frame { position: absolute; left: 50%; transform: translateX(-50%); }
+  .frame i { position: absolute; width: 24px; height: 24px; border: 3px solid #fff; }
+  .frame i:nth-child(1){ top:0; left:0; border-right:0; border-bottom:0; border-top-left-radius:11px }
+  .frame i:nth-child(2){ top:0; right:0; border-left:0; border-bottom:0; border-top-right-radius:11px }
+  .frame i:nth-child(3){ bottom:0; left:0; border-right:0; border-top:0; border-bottom-left-radius:11px }
+  .frame i:nth-child(4){ bottom:0; right:0; border-left:0; border-top:0; border-bottom-right-radius:11px }
+  .frame.found i { border-color: #4CAF7D; }
+  .wide { top: 110px; width: 184px; height: 100px; }
+  .tall { top: 58px; width: 140px; height: 230px; }
+  .vtall { top: 54px; width: 120px; height: 250px; }
+  .big  { top: 60px; width: 190px; height: 240px; }
+  .hint { position: absolute; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 500; text-shadow: 0 1px 3px rgba(0,0,0,.7); padding: 0 12px; }
+  .tabs { position: absolute; bottom: 86px; left: 8px; right: 8px; display: flex; gap: 6px; }
+  .tab { flex: 1; background: rgba(44,36,32,.9); border-radius: 12px; padding: 7px 2px; text-align: center; font-size: 9.5px; font-weight: 500; color: #B8A898; }
+  .tab b { display: block; font-size: 14px; margin-bottom: 1px; color: #fff; }
+  .tab.on { background: #B5451C; color: #fff; }
+  .tab.done, .tab.done b { color: #4CAF7D; }
+  .tab .opt { display:block; font-size: 8px; opacity: .8; }
+  .ctrl { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-around; align-items: center; }
+  .shut { width: 54px; height: 54px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.25); }
+  .shut.off { background: rgba(255,255,255,.22); box-shadow:none }
+  .sm { width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .pillbtn { height: 32px; padding: 0 14px; border-radius: 999px; background: rgba(0,0,0,.55); display: flex; align-items: center; font-size: 10.5px; font-weight: 600; }
+  .pillbtn.p { background: #B5451C; }
+  .bars { position:absolute; left:50%; transform:translateX(-50%); width:110px; height:46px;
+          background: repeating-linear-gradient(90deg,#ddd 0 3px,transparent 3px 5px,#ddd 5px 6px,transparent 6px 9px); opacity:.85 }
+  .ex { position: absolute; left: 0; right: 0; top: 54px; text-align: center; padding: 0 14px; }
+  .ex h4 { font-size: 15px; font-weight: 700; margin: 12px 0 4px; }
+  .ex p { font-size: 11px; color: #B8A898; margin: 0 0 12px; line-height: 1.45; }
+  .cta { display: inline-block; background: #fff; color: #1C1410; border-radius: 999px; padding: 8px 28px; font-size: 13px; font-weight: 600; }
+  .nf { margin: 0 auto; background:#fff; color:#111; font-family: Arial, Helvetica, sans-serif; font-size: 6.6px; padding: 4px 5px; text-align:left; width: 92px; border-radius: 4px; line-height: 1.25 }
+  .nf .h { font-size: 11px; font-weight: 900; border-bottom: 1px solid #111; }
+  .nf .cal { font-size: 10px; font-weight: 900; display:flex; justify-content: space-between; border-bottom: 2px solid #111 }
+  .nf .r { display:flex; justify-content: space-between; border-bottom: .5px solid #777 }
+  .rcpt { margin: 0 auto; width: 74px; background:#f4f1ea; color:#222; font-family: "Courier New", monospace; font-size: 6.2px; padding: 6px 5px; text-align:left; line-height:1.5;
+          -webkit-mask: linear-gradient(#000 0 0) top/100% calc(100% - 4px) no-repeat, radial-gradient(3px at 50% 100%, transparent 98%, #000) bottom/6px 4px repeat-x }
+  .rcpt .r { display:flex; justify-content: space-between }
+  .menu { margin: 0 auto; width: 104px; background:#fbf6ec; color:#3a2410; font-family: Georgia, serif; font-size: 7px; padding: 8px 8px; text-align:left; border-radius: 3px; line-height: 1.55 }
+  .menu .h { text-align:center; font-size: 10px; font-style: italic; margin-bottom: 4px }
+  .menu .r { display:flex; justify-content: space-between }
+  .plate { margin: 0 auto; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #f7f1e6 0 46%, #e8dfd0 47% 60%, transparent 61%); position: relative }
+  .plate i { position:absolute; border-radius: 50% }
+  .tray { position: absolute; left: 8px; right: 8px; bottom: 84px; background: rgba(44,36,32,.92); border-radius: 14px; padding: 8px 10px; font-size: 10.5px }
+  .tray .r { display:flex; justify-content: space-between; padding: 2px 0; color:#F5EFE6 }
+  .tray .r span:last-child { color:#B8A898 }
+  .tray .hd { font-weight: 600; font-size: 11px; margin-bottom: 3px; display:flex; justify-content: space-between }
+  .toast { position:absolute; top: 56px; left: 50%; transform: translateX(-50%); background:#007A30; border-radius:999px; padding:5px 12px; font-size:10.5px; font-weight:600; white-space:nowrap }
+  .rstrip { position:absolute; left: 50%; transform: translateX(-50%); width: 104px; background: repeating-linear-gradient(#e9e4da 0 7px, #d8d1c4 7px 8px); opacity:.55; }
+  .card { position: absolute; left: 8px; right: 8px; bottom: 96px; background: #2C2420; border-radius: 16px; padding: 10px; font-size: 10.5px; }
+  .card .row { display: flex; gap: 8px; align-items: center; }
+  .thumb { width: 38px; height: 38px; border-radius: 8px; background: #fbf6ec; flex: none; }
+  .card h5 { margin: 0; font-size: 12px; font-weight: 600; }
+  .card .sub { color: #B8A898; font-size: 10px; margin-top: 2px; }
+  .btns { display: flex; gap: 6px; margin-top: 9px; }
+  .b { flex: 1; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 10.5px; background: rgba(255,255,255,.1); }
+  .b.p { background: #B5451C; }
+  .lnk { text-align: center; margin-top: 7px; font-size: 10px; color: #E8A07E; font-weight: 600; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #B8A898; border-top-color: transparent; flex: none; }
+  .hold { position: absolute; inset: 0; background: rgba(30,24,20,.55); }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 120px; background: #2C2420; border-radius: 20px 20px 0 0; padding: 14px 12px; font-size: 11px; }
+  .sheet .grp { color: #B8A898; font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; margin: 2px 0 6px; }
+  .sheet .it { display: flex; gap: 9px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .sheet .ic { width: 24px; height: 24px; border-radius: 7px; background: rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .sheet .it.new .ic { background: #B5451C; }
+  .sheet .it small { display: block; color: #B8A898; font-size: 9px; }
+  .new-tag { font-size: 8px; background: #4CAF7D; color: #0c2a1a; border-radius: 999px; padding: 1px 6px; margin-left: 4px; font-weight: 700; }
+</style>
+<h2>Snap anything — one photo, the app works out what it is</h2>
+<p style="font-size:13px;opacity:.8;max-width:760px">A new first item in the + menu. The other + menu items keep opening their own screens. Nothing moves on until you tap.</p>
+
+<div class="flow">
+<h3>1 · The + menu</h3>
+<p>"Snap anything" leads the camera group. Scan Menu now opens the menu camera directly (today it opens the "what is this?" picker).</p>
+<div class="story">
+  <div><div class="phone"><div class="feed" style="background:#1C1410"></div>
+    <div class="sheet">
+      <div class="grp">Camera &amp; scanning</div>
+      <div class="it new"><div class="ic">✨</div><div>Snap anything<span class="new-tag">NEW</span><small>We'll work out what it is</small></div></div>
+      <div class="it"><div class="ic">▥</div><div>Scan Barcode</div></div>
+      <div class="it"><div class="ic">◉</div><div>Photo Food Log</div></div>
+      <div class="it"><div class="ic">≡</div><div>Scan Nutrition Label</div></div>
+      <div class="it"><div class="ic">☰</div><div>Scan Menu<small>Opens the menu camera</small></div></div>
+      <div class="it"><div class="ic">🧾</div><div>Scan Receipt</div></div>
+    </div>
+  </div><p class="cap">The NEW tag is a mockup note only, not part of the build.</p></div>
+</div></div>
+
+<div class="flow">
+<h3>2 · Snap → working it out → what it found</h3>
+<p>Same shell as the guided camera: title pill, one big frame, shutter. No live barcode snapping here — the photo decides.</p>
+<div class="story">
+  <div><div class="phone"><div class="feed"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="title">Snap anything</div><div class="rbtn">?</div></div>
+    <div class="frame big"><i></i><i></i><i></i><i></i></div>
+    <div class="hint" style="top:318px">A meal, a label, a menu or a receipt — fit it in the frame</div>
+    <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="sm" style="opacity:0"></div></div>
+  </div><p class="cap">Ready. Torch left, shutter in the middle. (A photo library button comes with stage 2.)</p></div>
+
+  <div><div class="phone"><div class="feed"></div><div class="hold"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="title">Snap anything</div><div class="rbtn">?</div></div>
+    <div class="frame big found"><i></i><i></i><i></i><i></i></div>
+    <div class="card"><div class="row"><div class="spin"></div><div><h5>Working out what this is…</h5><div class="sub">One moment</div></div></div></div>
+  </div><p class="cap">After the shutter: the feed holds, the frame turns green, a busy card. No buttons yet.</p></div>
+
+  <div><div class="phone"><div class="feed"></div><div class="hold"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="title">Snap anything</div><div class="rbtn">?</div></div>
+    <div class="frame big found"><i></i><i></i><i></i><i></i></div>
+    <div class="card"><div class="row"><div class="thumb"></div><div><h5>Looks like a menu ✓</h5><div class="sub">We'll pull out the dishes for you</div></div></div>
+      <div class="btns"><div class="b">Not this</div><div class="b p">Continue →</div></div></div>
+  </div><p class="cap">Found. Continue opens the menu result; Not this goes back to the camera. Buttons arrive a beat after the card, like the barcode card.</p></div>
+
+  <div><div class="phone"><div class="feed"></div><div class="hold"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="title">Snap anything</div><div class="rbtn">?</div></div>
+    <div class="frame big"><i></i><i></i><i></i><i></i></div>
+    <div class="card"><div class="row"><div class="thumb" style="background:#3b342e"></div><div><h5>Couldn't tell what this is</h5><div class="sub">Try again, or pick what you're scanning</div></div></div>
+      <div class="btns"><div class="b p">Retake</div></div><div class="lnk">Pick it myself</div></div>
+  </div><p class="cap">Not food, too blurry, or the check failed. "Pick it myself" opens the existing chooser.</p></div>
+</div></div>
+
+<div class="flow">
+<h3>3 · A barcode always gets the full three steps</h3>
+<p>Snap anything hands a barcode to the barcode camera, so you still get Nutrition and Front — same as Scan Barcode.</p>
+<div class="story">
+  <div><div class="phone"><div class="feed"></div><div class="hold"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="title">Snap anything</div><div class="rbtn">?</div></div>
+    <div class="frame big found"><i></i><i></i><i></i><i></i></div>
+    <div class="card"><div class="row"><div class="thumb" style="background:repeating-linear-gradient(90deg,#ddd 0 2px,#fff 2px 4px)"></div><div><h5>Looks like a barcode ✓</h5><div class="sub">0 64144 04351 2</div></div></div>
+      <div class="btns"><div class="b">Not this</div><div class="b p">Continue →</div></div></div>
+  </div><p class="cap">Number read. Continue opens the barcode flow with that number…</p></div>
+
+  <div><div class="phone"><div class="feed"></div><div class="hold"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+    <div class="frame wide found"><i></i><i></i><i></i><i></i></div>
+    <div class="card" style="bottom:18px"><div class="row"><div class="thumb"></div><div><h5>Barcode found ✓</h5><div class="sub">Oat Crunch Granola · Harvest Co</div></div></div>
+      <div class="btns"><div class="b">Not this</div><div class="b p">Next: nutrition →</div></div></div>
+  </div><p class="cap">…and you land on the barcode camera's own found card. Then Nutrition, then Front.</p></div>
+
+  <div><div class="phone"><div class="feed"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+    <div class="frame tall"><i></i><i></i><i></i><i></i></div>
+    <div class="hint" style="top:300px">Fit the whole nutrition panel in the frame</div>
+    <div class="tabs"><div class="tab done"><b>✓</b>Barcode</div><div class="tab on"><b>2</b>Nutrition</div><div class="tab"><b>3</b>Front</div></div>
+    <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="pillbtn">Skip</div></div>
+  </div><p class="cap">Step 2, exactly as from Scan Barcode.</p></div>
+
+  <div><div class="phone"><div class="feed"></div><div class="hold"></div>
+    <div class="top"><div class="rbtn">✕</div><div class="title">Snap anything</div><div class="rbtn">?</div></div>
+    <div class="frame big found"><i></i><i></i><i></i><i></i></div>
+    <div class="card"><div class="row"><div class="thumb" style="background:repeating-linear-gradient(90deg,#999 0 2px,#ccc 2px 4px);filter:blur(1.5px)"></div><div><h5>Looks like a barcode</h5><div class="sub">Couldn't read the number. Let's scan it live</div></div></div>
+      <div class="btns"><div class="b">Not this</div><div class="b p">Continue →</div></div></div>
+  </div><p class="cap">Barcode seen but number unreadable: Continue opens the barcode camera to scan it live.</p></div>
+</div></div>
+
+<div class="flow">
+<h3>4 · What each answer says</h3>
+<p style="max-width:760px">Meal → "Looks like a meal ✓" → Photo Food Log result · Nutrition label → label result · Menu → menu result · Raw ingredients → "Looks like ingredients ✓" → Cook &amp; Track · Grocery or restaurant receipt → "Looks like a receipt ✓" → opens the receipt camera (receipts can run to several photos, so you snap it there) · Barcode → the barcode flow (above) · Not food → "Couldn't tell what this is". Menu, Cook &amp; Track and receipts are premium: when locked, Continue shows the upgrade card, as today.</p>
+</div>

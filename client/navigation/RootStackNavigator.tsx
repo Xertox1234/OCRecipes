@@ -108,7 +108,13 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Scan:
     | {
-        mode?: "label" | "front-label";
+        mode?: "label" | "front-label" | "smart";
+        /**
+         * A barcode already read in-app (snap anything); the barcode flow
+         * starts from it. In-app only, validated by ScanScreen, dropped from
+         * deep links.
+         */
+        lockedBarcode?: string;
         /**
          * Photo intent picked on PhotoIntent before a photo existed; the
          * captured photo routes there instead of being auto-classified.

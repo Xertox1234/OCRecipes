@@ -588,3 +588,112 @@ describe("ProductChip — reduced motion fades without travel", () => {
     expect(chipIsRendered()).toBe(true);
   });
 });
+
+describe("ProductChip — snap-anything cards", () => {
+  const classifying: ScanPhase = { type: "CLASSIFYING", imageUri: "x" };
+  const smart = (contentType: string): ScanPhase => ({
+    type: "SMART_CONFIRMED",
+    imageUri: "x",
+    classification: {
+      foods: [],
+      contentType,
+      overallConfidence: 0.9,
+    } as unknown as Extract<
+      ScanPhase,
+      { type: "SMART_CONFIRMED" }
+    >["classification"],
+  });
+  const smartError: ScanPhase = {
+    type: "SMART_ERROR",
+    imageUri: "x",
+    error: "boom",
+  };
+
+  it("CLASSIFYING shows the busy title and no buttons", () => {
+    render(<ProductChip phase={classifying} {...handlers} />);
+    expect(screen.getByText("Working out what this is…")).toBeTruthy();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("the busy card is not a modal view; result cards are", () => {
+    const { container, rerender } = render(
+      <ProductChip phase={classifying} {...handlers} />,
+    );
+    expect(container.querySelector("[aria-modal]")).toBeNull();
+    rerender(<ProductChip phase={smart("restaurant_menu")} {...handlers} />);
+    expect(container.querySelector("[aria-modal]")).not.toBeNull();
+  });
+
+  it("a menu result shows its title, Not this and Continue (no ✓ or arrow spoken)", () => {
+    const onRetry = vi.fn();
+    const onSmartPhotoConfirm = vi.fn();
+    render(
+      <ProductChip
+        phase={smart("restaurant_menu")}
+        {...handlers}
+        onRetry={onRetry}
+        onSmartPhotoConfirm={onSmartPhotoConfirm}
+      />,
+    );
+    const title = screen.getByText("Looks like a menu ✓");
+    expect(title.getAttribute("aria-label")).toBe("Looks like a menu");
+    expect(screen.getByText("We'll pull out the dishes for you")).toBeTruthy();
+    screen.getByLabelText("Not this").click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    screen.getByLabelText("Continue").click();
+    expect(onSmartPhotoConfirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Continue →")).toBeTruthy();
+  });
+
+  it("a non_food result shows the unclear layout", () => {
+    const onRetry = vi.fn();
+    const onPickItMyself = vi.fn();
+    render(
+      <ProductChip
+        phase={smart("non_food")}
+        {...handlers}
+        onRetry={onRetry}
+        onPickItMyself={onPickItMyself}
+      />,
+    );
+    expect(screen.getByText("Couldn't tell what this is")).toBeTruthy();
+    expect(screen.queryByLabelText("Continue")).toBeNull();
+    screen.getByLabelText("Retake").click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    screen.getByLabelText("Pick it myself").click();
+    expect(onPickItMyself).toHaveBeenCalledTimes(1);
+  });
+
+  it("SMART_ERROR shows the same unclear layout", () => {
+    const onRetry = vi.fn();
+    const onPickItMyself = vi.fn();
+    render(
+      <ProductChip
+        phase={smartError}
+        {...handlers}
+        onRetry={onRetry}
+        onPickItMyself={onPickItMyself}
+      />,
+    );
+    expect(screen.getByText("Couldn't tell what this is")).toBeTruthy();
+    screen.getByLabelText("Retake").click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    screen.getByLabelText("Pick it myself").click();
+    expect(onPickItMyself).toHaveBeenCalledTimes(1);
+  });
+
+  it("Continue is busy and disabled while isSmartConfirming", () => {
+    const onSmartPhotoConfirm = vi.fn();
+    render(
+      <ProductChip
+        phase={smart("restaurant_menu")}
+        {...handlers}
+        onSmartPhotoConfirm={onSmartPhotoConfirm}
+        isSmartConfirming
+      />,
+    );
+    const continueBtn = screen.getByLabelText("Continue");
+    expect(continueBtn.getAttribute("aria-busy")).toBe("true");
+    expect(continueBtn.getAttribute("aria-disabled")).toBe("true");
+  });
+});

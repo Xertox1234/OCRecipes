@@ -9,6 +9,7 @@ import {
   getChipConfidenceLabel,
   getChipConfidenceColor,
   getFoundCardActionBeats,
+  getSmartResultCopy,
 } from "../ProductChip-utils";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import type { ScanPhase } from "../../types/scan-phase";
@@ -27,9 +28,12 @@ describe("getProductChipVariant", () => {
         frameCount: 3,
       }),
     ).toBeNull();
-    expect(
-      getProductChipVariant({ type: "CLASSIFYING", imageUri: "x" }),
-    ).toBeNull();
+  });
+
+  it("returns classifying for CLASSIFYING", () => {
+    expect(getProductChipVariant({ type: "CLASSIFYING", imageUri: "x" })).toBe(
+      "classifying",
+    );
   });
 
   it("returns barcode_lock for BARCODE_LOCKED", () => {
@@ -193,22 +197,13 @@ describe("getChipAnnounceText", () => {
   // Non-smart_photo variants never read `phase`, so an IDLE placeholder is fine.
   const idle: ScanPhase = { type: "IDLE" };
 
-  it("derives the smart_photo announce from the content-type label when foods are empty", () => {
+  it("announces the smart result copy title (no ✓) then its sub-line", () => {
     expect(
       getChipAnnounceText(
         "smart_photo",
         smartConfirmed({ foods: [], contentType: "restaurant_menu" }),
       ),
-    ).toBe("Restaurant menu detected, tap to confirm");
-    expect(
-      getChipAnnounceText(
-        "smart_photo",
-        smartConfirmed({ foods: [], contentType: "grocery_receipt" }),
-      ),
-    ).toBe("Grocery receipt detected, tap to confirm");
-  });
-
-  it("announces the food name for a food-bearing smart_photo classification", () => {
+    ).toBe("Looks like a menu. We'll pull out the dishes for you");
     expect(
       getChipAnnounceText(
         "smart_photo",
@@ -217,7 +212,13 @@ describe("getChipAnnounceText", () => {
           contentType: "prepared_meal",
         }),
       ),
-    ).toBe("Grilled chicken, tap to confirm");
+    ).toBe("Looks like a meal. We'll estimate what's on the plate");
+  });
+
+  it("announces the busy card for the classifying variant", () => {
+    expect(getChipAnnounceText("classifying", idle)).toBe(
+      "Working out what this is…",
+    );
   });
 
   it("keeps the static announce strings for all other variants, with no ✓ read aloud", () => {
@@ -235,7 +236,7 @@ describe("getChipAnnounceText", () => {
     );
     expect(getChipAnnounceText("session_complete", idle)).toBe("Scan complete");
     expect(getChipAnnounceText("smart_error", idle)).toBe(
-      "Couldn't identify this food, try again",
+      "Couldn't tell what this is",
     );
   });
 
@@ -370,6 +371,82 @@ describe("getFoundCardActionBeats", () => {
       rowDelay: 0,
       linkDelay: 0,
       travel: 0,
+    });
+  });
+});
+
+describe("getSmartResultCopy", () => {
+  const copy = (
+    contentType: PhotoAnalysisResponse["contentType"],
+    barcode?: string | null,
+  ) => getSmartResultCopy({ contentType, barcode });
+
+  it("prepared_meal", () => {
+    expect(copy("prepared_meal")).toEqual({
+      kind: "found",
+      title: "Looks like a meal ✓",
+      sub: "We'll estimate what's on the plate",
+    });
+  });
+  it("nutrition_label", () => {
+    expect(copy("nutrition_label")).toEqual({
+      kind: "found",
+      title: "Looks like a nutrition label ✓",
+      sub: "We'll read the panel for you",
+    });
+  });
+  it("restaurant_menu", () => {
+    expect(copy("restaurant_menu")).toEqual({
+      kind: "found",
+      title: "Looks like a menu ✓",
+      sub: "We'll pull out the dishes for you",
+    });
+  });
+  it("raw_ingredients", () => {
+    expect(copy("raw_ingredients")).toEqual({
+      kind: "found",
+      title: "Looks like ingredients ✓",
+      sub: "We'll start a Cook & Track session",
+    });
+  });
+  it("both receipt types", () => {
+    const want = {
+      kind: "found",
+      title: "Looks like a receipt ✓",
+      sub: "You'll snap it in the receipt camera",
+    };
+    expect(copy("grocery_receipt")).toEqual(want);
+    expect(copy("restaurant_receipt")).toEqual(want);
+  });
+  it("has_barcode with a valid number shows the number", () => {
+    expect(copy("has_barcode", "0064144043512")).toEqual({
+      kind: "found",
+      title: "Looks like a barcode ✓",
+      sub: "0064144043512",
+    });
+  });
+  it("has_barcode without a valid number", () => {
+    expect(copy("has_barcode", "12")).toEqual({
+      kind: "found",
+      title: "Looks like a barcode",
+      sub: "Couldn't read the number. Let's scan it live",
+    });
+    expect(copy("has_barcode", null).sub).toBe(
+      "Couldn't read the number. Let's scan it live",
+    );
+  });
+  it("non_food is unclear", () => {
+    expect(copy("non_food")).toEqual({
+      kind: "unclear",
+      title: "Couldn't tell what this is",
+      sub: "Try again, or pick what you're scanning",
+    });
+  });
+  it("missing contentType falls back to food", () => {
+    expect(copy(undefined)).toEqual({
+      kind: "found",
+      title: "Looks like food ✓",
+      sub: "We'll estimate what's on the plate",
     });
   });
 });

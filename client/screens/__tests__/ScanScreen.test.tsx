@@ -24,6 +24,7 @@ const {
   mockCanGoBack,
   mockNavigate,
   mockReset,
+  mockReplace,
   mockNavigationObject,
   mockRouteParams,
   mockPermissionStatus,
@@ -43,7 +44,9 @@ const {
   const mockCanGoBack = vi.fn();
   const mockNavigate = vi.fn();
   const mockReset = vi.fn();
+  const mockReplace = vi.fn();
   return {
+    mockReplace,
     mockGoBack,
     mockCanGoBack,
     mockNavigate,
@@ -59,12 +62,14 @@ const {
       goBack: mockGoBack,
       canGoBack: mockCanGoBack,
       reset: mockReset,
+      replace: mockReplace,
       isFocused: (): boolean => true,
     },
     mockRouteParams: {
       value: undefined as
         | {
-            mode?: "label" | "front-label";
+            mode?: "label" | "front-label" | "smart";
+            lockedBarcode?: string;
             verifyBarcode?: string;
             returnAfterLog?: boolean;
             intent?: string;
@@ -120,6 +125,19 @@ const {
 // cannot parse under jsdom (same class of problem as the native-only camera
 // modules below) — stub it out. ScanScreen only renders it conditionally on
 // `showConfetti`, so this mount test never needs its real behavior.
+// Records CameraShell's feedHeld prop on every render (the real shell still renders).
+const mockFeedHeld = vi.hoisted(() => ({ values: [] as boolean[] }));
+vi.mock("@/camera/shell/CameraShell", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/camera/shell/CameraShell")>();
+  return {
+    ...actual,
+    CameraShell: (props: Parameters<typeof actual.CameraShell>[0]) => {
+      mockFeedHeld.values.push(props.feedHeld === true);
+      return actual.CameraShell(props);
+    },
+  };
+});
 vi.mock("react-native-confetti-cannon", () => ({
   default: () => null,
 }));
@@ -1450,7 +1468,7 @@ describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untra
   // it once the navigate's own blur fires — proven below by simulating that
   // blur and asserting deleteAsync eventually runs.
 
-  it("does not permanently leak the capture file when smart-classification routes to NutritionDetail (has_barcode)", async () => {
+  it("does not permanently leak the capture file when smart-classification hands a barcode to the barcode flow (has_barcode)", async () => {
     vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce({
       sessionId: null,
       intent: "auto",
@@ -1468,25 +1486,21 @@ describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untra
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     await act(async () => {
       fireEvent.click(confirm);
     });
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
-        barcode: "0778918011332",
+      expect(mockReplace).toHaveBeenCalledWith("Scan", {
+        lockedBarcode: "0778918011332",
       });
     });
     // Not yet deleted — ScanScreen hasn't blurred yet.
     expect(mockDeleteAsync).not.toHaveBeenCalled();
 
-    // Simulate the blur the real navigate causes (same pattern as the
-    // existing "abandoned by leaving Scan" test below) — this is what must
-    // eventually clean up the file, since NutritionDetail's params never
-    // carried it.
+    // The hand-off never carries the photo, so it stays tracked and the blur
+    // the real replace causes must delete it.
     mockIsFocused.value = false;
     await act(async () => {
       rerender(<ScanScreen />);
@@ -1515,9 +1529,7 @@ describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untra
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     await act(async () => {
       fireEvent.click(confirm);
     });
@@ -1563,7 +1575,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const retry = await screen.findByLabelText("Retry smart photo analysis");
+    const retry = await screen.findByLabelText("Retake");
     expect(mockDeleteAsync).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -1589,7 +1601,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const retry = await screen.findByLabelText("Retry smart photo analysis");
+    const retry = await screen.findByLabelText("Retake");
     await act(async () => {
       fireEvent.click(retry);
     });
@@ -1619,9 +1631,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     await act(async () => {
       fireEvent.click(confirm);
     });
@@ -1656,7 +1666,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    await screen.findByLabelText("Confirm smart photo analysis");
+    await screen.findByLabelText("Continue");
     expect(mockDeleteAsync).not.toHaveBeenCalled();
 
     mockIsFocused.value = false;
@@ -2103,23 +2113,18 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     expect(confirm.getAttribute("aria-busy")).not.toBe("true");
 
-    const onPress = capturedPressProps["Confirm smart photo analysis"]
-      .onPress as () => void;
+    const onPress = capturedPressProps["Continue"].onPress as () => void;
     await act(async () => {
       onPress();
       onPress();
     });
     expect(mockRecognizeText).toHaveBeenCalledTimes(1);
-    expect(
-      screen
-        .getByLabelText("Confirm smart photo analysis")
-        .getAttribute("aria-busy"),
-    ).toBe("true");
+    expect(screen.getByLabelText("Continue").getAttribute("aria-busy")).toBe(
+      "true",
+    );
 
     await act(async () => {
       release({ text: "Burger 12.00\nSalad 9.00", blocks: [] });
@@ -2134,11 +2139,9 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
       mockNavigate.mock.calls.filter((c) => c[0] === "MenuScanResult"),
     ).toHaveLength(1);
     await waitFor(() => {
-      expect(
-        screen
-          .getByLabelText("Confirm smart photo analysis")
-          .getAttribute("aria-busy"),
-      ).toBe("false");
+      expect(screen.getByLabelText("Continue").getAttribute("aria-busy")).toBe(
+        "false",
+      );
     });
 
     // Re-armed: the guard no longer blocks another confirm.
@@ -2147,9 +2150,7 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
       blocks: [],
     });
     await act(async () => {
-      (
-        capturedPressProps["Confirm smart photo analysis"].onPress as () => void
-      )();
+      (capturedPressProps["Continue"].onPress as () => void)();
     });
     await waitFor(() => {
       expect(
@@ -2218,5 +2219,185 @@ describe("ScanScreen — daily scan limit announcement", () => {
     mockPremiumCamera.value = { isPremium: false, remainingScans: 0 };
     renderComponent(<ScanScreen />);
     expect(announce).not.toHaveBeenCalledWith("Daily scan limit reached");
+  });
+});
+
+describe("ScanScreen — snap anything hand-offs and hold (Task 4)", () => {
+  const LOCKED = "0064144043512";
+  const barcodeUrl = `/api/nutrition/barcode/${LOCKED}`;
+  const hasBarcode = (barcode: string | undefined) => ({
+    sessionId: null,
+    intent: "auto" as const,
+    foods: [],
+    overallConfidence: 0.9,
+    needsFollowUp: false,
+    followUpQuestions: [],
+    contentType: "has_barcode" as const,
+    barcode,
+  });
+  const barcodeFetches = () =>
+    mockApiRequest.mock.calls.filter((c) => c[1] === barcodeUrl);
+
+  async function snapAndContinue() {
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    const confirm = await screen.findByLabelText("Continue");
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+  }
+
+  it("hands a read barcode to the barcode flow", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce(hasBarcode(LOCKED));
+    mockRouteParams.value = { mode: "smart" };
+    renderComponent(<ScanScreen />);
+    await snapAndContinue();
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("Scan", {
+        lockedBarcode: LOCKED,
+      });
+    });
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "NutritionDetail",
+      expect.anything(),
+    );
+  });
+
+  it("hands an unreadable barcode to the live camera", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce(
+      hasBarcode(undefined),
+    );
+    mockRouteParams.value = { mode: "smart" };
+    renderComponent(<ScanScreen />);
+    await snapAndContinue();
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("Scan", undefined);
+    });
+  });
+
+  it("double Continue navigates once", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce(hasBarcode(LOCKED));
+    mockRouteParams.value = { mode: "smart" };
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    await screen.findByLabelText("Continue");
+    const onPress = capturedPressProps["Continue"].onPress as () => void;
+    await act(async () => {
+      onPress();
+      onPress();
+    });
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks a lockedBarcode on arrival", async () => {
+    mockRouteParams.value = { lockedBarcode: LOCKED };
+    renderComponent(<ScanScreen />);
+    await waitFor(() => {
+      expect(mockApiRequest).toHaveBeenCalledWith("GET", barcodeUrl);
+    });
+  });
+
+  it("consumes lockedBarcode once", async () => {
+    mockRouteParams.value = { lockedBarcode: LOCKED };
+    const { rerender } = renderComponent(<ScanScreen />);
+    await waitFor(() => expect(barcodeFetches()).toHaveLength(1));
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+    mockIsFocused.value = true;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+    expect(barcodeFetches()).toHaveLength(1);
+  });
+
+  it("ignores an invalid lockedBarcode", async () => {
+    mockRouteParams.value = { lockedBarcode: "12" };
+    renderComponent(<ScanScreen />);
+    await act(async () => {});
+    expect(
+      mockApiRequest.mock.calls.filter((c) =>
+        String(c[1]).startsWith("/api/nutrition/barcode/"),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("pick it myself carries the photo", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockRejectedValueOnce(
+      new Error("classification failed"),
+    );
+    mockRouteParams.value = { mode: "smart" };
+    const { rerender } = renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    const pick = await screen.findByLabelText("Pick it myself");
+    await act(async () => {
+      fireEvent.click(pick);
+    });
+    expect(mockReplace).toHaveBeenCalledWith("PhotoIntent", {
+      imageUri: "file:///label.jpg",
+    });
+    // Released: the blur that follows must not delete the photo.
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+  });
+
+  it("holds the feed while classifying and on the smart cards", async () => {
+    let resolveUpload!: (v: ReturnType<typeof hasBarcode>) => void;
+    vi.mocked(uploadPhotoForAnalysis).mockReturnValueOnce(
+      new Promise((r) => {
+        resolveUpload = r;
+      }),
+    );
+    mockRouteParams.value = { mode: "smart" };
+    renderComponent(<ScanScreen />);
+    expect(mockFeedHeld.values.at(-1)).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    expect(mockFeedHeld.values.at(-1)).toBe(true); // CLASSIFYING
+    await act(async () => {
+      resolveUpload(hasBarcode(LOCKED));
+    });
+    await screen.findByLabelText("Continue");
+    expect(mockFeedHeld.values.at(-1)).toBe(true); // SMART_CONFIRMED
+  });
+
+  it("holds the feed on SMART_ERROR", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockRejectedValueOnce(new Error("x"));
+    mockRouteParams.value = { mode: "smart" };
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    await screen.findByLabelText("Retake");
+    expect(mockFeedHeld.values.at(-1)).toBe(true);
+  });
+
+  it("still holds the feed in BARCODE_LOCKED", async () => {
+    mockRouteParams.value = { lockedBarcode: LOCKED };
+    renderComponent(<ScanScreen />);
+    await waitFor(() => expect(barcodeFetches()).toHaveLength(1));
+    expect(mockFeedHeld.values.at(-1)).toBe(true);
+  });
+
+  it("no live barcode scanning in snap anything", async () => {
+    mockRouteParams.value = { mode: "smart" };
+    renderComponent(<ScanScreen />);
+    const { Camera } = await import("react-native-vision-camera");
+    const props = vi.mocked(Camera).mock.calls.at(-1)![0] as {
+      outputs: unknown[];
+    };
+    // Photo output only: the barcode scanner output is never attached.
+    expect(props.outputs).toHaveLength(1);
   });
 });

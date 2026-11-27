@@ -1,6 +1,6 @@
 ---
 title: "Smart scan auto-classify path is unreachable from the guided camera"
-status: backlog
+status: done
 priority: low
 created: 2026-11-26
 updated: 2026-11-26
@@ -21,7 +21,7 @@ After the guided scan camera stage 1, every generic camera entry point carries `
 
 ## Acceptance Criteria
 
-- [ ] Owner decides: revive auto-classify as a real entry point, or remove the path below
+- [x] Owner decides: revive auto-classify as a real entry point, or remove the path below
 - [ ] If removed, the exhaustive `ScanPhase` switches and their tests are updated together
 
 ## Implementation Notes
@@ -55,3 +55,8 @@ Record, don't delete, per the owner's rule.
 ### 2026-11-26
 
 - Filed during guided scan camera stage 1, Task 9
+
+### 2026-11-27
+
+- 2026-11-27: revived as Snap anything (spec docs/superpowers/specs/2026-11-27-scan-snap-anything-design.md); removal not done
+- Criterion 2 not met: owner chose revive

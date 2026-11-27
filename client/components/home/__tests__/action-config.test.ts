@@ -59,7 +59,7 @@ describe("action-config", () => {
   describe("getActionsByGroup", () => {
     it("returns only scanning actions", () => {
       const actions = getActionsByGroup("scanning");
-      expect(actions.length).toBe(6);
+      expect(actions.length).toBe(7);
       expect(actions.every((a) => a.group === "scanning")).toBe(true);
     });
 
@@ -109,6 +109,37 @@ describe("action-config", () => {
 
     it("scan-barcode navigates to Scan with no params", () => {
       expect(run("scan-barcode")).toHaveBeenCalledWith("Scan");
+    });
+
+    // Owner's condition: every + menu item keeps opening its own screen.
+    it("scan-receipt still opens ReceiptCapture", () => {
+      expect(run("scan-receipt")).toHaveBeenCalledWith("ReceiptCapture");
+    });
+
+    it('scan-nutrition-label still opens Scan with { mode: "label" }', () => {
+      expect(run("scan-nutrition-label")).toHaveBeenCalledWith("Scan", {
+        mode: "label",
+      });
+    });
+
+    it("batch-scan still opens BatchScan", () => {
+      expect(run("batch-scan")).toHaveBeenCalledWith("BatchScan");
+    });
+
+    it('snap-anything opens Scan with { mode: "smart" }', () => {
+      expect(run("snap-anything")).toHaveBeenCalledWith("Scan", {
+        mode: "smart",
+      });
+    });
+
+    it('scan-menu opens the menu camera: Scan with { intent: "menu" }', () => {
+      expect(run("scan-menu")).toHaveBeenCalledWith("Scan", {
+        intent: "menu",
+      });
+    });
+
+    it("snap-anything is first in the scanning group", () => {
+      expect(getActionsByGroup("scanning")[0].id).toBe("snap-anything");
     });
   });
 });

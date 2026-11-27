@@ -259,6 +259,61 @@ describe("scan-screen-utils", () => {
     const menuBlocked = { ...TIER_FEATURES.free, menuScanner: false };
     const live = () => true;
 
+    it("barcode hand-off carries a valid number", async () => {
+      const recognize = vi.fn();
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "has_barcode",
+          resolvedIntent: null,
+          barcode: "0064144043512",
+        },
+        imageUri: "/tmp/b.jpg",
+        features: menuAllowed,
+        recognizeText: recognize,
+        isStillLive: live,
+      });
+      expect(action).toEqual({
+        kind: "barcodeHandoff",
+        barcode: "0064144043512",
+      });
+      expect(recognize).not.toHaveBeenCalled();
+    });
+
+    it("invalid barcode digits hand off as unreadable", async () => {
+      for (const barcode of ["12", "abc", "123456789", undefined]) {
+        const action = await resolveSmartConfirmAction({
+          classification: {
+            contentType: "has_barcode",
+            resolvedIntent: null,
+            barcode,
+          },
+          imageUri: "/tmp/b.jpg",
+          features: menuAllowed,
+          recognizeText: vi.fn(),
+          isStillLive: live,
+        });
+        expect(action).toEqual({ kind: "barcodeHandoff", barcode: null });
+      }
+    });
+
+    it("barcode hand-off ignores premium gates", async () => {
+      const noFeatures = Object.fromEntries(
+        Object.keys(TIER_FEATURES.free).map((k) => [k, false]),
+      ) as unknown as typeof menuAllowed;
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "has_barcode",
+          resolvedIntent: null,
+          barcode: "0064144043512",
+        },
+        imageUri: "/tmp/b.jpg",
+        features: noFeatures,
+        recognizeText: vi.fn(),
+        isStillLive: live,
+      });
+      expect(action.kind).toBe("barcodeHandoff");
+    });
+
     it("navigates to PhotoAnalysis (no OCR) when contentType is absent", async () => {
       const recognize = vi.fn();
       const action = await resolveSmartConfirmAction({
@@ -363,21 +418,6 @@ describe("scan-screen-utils", () => {
           params: { imageUri: "/tmp/meal.jpg", intent: "log" },
         },
       });
-    });
-
-    it("returns unrecognized when the route resolves to null (has_barcode without a barcode)", async () => {
-      const action = await resolveSmartConfirmAction({
-        classification: {
-          contentType: "has_barcode",
-          resolvedIntent: null,
-          barcode: null,
-        },
-        imageUri: "/tmp/x.jpg",
-        features: menuAllowed,
-        recognizeText: vi.fn(),
-        isStillLive: live,
-      });
-      expect(action).toEqual({ kind: "unrecognized" });
     });
 
     it("returns unrecognized (no OCR) for non_food content", async () => {
@@ -781,6 +821,13 @@ describe("scan-screen-utils", () => {
     // The routing decision this field exists for: only HUNTING takes
     // onShutterPress's smart-classification/LabelAnalysis branch. Every other
     // capturing phase takes the STEP2/STEP3 branch.
+    it("captures in HUNTING for smart mode via the smart route", () => {
+      expect(
+        getCapturePlan({ type: "HUNTING" }, { isSmartMode: true }),
+      ).toEqual({ capture: true, runStepOcr: false, route: "smart" });
+      expect(getCapturePlan({ type: "HUNTING" }, {}).capture).toBe(false);
+    });
+
     it("routes only HUNTING to the smart branch", () => {
       expect(getCapturePlan({ type: "HUNTING" }).route).toBe("smart");
       expect(
@@ -923,6 +970,8 @@ describe("getScanFlow", () => {
       { mode: "front-label", verifyBarcode: "06772408" },
       "generic",
     ],
+    ["smart mode", { mode: "smart" }, "generic"],
+    ["lockedBarcode", { lockedBarcode: "0064144043512" }, "barcode"],
     ["intent log", { intent: "log" }, "generic"],
     ["intent menu", { intent: "menu" }, "generic"],
     // CoachChat casts model params: an unknown or null mode is not a
@@ -960,6 +1009,18 @@ describe("getGenericFlowView", () => {
     expect(
       getGenericFlowView({ mode: "front-label", verifyBarcode: "1" }).frame,
     ).toBe("front");
+  });
+
+  it("describes the snap-anything camera for smart mode", () => {
+    expect(getGenericFlowView({ mode: "smart" })).toEqual({
+      title: "Snap anything",
+      frame: "photo",
+      hint: "A meal, a label, a menu or a receipt \u2014 fit it in the frame",
+      tabs: [],
+      showShutter: true,
+      showSkip: false,
+      exampleKey: null,
+    });
   });
 
   it("falls back to a plain title for an unknown intent", () => {

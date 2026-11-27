@@ -16,11 +16,33 @@
  * here. See docs/rules/accessibility.md.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import * as RN from "react-native";
 import { ProductChip } from "../ProductChip";
 import type { ScanPhase } from "../../types/scan-phase";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
+import type { StyleProp, ViewStyle } from "react-native";
+
+// The shared Pressable mock drops `style`, which would hide the buttons'
+// 44pt minHeight. Render PressableScale as the TouchableOpacity mock (which
+// keeps style) with its style flattened.
+vi.mock("@/components/PressableScale", async () => {
+  const RNmod = await import("react-native");
+  const flat = (s: unknown): unknown =>
+    Array.isArray(s) ? Object.assign({}, ...s.map(flat).filter(Boolean)) : s;
+  return {
+    PressableScale: ({
+      style,
+      scaleTo: _scaleTo,
+      ...props
+    }: Record<string, unknown>) => (
+      <RNmod.TouchableOpacity
+        {...props}
+        style={flat(style) as StyleProp<ViewStyle>}
+      />
+    ),
+  };
+});
 
 const noop = () => {};
 
@@ -192,5 +214,34 @@ describe("ProductChip — announce model (rework)", () => {
     RN.Platform.OS = os;
     render(<ProductChip phase={idle} {...handlers} />);
     expect(announceSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProductChip — snap-anything touch targets", () => {
+  const nonFood: ScanPhase = {
+    type: "SMART_CONFIRMED",
+    imageUri: "x",
+    classification: {
+      foods: [],
+      contentType: "non_food",
+      overallConfidence: 0.9,
+    } as unknown as PhotoAnalysisResponse,
+  };
+  const smartError: ScanPhase = {
+    type: "SMART_ERROR",
+    imageUri: "x",
+    error: "boom",
+  };
+
+  it("every snap-anything button has a 44pt minimum touch target", () => {
+    for (const phase of [smartPhoto, nonFood, smartError]) {
+      const { unmount } = render(<ProductChip phase={phase} {...handlers} />);
+      const buttons = screen.getAllByRole("button");
+      expect(buttons.length).toBeGreaterThan(0);
+      for (const button of buttons) {
+        expect(getComputedStyle(button).minHeight).toBe("44px");
+      }
+      unmount();
+    }
   });
 });
