@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "@/hooks/useTheme";
 import { useDailySummary } from "@/hooks/useDailySummary";
 import { GOALS_QUERY_KEY } from "@/hooks/useCalorieGoal";
-import { toLocalDateString } from "@shared/lib/date";
+import { useLocalToday } from "@/hooks/useLocalToday";
 import type { DayProgressBlock } from "@shared/schemas/coach-blocks";
 import type { GoalsResponse } from "@/types/api";
 import {
@@ -39,7 +39,8 @@ const DayProgress = React.memo(function DayProgress({ block }: Props) {
     live && totals && goals
       ? dayProgressRows(totals, goals)
       : dayProgressRows(block.snapshot.totals, block.snapshot.goals);
-  const title = dayProgressTitle(block.date, toLocalDateString(new Date()));
+  const today = useLocalToday();
+  const title = dayProgressTitle(block.date, today);
 
   return (
     <View

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import DayProgress from "../DayProgress";
 import { useDailySummary } from "@/hooks/useDailySummary";
@@ -100,5 +100,26 @@ describe("DayProgress", () => {
     renderComponent(<DayProgress block={block} />);
     expect(screen.getByText("900 / 2,000 cal")).toBeTruthy();
     expect(screen.getByText("As of the Coach's reply")).toBeTruthy();
+  });
+
+  describe("when the day turns while the card is on screen", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 10, 20, 23, 50, 0));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("moves from today to yesterday without leaving the chat", () => {
+      renderComponent(<DayProgress block={block} />);
+      expect(screen.getByText("Today so far")).toBeTruthy();
+
+      act(() => {
+        vi.advanceTimersByTime(11 * 60 * 1000);
+      });
+      expect(screen.getByText("Yesterday")).toBeTruthy();
+      expect(screen.queryByText("Today so far")).toBeNull();
+    });
   });
 });
