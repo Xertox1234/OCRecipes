@@ -6958,18 +6958,19 @@ nd_only_deny && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  too
 nd_words 'ls; gh pr merge 42 --auto'
 n="ND5e control: the same words before an --auto merge: allowed in under 5 s"
 nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
-# ND5f. One 150 KB quoted body run by `bash -c` (string wrappers, 2026-11-27): the hook judges
-#      the command and, in a child, the body; 2.2 s with gawk, 5.7 s with mawk.
+# ND5f. One 55 KB quoted body run by `bash -c` (string wrappers, 2026-11-27; bodies over 64 KB
+#      deny at once): the hook judges the command and, in a child, the body; 1.4 s with gawk,
+#      1.7 s with mawk.
 nd_body() {  # $1=last command in the body ; sets ND_OUT ND_RC ND_SECS
   local t0 t1
   t0=$(date +%s)
-  ND_OUT=$({ printf "bash -c '"; awk 'BEGIN { for (i = 0; i < 13000; i++) printf "echo ea %d; ", i }'; printf "%s'" "$1"; } \
+  ND_OUT=$({ printf "bash -c '"; awk 'BEGIN { for (i = 0; i < 4500; i++) printf "echo ea %d; ", i }'; printf "%s'" "$1"; } \
     | jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null); ND_RC=$?; ND_ERR=""
   t1=$(date +%s); ND_SECS=$((t1 - t0))
 }
 nd_body 'eas update'
-n="ND5f a 150 KB bash -c body ending in an OTA update: the deny in under 8 s"
-nd_only_deny && nd_reason_has 'Read inside a quoted string' && [ "$ND_SECS" -lt 8 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+n="ND5f a 55 KB bash -c body ending in an OTA update: the deny in under 8 s"
+nd_only_deny && nd_reason_has 'Read inside a quoted string' && nd_reason_has 'eas update' && [ "$ND_SECS" -lt 8 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
 nd_body 'eas whoami'
 n="ND5f control: the same body ending in a read-only command: allowed in under 8 s"
 nd_silent && [ "$ND_SECS" -lt 8 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
@@ -7574,10 +7575,84 @@ assert_deny "SW a wrapper after a heredoc with an apostrophe" "$(jsonc "$(printf
 # The caps: more than 2000 listed bodies, or more than 400 command-position evaluations, deny.
 sw_many=$(awk 'BEGIN { for (i = 0; i < 2001; i++) printf "echo %cnpm run %d%c; ", 39, i, 39; print "true" }')
 assert_deny "SW more than 2000 quoted strings naming a gated word fail closed" "$(jsonc "$sw_many")" "more than 2000 quoted strings"
-sw_many=$(awk 'BEGIN { for (i = 0; i < 401; i++) printf "ssh h%d %ceas whoami%c; ", i, 39, 39; print "true" }')
-assert_deny "SW more than 400 wrapper contexts fail closed" "$(jsonc "$sw_many")" "more quoted strings near a command wrapper"
-sw_many=$(awk 'BEGIN { for (i = 0; i < 399; i++) printf "ssh h%d %ceas whoami%c; ", i, 39, 39; print "true" }')
-assert_allow "SW control: 399 wrapper contexts are read" "$(jsonc "$sw_many")"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 401; i++) printf "env A=%d %cnpm run x%c; ", i, 39, 39; print "true" }')
+assert_deny "SW more than 400 wrapper-context evaluations fail closed" "$(jsonc "$sw_many")" "more quoted strings near a command wrapper"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 400; i++) printf "env A=%d %cnpm run x%c; ", i, 39, 39; print "true" }')
+assert_allow "SW control: 400 wrapper-context evaluations are read" "$(jsonc "$sw_many")"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 2000; i++) printf "echo %cnpm run %d%c; ", 39, i, 39; print "true" }')
+assert_allow "SW control: 2000 quoted strings naming a gated word are read" "$(jsonc "$sw_many")"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 101; i++) printf "bash -c %ceas whoami %d%c; ", 39, i, 39; print "true" }')
+assert_deny "SW more than 100 wrapper bodies fail closed" "$(jsonc "$sw_many")" "more than 100 quoted strings that a wrapper runs"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 100; i++) printf "bash -c %ceas whoami %d%c; ", 39, i, 39; print "true" }')
+assert_allow "SW control: 100 wrapper bodies are read" "$(jsonc "$sw_many")"
+sw_many=$(awk 'BEGIN { printf "bash -c %c", 39; for (i = 0; i < 6000; i++) printf "echo ea %d; ", i; printf "eas whoami%c", 39 }')
+assert_deny "SW wrapper bodies over 64 KB fail closed" "$(jsonc "$sw_many")" "add up to more than 64 KB"
+sw_many="psql \"\$DATABASE_URL\" <<'SQL'
+$(awk 'BEGIN { for (i = 0; i < 2100; i++) printf "INSERT INTO foods VALUES (%cchicken breast %d%c, 165);\n", 39, i, 39 }')
+SQL"
+assert_allow "SW control: a 2100-row seed heredoc (breast, a text heredoc) stays allowed" "$(jsonc "$sw_many")"
+
+# SW2 (security and code review of SW, all ALLOWED on the first SW commit): `$'...'` escapes
+# (`\x20`, `\145`), printf formats, pipes through filters and groups, an unbalanced body
+# swallowing the next, an inline bypass inside a body, `#` glued after `)` or a backtick, quotes
+# inside a double-quoted `$( )`, empty and arithmetic `<<`, quoted heredoc delimiters with a
+# space or `;`, ssh trailing words and `-o ProxyCommand`, quoted wrapper names, `+e` and rbash.
+while IFS= read -r sw_cmd; do
+  [ -n "$sw_cmd" ] || continue
+  assert_deny "SW2 '$sw_cmd' denies" "$(jsonc "$sw_cmd")" "eas update/publish/submit"
+done <<'SWROWS'
+bash -c $'eas\x20update --branch p'
+bash -c $'eas\040update --branch p'
+bash -c $'\x65as update --branch p'
+bash -c $'\145as update --branch p'
+eval $'eas\x20update'
+printf %s 'eas update --branch p' | sh
+printf '%s' 'eas update' | bash
+printf '%b' 'eas update' | sh
+printf 'eas %s\n' update | bash
+echo 'eas update' | cat | sh
+echo 'eas update' | tee /dev/null | sh
+echo 'eas update' | (sh)
+echo 'eas update' | { sh; }
+echo 'eas update' | source /dev/stdin
+echo 'eas update' | . /dev/stdin
+yes 'eas update' | head -1 | bash
+command echo 'eas update' | bash
+bash -c 'ALLOW_OUTWARD_CLI=1 eas update'
+cd /tmp && bash -c 'ALLOW_OUTWARD_CLI=1 eas update'
+bash -c 'ALLOW_OUTWARD_CLI=1 echo npm x' ; bash -c 'eas update'
+echo $(true)#; bash -c 'eas update'
+echo `true`#; bash -c 'eas update'
+x=$(true)# eval 'eas update'
+echo "$(echo "'")"; bash -c 'eas update'
+echo "$(printf '%s' "it's")"; bash -c 'eas update'
+ssh host true '&&' 'eas update'
+ssh host ls\; 'eas update'
+'bash' -c 'eas update'
+"bash" -c 'eas update'
+ev''al 'eas update'
+ssh -o ProxyCommand='eas update %h' host true
+ssh -o 'ProxyCommand eas update' host
+ssh -oProxyCommand='eas update %h' host
+ssh -o LocalCommand='eas update' host
+bash +e -c 'eas update'
+rbash -c 'eas update'
+x=`bash -c 'eas update'`
+SWROWS
+assert_deny "SW2 an unbalanced body fails closed: bash -c 'echo npm '' ; bash -c 'eas update'" "$(jsonc $'bash -c "echo npm \'" ; bash -c \'eas update\'')" "does not parse on its own"
+assert_deny "SW2 an unbalanced body fails closed: bash -c 'echo npm '' ; bash -c 'eas update'" "$(jsonc $'bash -c \'echo npm "\' ; bash -c \'eas update\'')" "does not parse on its own"
+assert_deny "SW2 cat <<'E 1' / x / E 1 / bash -c 'eas update --branch p'" "$(jsonc $'cat <<\'E 1\'\nx\nE 1\nbash -c \'eas update --branch p\'')" "eas update/publish/submit"
+assert_deny "SW2 cat <<'E;1' / x / E;1 / ssh h 'eas update --branch p'" "$(jsonc $'cat <<"E;1"\nx\nE;1\nssh h \'eas update --branch p\'')" "eas update/publish/submit"
+assert_deny "SW2 cat <<EOF / EOF / echo 'a / EOF / '; bash -c 'eas update'" "$(jsonc $'cat <<EOF\nEOF\necho \'a\nEOF\n\'; bash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW2 echo ((1<<2)) 'a / 2 / '; bash -c 'eas update'" "$(jsonc $'echo $((1<<2)) \'a\n2\n\'; bash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW2 bash <<'EOF' / bash -c 'eas update' / EOF" "$(jsonc $'bash <<\'EOF\'\nbash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_allow "SW2 control: a text heredoc: git commit -F - <<'EOF'" "$(jsonc $'git commit -F - <<\'EOF\'\nfix(hooks): deny bash -c "npm publish" and eval \'eas update\'\nEOF')"
+assert_allow "SW2 control: a text heredoc: cat > t.sh <<'EOF'" "$(jsonc $'cat > t.sh <<\'EOF\'\nbash -c \'npm publish\'\nEOF')"
+assert_allow "SW2 control: echo 'chicken breast' 'peas please' | grep x" "$(jsonc $'echo \'chicken breast\' \'peas please\' | grep x')"
+assert_allow "SW2 control: node -e 'console.log('npm publish')'" "$(jsonc $'node -e \'console.log("npm publish")\'')"
+assert_allow "SW2 control: gh pr create --title x --body 'deny bash -c 'npm publish''" "$(jsonc $'gh pr create --title x --body \'deny bash -c "npm publish"\'')"
+assert_allow "SW2 control: bash -c 'echo npm \' ; echo done" "$(jsonc $'bash -c \'echo npm \\\' ; echo done')"
+assert_allow "SW2 control: echo 'eas update' | cat" "$(jsonc $'echo \'eas update\' | cat')"
 
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
@@ -7606,7 +7681,9 @@ assert_allow "SW control: 399 wrapper contexts are read" "$(jsonc "$sw_many")"
 # 1660 -> 1724 (2026-11-27, string wrappers): +64 = SW, 38 deny rows (all ALLOWED
 # before) and 14 allow controls; then 10 rows for the known over-reads, nesting, heredocs and the
 # caps, and ND5f, a timed deny row and its control.
-EXPECTED_TOTAL=1724
+# 1724 -> 1780 (review of SW): +56 = SW2, 44 deny rows, 7 controls, and 5 cap rows (the 400 and 2000
+# boundaries, the 100-body and 64 KB caps, a 2100-row seed heredoc).
+EXPECTED_TOTAL=1780
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
