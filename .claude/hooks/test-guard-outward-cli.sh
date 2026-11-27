@@ -7561,8 +7561,8 @@ nix develop -c eas update|eas update/publish/submit
 nix shell nixpkgs#nodejs -c eas update|eas update/publish/submit
 watchexec -e ts -- eas update|eas update/publish/submit
 watchexec eas update|eas update/publish/submit
-ls | entr eas update|eas update/publish/submit
-ls | entr -r eas update|eas update/publish/submit
+entr eas update < files.txt|eas update/publish/submit
+entr -r eas update < files.txt|eas update/publish/submit
 git submodule foreach eas update|eas update/publish/submit
 git bisect run eas update|eas update/publish/submit
 docker exec app eas update|eas update/publish/submit
@@ -7583,13 +7583,14 @@ sandbox-exec -p x eas update|eas update/publish/submit
 ifne eas update|eas update/publish/submit
 lckdo /tmp/l eas update|eas update/publish/submit
 chpst -u ci eas update|eas update/publish/submit
+schroot -c sid -- eas update|eas update/publish/submit
 uv run npm publish|npm publish
 docker exec app railway up|railway up/deploy
 kubectl exec pod -- gh pr merge 42|without a REAL --auto flag
 git submodule foreach 'eas update'|eas update/publish/submit
 watchexec 'eas update'|eas update/publish/submit
 watchexec -e ts -- 'eas update'|eas update/publish/submit
-ls | entr -s 'eas update'|eas update/publish/submit
+entr -s 'eas update' < files.txt|eas update/publish/submit
 RNROWS
 while IFS= read -r rn_cmd; do
   [ -n "$rn_cmd" ] || continue
@@ -7885,8 +7886,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 1780 -> 1806 (confirmation review of SW2): +26 = SW3, 22 deny rows and 3 controls, and ND5g.
 # 1806 -> 1840 (third review of the scan): +34 = SW4, 28 deny rows and 4 controls, and ND5h (two
 # timed rows).
-# 1840 -> 1928 (runners not on the list): +88 = RN3, 68 deny rows and 20 controls.
-EXPECTED_TOTAL=1928
+# 1840 -> 1929 (runners not on the list): +89 = RN3, 69 deny rows and 20 controls.
+EXPECTED_TOTAL=1929
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
