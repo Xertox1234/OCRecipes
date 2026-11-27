@@ -13,7 +13,7 @@ github_issue:
 
 ## Summary
 
-`INTAKE_VERB_BEFORE_RE` in `server/lib/ai-safety.ts` requires the verb (eat, have, aim, keep...) within 25 characters before the calorie figure. "Have nothing but breakfast of 300 calories." puts it 30 characters away, so the sentence is not screened. Main behaves the same, so this is not a regression. Found while writing corpus rows for the meal-slot veto (#2089 follow-up, 2026-11-26).
+`INTAKE_VERB_BEFORE_RE` in `server/lib/ai-safety.ts` requires the verb (eat, have, aim, keep...) within 25 characters before the calorie figure. "Have nothing but breakfast of 300 calories." puts it 30 characters away, so the sentence is not screened. Main behaves the same, so this is not a regression. Found while writing screen corpus rows (2026-11-26; see todos/P2-2026-11-26-screen-blocks-snack-size-advice.md).
 
 ## Acceptance Criteria
 

@@ -307,44 +307,6 @@ const MEAL_BEFORE_RE =
 /** A verb that sets an intake: "eat only 600 cal", "aim for 900 calories". */
 const INTAKE_VERB_BEFORE_RE =
   /\b(?:eat|consume|have|aim|target|stay|stick|keep|limit\s+yourself)\b[^.!?\d]{0,25}$/i;
-/**
- * Before the figure, after the verb: the amount is one meal's or snack's size
- * ("keep tonight's snack under 200 calories", "keep dinner around 600").
- * Ordinary advice near the end of a day; it used to replace the whole reply
- * with the safety message (eval baseline 2026-11-26). Only a named slot
- * counts: a generic "meal" ("eat only one meal of 400 calories") can be the
- * whole day's intake, so it stays a target.
- */
-const MEAL_SIZE_BEFORE_RE =
-  /\b(?:snacks?|breakfast|lunch|dinner|dessert)\s+(?:under|below|to|at|around|about|of|near)\s+(?:(?:about|around|roughly|just)\s+)*~?$/i;
-/**
- * "only dinner", "just lunch", "nothing but breakfast": the slot is the day.
- * The cue must sit right before the slot word: a casual "Just keep dinner
- * under 400" is still one slot's size.
- */
-const ONLY_SLOT_BEFORE_RE =
-  /\b(?:only|just|solely|nothing\s+but)\s+(?:(?:a|the|one)\s+)?(?:snacks?|breakfast|lunch|dinner|dessert)\b/i;
-/**
- * "... and skip the rest", "fast the rest of the day", "and nothing else":
- * the rest of the day goes without. A bare "skip the dessert" or "don't skip
- * breakfast" does not.
- */
-const REST_OF_DAY_AFTER_RE =
-  /\b(?:skip|fast)\s+(?:the\s+rest|everything\s+else|(?:the\s+|your\s+|all\s+(?:the\s+)?)?other\s+meals)\b|\b(?:and|but)\s+(?:nothing\s+else|(?:don['’]?t|do\s+not)\s+eat\s+anything\s+else)\b/i;
-
-/**
- * The figure sizes one named slot of a normal day. Not when the sentence
- * makes that slot the whole day: "eat only dinner of 400 calories", "stick
- * to dinner around 400 calories and skip the rest" (ai-reviewer, 2026-11-26).
- */
-function isOneSlotSize(before: string, rest: string): boolean {
-  return (
-    MEAL_SIZE_BEFORE_RE.test(before) &&
-    !ONLY_SLOT_BEFORE_RE.test(before) &&
-    !REST_OF_DAY_AFTER_RE.test(rest)
-  );
-}
-
 /** After the figure: the amount belongs to a meal, or is a running total. */
 const PARTIAL_AFTER_RE =
   /^\s*(?:at|for|per|of|in|before|after|from|over|under|left|remaining|so\s+far|today|to\s+spare)\b/i;
@@ -376,11 +338,7 @@ function lowCalorieTargetSpan(sentence: string): [number, number] | null {
     }
     // No "per day": still a target when a verb sets it and nothing says the
     // amount is for one meal ("Aim for 900 calories." vs "... at dinner").
-    if (
-      INTAKE_VERB_BEFORE_RE.test(before) &&
-      !PARTIAL_AFTER_RE.test(after) &&
-      !isOneSlotSize(before, s.slice(end))
-    ) {
+    if (INTAKE_VERB_BEFORE_RE.test(before) && !PARTIAL_AFTER_RE.test(after)) {
       return [start, end];
     }
   }
