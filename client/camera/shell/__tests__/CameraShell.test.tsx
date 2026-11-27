@@ -50,17 +50,17 @@ describe("CameraShell", () => {
   });
 
   // Spec: "On detection, the camera pauses". The feed dims behind the frame
-  // while a barcode is locked; detection itself is not touched.
-  it("holds the feed under a dim layer while feedHeld", () => {
+  // while a barcode is locked; detection itself is not touched. The shared
+  // reanimated mock settles withTiming at once, so opacity is the end value.
+  it("dims the feed while feedHeld", () => {
     renderShell({ feedHeld: true });
     const hold = screen.getByTestId("scan-feed-hold");
+    expect(hold.style.opacity).toBe("1");
     expect(hold.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("keeps the dim layer at zero opacity when the feed is live", () => {
-    renderShell({});
-    const hold = screen.queryByTestId("scan-feed-hold");
-    // Mounted so it can fade, but invisible.
-    expect(hold?.style.opacity ?? "0").toBe("0");
+  it("leaves the feed undimmed when it is live", () => {
+    renderShell({ feedHeld: false });
+    expect(screen.getByTestId("scan-feed-hold").style.opacity).toBe("0");
   });
 });
