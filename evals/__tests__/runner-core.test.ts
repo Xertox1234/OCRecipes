@@ -4,6 +4,7 @@ import {
   mulberry32,
   aggregateResults,
   printSummary,
+  caseAssertions,
 } from "../lib/runner-core";
 import type { SuiteConfig } from "../lib/runner-core";
 import type { EvalCaseResult, RubricScore } from "../types";
@@ -276,5 +277,50 @@ describe("aggregateResults — dimension intervals resample cases, not samples",
     ];
     const result = aggregateResults(cases, config, 1);
     expect(result.dimensionConfidenceIntervals.safety.sampleSize).toBe(2);
+  });
+});
+
+// Audit 2026-11-24 (M30): a suite can add its own checks (the Coach Pro
+// runner checks tool calls and blocks); their failures join the rest.
+describe("caseAssertions", () => {
+  const tc = {
+    id: "c1",
+    category: "helpfulness",
+    description: "d",
+    assertions: { mustContain: ["card"] },
+  } as unknown as Parameters<typeof caseAssertions>[0]["testCase"];
+
+  it("merges a suite's extra failures with the text checks", () => {
+    const r = caseAssertions({
+      testCase: tc,
+      text: "no match here",
+      structuredData: { toolCalls: [] },
+      extra: (_t, data) =>
+        (data as { toolCalls: unknown[] }).toolCalls.length === 0
+          ? ["expected a tool call"]
+          : [],
+    });
+    expect(r.passed).toBe(false);
+    expect(r.failures).toEqual([
+      expect.stringContaining("card"),
+      "expected a tool call",
+    ]);
+  });
+
+  it("passes when the text checks and the extra checks both pass", () => {
+    const r = caseAssertions({
+      testCase: tc,
+      text: "tap the card",
+      structuredData: {},
+      extra: () => [],
+    });
+    expect(r).toEqual({ passed: true, failures: [] });
+  });
+
+  it("works with no extra checks", () => {
+    expect(
+      caseAssertions({ testCase: tc, text: "tap the card", structuredData: {} })
+        .passed,
+    ).toBe(true);
   });
 });
