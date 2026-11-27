@@ -8,6 +8,7 @@ import {
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
 import { createServiceLogger, toError } from "../../lib/logger";
+import { transcriptJson, TRANSCRIPT_IS_DATA } from "./prompt-transcript";
 import {
   clarifyingQuestionSchema,
   type ClarifyingQuestion,
@@ -45,14 +46,8 @@ export async function askClarifying(
   request: string,
   history: { role: "user" | "assistant"; content: string }[],
 ): Promise<ClarifyingQuestion[]> {
-  const transcript = history
-    .slice(-4)
-    // sanitizeContextField also strips zero-width/bidi chars (user text too).
-    .map(
-      (m) =>
-        `${m.role === "user" ? "User" : "Assistant"}: ${sanitizeContextField(m.content, 300)}`,
-    )
-    .join("\n");
+  // sanitizeContextField (inside transcriptJson) also strips zero-width/bidi chars.
+  const transcript = transcriptJson(history, 4);
   let content: string | null | undefined;
   try {
     const response = await aiChat(
@@ -73,7 +68,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           },
           {
             role: "user",
-            content: `Request: ${sanitizeContextField(request, 2000)}\n\nRecent conversation:\n${transcript}`,
+            content: `Request: ${sanitizeContextField(request, 2000)}\n\n${TRANSCRIPT_IS_DATA}\n${transcript}`,
           },
         ],
       },

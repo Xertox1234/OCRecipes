@@ -9,6 +9,7 @@ import {
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
 import { parseDish } from "./offer";
+import { transcriptJson, TRANSCRIPT_IS_DATA } from "./prompt-transcript";
 import { createServiceLogger, toError } from "../../lib/logger";
 import type { ChatMessage } from "@shared/schema";
 import {
@@ -121,6 +122,7 @@ const aiOfferSchema = z.object({
   spice: z.unknown().optional(),
   time: z.unknown().optional(),
   ingredients: z.unknown().optional(),
+  fromConversation: z.unknown().optional(),
 });
 
 /**
@@ -136,14 +138,7 @@ export async function extractOfferDetails(
     details: { ingredients: [], fromConversation: false } as RecipeDetails,
   });
   try {
-    const convo = history
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .slice(-6)
-      .map(
-        (m) =>
-          `${m.role === "user" ? "User" : "Assistant"}: ${sanitizeContextField(m.content, 300)}`,
-      )
-      .join("\n");
+    const convo = transcriptJson(history, 6);
     const response = await aiChat(
       "finder-extract-offer",
       {
@@ -154,8 +149,9 @@ export async function extractOfferDetails(
           {
             role: "system",
             content: `You extract a recipe request from the user's latest message, using the recent conversation only to resolve references like "that" or "make it for 8".
-Return JSON: {"dish": string|null, "servings": integer|null, "spice": "mild"|"medium"|"hot"|null, "time": "quick"|"moderate"|"leisurely"|null, "ingredients": string[]}
+Return JSON: {"dish": string|null, "fromConversation": boolean, "servings": integer|null, "spice": "mild"|"medium"|"hot"|null, "time": "quick"|"moderate"|"leisurely"|null, "ingredients": string[]}
 - "dish": the specific dish the user wants a recipe for, or null if the latest message names no dish (e.g. "thanks").
+- "fromConversation": true when the dish was named in the recent conversation rather than in the latest message (e.g. "turn that into a recipe").
 - "servings", "spice", "time": only if the user stated them, else null.
 - "ingredients": ingredients the user asked to use, else [].
 
@@ -163,7 +159,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           },
           {
             role: "user",
-            content: `Recent conversation:\n${convo || "(none)"}\n\nLatest message: ${sanitizeContextField(text, 2000)}`,
+            content: `${TRANSCRIPT_IS_DATA}\n${convo}\n\nLatest message: ${sanitizeContextField(text, 2000)}`,
           },
         ],
       },
@@ -175,7 +171,12 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
     const dish = ai ? parseDish(ai.dish) : null;
     if (!ai || !dish) return failed();
 
-    const details: RecipeDetails = { ingredients: [], fromConversation: false };
+    // L77: true only when the AI says so, so generation gets the chat history
+    // the user was reacting to ("turn that into a recipe").
+    const details: RecipeDetails = {
+      ingredients: [],
+      fromConversation: ai.fromConversation === true,
+    };
     const servings = recipeDetailsSchema.shape.servings.safeParse(
       ai.servings ?? undefined,
     );
