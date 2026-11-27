@@ -690,7 +690,11 @@ export default function ScanScreen() {
         clearTimeout(barcodeAbsentTimerRef.current);
         barcodeAbsentTimerRef.current = null;
         dispatch({ type: "BARCODE_LOCKED" });
-        void fetchProductInfo(barcode);
+        // A redo that found the same barcode resumes its saved step: only a
+        // fresh lock needs the lookup (and its severe-flag haptic).
+        if (scanPhaseRef.current.type === "BARCODE_LOCKED") {
+          void fetchProductInfo(barcode);
+        }
         return;
       }
     },
@@ -1188,6 +1192,7 @@ export default function ScanScreen() {
       right={rightControl}
       chromeHidden={productChipVisible}
       controlsMuted={exampleCardKey !== null}
+      obscured={teachingUp}
       staticUIImportance={staticUIImportance}
     >
       {showConfetti && (
@@ -1238,7 +1243,7 @@ export default function ScanScreen() {
         // Retake stays in the wizard (owner decision 2026-11-22): no
         // navigate, so no blur reset — the barcode and earlier photos are
         // kept. Only the discarded photo is deleted.
-        // The live ref, not the render closure: a tap landing as the 1 s
+        // The live ref, not the render closure: a tap landing as the 1.5 s
         // auto-advance fires would otherwise delete a photo the next phase
         // keeps (the reducer then no-ops the retake).
         onRetakeStep2={() => {

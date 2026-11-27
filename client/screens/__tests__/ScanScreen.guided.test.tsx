@@ -530,7 +530,27 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
     await scanBarcode(BARCODE_A);
     announce.mockClear();
     fireEvent.click(await screen.findByLabelText("Next: nutrition →"));
-    expect(announce).toHaveBeenCalledWith("Barcode step complete");
+    // Batched with "Nutrition step in progress" (announceTogether, next tick).
+    await waitFor(() =>
+      expect(announce).toHaveBeenCalledWith(
+        expect.stringContaining("Barcode step complete"),
+      ),
+    );
+  });
+
+  it("a same-barcode redo via scan resumes the step without a second lookup", async () => {
+    renderComponent(<ScanScreen />);
+    await scanBarcode(BARCODE_A);
+    fireEvent.click(await screen.findByLabelText("Next: nutrition →"));
+    fireEvent.click(screen.getByLabelText("Barcode, done"));
+    await scanBarcode(BARCODE_A);
+    // Back on the Nutrition step, with the one lookup from the first lock.
+    expect(screen.getByLabelText("Take photo")).toBeTruthy();
+    expect(
+      mockApiRequest.mock.calls.filter(
+        (c) => c[1] === `/api/nutrition/barcode/${BARCODE_A}`,
+      ),
+    ).toHaveLength(1);
   });
 
   it("Skip on the Front step navigates to NutritionDetail", async () => {

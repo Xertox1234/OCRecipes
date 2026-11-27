@@ -103,7 +103,7 @@ interface Props {
   /**
    * True while VoiceOver/TalkBack is active. The auto-advancing review card
    * (step2_review/step3_review) falls back to explicit Confirm/Retake buttons
-   * in this mode — the ~1s auto-advance timer in ScanScreen is suppressed for
+   * in this mode — the ~1.5 s auto-advance timer in ScanScreen is suppressed for
    * screen-reader users (see docs/rules/accessibility.md and the design spec),
    * so this state needs its own explicit continue affordance instead.
    */

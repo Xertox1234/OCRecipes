@@ -41,6 +41,13 @@ interface CameraShellProps {
    * hide (they stay mounted for their done moment).
    */
   chromeHidden?: boolean;
+  /**
+   * A teaching surface (example card / carousel) is up. The overlay renders
+   * BEFORE the chrome, and iOS accessibilityViewIsModal hides only earlier
+   * siblings, so the shell hides its own top bar, hint, tabs and controls
+   * from both screen readers; the card's own button is the way out.
+   */
+  obscured?: boolean;
   /** Dim the controls row and ignore its taps (an example card is up). */
   controlsMuted?: boolean;
   /** Android TalkBack trap for the static camera UI (getScanOverlayA11y). */
@@ -63,10 +70,15 @@ export function CameraShell({
   right,
   chromeHidden = false,
   controlsMuted = false,
+  obscured = false,
   staticUIImportance,
   children,
 }: CameraShellProps) {
   const insets = useSafeAreaInsets();
+  const chromeImportance = obscured
+    ? "no-hide-descendants"
+    : staticUIImportance;
+  const tabsHidden = chromeHidden || obscured;
 
   return (
     <View style={styles.root} accessibilityViewIsModal>
@@ -77,7 +89,8 @@ export function CameraShell({
       <View
         testID="scan-top-overlay"
         style={[styles.top, { paddingTop: insets.top + 8 }]}
-        importantForAccessibility={staticUIImportance}
+        accessibilityElementsHidden={obscured}
+        importantForAccessibility={chromeImportance}
       >
         <View style={styles.topBar}>
           <TouchableOpacity
@@ -129,8 +142,10 @@ export function CameraShell({
         pointerEvents="box-none"
       >
         <View
+          testID="scan-hint"
           style={styles.hint}
-          importantForAccessibility={staticUIImportance}
+          accessibilityElementsHidden={obscured}
+          importantForAccessibility={chromeImportance}
         >
           {hint}
         </View>
@@ -139,11 +154,12 @@ export function CameraShell({
             the card still pops its ✓ and announces it. */}
         {tabs ? (
           <View
+            testID="scan-tabs"
             style={[styles.tabs, chromeHidden && styles.hidden]}
             pointerEvents={chromeHidden ? "none" : "auto"}
-            accessibilityElementsHidden={chromeHidden}
+            accessibilityElementsHidden={tabsHidden}
             importantForAccessibility={
-              chromeHidden ? "no-hide-descendants" : staticUIImportance
+              tabsHidden ? "no-hide-descendants" : staticUIImportance
             }
           >
             {tabs}
@@ -151,9 +167,11 @@ export function CameraShell({
         ) : null}
         {chromeHidden ? null : (
           <View
+            testID="scan-controls"
             style={[styles.controls, controlsMuted && styles.muted]}
             pointerEvents={controlsMuted ? "none" : "auto"}
-            importantForAccessibility={staticUIImportance}
+            accessibilityElementsHidden={obscured}
+            importantForAccessibility={chromeImportance}
           >
             <View style={styles.side}>{left}</View>
             {shutter ?? <View style={styles.shutterSlot} />}

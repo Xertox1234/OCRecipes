@@ -1,11 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  AccessibilityInfo,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
+import { announceTogether } from "@/lib/announce-together";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -57,7 +52,10 @@ function StepTab({ tab, onRedo }: TabProps) {
         });
       }
       if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(`${label} step complete`);
+        // Batched with the next tab's "in progress" from the same commit:
+        // VoiceOver cuts off a second announcement made in the same tick.
+        // Done leads.
+        announceTogether(`${label} step complete`, { first: true });
       }
     }
     prevState.current = state;
@@ -67,7 +65,7 @@ function StepTab({ tab, onRedo }: TabProps) {
   // out active.
   useEffect(() => {
     if (state === "active" && Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(`${label} step in progress`);
+      announceTogether(`${label} step in progress`);
     }
   }, [state, label]);
 
