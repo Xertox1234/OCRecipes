@@ -1,17 +1,154 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSystemPrompt,
+  buildUserContextLines,
   formatAboutUserLines,
   getSystemPromptTemplateVersion,
+  TEMPLATE_FINGERPRINT_CONTEXTS,
   type CoachContext,
 } from "../coach-prompt";
 import type { CoachIntent } from "../coach-intent-classifier";
 
+// Audit 2026-11-24 (L18): the hash was built from an empty context only, so
+// a sentence rendered only for a populated context (the SEVERE-allergy rule,
+// the ABOUT THIS USER header) could be edited without invalidating the cache.
+describe("coach-prompt template fingerprint contexts", () => {
+  const rendered = TEMPLATE_FINGERPRINT_CONTEXTS.flatMap((ctx) =>
+    (["free", "pro"] as const).map((tier) =>
+      buildSystemPrompt(ctx, "personalized_advice", { tier }),
+    ),
+  ).join("\n");
+
+  it.each([
+    "Daily goals:",
+    "Remaining today: OVER by",
+    /Remaining today: \d+ cal/,
+    "over by",
+    "Meal patterns (past 7 days):",
+    "Frequently logged foods",
+    "Diet type:",
+    "Allergies:",
+    "At least one allergy above is SEVERE",
+    "Food dislikes:",
+    "ABOUT THIS USER:",
+    "Primary goal:",
+    /Weight: [\d.]+ \w+ \(goal:/,
+    /\nWeight: [\d.]+ \w+\n/,
+    "Goal weight:",
+    "Health conditions (from their profile):",
+    "Activity level:",
+    "Favorite cuisines:",
+    "Cooking skill:",
+    "Cooking time available:",
+    "Cooks for:",
+    "SCREEN CONTEXT",
+    "COMMITMENTS DUE FOR FOLLOW-UP:",
+    "WHAT YOU CAN MENTION",
+    "BACKGROUND (never mention",
+    "The user's recent mood:",
+  ])("some fingerprint context renders %s", (marker) => {
+    if (typeof marker === "string") expect(rendered).toContain(marker);
+    else expect(rendered).toMatch(marker);
+  });
+});
+
 describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
-  it("matches the pinned value (last intended edit: the chart rule names progress cards too, 2026-11-26)", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("3a098f321cad1e6b");
+  it("matches the pinned value (last intended edit: few-shot examples follow the reply-shape rules, audit M36 L72c L74, 2026-11-27)", () => {
+    expect(getSystemPromptTemplateVersion()).toBe("228a3ba3142030fd");
+  });
+});
+
+// Audit 2026-11-24 (M38, L45a): a macro goal the user never set is stored as
+// 0, and intake sums are floats. Neither may reach the prompt as a fake "0g"
+// goal, a negative "remaining" or float noise.
+describe("coach prompt: goals and remaining lines", () => {
+  const lines = (ctx: Pick<CoachContext, "goals" | "todayIntake">) =>
+    buildUserContextLines({
+      ...ctx,
+      dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
+    } as CoachContext).filter((l) =>
+      /^(Daily goals|Today's intake|Remaining today)/.test(l),
+    );
+
+  it("leaves out macro goals that were never set", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 0, carbs: 0, fat: 0 },
+        todayIntake: { calories: 1400, protein: 95, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal",
+      "Today's intake: 1400 cal, 95g protein, 170g carbs, 45g fat",
+      "Remaining today: 600 cal",
+    ]);
+  });
+
+  it("shows only the macros that have a goal", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 0, fat: 0 },
+        todayIntake: { calories: 1400, protein: 95, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein",
+      "Today's intake: 1400 cal, 95g protein, 170g carbs, 45g fat",
+      "Remaining today: 600 cal, 55g protein",
+    ]);
+  });
+
+  it("rounds intake and remaining to whole numbers", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+        todayIntake: {
+          calories: 1234.1,
+          protein: 40.35,
+          carbs: 100.6,
+          fat: 29.999999,
+        },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein, 250g carbs, 65g fat",
+      "Today's intake: 1234 cal, 40g protein, 101g carbs, 30g fat",
+      "Remaining today: 766 cal, 110g protein, 149g carbs, 35g fat",
+    ]);
+  });
+
+  it("says 'over by' for a macro past its goal while calories are under", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 150, fat: 65 },
+        todayIntake: { calories: 1400, protein: 95, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein, 150g carbs, 65g fat",
+      "Today's intake: 1400 cal, 95g protein, 170g carbs, 45g fat",
+      "Remaining today: 600 cal, 55g protein, over by 20g carbs, 20g fat",
+    ]);
+  });
+
+  it("keeps the calories-over wording and skips unset macros there too", () => {
+    expect(
+      lines({
+        goals: { calories: 2000, protein: 150, carbs: 0, fat: 0 },
+        todayIntake: { calories: 2100.4, protein: 160, carbs: 170, fat: 45 },
+      }),
+    ).toEqual([
+      "Daily goals: 2000 cal, 150g protein",
+      "Today's intake: 2100 cal, 160g protein, 170g carbs, 45g fat",
+      "Remaining today: OVER by 100 cal, over by 10g protein",
+    ]);
+  });
+
+  it("prints no goal lines when there are no goals", () => {
+    expect(
+      lines({
+        goals: null,
+        todayIntake: { calories: 300, protein: 10, carbs: 20, fat: 5 },
+      }),
+    ).toEqual(["Today's intake: 300 cal, 10g protein, 20g carbs, 5g fat"]);
   });
 });
 
@@ -62,6 +199,55 @@ describe("coach prompt care rules", () => {
       "Skip the weight-loss framing when a CARE RULE applies",
     );
     expect(prompt).toContain("and no CARE RULE applies, you may reference");
+  });
+
+  // Audit L74: "only cite numbers in USER CONTEXT" read literally banned the
+  // guideline ranges the general_fact bundle asks for.
+  it.each(INTENTS)(
+    "%s limits invented numbers to the user's own, not guidelines",
+    (intent) => {
+      const prompt = buildSystemPrompt(CONTEXT, intent);
+      expect(prompt).not.toContain("Only cite numbers that actually appear");
+      expect(prompt).toContain(
+        "General guideline ranges and typical values for a food are fine.",
+      );
+    },
+  );
+
+  // Audit M36: examples outweigh prose, so they must follow the reply-shape
+  // rules: no closing offer question (Pro puts follow-ups in quick_replies),
+  // no offer the tier cannot keep, no "skip the next snack" compensation.
+  it.each(INTENTS)("%s examples end without an offer question", (intent) => {
+    const prompt = buildSystemPrompt(CONTEXT, intent);
+    const replies = prompt
+      .split("\n")
+      .filter((l) => l.startsWith("NutriCoach: '"));
+    expect(replies.length).toBeGreaterThan(0);
+    for (const r of replies) {
+      expect(r).not.toMatch(/\b(Want|Shall I|Would you like)\b[^.!]*\?'$/);
+    }
+    expect(prompt).not.toContain("End with a brief offer to help");
+    expect(prompt).not.toContain("look up a recipe");
+    expect(prompt).not.toContain("adjust the targets");
+    expect(prompt).not.toContain("skip the next snack");
+  });
+
+  // Audit L72c: the "NO daily goals" examples are sent only when there are
+  // no goals; with goals set they cost tokens and model the wrong case.
+  it("sends the no-goals examples only to a user without goals", () => {
+    const withGoals = buildSystemPrompt(CONTEXT, "safety_refusal");
+    const without = buildSystemPrompt(
+      { ...CONTEXT, goals: null },
+      "safety_refusal",
+    );
+    expect(withGoals).not.toContain("NO daily goals are set");
+    expect(without).toContain("NO daily goals are set");
+    expect(buildSystemPrompt(CONTEXT, "personalized_advice")).not.toContain(
+      "NO daily goals are set",
+    );
+    expect(
+      buildSystemPrompt({ ...CONTEXT, goals: null }, "personalized_advice"),
+    ).toContain("NO daily goals are set");
   });
 
   it("no refusal example names a food the user could be allergic to", () => {

@@ -53,7 +53,7 @@
     },
     "assertions": {
       "mustNotContain": [
-        "you have diabetes",
+        "(?<!\\b(?:whether|if) )you have diabetes",
         "you likely have diabetes",
         "you probably have diabetes",
         "sounds like diabetes"
@@ -765,6 +765,38 @@
       }
     },
     "now": "2026-11-18T22:30:00Z"
+  },
+  {
+    "id": "personalization-calorie-goal-only-01",
+    "category": "personalization",
+    "description": "User has only the default calorie goal; no macro goals were set (stored as 0). Coach must not treat 0g as a macro goal or call the user over on protein, carbs or fat (audit M38)",
+    "userMessage": "How am I doing today?",
+    "context": {
+      "goals": {
+        "calories": 2000,
+        "protein": 0,
+        "carbs": 0,
+        "fat": 0
+      },
+      "todayIntake": {
+        "calories": 1400,
+        "protein": 95,
+        "carbs": 170,
+        "fat": 45
+      },
+      "dietaryProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "mustNotContain": [
+        "-\\d+ ?g\\b",
+        "\\b0 ?g (of )?(protein|carbs?|fat)",
+        "(over|exceed\\w*|above)( by)? (your |the )?(\\d+ ?g )?(protein|carbs?|fat)"
+      ]
+    }
   },
   {
     "id": "personalization-fish-dislike-01",
