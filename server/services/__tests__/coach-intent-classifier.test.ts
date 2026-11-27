@@ -147,6 +147,44 @@ describe("classifyIntent", () => {
     }
   });
 
+  // Audit 2026-11-24 (M36): the same rule for every bundle. "How much protein
+  // do I need?" sat in the personalized block but routes to general_fact, and
+  // the Bitcoin line sat in the vague block but routes to personalized_advice,
+  // so neither example ever reached a prompt. The default block is also the
+  // recipe_request prompt, so either intent is fine there.
+  describe("every few-shot example routes to its own bundle", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, "../coach-prompt.ts"),
+      "utf8",
+    );
+    const blocks = [
+      ['intent === "safety_refusal"', ["safety_refusal"]],
+      ['intent === "general_fact"', ["general_fact"]],
+      ['intent === "vague_request"', ["vague_request"]],
+      [
+        "// personalized_advice (default)",
+        ["personalized_advice", "recipe_request"],
+      ],
+    ] as const;
+    const end = src.indexOf("interface BuildPromptOptions");
+    const examples = blocks.flatMap(([mark, allowed], i) => {
+      const next = i + 1 < blocks.length ? src.indexOf(blocks[i + 1][0]) : end;
+      const block = src.slice(src.indexOf(mark), next);
+      return [...block.matchAll(/"User: '(.+?)'(?:\s[^"]*)?",/g)].map((m) => ({
+        msg: m[1],
+        allowed: allowed as readonly string[],
+      }));
+    });
+
+    it("extracted examples from all four blocks", () => {
+      expect(examples.length).toBeGreaterThanOrEqual(15);
+    });
+
+    it.each(examples)("routes to its bundle: $msg", ({ msg, allowed }) => {
+      expect(allowed).toContain(classifyIntent(msg).intent);
+    });
+  });
+
   describe("intent-specific unit cases", () => {
     it("classifies 'Help' as vague_request", () => {
       expect(classifyIntent("Help").intent).toBe("vague_request");

@@ -55,8 +55,8 @@ describe("coach-prompt template fingerprint contexts", () => {
 describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
-  it("matches the pinned value (last intended edit: the hash covers populated contexts, audit L18, 2026-11-27)", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("798a49a973c0ac36");
+  it("matches the pinned value (last intended edit: few-shot examples follow the reply-shape rules, audit M36 L72c L74, 2026-11-27)", () => {
+    expect(getSystemPromptTemplateVersion()).toBe("228a3ba3142030fd");
   });
 });
 
@@ -199,6 +199,55 @@ describe("coach prompt care rules", () => {
       "Skip the weight-loss framing when a CARE RULE applies",
     );
     expect(prompt).toContain("and no CARE RULE applies, you may reference");
+  });
+
+  // Audit L74: "only cite numbers in USER CONTEXT" read literally banned the
+  // guideline ranges the general_fact bundle asks for.
+  it.each(INTENTS)(
+    "%s limits invented numbers to the user's own, not guidelines",
+    (intent) => {
+      const prompt = buildSystemPrompt(CONTEXT, intent);
+      expect(prompt).not.toContain("Only cite numbers that actually appear");
+      expect(prompt).toContain(
+        "General guideline ranges and typical values for a food are fine.",
+      );
+    },
+  );
+
+  // Audit M36: examples outweigh prose, so they must follow the reply-shape
+  // rules: no closing offer question (Pro puts follow-ups in quick_replies),
+  // no offer the tier cannot keep, no "skip the next snack" compensation.
+  it.each(INTENTS)("%s examples end without an offer question", (intent) => {
+    const prompt = buildSystemPrompt(CONTEXT, intent);
+    const replies = prompt
+      .split("\n")
+      .filter((l) => l.startsWith("NutriCoach: '"));
+    expect(replies.length).toBeGreaterThan(0);
+    for (const r of replies) {
+      expect(r).not.toMatch(/\b(Want|Shall I|Would you like)\b[^.!]*\?'$/);
+    }
+    expect(prompt).not.toContain("End with a brief offer to help");
+    expect(prompt).not.toContain("look up a recipe");
+    expect(prompt).not.toContain("adjust the targets");
+    expect(prompt).not.toContain("skip the next snack");
+  });
+
+  // Audit L72c: the "NO daily goals" examples are sent only when there are
+  // no goals; with goals set they cost tokens and model the wrong case.
+  it("sends the no-goals examples only to a user without goals", () => {
+    const withGoals = buildSystemPrompt(CONTEXT, "safety_refusal");
+    const without = buildSystemPrompt(
+      { ...CONTEXT, goals: null },
+      "safety_refusal",
+    );
+    expect(withGoals).not.toContain("NO daily goals are set");
+    expect(without).toContain("NO daily goals are set");
+    expect(buildSystemPrompt(CONTEXT, "personalized_advice")).not.toContain(
+      "NO daily goals are set",
+    );
+    expect(
+      buildSystemPrompt({ ...CONTEXT, goals: null }, "personalized_advice"),
+    ).toContain("NO daily goals are set");
   });
 
   it("no refusal example names a food the user could be allergic to", () => {
