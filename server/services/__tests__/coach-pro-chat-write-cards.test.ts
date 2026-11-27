@@ -12,6 +12,7 @@ import type { CoachContext } from "../coach-prompt";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "../coach-blocks";
 import {
   buildGoalsPayload,
+  buildRemindersPayload,
   buildWriteCardPayload,
   performWriteCardSave,
   planGroceryCard,
@@ -91,6 +92,7 @@ vi.mock("../write-cards", async (orig) => ({
   planGroceryCard: vi.fn(),
   planPantryCard: vi.fn(),
   buildGoalsPayload: vi.fn(),
+  buildRemindersPayload: vi.fn(),
   performWriteCardSave: vi.fn(),
 }));
 
@@ -624,6 +626,48 @@ describe("handleCoachChat with write cards", () => {
       expect.objectContaining({ kind: "goals", payload: goalsPayload }),
     );
     expect(buildWriteCardPayload).not.toHaveBeenCalled();
+  });
+
+  it("a reminders card is worked out during the tool call, only for an app that declared it (A3)", async () => {
+    const remindersPayload = {
+      changes: [{ key: "meal-log" as const, on: false }],
+    };
+    vi.mocked(buildRemindersPayload).mockResolvedValue(remindersPayload);
+    const seen: { outcome?: unknown } = {};
+    vi.mocked(generateCoachProResponse).mockImplementation(async function* (
+      ...args: Parameters<typeof generateCoachProResponse>
+    ): AsyncGenerator<CoachProChunk> {
+      seen.outcome = await args[7]?.onWriteCardProposal?.({
+        kind: "reminders",
+        args: { mealLog: false },
+      });
+      const chunk: CoachProChunk = { type: "content", content: "Here." };
+      yield chunk;
+    });
+    await collect(handleCoachChat(makeParams({ writeCards: true })));
+    expect(
+      vi.mocked(generateCoachProResponse).mock.calls[0][7],
+    ).not.toHaveProperty("remindersCard");
+    vi.mocked(generateCoachProResponse).mockClear();
+    vi.mocked(storage.createWriteCard).mockClear();
+    await collect(
+      handleCoachChat(makeParams({ writeCards: true, remindersCard: true })),
+    );
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][7]).toMatchObject({
+      remindersCard: true,
+    });
+    expect(buildRemindersPayload).toHaveBeenCalledWith(
+      { mealLog: false },
+      "user-42",
+    );
+    expect(seen.outcome).toEqual({
+      kind: "reminders",
+      shown: true,
+      rows: "Meal logging nudges off on the card (now on)",
+    });
+    expect(storage.createWriteCard).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "reminders", payload: remindersPayload }),
+    );
   });
 
   describe("the allergy card", () => {

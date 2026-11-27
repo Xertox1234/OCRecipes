@@ -14,6 +14,9 @@ import {
   PlanCardEdits,
   PlanCardPayload,
   planRecipeKey,
+  REMINDER_LABELS,
+  type RemindersCardEdits,
+  type RemindersCardPayload,
   WriteCardEdits,
   WriteCardKind,
   WriteCardMealType,
@@ -177,6 +180,25 @@ export function goalsSummary(p: GoalsCardPayload, e: GoalsCardEdits): string {
     .join(" · ");
 }
 
+/** The reminders card's switch per row: the user's edit, else the proposal. */
+export function remindersValues(
+  p: RemindersCardPayload,
+  e: RemindersCardEdits,
+): boolean[] {
+  return p.changes.map((row, i) => e.on?.[i] ?? row.on);
+}
+
+/** "Meal logging nudges off · Daily check-in on" for the card's rows. */
+export function remindersSummary(
+  p: RemindersCardPayload,
+  e: RemindersCardEdits,
+): string {
+  const values = remindersValues(p, e);
+  return p.changes
+    .map((row, i) => `${REMINDER_LABELS[row.key]} ${values[i] ? "on" : "off"}`)
+    .join(" · ");
+}
+
 export function writeCardButtonLabel(
   kind: WriteCardKind,
   p: WriteCardPayload,
@@ -207,6 +229,8 @@ export function writeCardButtonLabel(
       return "Update goals";
     case "allergy":
       return "Add to allergies";
+    case "reminders":
+      return "Update reminders";
   }
 }
 
@@ -242,5 +266,7 @@ export function writeCardReceipt(
     }
     case "goals":
       return `✓ Goals updated · ${goalsSummary(p as GoalsCardPayload, e as GoalsCardEdits)}`;
+    case "reminders":
+      return `✓ Reminders updated · ${remindersSummary(p as RemindersCardPayload, e as RemindersCardEdits)}`;
   }
 }

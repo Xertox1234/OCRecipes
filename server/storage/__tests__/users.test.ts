@@ -79,6 +79,7 @@ const {
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,
+  getUserReminderMutes,
   setFamilyPlanningEnabled,
   withdrawHealthConsent,
   getSubscriptionStatus,
@@ -1074,6 +1075,43 @@ describe("users storage", () => {
       expect(theirs[0].allergies).toHaveLength(1);
       expect(theirs[0].note).toBe("careful");
     });
+  });
+
+  describe("getUserReminderMutes (Coach reminders card)", () => {
+    it("is empty for a user with no profile row", async () => {
+      expect(await getUserReminderMutes(testUser.id)).toEqual({});
+    });
+
+    it("reads the stored mutes, inside a transaction too", async () => {
+      await createTestUserProfile(tx, testUser.id, {
+        reminderMutes: { "meal-log": true },
+      });
+      expect(await getUserReminderMutes(testUser.id)).toEqual({
+        "meal-log": true,
+      });
+      expect(
+        await getUserReminderMutes(testUser.id, tx, { forUpdate: true }),
+      ).toEqual({ "meal-log": true });
+    });
+
+    it("reads only the given user's mutes", async () => {
+      const otherUser = await createTestUser(tx, {
+        username: "other_read_mutes_user",
+      });
+      await createTestUserProfile(tx, otherUser.id, {
+        reminderMutes: { commitment: true },
+      });
+      expect(await getUserReminderMutes(testUser.id)).toEqual({});
+    });
+  });
+
+  it("saveReminderMutes writes through the executor it is given", async () => {
+    const result = await saveReminderMutes(
+      testUser.id,
+      { "pantry-expiring": true },
+      tx,
+    );
+    expect(result).toEqual({ "pantry-expiring": true });
   });
 
   describe("saveReminderMutes", () => {

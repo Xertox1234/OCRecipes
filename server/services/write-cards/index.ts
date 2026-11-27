@@ -3,16 +3,14 @@ import {
   WRITE_CARD_EDITS_SCHEMAS,
   type FoodCardEdits,
   type AllergyCardEdits,
-  type AllergyCardPayload,
   type FoodCardPayload,
   type GoalsCardEdits,
-  type GoalsCardPayload,
   type GroceryCardEdits,
   type GroceryCardPayload,
   type PantryCardEdits,
-  type PantryCardPayload,
   type PlanCardEdits,
   type PlanCardPayload,
+  type RemindersCardEdits,
   type WriteCardEdits,
   type WriteCardKind,
   type WriteCardPayload,
@@ -61,6 +59,12 @@ import {
   performGoalsSave,
   revertGoalsSave,
 } from "./goals";
+import {
+  buildRemindersPayload,
+  describeReminders,
+  performRemindersSave,
+  revertRemindersSave,
+} from "./reminders";
 import { WriteCardEditError } from "./errors";
 import { readCardPayload, STALE_CARD_RECEIPT } from "./payload";
 import type { WriteCardProposal } from "./tool-args";
@@ -71,6 +75,7 @@ export type { WriteCardOutcome, WriteCardProposal } from "./tool-args";
 export { planGroceryCard, type GroceryCardPlan } from "./grocery";
 export { planPantryCard, pantryRowLine, type PantryCardPlan } from "./pantry";
 export { buildGoalsPayload, describeGoals } from "./goals";
+export { buildRemindersPayload, describeReminders } from "./reminders";
 
 export async function buildWriteCardPayload(
   p: WriteCardProposal,
@@ -91,6 +96,8 @@ export async function buildWriteCardPayload(
       return buildGoalsPayload(p.args, ctx.userId);
     case "allergy":
       return buildAllergyPayload(p.args, ctx.userId);
+    case "reminders":
+      return buildRemindersPayload(p.args, ctx.userId);
   }
 }
 
@@ -140,6 +147,10 @@ export async function performWriteCardSave(
         userId: ctx.userId,
         afterCommit: ctx.afterCommit,
       });
+    case "reminders":
+      return performRemindersSave(tx, card, parsed.data, {
+        userId: ctx.userId,
+      });
   }
 }
 
@@ -161,6 +172,8 @@ export async function revertWriteCardSave(
       return revertGoalsSave(tx, card);
     case "allergy":
       return revertAllergySave(tx, card, afterCommit);
+    case "reminders":
+      return revertRemindersSave(tx, card);
   }
 }
 
@@ -193,6 +206,7 @@ const TOOL_FOR_KIND: Record<Exclude<WriteCardKind, "allergy">, string> = {
   plan: "add_to_meal_plan",
   pantry: "update_pantry",
   goals: "set_nutrition_goals",
+  reminders: "set_reminders",
 };
 
 const fmt = (n: number) => String(Math.round(n));
@@ -260,6 +274,7 @@ const KIND_LABEL: Record<WriteCardKind, string> = {
   pantry: "pantry",
   goals: "daily goals",
   allergy: "allergy",
+  reminders: "reminders",
 };
 
 /**
@@ -303,6 +318,10 @@ function describeLiveCardBody(card: CoachWriteCard): string | null {
     case "allergy": {
       const p = readCardPayload(card, "allergy");
       return p && describeAllergy(p, e as AllergyCardEdits);
+    }
+    case "reminders": {
+      const p = readCardPayload(card, "reminders");
+      return p && describeReminders(p, e as RemindersCardEdits);
     }
   }
 }

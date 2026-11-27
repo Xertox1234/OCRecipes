@@ -12,8 +12,10 @@ import { STANDARD_SAFETY_MESSAGE } from "../../lib/ai-safety";
 import { flatRefusalReplacement, freeReplyShownText } from "./visible-reply";
 import {
   buildGoalsPayload,
+  buildRemindersPayload,
   buildWriteCardPayload,
   describeGoals,
+  describeReminders,
   pantryRowLine,
   planGroceryCard,
   planPantryCard,
@@ -61,6 +63,8 @@ interface StreamArgs {
   writeCards: boolean;
   pantryCard: boolean;
   goalsCard: boolean;
+  /** The app can draw the reminders card (A3). */
+  remindersCard?: boolean;
   /** The app can draw the plan card's shopping section (A1). */
   planShopCard: boolean;
   /** A small typed food log is applied at once, with Undo (T2). */
@@ -167,6 +171,25 @@ async function* streamProReply(
             } catch (err) {
               if (err instanceof WriteCardEditError) {
                 return { kind: "goals", shown: false, rows: "" };
+              }
+              throw err;
+            }
+          }
+          if (p.kind === "reminders") {
+            // As the goals card: worked out now, so the reply never points
+            // at a card for reminders already set that way.
+            try {
+              const payload = await buildRemindersPayload(p.args, userId);
+              reply.writeCardProposal = p;
+              reply.writeCardPrepared = payload;
+              return {
+                kind: "reminders",
+                shown: true,
+                rows: describeReminders(payload, {}),
+              };
+            } catch (err) {
+              if (err instanceof WriteCardEditError) {
+                return { kind: "reminders", shown: false, rows: "" };
               }
               throw err;
             }
@@ -320,6 +343,9 @@ async function* streamProReply(
         ...(pantryCard && { pantryCard: true }),
         // Not on a safety turn: the Coach is refusing, not setting goals.
         ...(goalsCard && intent !== "safety_refusal" && { goalsCard: true }),
+        // Likewise the reminders card (A3).
+        ...(a.remindersCard &&
+          intent !== "safety_refusal" && { remindersCard: true }),
       }),
     },
   )) {

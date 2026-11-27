@@ -6,6 +6,8 @@ import {
   goalsEditsSchema,
   groceryEditsSchema,
   planEditsSchema,
+  remindersCardPayloadSchema,
+  remindersEditsSchema,
   writeCardBlockSchema,
 } from "../coach-write-cards";
 import { coachBlockSchema } from "../coach-blocks";
@@ -221,6 +223,70 @@ describe("pantry write card", () => {
     );
     expect(
       pantryEditsSchema.safeParse({ ticked: [true], quantity: "99" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("reminders write card (Coach roadmap A3)", () => {
+  const remindersBlock = {
+    type: "write_card",
+    cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+    kind: "reminders",
+    status: "live",
+    payload: {
+      changes: [
+        { key: "meal-log", on: false },
+        { key: "daily-checkin", on: true },
+      ],
+    },
+  };
+
+  it("a reminders block passes the coach block schema, so the app does not drop it", () => {
+    expect(coachBlockSchema.safeParse(remindersBlock).success).toBe(true);
+    expect(writeCardBlockSchema.safeParse(remindersBlock).success).toBe(true);
+  });
+
+  it("a reminders payload under another kind is refused, and the other way round", () => {
+    expect(
+      writeCardBlockSchema.safeParse({ ...remindersBlock, kind: "goals" })
+        .success,
+    ).toBe(false);
+    expect(
+      writeCardBlockSchema.safeParse({
+        ...remindersBlock,
+        payload: { rows: [{ key: "calories", current: 1800, proposed: 2000 }] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["no changes", []],
+    ["an unknown reminder", [{ key: "weigh-in", on: true }]],
+    [
+      "the same reminder twice",
+      [
+        { key: "commitment", on: true },
+        { key: "commitment", on: false },
+      ],
+    ],
+  ])("refuses a payload with %s", (_name, changes) => {
+    expect(remindersCardPayloadSchema.safeParse({ changes }).success).toBe(
+      false,
+    );
+  });
+
+  it("edits are strict: one on/off per row", () => {
+    expect(remindersEditsSchema.safeParse({ on: [true, false] }).success).toBe(
+      true,
+    );
+    expect(remindersEditsSchema.safeParse({}).success).toBe(true);
+    expect(
+      remindersEditsSchema.safeParse({ on: [true], key: "meal-log" }).success,
+    ).toBe(false);
+    expect(remindersEditsSchema.safeParse({ on: ["yes"] }).success).toBe(false);
+    expect(
+      remindersEditsSchema.safeParse({ on: [true, true, true, true, true] })
+        .success,
     ).toBe(false);
   });
 });

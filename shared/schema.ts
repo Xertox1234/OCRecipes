@@ -1545,7 +1545,15 @@ export const coachWriteCards = pgTable(
       .notNull(),
     kind: text("kind")
       .notNull()
-      .$type<"food" | "grocery" | "plan" | "pantry" | "goals" | "allergy">(),
+      .$type<
+        | "food"
+        | "grocery"
+        | "plan"
+        | "pantry"
+        | "goals"
+        | "allergy"
+        | "reminders"
+      >(),
     payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
     edits: jsonb("edits")
       .notNull()
@@ -1565,8 +1573,8 @@ export const coachWriteCards = pgTable(
     check(
       "coach_write_cards_kind_check",
       // Migration 0050 widened the production constraint for 'goals' and
-      // 'allergy' together.
-      sql`${table.kind} IN ('food', 'grocery', 'plan', 'pantry', 'goals', 'allergy')`,
+      // 'allergy' together, and 0052 for 'reminders'.
+      sql`${table.kind} IN ('food', 'grocery', 'plan', 'pantry', 'goals', 'allergy', 'reminders')`,
     ),
     check(
       "coach_write_cards_status_check",
@@ -1605,6 +1613,13 @@ export interface CoachWriteCardSavedRefs {
   /** Allergy card: the allergy the save added. Undo removes it only while
    *  the profile still holds it with this severity. */
   allergyAdded?: { name: string; severity: "mild" | "moderate" | "severe" };
+  /** Reminders card: each reminder type the save switched, as mutes before
+   *  and after. Undo restores a type only while it still holds `after`. */
+  remindersRestore?: {
+    key: "meal-log" | "commitment" | "daily-checkin" | "pantry-expiring";
+    before: boolean;
+    after: boolean;
+  }[];
   /** Pantry card: the rows this save inserted (Undo deletes them). */
   pantryAddedIds?: number[];
   /** Pantry card: each row the save changed or deleted, as it was before. */

@@ -42,6 +42,9 @@ export function writeCardRefreshKeys(
       return [GOALS_QUERY_KEY, QUERY_KEYS.dailySummary, QUERY_KEYS.dailyBudget];
     case "allergy":
       return [QUERY_KEYS.dietaryProfile];
+    case "reminders":
+      // The Coach Reminders screen reads the mutes from the dietary profile.
+      return [QUERY_KEYS.dietaryProfile];
     default:
       return [];
   }

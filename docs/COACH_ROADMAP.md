@@ -149,8 +149,13 @@ Then re-rank.
       (the latest six reports, and one in detail) and a `weekly_report`
       card the server builds from the stored report (the week, its
       headline, the days logged, the meals and the protein goal days); a
-      tap opens the full report on the Profile tab. Left: reminders and
-      family profiles.
+      tap opens the full report on the Profile tab.
+      Part 2, reminders: a `set_reminders` tool and a `reminders` write card
+      that switch the four Coach Reminders types (meal logging nudges,
+      commitment follow-ups, the daily check-in, expiring food) on and off,
+      as the settings screen does; nothing changes until Save, and Undo puts
+      them back. Reminders the user sets for a time of their own are not in
+      the app yet, so the Coach says so. Left: family profiles.
 
 ## Speak: the road to rung 10
 

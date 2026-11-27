@@ -69,6 +69,11 @@ export interface ExecuteToolOptions {
    * set_nutrition_goals is refused without it.
    */
   goalsCard?: boolean;
+  /**
+   * The reminders card is on for this turn (Coach roadmap A3): the app listed
+   * the kind. set_reminders is refused without it.
+   */
+  remindersCard?: boolean;
   /** Receives each validated write-tool call in write-card mode. */
   onWriteCardProposal?: (
     p: WriteCardProposal,

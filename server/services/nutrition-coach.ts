@@ -1,6 +1,9 @@
 import { aiChat } from "../lib/ai-client";
 import { OPENAI_TIMEOUT_STREAM_MS } from "../lib/openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from "openai/resources/chat/completions";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -44,25 +47,38 @@ export const WRITE_CARD_TOOL_DEFINITIONS = Object.freeze(
 export const PANTRY_CARD_TOOL_DEFINITIONS = Object.freeze(
   getToolDefinitions({ writeCards: true, pantryCard: true }),
 );
-/** Write-card mode plus the goals card (Coach roadmap T1), without and with
- *  the pantry card. */
-const GOALS_CARD_TOOL_DEFINITIONS = Object.freeze(
-  getToolDefinitions({ writeCards: true, goalsCard: true }),
-);
-const PANTRY_GOALS_CARD_TOOL_DEFINITIONS = Object.freeze(
-  getToolDefinitions({ writeCards: true, pantryCard: true, goalsCard: true }),
-);
+/**
+ * Write-card lists for the extra card kinds (the goals card, Coach roadmap T1;
+ * the reminders card, A3), alone or together with the pantry card: built once
+ * per combination, then shared like the lists above.
+ */
+const writeCardToolLists = new Map<string, readonly ChatCompletionTool[]>();
 
 /** The hoisted list for a write-card turn's extra card kinds. */
-function writeCardToolList(pantryCard: boolean, goalsCard: boolean) {
-  if (goalsCard) {
+function writeCardToolList(
+  pantryCard: boolean,
+  goalsCard: boolean,
+  remindersCard: boolean,
+): readonly ChatCompletionTool[] {
+  if (!goalsCard && !remindersCard) {
     return pantryCard
-      ? PANTRY_GOALS_CARD_TOOL_DEFINITIONS
-      : GOALS_CARD_TOOL_DEFINITIONS;
+      ? PANTRY_CARD_TOOL_DEFINITIONS
+      : WRITE_CARD_TOOL_DEFINITIONS;
   }
-  return pantryCard
-    ? PANTRY_CARD_TOOL_DEFINITIONS
-    : WRITE_CARD_TOOL_DEFINITIONS;
+  const key = `${pantryCard}|${goalsCard}|${remindersCard}`;
+  let list = writeCardToolLists.get(key);
+  if (!list) {
+    list = Object.freeze(
+      getToolDefinitions({
+        writeCards: true,
+        pantryCard,
+        goalsCard,
+        remindersCard,
+      }),
+    );
+    writeCardToolLists.set(key, list);
+  }
+  return list;
 }
 
 /**
@@ -257,6 +273,8 @@ export async function* generateCoachProResponse(
     pantryCard?: boolean;
     /** The app can show the goals card. */
     goalsCard?: boolean;
+    /** The app can show the reminders card (A3). */
+    remindersCard?: boolean;
     onWriteCardProposal?: ExecuteToolOptions["onWriteCardProposal"];
     planRecipePool?: ExecuteToolOptions["planRecipePool"];
   },
@@ -293,7 +311,11 @@ export async function* generateCoachProResponse(
   // replaces (spec §3.3). Flag off → today's tools.
   const toolList = !options?.writeCards
     ? TOOL_DEFINITIONS
-    : writeCardToolList(!!options.pantryCard, !!options.goalsCard);
+    : writeCardToolList(
+        !!options.pantryCard,
+        !!options.goalsCard,
+        !!options.remindersCard,
+      );
   const baseTools = isRecipeFinderEnabled()
     ? toolList.filter(
         (t) => !("function" in t && t.function.name === "search_recipes"),
@@ -568,6 +590,7 @@ export async function* generateCoachProResponse(
                   writeCards: true,
                   pantryCard: !!options.pantryCard,
                   goalsCard: !!options.goalsCard,
+                  remindersCard: !!options.remindersCard,
                   onWriteCardProposal: options.onWriteCardProposal,
                   planRecipePool: options.planRecipePool,
                 },
