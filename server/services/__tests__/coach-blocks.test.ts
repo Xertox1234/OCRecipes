@@ -643,7 +643,13 @@ describe("more chart kinds (Coach roadmap T4)", () => {
     expect(on).toMatch(
       /for today or yesterday against the goals use day_progress/,
     );
-    // It has no multi-day or weight history: no data, no chart.
+    // Many days come from one get_intake_history call; there is still no
+    // weight history, so no data, no chart.
+    expect(on).toMatch(
+      /read them with one get_intake_history call, not one get_daily_log_details call per day/,
+    );
+    expect(on).toMatch(/a day not logged is not a day without food/);
+    expect(on).toMatch(/if its sensitive is true, draw no chart of intake/);
     expect(on).toMatch(
       /Every value, label and hit must come from a tool result or your context/,
     );
