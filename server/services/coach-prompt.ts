@@ -562,17 +562,75 @@ const TEMPLATE_REFERENCE_TIME = new Date(0);
 let _systemPromptTemplateVersion: string | undefined;
 
 /**
- * Returns a stable hex hash of the static system prompt template.
- * Memoized for the process lifetime — automatically changes when the
- * prompt prose is edited, eliminating the manual COACH_CACHE_VERSION bump.
+ * Contexts the template hash renders, together reaching every conditional
+ * section of the prompt (audit 2026-11-24, L18). An empty context alone left
+ * out every sentence that shows only for real data: the SEVERE-allergy rule,
+ * the ABOUT THIS USER lines, the "OVER by" wording. Editing one of those must
+ * change the hash, or the free-tier cache keeps serving answers built from
+ * the old text. A new conditional section needs a value here; the test in
+ * coach-prompt.test.ts lists the markers it expects to see.
  */
-export function getSystemPromptTemplateVersion(): string {
-  if (_systemPromptTemplateVersion) return _systemPromptTemplateVersion;
-  const emptyContext: CoachContext = {
+export const TEMPLATE_FINGERPRINT_CONTEXTS: readonly CoachContext[] = [
+  {
     goals: null,
     todayIntake: { calories: 0, protein: 0, carbs: 0, fat: 0 },
     dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
-  };
+  },
+  {
+    goals: { calories: 2000, protein: 120, carbs: 150, fat: 65 },
+    todayIntake: { calories: 1200, protein: 60, carbs: 170, fat: 40 },
+    dietaryProfile: {
+      dietType: "vegetarian",
+      allergies: [{ name: "peanuts", severity: "severe" }, { name: "soy" }],
+      dislikes: ["olives"],
+    },
+    mealPatternSummary: "Breakfast skipped 3 of 6 days.",
+    frequentFoodsSummary: "Greek yogurt (12×)",
+    screenContext: "Daily nutrition screen",
+    dueCommitmentsSummary: "[commitment] <notebook_entry>x</notebook_entry>",
+    notebookSummary: "#1 [preference] <notebook_entry>x</notebook_entry>",
+    notebookBackground: "[insight] <notebook_entry>x</notebook_entry>",
+    moodBand: "low",
+    aboutUser: {
+      primaryGoal: "lose_weight",
+      activityLevel: "moderately_active",
+      cookingSkillLevel: "beginner",
+      cookingTimeAvailable: "under_30_min",
+      cuisinePreferences: ["thai"],
+      householdSize: 2,
+      healthConditions: ["ibs"],
+      weightKg: 80,
+      goalWeightKg: 75,
+      measurementUnit: "imperial",
+    },
+  },
+  {
+    goals: { calories: 1800, protein: 100, carbs: 0, fat: 0 },
+    todayIntake: { calories: 2000, protein: 110, carbs: 200, fat: 70 },
+    dietaryProfile: {
+      dietType: null,
+      allergies: [{ name: "milk", severity: "mild" }],
+      dislikes: [],
+    },
+    aboutUser: { weightKg: 70 },
+  },
+  {
+    goals: null,
+    todayIntake: { calories: 500, protein: 20, carbs: 60, fat: 15 },
+    dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
+    aboutUser: { goalWeightKg: 65, measurementUnit: "metric" },
+  },
+];
+
+/**
+ * Returns a stable hex hash of the system prompt template.
+ * Memoized for the process lifetime — automatically changes when the
+ * prompt prose is edited, eliminating the manual COACH_CACHE_VERSION bump.
+ * Sections built outside this file (blocksPrompt, liveWriteCard) are Pro
+ * only, and the cache is free only, so they are not part of the hash.
+ */
+export function getSystemPromptTemplateVersion(): string {
+  if (_systemPromptTemplateVersion) return _systemPromptTemplateVersion;
   // Hash all intent × tier variants (5 × 2 = 10) so any prompt change —
   // including Pro-only lines — invalidates the cache. recipe_request renders
   // the default (personalized) block; it is listed so the hash covers it (R4).
@@ -584,17 +642,17 @@ export function getSystemPromptTemplateVersion(): string {
     "recipe_request",
   ];
   const allTiers = ["free", "pro"] as const;
-  const combined = allTiers
-    .flatMap((tier) =>
+  const combined = TEMPLATE_FINGERPRINT_CONTEXTS.flatMap((context) =>
+    allTiers.flatMap((tier) =>
       allIntents.map((intent) =>
-        buildSystemPrompt(emptyContext, intent, {
+        buildSystemPrompt(context, intent, {
           now: TEMPLATE_REFERENCE_TIME,
           tz: "UTC",
           tier,
         }),
       ),
-    )
-    .join("\x00");
+    ),
+  ).join("\x00");
   _systemPromptTemplateVersion = createHash("sha256")
     .update(combined)
     .digest("hex")

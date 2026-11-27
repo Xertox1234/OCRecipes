@@ -4,15 +4,59 @@ import {
   buildUserContextLines,
   formatAboutUserLines,
   getSystemPromptTemplateVersion,
+  TEMPLATE_FINGERPRINT_CONTEXTS,
   type CoachContext,
 } from "../coach-prompt";
 import type { CoachIntent } from "../coach-intent-classifier";
 
+// Audit 2026-11-24 (L18): the hash was built from an empty context only, so
+// a sentence rendered only for a populated context (the SEVERE-allergy rule,
+// the ABOUT THIS USER header) could be edited without invalidating the cache.
+describe("coach-prompt template fingerprint contexts", () => {
+  const rendered = TEMPLATE_FINGERPRINT_CONTEXTS.flatMap((ctx) =>
+    (["free", "pro"] as const).map((tier) =>
+      buildSystemPrompt(ctx, "personalized_advice", { tier }),
+    ),
+  ).join("\n");
+
+  it.each([
+    "Daily goals:",
+    "Remaining today: OVER by",
+    /Remaining today: \d+ cal/,
+    "over by",
+    "Meal patterns (past 7 days):",
+    "Frequently logged foods",
+    "Diet type:",
+    "Allergies:",
+    "At least one allergy above is SEVERE",
+    "Food dislikes:",
+    "ABOUT THIS USER:",
+    "Primary goal:",
+    /Weight: [\d.]+ \w+ \(goal:/,
+    /\nWeight: [\d.]+ \w+\n/,
+    "Goal weight:",
+    "Health conditions (from their profile):",
+    "Activity level:",
+    "Favorite cuisines:",
+    "Cooking skill:",
+    "Cooking time available:",
+    "Cooks for:",
+    "SCREEN CONTEXT",
+    "COMMITMENTS DUE FOR FOLLOW-UP:",
+    "WHAT YOU CAN MENTION",
+    "BACKGROUND (never mention",
+    "The user's recent mood:",
+  ])("some fingerprint context renders %s", (marker) => {
+    if (typeof marker === "string") expect(rendered).toContain(marker);
+    else expect(rendered).toMatch(marker);
+  });
+});
+
 describe("coach-prompt template version", () => {
   // The hash feeds coach cache keys. A pure module move must not change it;
   // an intentional prompt edit updates this pin on purpose.
-  it("matches the pinned value (last intended edit: the chart rule names progress cards too, 2026-11-26)", () => {
-    expect(getSystemPromptTemplateVersion()).toBe("3a098f321cad1e6b");
+  it("matches the pinned value (last intended edit: the hash covers populated contexts, audit L18, 2026-11-27)", () => {
+    expect(getSystemPromptTemplateVersion()).toBe("798a49a973c0ac36");
   });
 });
 
