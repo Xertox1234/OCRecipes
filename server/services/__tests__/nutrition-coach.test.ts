@@ -10,6 +10,10 @@ import type { CoachContext } from "../coach-prompt";
 import { aiChat } from "../../lib/ai-client";
 import { executeToolCall } from "../coach-tools";
 import {
+  ONE_CARD_PER_REPLY_RESULT,
+  foodCardResult,
+} from "../write-cards/results";
+import {
   sanitizeUserInput,
   sanitizeContextField,
   containsUnsafeCoachAdvice,
@@ -922,6 +926,176 @@ describe("generateCoachProResponse", () => {
       undefined,
       "UTC",
     );
+  });
+
+  // Audit 2026-11-24 (L19): a reply shows one card and the last write call
+  // wins. In one parallel round, which call finished last decided the card,
+  // and every call's result said its card was on screen. Now write calls
+  // run one at a time in call order, and an earlier shown card is told it
+  // was replaced only when a later call also showed one.
+  describe("two write-card calls in one round", () => {
+    const twoWrites = () =>
+      createMockStream([
+        {
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_food",
+              function: {
+                name: "log_food_item",
+                arguments: '{"food":"eggs","count":2}',
+              },
+            },
+            {
+              index: 1,
+              id: "call_look",
+              function: {
+                name: "lookup_nutrition",
+                arguments: '{"query":"egg"}',
+              },
+            },
+            {
+              index: 2,
+              id: "call_grocery",
+              function: {
+                name: "add_to_grocery_list",
+                arguments: '{"items":["milk"]}',
+              },
+            },
+          ],
+        },
+        { finish_reason: "tool_calls" },
+      ]);
+
+    function toolMessages(): Record<string, string> {
+      const body = vi.mocked(aiChat).mock.calls[1][1] as {
+        messages: { role: string; tool_call_id?: string; content: string }[];
+      };
+      return Object.fromEntries(
+        body.messages
+          .filter((m) => m.role === "tool")
+          .map((m) => [m.tool_call_id!, m.content]),
+      );
+    }
+
+    const SHOWN = { card_shown: true, message: "on screen" };
+    const runCardTurn = async () => {
+      vi.mocked(aiChat)
+        .mockResolvedValueOnce(twoWrites() as any)
+        .mockResolvedValueOnce(
+          createMockStream([
+            { content: "Tap the card." },
+            { finish_reason: "stop" },
+          ]) as any,
+        );
+      await collectStream(
+        generateCoachProResponse(
+          [{ role: "user", content: "log 2 eggs and add milk" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+          undefined,
+          undefined,
+          undefined,
+          "UTC",
+          { writeCards: true },
+        ),
+      );
+    };
+
+    it("runs write calls one at a time in call order", async () => {
+      const order: string[] = [];
+      let inFlight = 0;
+      let overlapped = false;
+      vi.mocked(executeToolCall).mockImplementation(async (name) => {
+        if (name !== "lookup_nutrition") {
+          inFlight++;
+          if (inFlight > 1) overlapped = true;
+          // The first write is the slow one: in parallel it would finish last.
+          await new Promise((r) =>
+            setTimeout(r, name === "log_food_item" ? 20 : 0),
+          );
+          inFlight--;
+          order.push(name);
+        }
+        return SHOWN;
+      });
+      await runCardTurn();
+      expect(overlapped).toBe(false);
+      expect(order).toEqual(["log_food_item", "add_to_grocery_list"]);
+    });
+
+    it("tells an earlier shown card it was replaced by the later one", async () => {
+      vi.mocked(executeToolCall).mockResolvedValue(SHOWN);
+      await runCardTurn();
+      const results = toolMessages();
+      expect(JSON.parse(results.call_food)).toEqual(ONE_CARD_PER_REPLY_RESULT);
+      expect(JSON.parse(results.call_grocery)).toEqual(SHOWN);
+      expect(JSON.parse(results.call_look)).toEqual(SHOWN);
+    });
+
+    it("keeps the earlier card when the later write call shows none", async () => {
+      vi.mocked(executeToolCall).mockImplementation(async (name) =>
+        name === "add_to_grocery_list"
+          ? { card_shown: false, message: "pantry has it" }
+          : SHOWN,
+      );
+      await runCardTurn();
+      const results = toolMessages();
+      expect(JSON.parse(results.call_food)).toEqual(SHOWN);
+      expect(JSON.parse(results.call_grocery)).toEqual({
+        card_shown: false,
+        message: "pantry has it",
+      });
+    });
+
+    it("a food logged at once neither replaces nor is replaced by a card", async () => {
+      const LOGGED = {
+        card_shown: true,
+        message: foodCardResult({
+          kind: "food",
+          shown: true,
+          loggedAtOnce: true,
+        }).message,
+      };
+      vi.mocked(executeToolCall).mockImplementation(async (name) =>
+        name === "log_food_item" ? LOGGED : SHOWN,
+      );
+      await runCardTurn();
+      const results = toolMessages();
+      expect(JSON.parse(results.call_food)).toEqual(LOGGED);
+      expect(JSON.parse(results.call_grocery)).toEqual(SHOWN);
+    });
+
+    it("keeps the earlier card when the later write call fails", async () => {
+      vi.mocked(executeToolCall).mockImplementation(async (name) => {
+        if (name === "add_to_grocery_list") throw new Error("db down");
+        return SHOWN;
+      });
+      await runCardTurn();
+      expect(JSON.parse(toolMessages().call_food)).toEqual(SHOWN);
+    });
+
+    it("control: without write-card mode both calls run", async () => {
+      vi.mocked(aiChat)
+        .mockResolvedValueOnce(twoWrites() as any)
+        .mockResolvedValueOnce(
+          createMockStream([
+            { content: "Done." },
+            { finish_reason: "stop" },
+          ]) as any,
+        );
+      vi.mocked(executeToolCall).mockResolvedValue({ ok: true });
+
+      await collectStream(
+        generateCoachProResponse(
+          [{ role: "user", content: "log 2 eggs and add milk" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+
+      expect(vi.mocked(executeToolCall)).toHaveBeenCalledTimes(3);
+    });
   });
 
   it("handles mixed success/failure in parallel tool calls", async () => {
