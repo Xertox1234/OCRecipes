@@ -1468,9 +1468,7 @@ describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untra
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     await act(async () => {
       fireEvent.click(confirm);
     });
@@ -1515,9 +1513,7 @@ describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untra
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     await act(async () => {
       fireEvent.click(confirm);
     });
@@ -1563,7 +1559,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const retry = await screen.findByLabelText("Retry smart photo analysis");
+    const retry = await screen.findByLabelText("Retake");
     expect(mockDeleteAsync).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -1589,7 +1585,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    const retry = await screen.findByLabelText("Retry smart photo analysis");
+    const retry = await screen.findByLabelText("Retake");
     await act(async () => {
       fireEvent.click(retry);
     });
@@ -1619,9 +1615,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     await act(async () => {
       fireEvent.click(confirm);
     });
@@ -1656,7 +1650,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
-    await screen.findByLabelText("Confirm smart photo analysis");
+    await screen.findByLabelText("Continue");
     expect(mockDeleteAsync).not.toHaveBeenCalled();
 
     mockIsFocused.value = false;
@@ -2103,23 +2097,18 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
-    const confirm = await screen.findByLabelText(
-      "Confirm smart photo analysis",
-    );
+    const confirm = await screen.findByLabelText("Continue");
     expect(confirm.getAttribute("aria-busy")).not.toBe("true");
 
-    const onPress = capturedPressProps["Confirm smart photo analysis"]
-      .onPress as () => void;
+    const onPress = capturedPressProps["Continue"].onPress as () => void;
     await act(async () => {
       onPress();
       onPress();
     });
     expect(mockRecognizeText).toHaveBeenCalledTimes(1);
-    expect(
-      screen
-        .getByLabelText("Confirm smart photo analysis")
-        .getAttribute("aria-busy"),
-    ).toBe("true");
+    expect(screen.getByLabelText("Continue").getAttribute("aria-busy")).toBe(
+      "true",
+    );
 
     await act(async () => {
       release({ text: "Burger 12.00\nSalad 9.00", blocks: [] });
@@ -2134,11 +2123,9 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
       mockNavigate.mock.calls.filter((c) => c[0] === "MenuScanResult"),
     ).toHaveLength(1);
     await waitFor(() => {
-      expect(
-        screen
-          .getByLabelText("Confirm smart photo analysis")
-          .getAttribute("aria-busy"),
-      ).toBe("false");
+      expect(screen.getByLabelText("Continue").getAttribute("aria-busy")).toBe(
+        "false",
+      );
     });
 
     // Re-armed: the guard no longer blocks another confirm.
@@ -2147,9 +2134,7 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
       blocks: [],
     });
     await act(async () => {
-      (
-        capturedPressProps["Confirm smart photo analysis"].onPress as () => void
-      )();
+      (capturedPressProps["Continue"].onPress as () => void)();
     });
     await waitFor(() => {
       expect(

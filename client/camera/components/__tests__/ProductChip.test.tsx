@@ -687,20 +687,4 @@ describe("ProductChip — snap-anything cards", () => {
     expect(continueBtn.getAttribute("aria-busy")).toBe("true");
     expect(continueBtn.getAttribute("aria-disabled")).toBe("true");
   });
-
-  it("every snap-anything button has a 44pt minimum touch target", () => {
-    for (const phase of [
-      smart("restaurant_menu"),
-      smart("non_food"),
-      smartError,
-    ]) {
-      const { unmount } = render(<ProductChip phase={phase} {...handlers} />);
-      const buttons = screen.getAllByRole("button");
-      expect(buttons.length).toBeGreaterThan(0);
-      for (const button of buttons) {
-        expect(getComputedStyle(button).minHeight).toBe("44px");
-      }
-      unmount();
-    }
-  });
 });

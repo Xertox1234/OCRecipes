@@ -729,7 +729,7 @@ function ChipButton({
       disabled={busy}
       // TouchableOpacity does not auto-propagate `disabled` to
       // accessibilityState (unlike Pressable) — set it explicitly.
-      accessibilityState={busy ? { busy: true, disabled: true } : undefined}
+      accessibilityState={{ busy, disabled: busy }}
       style={[
         tone === "accent"
           ? styles.btnAccent
@@ -976,22 +976,4 @@ const styles = StyleSheet.create({
   },
   capturedTitle: { flex: 1 },
   retake: { paddingHorizontal: 22 },
-  errorText: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  classificationRow: {
-    marginBottom: 4,
-  },
-  classificationName: {
-    color: "#FFF", // hardcoded — camera overlay
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  classificationConfidence: {
-    fontSize: 13,
-  },
 });
