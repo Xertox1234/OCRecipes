@@ -7701,6 +7701,42 @@ docker inspect --format '{{.Config.Entrypoint}}' img
 docker run --entrypoint railway img status
 CEROWS
 
+# CE2 (2026-11-27, review of CE, all ALLOWED before it): a shell as the entry point with its
+# `-c` string, compose's entry point read as a command string (compose splits it into words),
+# the gh and `eas build --auto-submit` verbs the first list missed, and an expansion as the verb.
+while IFS='|' read -r ce_cmd ce_reason; do
+  [ -n "$ce_cmd" ] || continue
+  assert_deny "CE2 '$ce_cmd' denies" "$(jsonc "$ce_cmd")" "$ce_reason"
+done <<'CEROWS'
+docker run --entrypoint sh img -c 'eas update'|eas update/publish/submit
+docker run --entrypoint /bin/sh img -c 'eas update'|eas update/publish/submit
+docker run --entrypoint=bash img -lc 'eas update --branch production'|eas update/publish/submit
+podman run --entrypoint sh img -c 'eas update'|eas update/publish/submit
+docker compose run --entrypoint sh web -c 'eas update'|eas update/publish/submit
+docker compose run --entrypoint 'eas update' web|eas update/publish/submit
+docker-compose run --entrypoint="eas update" web|eas update/publish/submit
+docker compose run --rm --entrypoint 'sh -c "eas update"' web|eas update/publish/submit
+docker run --entrypoint gh img pr close 1|--entrypoint
+docker run --entrypoint gh img pr review --approve 1|--entrypoint
+docker run --entrypoint gh img release create v1|--entrypoint
+docker run --entrypoint gh img repo delete x|--entrypoint
+docker run --entrypoint eas img build --auto-submit|--entrypoint
+docker run --entrypoint eas img build -p ios --auto-submit|--entrypoint
+docker run --entrypoint eas img $V|--entrypoint
+docker run --entrypoint eas img $(echo update)|--entrypoint
+CEROWS
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_allow "CE2 control '$ce_cmd' stays allowed" "$(jsonc "$ce_cmd")"
+done <<'CEROWS'
+docker run --entrypoint sh img -c 'ls'
+docker compose run --entrypoint 'npm test' web
+docker run --entrypoint eas img build
+docker run --entrypoint gh img release list
+docker run --entrypoint gh img pr view 1
+docker run --entrypoint sh img -c 'eas whoami'
+CEROWS
+
 # SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
 # code (`bash -c`, `eval`, `ssh HOST`, `su -c`, `script -c`, `env -S`, `watch`, `flock -c`,
 # `nodemon --exec`, `parallel :::`, `trap`, a here-string or a pipe into a shell). The hook
@@ -7970,8 +8006,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 1806 -> 1840 (third review of the scan): +34 = SW4, 28 deny rows and 4 controls, and ND5h (two
 # timed rows).
 # 1840 -> 1962 (runners not on the list): +122 = RN3, 96 deny rows and 26 controls.
-# 1962 -> 1997 (container entry point): +35 = CE, 25 deny rows and 10 controls.
-EXPECTED_TOTAL=1997
+# 1962 -> 2019 (container entry point): +57 = CE and CE2, 41 deny rows and 16 controls.
+EXPECTED_TOTAL=2019
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

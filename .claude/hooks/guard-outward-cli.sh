@@ -4023,7 +4023,7 @@ _out_sw_scan() {
     return t
   }
   # A word naming a shell or a runner anywhere in the command: heredoc bodies are then code.
-  BEGIN { WCTX = "sh|eval|trap|su|runuser|flock|script|env|watch|nodemon|parallel|sem|tmux|screen|entr|foreach"
+  BEGIN { WCTX = "sh|eval|trap|su|runuser|flock|script|env|watch|nodemon|parallel|sem|tmux|screen|entr|foreach|compose"
           NEEDLE = "(^|[^a-z0-9_])(eas|railway|npm|pnpm|yarn|gh|npx|bun|bunx)([^a-z0-9_]|$)|update:(preview|production)"
           RUNNER = "^(r?ba|z|da|k|mk|a|fi|tc|c|y)?sh$|^(ssh|autossh|slogin|rsh|mosh|eval|source|\\.|sudo|doas|su|runuser|script|parallel|sem|at|batch|xargs|env|exec|docker|podman|kubectl|nsenter|chroot|expect|tmux|screen)$"
           off = 0; st = 0; esc = 0; inword = 0; argstart = -1; ctx = ""; ctxg = ""; nh = 0; hq = 0; nrec = 0; sd = 0; cb = 1; nb = 0
@@ -4186,14 +4186,23 @@ _out_sw_scan() {
   }
   '
 }
+# _OUT_CE_WORDS/_OUT_CE_RUN: a container `run` and the words of its simple command, read by the
+# entry-point arm further down and by the string-wrapper reader here (a shell entry point's `-c`
+# string, and compose's `--entrypoint 'CMD'`, which compose splits into words).
+_OUT_CE_WORDS='('"$_OUT_SEP"'[^[:space:];&|()`{}<>]+)*'"$_OUT_SEP"
+_OUT_CE_RUN='((docker|podman)'"$_OUT_FLAG_RUN"'(container'"$_OUT_FLAG_RUN"')?run|(docker'"$_OUT_FLAG_RUN"'compose|docker-compose|podman-compose)'"$_OUT_FLAG_RUN"'run)'
 _OUT_SW_SH='(/[^[:space:]]*/)?(r?ba|z|da|k|mk|a|fi|tc|c|y)?sh'
 _OUT_SW_SHELL_RE='^(.*[[:space:]])?'"$_OUT_SW_SH"'(('"$_OUT_SEP"'[-+][^[:space:]]*('"$_OUT_SEP"'[^-+[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"'-[A-Za-z]*c[A-Za-z]*('"$_OUT_SEP"'[-+][^[:space:]]*)*'"$_OUT_SEP"'|('"$_OUT_SEP"'[-+][^[:space:]]*)*[[:space:]]*<<<[[:space:]]*)$'
 _OUT_SW_WORDS='('"$_OUT_SEP"'[^[:space:]]+)*'"$_OUT_SEP"
-_OUT_SW_CMDPOS_RE='^[[:space:]]*(([{!]|if|while|until|then|do|else|elif)[[:space:]]+)*('"$_OUT_WRAPPER_WORD"'[[:space:]]+)*((('"$_OUT_PATH_PREFIX"')?'"$_OUT_WRAPPER_WORD$_OUT_FLAG_RUN"')|(('"$_OUT_PATH_PREFIX"')?'"$_OUT_PRIV_WORD"'))*('"$_OUT_PATH_PREFIX"')?(eval('"$_OUT_SEP"'--)?'"$_OUT_SEP"'|trap('"$_OUT_SEP"'--)?'"$_OUT_SEP"'|(ssh|autossh|slogin|rsh)'"$_OUT_FLAG_RUN"'([^[:space:]]+'"$_OUT_SEP"')*|mosh'"$_OUT_SW_WORDS"'--'"$_OUT_SEP"'|(su|runuser|flock)'"$_OUT_SW_WORDS"'(-c|--command)'"$_OUT_SEP"'|script'"$_OUT_SW_WORDS"'(-[A-Za-z]*c|--command)'"$_OUT_SEP"'|env'"$_OUT_SW_WORDS"'(-[A-Za-z]*S|--split-string)'"$_OUT_SEP"'|watch'"$_OUT_FLAG_RUN"'|watchexec'"$_OUT_FLAG_RUN"'|nix-shell'"$_OUT_SW_WORDS"'(--run|--command)'"$_OUT_SEP"'|git'"$_OUT_FLAG_RUN"'submodule'"$_OUT_FLAG_RUN"'foreach'"$_OUT_FLAG_RUN"'|entr'"$_OUT_SW_WORDS"'-[A-Za-z]*s[A-Za-z]*'"$_OUT_SW_WORDS"'|nodemon'"$_OUT_SW_WORDS"'(-x|--exec)'"$_OUT_SEP"'|(parallel|sem)('"$_OUT_SEP"'-[^[:space:]]*)*'"$_OUT_SEP"':::'"$_OUT_SW_WORDS"'|(tmux|screen)'"$_OUT_SW_WORDS"')$'
+_OUT_SW_CMDPOS_RE='^[[:space:]]*(([{!]|if|while|until|then|do|else|elif)[[:space:]]+)*('"$_OUT_WRAPPER_WORD"'[[:space:]]+)*((('"$_OUT_PATH_PREFIX"')?'"$_OUT_WRAPPER_WORD$_OUT_FLAG_RUN"')|(('"$_OUT_PATH_PREFIX"')?'"$_OUT_PRIV_WORD"'))*('"$_OUT_PATH_PREFIX"')?(eval('"$_OUT_SEP"'--)?'"$_OUT_SEP"'|trap('"$_OUT_SEP"'--)?'"$_OUT_SEP"'|(ssh|autossh|slogin|rsh)'"$_OUT_FLAG_RUN"'([^[:space:]]+'"$_OUT_SEP"')*|mosh'"$_OUT_SW_WORDS"'--'"$_OUT_SEP"'|(su|runuser|flock)'"$_OUT_SW_WORDS"'(-c|--command)'"$_OUT_SEP"'|script'"$_OUT_SW_WORDS"'(-[A-Za-z]*c|--command)'"$_OUT_SEP"'|env'"$_OUT_SW_WORDS"'(-[A-Za-z]*S|--split-string)'"$_OUT_SEP"'|watch'"$_OUT_FLAG_RUN"'|watchexec'"$_OUT_FLAG_RUN"'|nix-shell'"$_OUT_SW_WORDS"'(--run|--command)'"$_OUT_SEP"'|git'"$_OUT_FLAG_RUN"'submodule'"$_OUT_FLAG_RUN"'foreach'"$_OUT_FLAG_RUN"'|entr'"$_OUT_SW_WORDS"'-[A-Za-z]*s[A-Za-z]*'"$_OUT_SW_WORDS"'|'"$_OUT_CE_RUN$_OUT_SW_WORDS"'--entrypoint(=|'"$_OUT_SEP"')'"$_OUT_SW_SH$_OUT_SW_WORDS"'-[A-Za-z]*c[A-Za-z]*'"$_OUT_SW_WORDS"'|(docker'"$_OUT_FLAG_RUN"'compose|docker-compose|podman-compose)'"$_OUT_FLAG_RUN"'run'"$_OUT_SW_WORDS"'--entrypoint(=|'"$_OUT_SEP"')|nodemon'"$_OUT_SW_WORDS"'(-x|--exec)'"$_OUT_SEP"'|(parallel|sem)('"$_OUT_SEP"'-[^[:space:]]*)*'"$_OUT_SEP"':::'"$_OUT_SW_WORDS"'|(tmux|screen)'"$_OUT_SW_WORDS"')$'
 _OUT_SW_PIPE_RE='^[[:space:]]*([{(!][[:space:]]*)*('"$_OUT_WRAPPER_WORD"'[[:space:]]+)*((('"$_OUT_PATH_PREFIX"')?'"$_OUT_WRAPPER_WORD$_OUT_FLAG_RUN"')|(('"$_OUT_PATH_PREFIX"')?'"$_OUT_PRIV_WORD"'))*('"$_OUT_SW_SH"'|('"$_OUT_PATH_PREFIX"')?(parallel|sem)|(source|\.)[[:space:]]+(/dev/stdin|/proc/self/fd/0|-))'"$_OUT_POS_SUFFIX"
 # An ssh option that runs a local command (`-o ProxyCommand=...`, `LocalCommand`,
 # `KnownHostsCommand`, `RemoteCommand`): ssh hands its value to /bin/sh -c.
 _OUT_SW_SSHOPT_CTX_RE='(^|[[:space:]/])(ssh|autossh|slogin|sshpass|scp|sftp)'"$_OUT_POS_SUFFIX"
+# compose's `--entrypoint="CMD"`, the quote glued after `=`: the string is the whole word, as
+# for ssh's `-oProxyCommand=`, and compose splits it into a command (rows CE2).
+_OUT_SW_CEOPT_CTX_RE='(^|[[:space:]/])(docker-compose|podman-compose|docker[[:space:]](.*[[:space:]])?compose)[[:space:]](.*[[:space:]])?run[[:space:]]'
+_OUT_SW_CEOPT_RE='^--entrypoint=(.*)$'
 _OUT_SW_SSHOPT_RE='^(-o[[:space:]]*)?(ProxyCommand|LocalCommand|KnownHostsCommand|RemoteCommand)[=[:space:]]+(.*)$'
 _out_sw_depth=${_OUT_SW_DEPTH:-0}
 [[ "$_out_sw_depth" =~ ^[0-9]+$ ]] || _out_sw_depth=0
@@ -4231,6 +4240,9 @@ if [[ "$_OUT_SW_CMD" == *[\'\"\\]* || "$_OUT_SW_CMD" == *'|'* ]]; then
     # The context first: the value match must be the last one, as BASH_REMATCH holds its body.
     if [ "$_out_sw_t" = Q ] && [[ "$_out_sw_ctx" =~ $_OUT_SW_SSHOPT_CTX_RE ]] && [[ "$_out_sw_v" =~ $_OUT_SW_SSHOPT_RE ]]; then
       _out_sw_v=${BASH_REMATCH[3]}
+      _out_sw_ok=1
+    elif [ "$_out_sw_t" = Q ] && [[ "$_out_sw_ctx" =~ $_OUT_SW_CEOPT_CTX_RE ]] && [[ "$_out_sw_v" =~ $_OUT_SW_CEOPT_RE ]]; then
+      _out_sw_v=${BASH_REMATCH[1]}
       _out_sw_ok=1
     elif [ "$_out_sw_ctx" = LONG ]; then
       _out_sw_ok=1
@@ -4670,13 +4682,14 @@ fi
 # (2026-11-27). This arm reads `(docker|podman) [container] run` and the compose `run` forms,
 # any words up to `--entrypoint BIN` or `--entrypoint=BIN` (a path before BIN too), then any
 # words of the same simple command up to a gated verb of that binary. The verb list is per
-# binary and mirrors the literal checks below it, so `--entrypoint eas IMAGE whoami` and
+# binary and copies the literal checks (gh's from GH_MUTATING_RE; keep them in step), an
+# expansion as the verb denies as it does bare, so `--entrypoint eas IMAGE whoami` and
 # `--entrypoint npm IMAGE test` stay allowed. OVER-READS, accepted: the words between are not
 # parsed, so a gated verb anywhere later in the same simple command denies (an image named
-# `update`, a `gh api` GET), and `docker create` is left out because it starts nothing.
-_OUT_CE_WORDS='('"$_OUT_SEP"'[^[:space:];&|()`{}<>]+)*'"$_OUT_SEP"
-_OUT_CE_RUN='((docker|podman)'"$_OUT_FLAG_RUN"'(container'"$_OUT_FLAG_RUN"')?run|(docker'"$_OUT_FLAG_RUN"'compose|docker-compose|podman-compose)'"$_OUT_FLAG_RUN"'run)'
-_OUT_CE_BINVERB='(eas'"$_OUT_CE_WORDS"'(update|publish|submit|update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|(channel|branch):(create|edit|delete|rename))|railway'"$_OUT_CE_WORDS"'(up|deploy|redeploy|restart|down|delete|remove|rm|run|service|environment|variables?|vars?)|(npm|pnpm|yarn)'"$_OUT_CE_WORDS"'(publish|update:(preview|production))|gh'"$_OUT_CE_WORDS"'(pr'"$_OUT_SEP"'(merge|create|comment)|api))'
+# `update`, a `gh api` GET, `--entrypoint npm IMAGE install $PKG`), and `docker create` is left out
+# because it starts nothing (`docker start` then runs the stored command: documented, open). A shell
+# as the entry point and compose's `--entrypoint 'CMD'` string are read by the string-wrapper reader.
+_OUT_CE_BINVERB='(eas'"$_OUT_CE_WORDS"'(update|publish|submit|build'"$_OUT_CE_WORDS"'--auto-submit|update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|(channel|branch):(create|edit|delete|rename))|railway'"$_OUT_CE_WORDS"'(up|deploy|redeploy|restart|down|delete|remove|rm|run|service|environment|variables?|vars?)|(npm|pnpm|yarn)'"$_OUT_CE_WORDS"'(publish|update:(preview|production))|gh'"$_OUT_CE_WORDS"'(pr'"$_OUT_SEP"'(merge|create|comment|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release'"$_OUT_SEP"'(create|delete|delete-asset|edit|upload)|repo'"$_OUT_SEP"'(create|delete|archive|unarchive|edit|rename|sync|fork)|api)|(eas|railway|npm|pnpm|yarn|gh)'"$_OUT_CE_WORDS$_OUT_EXPANSION_TOKEN"')'
 if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_CE_RUN}${_OUT_CE_WORDS}--entrypoint(=|${_OUT_SEP})(${_OUT_PATH_PREFIX})?${_OUT_CE_BINVERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a container run names an outward-facing CLI (eas/railway/npm/pnpm/yarn/gh) as its --entrypoint, and a gated verb of that CLI follows the image, so the container runs that command (for example 'docker run --entrypoint eas IMAGE update' runs 'eas update', the 2026-08-16 accidental-OTA class). Read-only verbs are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
