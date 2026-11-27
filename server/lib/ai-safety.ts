@@ -317,6 +317,24 @@ const INTAKE_VERB_BEFORE_RE =
  */
 const MEAL_SIZE_BEFORE_RE =
   /\b(?:snacks?|breakfast|lunch|dinner|dessert)\s+(?:under|below|to|at|around|about|of|near)\s+(?:(?:about|around|roughly|just)\s+)*~?$/i;
+/** "only dinner", "just lunch", "nothing but breakfast": the slot is the day. */
+const ONLY_SLOT_BEFORE_RE = /\b(?:only|just|solely|nothing\s+but)\b/i;
+/** "... and skip the rest", "fast the rest of the day", "nothing else". */
+const REST_OF_DAY_AFTER_RE = /\b(?:skip|fast|nothing\s+else)\b/i;
+
+/**
+ * The figure sizes one named slot of a normal day. Not when the sentence
+ * makes that slot the whole day: "eat only dinner of 400 calories", "stick
+ * to dinner around 400 calories and skip the rest" (ai-reviewer, 2026-11-26).
+ */
+function isOneSlotSize(before: string, rest: string): boolean {
+  return (
+    MEAL_SIZE_BEFORE_RE.test(before) &&
+    !ONLY_SLOT_BEFORE_RE.test(before) &&
+    !REST_OF_DAY_AFTER_RE.test(rest)
+  );
+}
+
 /** After the figure: the amount belongs to a meal, or is a running total. */
 const PARTIAL_AFTER_RE =
   /^\s*(?:at|for|per|of|in|before|after|from|over|under|left|remaining|so\s+far|today|to\s+spare)\b/i;
@@ -351,7 +369,7 @@ function lowCalorieTargetSpan(sentence: string): [number, number] | null {
     if (
       INTAKE_VERB_BEFORE_RE.test(before) &&
       !PARTIAL_AFTER_RE.test(after) &&
-      !MEAL_SIZE_BEFORE_RE.test(before)
+      !isOneSlotSize(before, s.slice(end))
     ) {
       return [start, end];
     }
