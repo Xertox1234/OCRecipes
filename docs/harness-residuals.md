@@ -953,11 +953,22 @@ its over-read: a flag's optional value word can swallow a command that is not ga
 `timeout $((30*2))`), `arch -arm64 eas update` (an everyday Apple Silicon idiom), BSD
 `script -q /dev/null eas update`, Homebrew's `gnice`/`gstdbuf`, and the environment and secret
 runners `op run`, `dotenvx run`, `volta run`, `fnm exec`, `asdf exec`, `mise exec`/`mise x`
-(with `tool@version` specs) and `direnv exec DIR`. Still open, all measured ALLOW on `main`
-too: `find . -exec eas update \;` (and `-execdir`, `-ok`); `ssh host eas update`; `nvm exec
-20 eas update`; wrappers not on the list (`strace`, `ltrace`, `valgrind`, `faketime`,
-`proxychains`, `torsocks`, `numactl`, `cpulimit`, `unshare`, `nsenter`, `chroot`, `pkexec`,
-`rlwrap`, `dbus-run-session`, `firejail`, `systemd-run`, `xvfb-run`, `parallel`); a backslash
+(with `tool@version` specs) and `direnv exec DIR`. Still open after that change: a backslash
 in the wrapper name (`n\ice eas update`, the documented backslash class); and the string
 wrappers (`bash -c`, `sh -c`, `eval`, `su user -c`, `script -c`, `expect -c`, `env -S`,
 `watch "eas update"`, `flock FILE -c "..."`).
+
+`guard-outward-cli.sh` OTHER COMMAND RUNNERS AND UNLISTED WRAPPERS, FIXED 2026-11-26 (rows `RN`
+in `test-guard-outward-cli.sh`, 41 deny rows, all measured ALLOW on `main`): `_OUT_PRIV_WORD`
+now also reads `find`/`gfind` words up to `-exec`, `-execdir`, `-ok` or `-okdir`
+(`find . -exec eas update \;`), `fd`/`fdfind` up to `-x`, `--exec`, `-X` or `--exec-batch`,
+`ssh [flags] HOST CMD`, `nvm exec [VERSION] CMD`, `faketime TIME CMD` (a quoted time string
+counts as one word), `chroot DIR CMD`, and the flag-only runners `strace`, `ltrace`,
+`valgrind`, `proxychains`/`proxychains4`, `torsocks`, `numactl`, `cpulimit`, `unshare`,
+`nsenter`, `pkexec`, `rlwrap`, `dbus-run-session`, `firejail`, `systemd-run`, `xvfb-run` and
+`parallel` (its command template first: `parallel eas update ::: a`). The `find` words stop at
+`;`, `&` and `|`, so `find . -name x; echo -exec eas update` stays allowed. Same over-read as
+the other wrappers, the safe direction: `ssh -t host echo eas update` denies. Still open:
+`ssh host 'eas update'` (the quoted remote command, the usual spelling, is the string-wrapper
+class, like `find . -exec sh -c 'eas update' \;`); `parallel ::: 'eas update'` and
+`echo eas update | parallel` (the command comes from arguments or stdin); a `gh pr merge {} --auto` behind `find -exec` or `parallel` denies (the safe direction: a `{}` argument already denied bare and behind `xargs -I{}`). Found by the review of that change and fixed with it (rows `RN2`): a `faketime` time word that starts with `-` (`faketime -1d eas update`, `faketime -- eas update`: faketime takes the first word it does not know as the time), and the relatives `cross-env A=1`, `dotenv -e .env --`, `env-cmd -f .env`, `doppler run`, `infisical run`, `nodemon --exec`, `sshpass -p pw ssh HOST`, `autossh`, `slogin` and `sem`. Also found and fixed (row `ND5e`): under a UTF-8 locale the wider regex took 13.8 s on a 199 KB command of `ssh 'h'` words, past the 10 s timeout (7.7 s on `main`); the hook now pins `LC_ALL=C`, 1.4 s. Still open, an open class measured ALLOW on `main` and here: runners not on the list, among them `rsh`, `mosh`, `ssh-agent`, `busybox`, `niceload`, `env_parallel`, `fakeroot`, `fakechroot`, `proot`, `schroot`, `bwrap`, `run0`, `runuser`, `setpriv`, `tmux`, `screen`, `dbus-launch`, `systemd-inhibit`, `torify`, `tsocks`, `aws-vault exec`, `chamber exec`, `n exec`, `nodenv exec`, `uv run`, `poetry run`, `pipenv run`, `conda run`, `pixi run`, `devbox run`, `nix run`/`nix develop -c`, `watchexec`, `entr`, `git submodule foreach`, `git bisect run`, `docker exec`, `kubectl exec`, `perf stat`, `gdb --args`, `lldb --`, `heaptrack`, `prlimit`, `setarch`, `cgexec`, `trickle`, `sandbox-exec`, `ifne`, `lckdo`, `chpst` and `nvm run`.
