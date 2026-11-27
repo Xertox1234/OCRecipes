@@ -39,14 +39,42 @@ function sumOrNull(values: (number | null)[]): number | null {
   return Math.round(present.reduce((a, b) => a + b, 0));
 }
 
-function proteinMet(value: number | null, goal: number | null): boolean | null {
+/** Protein met: at least 90% of the goal. Null with no goal. Shared with the Coach's intake history. */
+export function proteinMet(
+  value: number | null,
+  goal: number | null,
+): boolean | null {
   if (goal === null) return null;
   return value !== null && value >= PROTEIN_MET_RATIO * goal;
 }
 
-function inRange(value: number | null, goal: number | null): boolean | null {
+/** Within 10% of the goal either way. Null with no goal. */
+export function inRange(
+  value: number | null,
+  goal: number | null,
+): boolean | null {
   if (goal === null) return null;
   return value !== null && Math.abs(value - goal) <= RANGE_TOLERANCE * goal;
+}
+
+/**
+ * More than half of the fully logged days are under the safe line: 70% of the
+ * calorie goal, or the safety floor with no goal. The weekly report and the
+ * Coach's intake history both stop praising or showing intake when it holds.
+ */
+export function isLowIntake(
+  days: { meals: number; calories: number | null }[],
+  calorieGoal: number | null,
+): boolean {
+  const lowLine =
+    calorieGoal !== null
+      ? LOW_CALORIE_RATIO * calorieGoal
+      : MIN_SAFE_DAILY_CALORIES;
+  const full = days.filter(
+    (d) => d.meals >= FULL_DAY_MEALS && d.calories !== null,
+  );
+  const low = full.filter((d) => (d.calories as number) < lowLine);
+  return full.length > 0 && low.length > full.length / 2;
 }
 
 function countTrue(days: WeeklyDay[], key: keyof WeeklyDay): number {
@@ -156,13 +184,7 @@ export function buildWeeklyFacts(
   // not hang on a profile field the user may leave blank (coach audit
   // 2026-11-24, L22). A partial day's total is too low, which can only set the
   // guard, never clear it: the safe side.
-  const lowLine =
-    goals.calories !== null
-      ? LOW_CALORIE_RATIO * goals.calories
-      : MIN_SAFE_DAILY_CALORIES;
-  const full = days.filter((d) => d.fullyLogged && d.calories !== null);
-  const low = full.filter((d) => (d.calories as number) < lowLine);
-  const lowCalorieGuard = full.length > 0 && low.length > full.length / 2;
+  const lowCalorieGuard = isLowIntake(days, goals.calories);
 
   const previous = inputs.previous.slice(0, 6);
   const last = previous[0] ?? null;

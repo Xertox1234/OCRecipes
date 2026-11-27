@@ -19,7 +19,8 @@
  *   9. get_substitutions     — suggest ingredient swaps
  *  10. get_grocery_lists     — recent grocery lists with the items still to buy
  *
- * With write cards, also: get_my_recipes, find_plan_recipes, get_recent_scans
+ * With write cards, also: get_intake_history (several days of totals, for
+ * trend charts), get_my_recipes, find_plan_recipes, get_recent_scans
  * (the latest scans, for the compare card), get_weekly_reports (for the
  * weekly report card), and the card-gated write tools.
  */
@@ -30,6 +31,7 @@ import { logger } from "../lib/logger";
 import type { UserProfile } from "@shared/schema";
 import { GOALS_TOOLS } from "./coach-tools/goals";
 import { GROCERY_TOOLS } from "./coach-tools/grocery";
+import { INTAKE_HISTORY_TOOLS } from "./coach-tools/intake-history";
 import { NUTRITION_TOOLS } from "./coach-tools/nutrition";
 import { PANTRY_TOOLS } from "./coach-tools/pantry";
 import { PLAN_TOOLS } from "./coach-tools/plan";
@@ -64,6 +66,7 @@ function hashUserId(userId: string): string {
  */
 const ALL_TOOLS: CoachToolEntry[] = [
   ...NUTRITION_TOOLS,
+  ...INTAKE_HISTORY_TOOLS,
   ...RECIPE_TOOLS,
   ...PANTRY_TOOLS,
   ...GROCERY_TOOLS,
@@ -90,6 +93,7 @@ const TOOL_ORDER = [
   "find_plan_recipes",
   "get_recent_scans",
   "get_weekly_reports",
+  "get_intake_history",
   "update_pantry",
   "set_nutrition_goals",
   "set_reminders",

@@ -40,6 +40,7 @@ const ALL_TOOL_NAMES = [
   "find_plan_recipes",
   "get_recent_scans",
   "get_weekly_reports",
+  "get_intake_history",
   "update_pantry",
   "set_nutrition_goals",
   "set_reminders",
@@ -90,16 +91,16 @@ describe("coach tool registry: offered and executable are one rule", () => {
     expect(offeredNames({})).toEqual(ALL_TOOL_NAMES.slice(0, 10));
   });
 
-  it("adds the recipe-id tools, get_recent_scans and get_weekly_reports with write cards, and update_pantry only with the pantry card", () => {
+  it("adds the recipe-id tools, get_recent_scans, get_weekly_reports and get_intake_history with write cards, and update_pantry only with the pantry card", () => {
     expect(offeredNames({ writeCards: true })).toEqual(
-      ALL_TOOL_NAMES.slice(0, 14),
+      ALL_TOOL_NAMES.slice(0, 15),
     );
     expect(offeredNames({ writeCards: true, pantryCard: true })).toEqual(
-      ALL_TOOL_NAMES.slice(0, 15),
+      ALL_TOOL_NAMES.slice(0, 16),
     );
     expect(
       offeredNames({ writeCards: true, pantryCard: true, goalsCard: true }),
-    ).toEqual(ALL_TOOL_NAMES.slice(0, 16));
+    ).toEqual(ALL_TOOL_NAMES.slice(0, 17));
     expect(
       offeredNames({
         writeCards: true,
@@ -107,7 +108,7 @@ describe("coach tool registry: offered and executable are one rule", () => {
         goalsCard: true,
         remindersCard: true,
       }),
-    ).toEqual(ALL_TOOL_NAMES.slice(0, 17));
+    ).toEqual(ALL_TOOL_NAMES.slice(0, 18));
     expect(
       offeredNames({
         writeCards: true,
@@ -118,21 +119,21 @@ describe("coach tool registry: offered and executable are one rule", () => {
       }),
     ).toEqual(ALL_TOOL_NAMES);
     expect(offeredNames({ writeCards: true, familyCard: true })).toEqual([
-      ...ALL_TOOL_NAMES.slice(0, 14),
+      ...ALL_TOOL_NAMES.slice(0, 15),
       "add_family_member",
     ]);
     expect(offeredNames({ familyCard: true })).toEqual(
       ALL_TOOL_NAMES.slice(0, 10),
     );
     expect(offeredNames({ writeCards: true, remindersCard: true })).toEqual([
-      ...ALL_TOOL_NAMES.slice(0, 14),
+      ...ALL_TOOL_NAMES.slice(0, 15),
       "set_reminders",
     ]);
     expect(offeredNames({ remindersCard: true })).toEqual(
       ALL_TOOL_NAMES.slice(0, 10),
     );
     expect(offeredNames({ writeCards: true, goalsCard: true })).toEqual([
-      ...ALL_TOOL_NAMES.slice(0, 14),
+      ...ALL_TOOL_NAMES.slice(0, 15),
       "set_nutrition_goals",
     ]);
     expect(offeredNames({ goalsCard: true })).toEqual(

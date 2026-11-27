@@ -18,6 +18,7 @@ const PLAIN_LABELS: Record<string, string> = {
   find_plan_recipes: "Finding recipes…",
   get_my_recipes: "Checking your recipes…",
   get_daily_log_details: "Checking today's log…",
+  get_intake_history: "Checking your recent days…",
   log_food_item: "Preparing a food entry…",
   get_pantry_items: "Checking your pantry…",
   get_recent_scans: "Checking your scans…",
@@ -131,6 +132,8 @@ function rawToolStep(
         ? { label: `Reading your log for ${v}…`, trail: `log for ${v}` }
         : { label: "Reading today's log…", trail: "today's log" };
     }
+    case "get_intake_history":
+      return { label: "Checking your recent days…", trail: "your recent days" };
     case "get_pantry_items":
       return { label: "Checking your pantry…", trail: "your pantry" };
     case "get_recent_scans":
