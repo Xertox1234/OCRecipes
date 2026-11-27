@@ -72,6 +72,12 @@ sibling-order behavior observable at all.
   deliberately as the labelled close affordance
 - `client/components/SpeedDial.tsx` — the modal wrapper with the per-platform
   exits
+- `client/camera/shell/CameraShell.tsx` — seen again 2026-11-26: a layout shell's
+  `overlay` slot (the scan example card) rendered before the top bar and controls,
+  so VoiceOver could reach the shutter behind the card. Fixed with an `obscured`
+  prop that hides the later chrome (`accessibilityElementsHidden` +
+  `importantForAccessibility="no-hide-descendants"`) while the card is up. A
+  slot-based shell hides the ordering from whoever fills the slot — check it there.
 
 ## See Also
 
