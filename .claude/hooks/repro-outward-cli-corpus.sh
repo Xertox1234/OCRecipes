@@ -2239,6 +2239,7 @@ add lp-site-strwrap      DENY "bash -c 'eas update'"
 add lp-site-swnest       DENY "bash -c \"bash -c \\\"bash -c 'npm test'\\\"\""
 add lp-site-swctl        DENY "$(printf "echo 'npm x' \001")"
 add lp-site-swparse      DENY "bash -c \"echo npm '\" ; bash -c 'eas update'"
+add lp-site-entrypoint   DENY 'docker run --entrypoint eas img update'
 
 # axis: AMBIGUOUS-TARGET LAUNCHER FLAGS (2026-09-16, round-2 security review of
 # this PR). --package/-p (npx/npm exec's own --package/-p invocation form) and
@@ -3205,7 +3206,9 @@ fi
 # 2160 -> 2163 (2026-11-27, string wrappers): +3, the DENY-SITE COVERAGE rows `lp-site-strwrap`,
 # `lp-site-swnest` and `lp-site-swctl`.
 # 2163 -> 2164 (review of SW): +1, `lp-site-swparse`, a body that does not parse on its own.
-EXPECTED_ROWS=2164
+# 2164 -> 2165 (2026-11-27, container entry point): +1, `lp-site-entrypoint`, the DENY-SITE COVERAGE
+# row for the `--entrypoint` check.
+EXPECTED_ROWS=2165
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
@@ -3452,7 +3455,8 @@ EXPECTED_ROWS=2164
 # the brace RANGE/LIST checks (the verb's first three letters are themselves a publish). MEASURED by the aggregate on that commit.
 # 1925 -> 1928 (2026-11-27, string wrappers): +3, the three new DENY-SITE COVERAGE rows.
 # 1928 -> 1929 (review of SW): +1, `lp-site-swparse`.
-EXPECTED_DENY_ATTRIB_ROWS=1929
+# 1929 -> 1930 (container entry point): +1, `lp-site-entrypoint`.
+EXPECTED_DENY_ATTRIB_ROWS=1930
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -3626,7 +3630,10 @@ EXPECTED_PRECISE_GAPS=58
 # 352 -> 354 (2026-11-27, string wrappers): +2, `lp-site-swnest` and `lp-site-swctl` at
 # p=DENY j=ALLOW l=ALLOW a=ALLOW (the degraded paths cannot run the scan). `lp-site-strwrap`
 # denies on every path: its body is also visible to the crude smell test.
-EXPECTED_ALLPATH_GAPS=354
+# 354 -> 355 (2026-11-27, container entry point): +1, `lp-site-entrypoint` at p=DENY j=ALLOW l=ALLOW
+# a=ALLOW: the binary and its verb sit apart (`--entrypoint eas IMAGE update`), so the degraded paths'
+# crude smell test, which reads them side by side, cannot see it. MEASURED by the aggregate on that commit.
+EXPECTED_ALLPATH_GAPS=355
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -4044,6 +4051,7 @@ vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
 lp-site-interpexp p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-site-swctl p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-site-entrypoint p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-site-swnest p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
@@ -5918,6 +5926,7 @@ lp-site-strwrap    : command-position 'eas update/publish/submit' publishes an O
 lp-site-swnest     : this command nests quoted strings that a wrapper runs as code (bash -c,
 lp-site-swctl      : this command holds a \\001 or \\002 control character, which the string-
 lp-site-swparse    : a quoted string that a wrapper here runs as code does not parse on its o
+lp-site-entrypoint : a container run names an outward-facing CLI (eas/railway/npm/pnpm/yarn/g
 lp-af-npx-pkgeq    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-pkgsp    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-peq      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
@@ -6168,7 +6177,9 @@ PIN_EXEMPT_EOF
 # COVERAGE rows (`lp-site-swnest`, `lp-site-swctl`, `lp-site-swparse`); the four caps and the
 # child's verdict (whose text is the inner check's) are in _pin_exempt_sites above with their
 # reasons.
-EXPECTED_EMIT_SITES=55
+# 55 -> 56 (2026-11-27, container entry point): +1 site, the `--entrypoint` check, reached by
+# the DENY-SITE COVERAGE row `lp-site-entrypoint`.
+EXPECTED_EMIT_SITES=56
 
 PIN_FAIL=0
 
