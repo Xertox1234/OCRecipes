@@ -89,6 +89,7 @@ export async function* handleCoachChat(
   const weekProgressCard = writeCards && !!params.weekProgressCard;
   const moreCharts = writeCards && !!params.moreCharts;
   const labelCompareCard = writeCards && !!params.labelCompareCard;
+  const weeklyReportCard = writeCards && !!params.weeklyReportCard;
 
   // Suicide or self-harm: the crisis message, from the server, on both tiers
   // (audit 2026-11-24, H3). The model is never called, so the reply cannot
@@ -145,6 +146,7 @@ export async function* handleCoachChat(
     weekProgressCard,
     moreCharts,
     labelCompareCard,
+    weeklyReportCard,
     intent,
     finderHistory: finder.history,
   });

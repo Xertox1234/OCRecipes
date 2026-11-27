@@ -10,21 +10,9 @@ import {
   usePendingWeeklyPopup,
   useWeeklyReport,
 } from "@/hooks/useWeeklyReports";
-import { navigationRef } from "@/navigation/navigationRef";
+import { openWeeklyReport as openReport } from "./open-weekly-report";
 import { Spacing } from "@/constants/theme";
 import { formatWeekRange, shouldShowPopup } from "./weekly-report-utils";
-
-function openReport(id: number) {
-  if (!navigationRef.isReady()) return;
-  navigationRef.navigate(
-    "Main",
-    {
-      screen: "ProfileTab",
-      params: { screen: "WeeklyReport", params: { id } },
-    },
-    { pop: true },
-  );
-}
 
 /** The report id in a weekly-report push's data, or null. */
 function weeklyReportIdFrom(data: unknown): number | null {

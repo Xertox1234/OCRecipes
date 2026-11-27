@@ -68,6 +68,8 @@ export async function loadTurnContext(
     moreCharts?: boolean;
     /** The app can draw the label compare card (T4). */
     labelCompareCard?: boolean;
+    /** The app can draw the weekly report card (A3). */
+    weeklyReportCard?: boolean;
     intent: CoachIntent;
     /** History the finder gate already read, if any. */
     finderHistory?: ChatMessage[];
@@ -147,6 +149,7 @@ export async function loadTurnContext(
       weekProgress: a.weekProgressCard,
       moreCharts: a.moreCharts,
       labelCompare: a.labelCompareCard,
+      weeklyReport: a.weeklyReportCard,
     });
   }
 

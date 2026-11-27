@@ -24,6 +24,7 @@ import {
   createMockChatMessage,
   createMockCoachWriteCard,
   createMockScannedItem,
+  createMockWeeklyReport,
   createMockUserProfile,
 } from "../../__tests__/factories";
 
@@ -32,6 +33,7 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     getDailySummary: vi.fn(),
     getScannedItemsByIds: vi.fn(),
+    getWeeklyReport: vi.fn(),
     getChatMessages: vi.fn(),
     getDailyLogsInRange: vi.fn(),
     getMostEatenFoods: vi.fn(),
@@ -1810,6 +1812,71 @@ describe("the label compare card (Coach roadmap T4)", () => {
     expect(getBlocksSystemPrompt).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ labelCompare: true }),
+    );
+  });
+});
+
+describe("the weekly report card (Coach roadmap A3)", () => {
+  const quick = {
+    type: "quick_replies" as const,
+    options: [{ label: "Ok", message: "Ok" }],
+  };
+  const types = (events: CoachChatEvent[]) =>
+    blocksEvent(events)?.blocks.map((b) => b.type);
+
+  beforeEach(() => {
+    vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+      text: t,
+      blocks: [quick],
+      weeklyReport: 12,
+    }));
+    vi.mocked(storage.getWeeklyReport).mockResolvedValue(
+      createMockWeeklyReport({ id: 12 }),
+    );
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      async function* (): AsyncGenerator<CoachProChunk> {
+        yield { type: "content", content: "Here is last week." };
+      },
+    );
+  });
+
+  it("is built from the user's report, before the quick replies", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, weeklyReportCard: true })),
+    );
+    expect(types(events)).toEqual(["weekly_report", "quick_replies"]);
+    expect(storage.getWeeklyReport).toHaveBeenCalledWith(
+      expect.any(String),
+      12,
+    );
+    expect(blocksEvent(events)?.blocks[0]).toMatchObject({
+      type: "weekly_report",
+      reportId: 12,
+      weekStart: "2026-11-01",
+    });
+    expect(getBlocksSystemPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ weeklyReport: true }),
+    );
+  });
+
+  it("is left out when the report is not the user's", async () => {
+    vi.mocked(storage.getWeeklyReport).mockResolvedValue(null);
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, weeklyReportCard: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+  });
+
+  it("is not built, or offered, for an app that did not declare it", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true })),
+    );
+    expect(types(events)).toEqual(["quick_replies"]);
+    expect(storage.getWeeklyReport).not.toHaveBeenCalled();
+    expect(getBlocksSystemPrompt).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ weeklyReport: true }),
     );
   });
 });

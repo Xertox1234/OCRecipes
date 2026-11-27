@@ -815,3 +815,39 @@ describe("label_compare block (Coach roadmap T4)", () => {
     ).toBe(false);
   });
 });
+
+describe("weekly_report block (Coach roadmap A3)", () => {
+  const block = {
+    type: "weekly_report",
+    reportId: 7,
+    weekStart: "2026-11-15",
+    weekEnd: "2026-11-21",
+    headline: "Five days logged and protein on track",
+    daysActive: 5,
+    mealsLogged: 14,
+    proteinDaysMet: 4,
+  };
+
+  it("parses the server-built card", () => {
+    expect(coachBlockSchema.parse(block)).toEqual(block);
+    expect(
+      coachBlockSchema.parse({ ...block, proteinDaysMet: null }),
+    ).toMatchObject({ proteinDaysMet: null });
+  });
+
+  it("rejects the model's request, which names a report and nothing else", () => {
+    expect(
+      coachBlockSchema.safeParse({ type: "weekly_report", reportId: 7 })
+        .success,
+    ).toBe(false);
+  });
+
+  it("keeps the counts to a week", () => {
+    expect(
+      coachBlockSchema.safeParse({ ...block, daysActive: 8 }).success,
+    ).toBe(false);
+    expect(
+      coachBlockSchema.safeParse({ ...block, weekStart: "Nov 16" }).success,
+    ).toBe(false);
+  });
+});

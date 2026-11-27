@@ -75,6 +75,8 @@ export interface CoachChatParams {
   moreCharts?: boolean;
   /** Coach roadmap T4: the app can draw the label compare card. */
   labelCompareCard?: boolean;
+  /** Coach roadmap A3: the app can draw the weekly report card. */
+  weeklyReportCard?: boolean;
   /** The card on screen and the user's edits to it, sent with this message. */
   liveCard?: { cardId: string; edits: Record<string, unknown> };
   finder?: {

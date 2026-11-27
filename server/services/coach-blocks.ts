@@ -10,6 +10,7 @@ import {
   isWeekProgressRequest,
   readDayProgressRequest,
   readLabelCompareRequest,
+  readWeeklyReportRequest,
   type DayProgressDay,
 } from "./day-progress-request";
 
@@ -33,7 +34,10 @@ export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
         (block as { type?: unknown }).type === "week_progress" ||
         // Likewise the compare card (T4): it names two scans, and the server
         // reads their numbers (label-compare.ts).
-        (block as { type?: unknown }).type === "label_compare")
+        (block as { type?: unknown }).type === "label_compare" ||
+        // And the weekly report card (A3): it names a report, and the
+        // server reads it (weekly-report-card.ts).
+        (block as { type?: unknown }).type === "weekly_report")
     ) {
       logger.debug(
         { type: (block as { type?: unknown }).type },
@@ -70,6 +74,8 @@ export function parseBlocksFromContent(content: string): {
   weekProgress?: true;
   /** The two scans the first label_compare card asked for (T4). */
   labelCompare?: [number, number];
+  /** The report the first weekly_report card asked for (A3). */
+  weeklyReport?: number;
 } {
   const fences = extractBlockFences(content);
   const text = stripCitationMarkers(fences.text).trim();
@@ -77,6 +83,7 @@ export function parseBlocksFromContent(content: string): {
   let dayProgress: DayProgressDay | undefined;
   let weekProgress = false;
   let labelCompare: [number, number] | undefined;
+  let weeklyReport: number | undefined;
 
   // warn, not debug: persistent model drift here silently strips every
   // interactive block, and debug is off in production.
@@ -95,6 +102,7 @@ export function parseBlocksFromContent(content: string): {
           dayProgress ??= readDayProgressRequest(raw);
           weekProgress ||= isWeekProgressRequest(raw);
           labelCompare ??= readLabelCompareRequest(raw);
+          weeklyReport ??= readWeeklyReportRequest(raw);
         }
       }
     } catch (err) {
@@ -108,6 +116,7 @@ export function parseBlocksFromContent(content: string): {
     ...(dayProgress && { dayProgress }),
     ...(weekProgress && { weekProgress: true as const }),
     ...(labelCompare && { labelCompare }),
+    ...(weeklyReport && { weeklyReport }),
   };
 }
 
@@ -186,6 +195,11 @@ const LABEL_COMPARE_LINE =
   '- label_compare: { type: "label_compare", scanIds: [id, id] } (the app shows the two scanned products side by side, each per its own serving, from the scans themselves)';
 const LABEL_COMPARE_RULE =
   '- To compare two products the user scanned, call get_recent_scans (without a limit), then use one label_compare block with two different ids from that result, not an inline_chart or a stat_row; never write their numbers into the block, and never guess an id. If the result has fewer than two scans, or a product the user means is not in it, write no label_compare block: say which is missing and ask them to scan it. The card shows each product per its own serving, so do not repeat its numbers, convert them to per 100 g or another serving, or work out differences; say in words how they differ (such as "the first has less sugar per serving"), say so when the servings differ, and do not call one the better pick on a number the servings make unequal. A blank value means the label did not list it, not zero. Judge only against the goals and diet in your context, in plain nutrition terms, with no medical claims; with no goals, describe the differences and ask what they are after. The scans carry no allergen information, so never say a product is safe for an allergy';
+/** Coach roadmap A3: the user's weekly report as a card. */
+const WEEKLY_REPORT_LINE =
+  '- weekly_report: { type: "weekly_report", reportId: id } (the app shows that week\'s report as a card: its headline, the days logged, the meals and the days the protein goal was met, with a link to the full report)';
+const WEEKLY_REPORT_RULE =
+  "- When the user asks about their weekly report, or how a past week went, call get_weekly_reports, then use one weekly_report block with an id from that result, newest first unless the user names an earlier week; never guess an id or write the report's numbers into the block. If the result has no reports, write no weekly_report block: say there is no weekly report yet, and that one is written each Sunday evening for the week just ended. A report covers one week, Sunday to Saturday, and does not change; for the last seven days up to today use week_progress when it is offered. The card shows the counts, so say in words what the week was like rather than repeating its numbers, and only from what the tool returned";
 
 // The Coach has no tool that returns many days at once (get_daily_log_details
 // reads one day) and no weight history, so the examples stay with data it
@@ -238,6 +252,8 @@ export function getBlocksSystemPrompt(
     moreCharts?: boolean;
     /** The app can draw a label_compare card (T4). */
     labelCompare?: boolean;
+    /** The app can draw a weekly_report card (A3). */
+    weeklyReport?: boolean;
   } = {},
 ): string {
   // The progress cards go in first: they are placed after the inline_chart
@@ -247,7 +263,8 @@ export function getBlocksSystemPrompt(
     week: !!opts.weekProgress,
   });
   const charted = opts.moreCharts ? withMoreCharts(progress) : progress;
-  const withCards = opts.labelCompare ? withLabelCompare(charted) : charted;
+  const compared = opts.labelCompare ? withLabelCompare(charted) : charted;
+  const withCards = opts.weeklyReport ? withWeeklyReport(compared) : compared;
   if (!opts.notesPaused) return withCards;
   // Coach's notes are paused (no health consent on record): a commitment card
   // offers a check-in that nothing would save. Not offered, and said so.
@@ -276,6 +293,16 @@ function withLabelCompare(prompt: string): string {
     .replace(
       "\n\nExample response",
       `\n${LABEL_COMPARE_RULE}\n\nExample response`,
+    );
+}
+
+/** Offers the weekly report card after the block list's last line, with its rule. */
+function withWeeklyReport(prompt: string): string {
+  return prompt
+    .replace("\n\nRules:\n", `\n${WEEKLY_REPORT_LINE}\n\nRules:\n`)
+    .replace(
+      "\n\nExample response",
+      `\n${WEEKLY_REPORT_RULE}\n\nExample response`,
     );
 }
 

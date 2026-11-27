@@ -944,6 +944,7 @@ describe("Chat Routes", () => {
               "week_progress",
               "more_charts",
               "label_compare",
+              "weekly_report",
             ],
           })
         ).status,
@@ -953,6 +954,7 @@ describe("Chat Routes", () => {
           writeCards: true,
           moreCharts: true,
           labelCompare: true,
+          weeklyReport: true,
         }),
       );
     });
