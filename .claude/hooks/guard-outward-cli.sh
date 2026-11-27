@@ -4662,6 +4662,25 @@ if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_DD}$
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
+# --- narrow deny: an outward CLI given as a container's ENTRY POINT --------------------------
+# `docker run --entrypoint eas IMAGE update` runs `eas update` inside the container: the entry
+# point is the command and the words after the image are its arguments. The runner grammar in
+# _OUT_PRIV_WORD cannot read it, because the binary comes BEFORE the image and the verb after
+# it, so `docker run IMAGE eas update` denies while this spelling was ALLOWED on `main`
+# (2026-11-27). This arm reads `(docker|podman) [container] run` and the compose `run` forms,
+# any words up to `--entrypoint BIN` or `--entrypoint=BIN` (a path before BIN too), then any
+# words of the same simple command up to a gated verb of that binary. The verb list is per
+# binary and mirrors the literal checks below it, so `--entrypoint eas IMAGE whoami` and
+# `--entrypoint npm IMAGE test` stay allowed. OVER-READS, accepted: the words between are not
+# parsed, so a gated verb anywhere later in the same simple command denies (an image named
+# `update`, a `gh api` GET), and `docker create` is left out because it starts nothing.
+_OUT_CE_WORDS='('"$_OUT_SEP"'[^[:space:];&|()`{}<>]+)*'"$_OUT_SEP"
+_OUT_CE_RUN='((docker|podman)'"$_OUT_FLAG_RUN"'(container'"$_OUT_FLAG_RUN"')?run|(docker'"$_OUT_FLAG_RUN"'compose|docker-compose|podman-compose)'"$_OUT_FLAG_RUN"'run)'
+_OUT_CE_BINVERB='(eas'"$_OUT_CE_WORDS"'(update|publish|submit|update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|(channel|branch):(create|edit|delete|rename))|railway'"$_OUT_CE_WORDS"'(up|deploy|redeploy|restart|down|delete|remove|rm|run|service|environment|variables?|vars?)|(npm|pnpm|yarn)'"$_OUT_CE_WORDS"'(publish|update:(preview|production))|gh'"$_OUT_CE_WORDS"'(pr'"$_OUT_SEP"'(merge|create|comment)|api))'
+if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_CE_RUN}${_OUT_CE_WORDS}--entrypoint(=|${_OUT_SEP})(${_OUT_PATH_PREFIX})?${_OUT_CE_BINVERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: a container run names an outward-facing CLI (eas/railway/npm/pnpm/yarn/gh) as its --entrypoint, and a gated verb of that CLI follows the image, so the container runs that command (for example 'docker run --entrypoint eas IMAGE update' runs 'eas update', the 2026-08-16 accidental-OTA class). Read-only verbs are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
+fi
+
 # --- narrow deny: an INTERPRETER whose verb slot is an expansion, WITH the OTA script present -
 # `_OUT_GATED_BIN` above deliberately does NOT list node/bun/deno, and must not: that arm denies
 # a gated binary followed by ANY expansion, and `node $SCRIPT`, `node $(which tsx)` and

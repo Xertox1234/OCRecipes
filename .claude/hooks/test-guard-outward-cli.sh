@@ -7651,6 +7651,56 @@ nvm run 20 app.js
 ls | entr -s 'npm test'
 RNROWS
 
+# CE (2026-11-27, an outward CLI as a container's entry point, all ALLOWED on `main`):
+# `docker`/`podman` [container] `run` and `docker compose`/`docker-compose`/`podman-compose` `run`
+# with `--entrypoint eas` (or gh/npm/pnpm/railway) and the gated verb after the image or service.
+# The controls keep read-only verbs, ungated verbs and a verb past `&&` allowed.
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_deny "CE '$ce_cmd' denies" "$(jsonc "$ce_cmd")" "--entrypoint"
+done <<'CEROWS'
+docker run --entrypoint eas img update
+docker run --entrypoint=eas img update
+docker run --rm --entrypoint eas -v a:b img update --branch production
+docker run --entrypoint /usr/local/bin/eas img update
+docker run --entrypoint eas img publish
+docker run --entrypoint eas img submit
+docker run --entrypoint eas img update:rollback
+docker run --entrypoint eas img channel:edit production
+podman run --entrypoint eas img update
+docker container run --entrypoint eas img update
+docker -H tcp://h run --entrypoint eas img update
+docker compose run --entrypoint eas web update
+docker compose -f c.yml run --rm --entrypoint eas web update
+docker-compose run --entrypoint eas web update
+podman-compose run --entrypoint eas web update
+docker run --entrypoint gh img pr merge 42
+docker run --entrypoint gh img pr create
+docker run --entrypoint npm img publish
+docker run --entrypoint pnpm img publish
+docker run --entrypoint npm img run update:production
+docker run --entrypoint railway img up
+docker run --entrypoint railway img deploy
+sudo docker run --entrypoint eas img update
+cd app && docker run --entrypoint eas img update
+docker run --entrypoint eas img update > out.txt
+CEROWS
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_allow "CE control '$ce_cmd' stays allowed" "$(jsonc "$ce_cmd")"
+done <<'CEROWS'
+docker run --entrypoint eas img update:list
+docker run --entrypoint eas img whoami
+docker run --entrypoint npm img test
+docker run --entrypoint npm img install
+docker run --entrypoint sh img -c ls
+docker run --entrypoint gh img pr view 42
+docker run --entrypoint eas img whoami && echo update
+docker run img eas whoami
+docker inspect --format '{{.Config.Entrypoint}}' img
+docker run --entrypoint railway img status
+CEROWS
+
 # SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
 # code (`bash -c`, `eval`, `ssh HOST`, `su -c`, `script -c`, `env -S`, `watch`, `flock -c`,
 # `nodemon --exec`, `parallel :::`, `trap`, a here-string or a pipe into a shell). The hook
@@ -7920,7 +7970,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 1806 -> 1840 (third review of the scan): +34 = SW4, 28 deny rows and 4 controls, and ND5h (two
 # timed rows).
 # 1840 -> 1962 (runners not on the list): +122 = RN3, 96 deny rows and 26 controls.
-EXPECTED_TOTAL=1962
+# 1962 -> 1997 (container entry point): +35 = CE, 25 deny rows and 10 controls.
+EXPECTED_TOTAL=1997
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
