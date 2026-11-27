@@ -78,6 +78,8 @@ describe("get_intake_history (Coach: several days in one call)", () => {
     expect(text).toMatch(/a later endDate reads up to today/);
     expect(text).toMatch(/never say the user ate nothing/);
     expect(text).toMatch(/never scold a missed day/);
+    expect(text).toMatch(/can also mean thinly logged days/);
+    expect(text).toMatch(/never say or imply the user ate too little/);
   });
 
   it("returns one row per day, oldest first, ending on the given day, for this user only", async () => {

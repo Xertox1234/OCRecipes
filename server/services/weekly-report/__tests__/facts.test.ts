@@ -300,6 +300,24 @@ describe("buildWeeklyFacts — low-calorie guard", () => {
     expect(facts({ logs }).lowCalorieGuard).toBe(false);
   });
 
+  it("four one-item days: two low of four is not more than half", () => {
+    const logs = [
+      ...DATES.slice(0, 2).map((d) => log(d, 12, { calories: 150 })),
+      ...DATES.slice(2, 4).map((d) => log(d, 12, { calories: 1900 })),
+    ];
+    expect(facts({ logs }).lowCalorieGuard).toBe(false);
+  });
+
+  it("four one-item days all low set the guard", () => {
+    const logs = DATES.slice(0, 4).map((d) => log(d, 12, { calories: 150 }));
+    expect(facts({ logs }).lowCalorieGuard).toBe(true);
+  });
+
+  it("items logged with 0 kcal count as low days", () => {
+    const logs = DATES.slice(0, 4).map((d) => log(d, 12, { calories: 0 }));
+    expect(facts({ logs }).lowCalorieGuard).toBe(true);
+  });
+
   it("three small one-item days are too few to judge (control)", () => {
     const logs = DATES.slice(0, 3).map((d) => log(d, 12, { calories: 150 }));
     expect(facts({ logs }).lowCalorieGuard).toBe(false);

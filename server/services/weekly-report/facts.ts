@@ -68,7 +68,8 @@ const MIN_PARTIAL_GUARD_DAYS = 4;
  * The guard holds when more than half of the fully logged days are under it,
  * or when, over at least four logged days, partial ones included, more than
  * half are: a user logging one tiny entry a day has no full days at all
- * (todo 2026-11-27). A partial total can only be too low, so counting it can
+ * (todo 2026-11-27). It also holds for a user who logs one normal item a day:
+ * deliberate, since the guard only hides numbers and praise. A partial total can only be too low, so counting it can
  * set the guard, never clear it: the safe side. The weekly report and the
  * Coach's intake history both stop praising or showing intake when it holds.
  */
