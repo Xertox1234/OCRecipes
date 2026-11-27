@@ -89,20 +89,22 @@ export async function getScannedItem(
   return item || undefined;
 }
 
+/** The owner filter always applies: an empty id matches no rows, never every user's. */
 export async function getScannedItemsByIds(
   ids: number[],
-  userId?: string,
+  userId: string,
 ): Promise<ScannedItem[]> {
-  if (ids.length === 0) return [];
-  const conditions = [
-    inArray(scannedItems.id, ids),
-    isNull(scannedItems.discardedAt),
-  ];
-  if (userId) conditions.push(eq(scannedItems.userId, userId));
+  if (ids.length === 0 || !userId) return [];
   return db
     .select()
     .from(scannedItems)
-    .where(and(...conditions));
+    .where(
+      and(
+        inArray(scannedItems.id, ids),
+        eq(scannedItems.userId, userId),
+        isNull(scannedItems.discardedAt),
+      ),
+    );
 }
 
 export async function getScannedItemWithFavourite(

@@ -89,12 +89,12 @@ async getScannedItemsByIds(
 
 1. **Deduplicate with `new Set()`** — IDs from logs may repeat; dedup before the query avoids fetching the same row twice and reduces result set size
 2. **Early return for empty array** — `if (ids.length === 0) return []` prevents Drizzle from generating an invalid `IN ()` clause
-3. **Optional `userId` for defense-in-depth** — batch methods on user-owned tables should accept optional userId to filter, following the storage-layer IDOR defense-in-depth pattern
+3. **Required `userId` for defense-in-depth** — batch methods on user-owned tables take a required userId and always filter by it (an optional one silently reads every user's rows when a caller passes `undefined` or `""`; fixed 2026-11-27), following the storage-layer IDOR defense-in-depth pattern
 4. **Type-narrowing filter** — `.filter((id): id is number => id !== null)` removes nulls and narrows the type in one step
 
 ## Related Files
 
-- `server/storage/nutrition.ts` — `getScannedItemsByIds(ids, userId?)`
+- `server/storage/nutrition.ts` — `getScannedItemsByIds(ids, userId)`
 - `server/routes/micronutrients.ts` — daily micronutrient endpoint
 
 ## See Also

@@ -1,6 +1,6 @@
 ---
 title: "getScannedItemsByIds drops the owner filter when userId is missing"
-status: backlog
+status: done
 priority: low
 created: 2026-11-27
 updated: 2026-11-27
@@ -37,5 +37,9 @@ In scope:
 
 ## Acceptance Criteria
 
-- [ ] No user-facing caller can read scans without an owner filter.
-- [ ] A test pins that the read never returns another user's scan.
+- [x] No user-facing caller can read scans without an owner filter.
+- [x] A test pins that the read never returns another user's scan.
+
+## Updates
+
+- 2026-11-27: `userId` is now required and the owner filter always applies; an empty id returns no rows. Both callers already pass the signed-in id. Test: `server/storage/__tests__/nutrition.test.ts` → "never returns another user's scan, even for an empty owner id".

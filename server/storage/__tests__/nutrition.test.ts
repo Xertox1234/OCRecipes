@@ -280,7 +280,10 @@ describe("nutrition storage", () => {
       });
       await insertScannedItem(testUser.id, { productName: "C" });
 
-      const result = await getScannedItemsByIds([item1.id, item2.id]);
+      const result = await getScannedItemsByIds(
+        [item1.id, item2.id],
+        testUser.id,
+      );
       expect(result).toHaveLength(2);
       const ids = result.map((r) => r.id);
       expect(ids).toContain(item1.id);
@@ -288,7 +291,7 @@ describe("nutrition storage", () => {
     });
 
     it("returns empty array for empty ids input", async () => {
-      const result = await getScannedItemsByIds([]);
+      const result = await getScannedItemsByIds([], testUser.id);
       expect(result).toEqual([]);
     });
 
@@ -296,11 +299,21 @@ describe("nutrition storage", () => {
       const item = await insertScannedItem(testUser.id);
       await softDeleteScannedItem(item.id, testUser.id);
 
-      const result = await getScannedItemsByIds([item.id]);
+      const result = await getScannedItemsByIds([item.id], testUser.id);
       expect(result).toHaveLength(0);
     });
 
-    it("filters by userId when provided", async () => {
+    it("never returns another user's scan, even for an empty owner id", async () => {
+      const otherUser = await createTestUser(tx, {
+        username: `ids_empty_owner_${Date.now()}`,
+      });
+      const theirItem = await insertScannedItem(otherUser.id);
+
+      const result = await getScannedItemsByIds([theirItem.id], "");
+      expect(result).toEqual([]);
+    });
+
+    it("filters by userId", async () => {
       const otherUser = await createTestUser(tx, {
         username: `ids_other_user_${Date.now()}`,
       });
