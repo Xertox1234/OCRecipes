@@ -666,7 +666,7 @@ describe("QuickLogScreen — camera button", () => {
     expect(mockGoBack).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalled();
     deferredTasks.splice(0).forEach((task) => task());
-    expect(mockNavigate).toHaveBeenCalledWith("Scan");
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", { intent: "log" });
   });
 });
 

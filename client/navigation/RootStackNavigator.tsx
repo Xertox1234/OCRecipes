@@ -365,6 +365,8 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="Scan"
             component={ScanScreen}
+            // The help and type-the-number sheets (fullScreenModal).
+            layout={withSheetProvider}
             options={{
               headerShown: false,
               // fullScreenModal intentional — transparentModal had rendering issues

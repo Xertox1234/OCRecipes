@@ -13,11 +13,8 @@
  */
 
 import { storage } from "../storage";
-import {
-  classifyIntent,
-  matchesSelfHarm,
-  type CoachIntent,
-} from "./coach-intent-classifier";
+import { matchesSelfHarm } from "./coach-intent-classifier";
+import { coachTurnIntents } from "./coach-pro-chat/visible-reply";
 import {
   SAFETY_CRISIS_FALLBACK_MESSAGE,
   STANDARD_SAFETY_MESSAGE,
@@ -114,14 +111,11 @@ export async function* handleCoachChat(
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
-  const { intent: classifiedIntent } = classifyIntent(safetyText);
   // A recipe_request that does not enter the finder (flag off, free Coach, a
   // turn routed elsewhere) keeps the prompt intent it had before this intent
   // existed — flag-off Coach is unchanged (spec §8).
-  const intent: CoachIntent =
-    classifiedIntent === "recipe_request"
-      ? classifyIntent(safetyText, { recipeRequests: false }).intent
-      : classifiedIntent;
+  const { classified: classifiedIntent, prompt: intent } =
+    coachTurnIntents(safetyText);
 
   // RECIPE_OFFER_ENABLED (spec 2026-10-06). Also requires the finder param:
   // the offer tool's repeat = yes delegation needs this turn's user row.

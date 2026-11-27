@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getCoachMessage } from "../CoachHint-utils";
+import { getCoachMessage, getFlowCoachMessage } from "../CoachHint-utils";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
 
@@ -144,7 +144,7 @@ describe("getCoachMessage", () => {
   // CoachHint announces via `useEffect(…, [message])` on iOS and relies on
   // `accessibilityLiveRegion="polite"` on Android. NEITHER re-fires when the
   // string is unchanged. If LABEL_PROMPTED reused BARCODE_LOCKED's exact copy,
-  // a screen-reader user who presses "Scan Nutrition Facts →" would get the
+  // a screen-reader user who presses "Next: nutrition →" would get the
   // chip silently unmounting and NO announcement at all — no confirmation their
   // tap did anything.
   //
@@ -161,5 +161,75 @@ describe("getCoachMessage", () => {
     );
     expect(prompted).not.toBe(locked);
     expect(prompted).toBeTruthy();
+  });
+});
+
+describe("getFlowCoachMessage", () => {
+  const HINT = "Line the barcode up inside the frame";
+
+  it("shows the step hint first, then escalates at 5 s / 10 s / 15 s", () => {
+    const hunting = { type: "HUNTING" } as const;
+    expect(getFlowCoachMessage(hunting, HINT, 0, "barcode")).toBe(HINT);
+    expect(getFlowCoachMessage(hunting, HINT, 5, "barcode")).toBe(
+      "Try moving closer",
+    );
+    expect(getFlowCoachMessage(hunting, HINT, 10, "barcode")).toBe(
+      "Or tap ⚡ for torch",
+    );
+    expect(getFlowCoachMessage(hunting, HINT, 15, "barcode")).toBe(
+      "Type the number",
+    );
+  });
+
+  it("says hold steady while tracking", () => {
+    expect(
+      getFlowCoachMessage(
+        {
+          type: "BARCODE_TRACKING",
+          barcode: "1",
+          bounds: BOUNDS,
+          frameCount: 2,
+        },
+        HINT,
+        12,
+        "barcode",
+      ),
+    ).toBe("Hold steady…");
+  });
+
+  it("is quiet while a card is up, and shows the step hint on photo steps", () => {
+    expect(
+      getFlowCoachMessage(
+        { type: "BARCODE_LOCKED", barcode: "1", bounds: BOUNDS },
+        HINT,
+        0,
+        "barcode",
+      ),
+    ).toBe("");
+    expect(
+      getFlowCoachMessage(
+        { type: "LABEL_PROMPTED", barcode: "1" },
+        "Fit the whole panel in the frame",
+        0,
+        "barcode",
+      ),
+    ).toBe("Fit the whole panel in the frame");
+  });
+
+  it("does not escalate an empty hint (the generic flow)", () => {
+    expect(getFlowCoachMessage({ type: "HUNTING" }, "", 12, "generic")).toBe(
+      "",
+    );
+  });
+
+  // Barcode advice ("move closer", "type the number") is for the barcode
+  // step only: the generic label flow lines up a photo and has no keypad.
+  it("never escalates in the generic flow", () => {
+    const LABEL = "Fit the whole panel in the frame";
+    for (const seconds of [5, 10, 15, 30]) {
+      expect(
+        getFlowCoachMessage({ type: "HUNTING" }, LABEL, seconds, "generic"),
+      ).toBe(LABEL);
+    }
   });
 });

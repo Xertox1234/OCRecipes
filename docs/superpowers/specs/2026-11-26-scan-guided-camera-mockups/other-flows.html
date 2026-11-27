@@ -1,0 +1,169 @@
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  .flow { margin-bottom: 34px; }
+  .flow h3 { margin-bottom: 2px; }
+  .flow > p { margin: 0 0 10px; font-size: 13px; opacity: .8; }
+  .story { display: flex; gap: 18px; flex-wrap: wrap; }
+  .cap { font-size: 12.5px; opacity: .8; margin: 8px 0 0; line-height: 1.4; width: 224px; }
+  .phone { width: 224px; height: 470px; border-radius: 32px; background: #000; position: relative; overflow: hidden;
+           font-family: Poppins, sans-serif; color: #fff; box-shadow: 0 8px 26px rgba(0,0,0,.35); border: 6px solid #222; }
+  .feed { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, #3b342e 0%, #15110e 70%); }
+  .dim { position: absolute; inset: 0; background: #1E1814; }
+  .top { position: absolute; top: 14px; left: 10px; right: 10px; display: flex; justify-content: space-between; align-items:center }
+  .rbtn { width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .dim ~ .top .rbtn { background: #2C2420; }
+  .title { font-size: 11px; font-weight: 600; background: rgba(0,0,0,.55); padding: 5px 11px; border-radius: 999px }
+  .frame { position: absolute; left: 50%; transform: translateX(-50%); }
+  .frame i { position: absolute; width: 24px; height: 24px; border: 3px solid #fff; }
+  .frame i:nth-child(1){ top:0; left:0; border-right:0; border-bottom:0; border-top-left-radius:11px }
+  .frame i:nth-child(2){ top:0; right:0; border-left:0; border-bottom:0; border-top-right-radius:11px }
+  .frame i:nth-child(3){ bottom:0; left:0; border-right:0; border-top:0; border-bottom-left-radius:11px }
+  .frame i:nth-child(4){ bottom:0; right:0; border-left:0; border-top:0; border-bottom-right-radius:11px }
+  .frame.found i { border-color: #4CAF7D; }
+  .wide { top: 110px; width: 184px; height: 100px; }
+  .tall { top: 58px; width: 140px; height: 230px; }
+  .vtall { top: 54px; width: 120px; height: 250px; }
+  .big  { top: 60px; width: 190px; height: 240px; }
+  .hint { position: absolute; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 500; text-shadow: 0 1px 3px rgba(0,0,0,.7); padding: 0 12px; }
+  .tabs { position: absolute; bottom: 86px; left: 8px; right: 8px; display: flex; gap: 6px; }
+  .tab { flex: 1; background: rgba(44,36,32,.9); border-radius: 12px; padding: 7px 2px; text-align: center; font-size: 9.5px; font-weight: 500; color: #B8A898; }
+  .tab b { display: block; font-size: 14px; margin-bottom: 1px; color: #fff; }
+  .tab.on { background: #B5451C; color: #fff; }
+  .tab.done, .tab.done b { color: #4CAF7D; }
+  .tab .opt { display:block; font-size: 8px; opacity: .8; }
+  .ctrl { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-around; align-items: center; }
+  .shut { width: 54px; height: 54px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.25); }
+  .shut.off { background: rgba(255,255,255,.22); box-shadow:none }
+  .sm { width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .pillbtn { height: 32px; padding: 0 14px; border-radius: 999px; background: rgba(0,0,0,.55); display: flex; align-items: center; font-size: 10.5px; font-weight: 600; }
+  .pillbtn.p { background: #B5451C; }
+  .bars { position:absolute; left:50%; transform:translateX(-50%); width:110px; height:46px;
+          background: repeating-linear-gradient(90deg,#ddd 0 3px,transparent 3px 5px,#ddd 5px 6px,transparent 6px 9px); opacity:.85 }
+  .ex { position: absolute; left: 0; right: 0; top: 54px; text-align: center; padding: 0 14px; }
+  .ex h4 { font-size: 15px; font-weight: 700; margin: 12px 0 4px; }
+  .ex p { font-size: 11px; color: #B8A898; margin: 0 0 12px; line-height: 1.45; }
+  .cta { display: inline-block; background: #fff; color: #1C1410; border-radius: 999px; padding: 8px 28px; font-size: 13px; font-weight: 600; }
+  .nf { margin: 0 auto; background:#fff; color:#111; font-family: Arial, Helvetica, sans-serif; font-size: 6.6px; padding: 4px 5px; text-align:left; width: 92px; border-radius: 4px; line-height: 1.25 }
+  .nf .h { font-size: 11px; font-weight: 900; border-bottom: 1px solid #111; }
+  .nf .cal { font-size: 10px; font-weight: 900; display:flex; justify-content: space-between; border-bottom: 2px solid #111 }
+  .nf .r { display:flex; justify-content: space-between; border-bottom: .5px solid #777 }
+  .rcpt { margin: 0 auto; width: 74px; background:#f4f1ea; color:#222; font-family: "Courier New", monospace; font-size: 6.2px; padding: 6px 5px; text-align:left; line-height:1.5;
+          -webkit-mask: linear-gradient(#000 0 0) top/100% calc(100% - 4px) no-repeat, radial-gradient(3px at 50% 100%, transparent 98%, #000) bottom/6px 4px repeat-x }
+  .rcpt .r { display:flex; justify-content: space-between }
+  .menu { margin: 0 auto; width: 104px; background:#fbf6ec; color:#3a2410; font-family: Georgia, serif; font-size: 7px; padding: 8px 8px; text-align:left; border-radius: 3px; line-height: 1.55 }
+  .menu .h { text-align:center; font-size: 10px; font-style: italic; margin-bottom: 4px }
+  .menu .r { display:flex; justify-content: space-between }
+  .plate { margin: 0 auto; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #f7f1e6 0 46%, #e8dfd0 47% 60%, transparent 61%); position: relative }
+  .plate i { position:absolute; border-radius: 50% }
+  .tray { position: absolute; left: 8px; right: 8px; bottom: 84px; background: rgba(44,36,32,.92); border-radius: 14px; padding: 8px 10px; font-size: 10.5px }
+  .tray .r { display:flex; justify-content: space-between; padding: 2px 0; color:#F5EFE6 }
+  .tray .r span:last-child { color:#B8A898 }
+  .tray .hd { font-weight: 600; font-size: 11px; margin-bottom: 3px; display:flex; justify-content: space-between }
+  .toast { position:absolute; top: 56px; left: 50%; transform: translateX(-50%); background:#007A30; border-radius:999px; padding:5px 12px; font-size:10.5px; font-weight:600; white-space:nowrap }
+  .rstrip { position:absolute; left: 50%; transform: translateX(-50%); width: 104px; background: repeating-linear-gradient(#e9e4da 0 7px, #d8d1c4 7px 8px); opacity:.55; }
+</style>
+
+<h2>The other camera flows from +</h2>
+<p class="subtitle">Same building blocks as the barcode flow: an example card first (first 3 times, then "?"), a frame shaped for the thing, a one-line hint, and a clear moment when something is captured. The tabs show up wherever there's more than one step.</p>
+
+<div class="flow">
+  <h3>Scan Nutrition Label</h3>
+  <p>One step: the barcode flow's step 2 on its own. No tabs; the screen title says what you're doing.</p>
+  <div class="story">
+    <div><div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex"><div class="nf"><div class="h">Nutrition Facts</div><div>Serving size 1 bar (40g)</div><div class="cal"><span>Calories</span><span>190</span></div><div class="r"><b>Total Fat 7g</b><b>9%</b></div><div class="r"><b>Sodium 95mg</b><b>4%</b></div><div class="r"><b>Total Carb. 27g</b><b>10%</b></div><div class="r"><b>Protein 6g</b><span></span></div></div>
+        <h4>Nutrition Label Scanner</h4><p>Get the exact numbers from any label to track your intake accurately.</p><span class="cta">Got it</span></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div class="shut off"></div><div class="sm" style="opacity:.4">🖼</div></div>
+    </div></div>
+    <div><div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="title">Nutrition label</div><div class="rbtn">?</div></div>
+      <div class="frame tall"><i></i><i></i><i></i><i></i></div>
+      <div class="hint" style="top:298px">Fit the whole panel in the frame</div>
+      <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="sm">🖼</div></div>
+    </div></div>
+  </div>
+</div>
+
+<div class="flow">
+  <h3>Photo Food Log</h3>
+  <p>One step: snap the meal. A big, almost square frame.</p>
+  <div class="story">
+    <div><div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex"><div class="plate"><i style="left:34px;top:34px;width:30px;height:24px;background:#c9773a"></i><i style="left:62px;top:40px;width:28px;height:28px;background:#5f8f3e"></i><i style="left:44px;top:62px;width:34px;height:22px;background:#f0d48a"></i></div>
+        <h4>Snap your meal</h4><p>Get the whole plate in, from a little above. Good light helps the estimate.</p><span class="cta">Got it</span></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div class="shut off"></div><div class="sm" style="opacity:.4">🖼</div></div>
+    </div></div>
+    <div><div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="title">Photo food log</div><div class="rbtn">?</div></div>
+      <div class="frame big"><i></i><i></i><i></i><i></i></div>
+      <div class="hint" style="top:310px">Fit the whole plate in the frame</div>
+      <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="sm">🖼</div></div>
+    </div></div>
+  </div>
+</div>
+
+<div class="flow">
+  <h3>Scan Menu</h3>
+  <p>One step: photo of the menu page. Tall frame, like a page.</p>
+  <div class="story">
+    <div><div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex"><div class="menu"><div class="h">Mains</div><div class="r"><span>Grilled salmon</span><span>24</span></div><div class="r"><span>Chicken caesar</span><span>18</span></div><div class="r"><span>Mushroom risotto</span><span>21</span></div><div class="r"><span>Steak frites</span><span>29</span></div><div class="r"><span>Veggie bowl</span><span>16</span></div></div>
+        <h4>Scan a menu</h4><p>Photo one page at a time. We'll suggest dishes that fit your goals.</p><span class="cta">Got it</span></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div class="shut off"></div><div class="sm" style="opacity:.4">🖼</div></div>
+    </div></div>
+    <div><div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="title">Menu</div><div class="rbtn">?</div></div>
+      <div class="frame tall"><i></i><i></i><i></i><i></i></div>
+      <div class="hint" style="top:298px">Fit one page in the frame</div>
+      <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="sm">🖼</div></div>
+    </div></div>
+  </div>
+</div>
+
+<div class="flow">
+  <h3>Scan Receipt</h3>
+  <p>Up to 3 photos for a long receipt, so the tabs become <b>Part 1 · Part 2 · Part 3</b>. Very tall, narrow frame.</p>
+  <div class="story">
+    <div><div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex"><div class="rcpt"><div style="text-align:center;font-weight:700">FRESH MART</div><div class="r"><span>MILK 2%</span><span>3.49</span></div><div class="r"><span>OAT CRUNCH</span><span>5.99</span></div><div class="r"><span>BANANAS</span><span>1.82</span></div><div class="r"><span>CHICKEN BR</span><span>9.40</span></div><div class="r"><span>SPINACH</span><span>2.99</span></div><div class="r" style="font-weight:700;border-top:1px dashed #444;margin-top:2px"><span>TOTAL</span><span>23.69</span></div></div>
+        <h4>Scan a receipt</h4><p>Lay it flat. Long receipt? Take it in up to 3 parts, top to bottom.</p><span class="cta">Got it</span></div>
+      <div class="tabs"><div class="tab on"><b>1</b>Part 1</div><div class="tab"><b>2</b>Part 2<span class="opt">if needed</span></div><div class="tab"><b>3</b>Part 3<span class="opt">if needed</span></div></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div class="shut off"></div><div class="pillbtn" style="opacity:.4">Done</div></div>
+    </div></div>
+    <div><div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="title">Receipt</div><div class="rbtn">?</div></div>
+      <div class="frame vtall"><i></i><i></i><i></i><i></i></div>
+      <div class="rstrip" style="top:62px;height:236px"></div>
+      <div class="hint" style="top:312px;font-size:10.5px">Next part: overlap the last line a little</div>
+      <div class="tabs"><div class="tab done"><b>✓</b>Part 1</div><div class="tab on"><b>2</b>Part 2<span class="opt">if needed</span></div><div class="tab"><b>3</b>Part 3<span class="opt">if needed</span></div></div>
+      <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="pillbtn p">Done</div></div>
+    </div>
+    <p class="cap">After part 1, "Done" lights up: you only take more parts if the receipt is long.</p></div>
+  </div>
+</div>
+
+<div class="flow">
+  <h3>Batch Scan</h3>
+  <p>Many barcodes in a row. No tabs; instead a running list fills up, and every scan says what it caught.</p>
+  <div class="story">
+    <div><div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex"><div style="position:relative;height:92px;width:170px;margin:0 auto"><div style="position:absolute;inset:0;border:3px solid #fff;border-radius:12px"></div><div class="bars" style="top:20px"></div><div style="position:absolute;right:-6px;top:-8px;background:#B5451C;border-radius:999px;font-size:10px;font-weight:700;padding:2px 7px">×3</div></div>
+        <h4>Scan many at once</h4><p>Scan each barcode in turn. Same item twice? We'll add to its count.</p><span class="cta">Got it</span></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div style="width:54px"></div><div class="pillbtn" style="opacity:.4">Done</div></div>
+    </div></div>
+    <div><div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="title">Batch scan</div><div class="rbtn">?</div></div>
+      <div class="toast">✓ Added: Greek Yogurt</div>
+      <div class="frame wide found" style="top:96px"><i></i><i></i><i></i><i></i></div><div class="bars" style="top:123px"></div>
+      <div class="tray"><div class="hd"><span>3 items</span><span style="color:#E07050">See all</span></div>
+        <div class="r"><span>Greek Yogurt</span><span>×1</span></div><div class="r"><span>Oat Crunch Granola</span><span>×2</span></div></div>
+      <div class="ctrl"><div class="sm">⚡</div><div style="width:54px"></div><div class="pillbtn p">Done · 3</div></div>
+    </div>
+    <p class="cap">Green flash + a buzz + "Added: …" each time, so you never wonder whether it caught one.</p></div>
+  </div>
+</div>

@@ -224,7 +224,7 @@ export function useHistoryData() {
 
   const handleScanPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate("Scan");
+    navigation.navigate("Scan", { intent: "log" });
   }, [navigation, haptics]);
 
   // Pending item IDs for mutation loading state — passed as scalars so

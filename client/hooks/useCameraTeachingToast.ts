@@ -40,7 +40,10 @@ export function useCameraTeachingToast(): (
       if (!claimTipSlot("toast-camera")) return;
       void markTipSeen("toast-camera");
       toast.info("Logging is faster with the camera", {
-        action: { label: "Try it", onPress: () => navigation.navigate("Scan") },
+        action: {
+          label: "Try it",
+          onPress: () => navigation.navigate("Scan", { intent: "log" }),
+        },
       });
       // The toast manages its own lifetime; the slot only guards the moment
       // of choosing, so a tooltip can't appear in the same instant.

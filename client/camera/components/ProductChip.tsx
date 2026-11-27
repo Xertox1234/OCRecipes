@@ -7,7 +7,6 @@ import {
   StyleSheet,
   View,
   Text,
-  TouchableOpacity,
   type ViewProps,
 } from "react-native";
 import { Image } from "expo-image";
@@ -15,10 +14,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
   withSpring,
+  withTiming,
   useAnimatedStyle,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { PressableScale } from "@/components/PressableScale";
+import { ScanFlagBadge } from "@/components/ScanFlagBadge";
+import { announceTogether } from "@/lib/announce-together";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import {
+  bannerEntrySpring,
+  contentRevealTimingConfig,
+} from "@/constants/animations";
+import { CameraColors, Colors } from "@/constants/theme";
 import type { ScanPhase } from "../types/scan-phase";
 import {
   getBarcodeLockActions,
@@ -30,7 +38,9 @@ import {
   getChipConfidenceColor,
 } from "./ProductChip-utils";
 
-const CHIP_SPRING = { damping: 18, mass: 1, stiffness: 280 };
+// The card rises with the banner spring, clamped: it settles without the ~4%
+// overshoot (spec motion plan, "Found card"). Reduced motion fades it instead.
+const CHIP_SPRING = { ...bannerEntrySpring, overshootClamping: true };
 const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera-overlay primary button (styles.btnPrimary)
 // Off-screen distance for the enter/exit spring. Must clear the chip's own
 // rendered height PLUS the shutter-clearance raise (insets.bottom + 96, see
@@ -40,9 +50,45 @@ const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera
 // plus the largest realistic raised offset (~136px) with headroom.
 const OFF_SCREEN_Y = 400;
 
+export type LookupErrorKind = "offline" | "failed";
+
+export const LOOKUP_ERROR_TEXT: Record<LookupErrorKind, string> = {
+  offline: "Couldn't look this up. Check your connection.",
+  failed: "Something went wrong looking this up.",
+};
+
 interface Props {
   phase: ScanPhase;
   onConfirm: () => void;
+  /** "Not this" on the found card: drop the lock and resume scanning. */
+  onRescan: () => void;
+  /**
+   * The barcode lookup came back with no product. The found card then says
+   * so instead of showing the name skeleton, and drops the "use database
+   * data" link (there is none). Leaving it unset keeps the skeleton.
+   */
+  productNotFound?: boolean;
+  /**
+   * Hide the step-3 prompt card (`step2_confirmed`). The camera shell's Front
+   * step offers the shutter and Skip itself, so the card would only repeat
+   * Skip and cover the step tabs.
+   */
+  hideFrontPrompt?: boolean;
+  /**
+   * QuickLogDrawer's flow: the found card's primary logs straight away
+   * ("Log it →", via onConfirm) and there is no photo-step action.
+   */
+  returnAfterLog?: boolean;
+  /**
+   * The product lookup for this barcode failed (not a 404): "offline" for a
+   * network failure, "failed" for a server error. The card says so in one
+   * line and offers Try again / Type it in instead of a skeleton forever.
+   */
+  lookupError?: LookupErrorKind | null;
+  /** Try again: re-run the lookup for the locked barcode. */
+  onRetryLookup?: () => void;
+  /** Type it in: open the type-the-number sheet. */
+  onTypeBarcode?: () => void;
   onProceedToLabel: () => void;
   onStepConfirmed: () => void;
   onRetakeStep2: () => void;
@@ -58,7 +104,7 @@ interface Props {
   /**
    * True while VoiceOver/TalkBack is active. The auto-advancing review card
    * (step2_review/step3_review) falls back to explicit Confirm/Retake buttons
-   * in this mode — the ~1s auto-advance timer in ScanScreen is suppressed for
+   * in this mode — the ~1.5 s auto-advance timer in ScanScreen is suppressed for
    * screen-reader users (see docs/rules/accessibility.md and the design spec),
    * so this state needs its own explicit continue affordance instead.
    */
@@ -75,6 +121,7 @@ interface Props {
 export function ProductChip({
   phase,
   onConfirm,
+  onRescan,
   onProceedToLabel,
   onStepConfirmed,
   onRetakeStep2,
@@ -84,12 +131,22 @@ export function ProductChip({
   importantForAccessibility,
   isSmartConfirming = false,
   screenReaderEnabled = false,
+  productNotFound = false,
+  hideFrontPrompt = false,
+  returnAfterLog = false,
+  lookupError = null,
+  onRetryLookup,
+  onTypeBarcode,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const translateY = useSharedValue(OFF_SCREEN_Y);
-  const variant = getProductChipVariant(phase);
+  const { reducedMotion } = useAccessibility();
+  const translateY = useSharedValue(reducedMotion ? 0 : OFF_SCREEN_Y);
+  const opacity = useSharedValue(0);
+  const phaseVariant = getProductChipVariant(phase);
+  const variant =
+    hideFrontPrompt && phaseVariant === "step2_confirmed" ? null : phaseVariant;
   // The product name can arrive AFTER the chip is shown: BARCODE_LOCKED renders
-  // with no product (a "Product" placeholder), then an async PRODUCT_LOADED adds
+  // with no product (a skeleton line on the found card), then an async PRODUCT_LOADED adds
   // it while keeping the same phase type (so `variant` is unchanged). Track it so
   // the loaded name can be announced — the variant-keyed effect below won't.
   const productName = "product" in phase ? phase.product?.name : undefined;
@@ -123,7 +180,9 @@ export function ProductChip({
 
   useEffect(() => {
     if (variant !== null) {
-      translateY.value = withSpring(0, CHIP_SPRING);
+      opacity.value = withTiming(1, contentRevealTimingConfig);
+      // Reduced motion drops the travel and keeps the fade.
+      translateY.value = reducedMotion ? 0 : withSpring(0, CHIP_SPRING);
       // Announce every transition INTO a non-null variant on BOTH platforms.
       // The chip no longer carries a container `accessibilityLiveRegion` (it
       // re-read the whole subtree on any descendant change, including the
@@ -133,19 +192,26 @@ export function ProductChip({
       // fires once per variant change: appear (null→non-null) AND non-null→
       // non-null transitions (e.g. step2_review→step2_confirmed), which the old
       // live-region model announced only on Android and iOS heard not at all.
-      AccessibilityInfo.announceForAccessibility(
-        getChipAnnounceText(variant, phase),
-      );
+      // Batched with the step tabs / hint changing in the same commit
+      // (VoiceOver cuts off a second announcement made in the same tick);
+      // the card's content leads.
+      announceTogether(getChipAnnounceText(variant, phase), { first: true });
     } else {
       // Unmount only when the exit spring settles. A variant that returns
       // mid-exit starts the enter spring above, which cancels this one and
       // fires the callback with finished=false; hiding then would hide a
       // chip that is showing a variant.
-      translateY.value = withSpring(OFF_SCREEN_Y, CHIP_SPRING, (finished) => {
+      const hide = (finished?: boolean) => {
+        "worklet";
         if (finished) scheduleOnRN(setShouldRender, false);
-      });
+      };
+      if (reducedMotion) {
+        opacity.value = withTiming(0, contentRevealTimingConfig, hide);
+      } else {
+        translateY.value = withSpring(OFF_SCREEN_Y, CHIP_SPRING, hide);
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref; `phase` is read only to build the announce string for the current variant and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers a meaningful change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY/opacity are stable useSharedValue refs; reducedMotion is read at the transition only (a live change applies on the next one); `phase` is read only to build the announce string for the current variant and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers a meaningful change).
   }, [variant]);
 
   // Announce the smart-confirm pending state on BOTH platforms on the idle→busy
@@ -168,7 +234,7 @@ export function ProductChip({
   // Announce a product name and/or safety flag that load AFTER the chip is
   // already shown. The BARCODE_LOCKED → PRODUCT_LOADED update keeps the same
   // phase type, so the variant-keyed effect above does NOT re-fire — yet the
-  // visible product row changes from a "Product" placeholder to the real name,
+  // visible product row changes from a skeleton line to the real name,
   // and a safety flag badge may appear alongside it. The old container live
   // region re-read the subtree on this change (so Android spoke both); with it
   // removed, this single effect drives the announcement explicitly.
@@ -221,6 +287,7 @@ export function ProductChip({
   }, [productName, topFlagTitle, topFlagDetail]);
 
   const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
     transform: [{ translateY: translateY.value }],
   }));
 
@@ -228,7 +295,10 @@ export function ProductChip({
     phase.type === "BARCODE_LOCKED"
       ? phase.product?.verificationLevel
       : undefined,
+    { returnAfterLog },
   );
+  const runLockAction = (intent: "proceedToLabel" | "confirmProduct") =>
+    intent === "proceedToLabel" ? onProceedToLabel : onConfirm;
 
   if (!shouldRender) return null;
 
@@ -251,125 +321,216 @@ export function ProductChip({
       // transition (see the two effects above) on both platforms.
       importantForAccessibility={importantForAccessibility}
     >
-      {/* Top flag row (badges only — never blocks the flow). Surfaces the
-          highest-severity flag across ALL kinds (allergen OR
-          universal/nutrition) — Task 14. */}
-      {product?.topFlag ? (
-        <View
-          style={[
-            styles.topFlag,
-            {
-              backgroundColor:
-                product.topFlag.severity === "danger"
-                  ? "rgba(229,72,77,0.22)"
-                  : product.topFlag.severity === "warn"
-                    ? "rgba(240,171,58,0.20)"
-                    : "rgba(100,181,246,0.20)",
-            },
-          ]}
-          accessible={true}
-          accessibilityLiveRegion="assertive"
-          accessibilityRole="text"
-          accessibilityLabel={
-            product.topFlag.detail
-              ? `${product.topFlag.title}. ${product.topFlag.detail}`
-              : product.topFlag.title
-          }
-        >
-          <Text style={styles.topFlagText}>⚠ {product.topFlag.title}</Text>
-        </View>
-      ) : null}
-
-      {/* Product info row */}
-      <View style={styles.productRow}>
-        {product?.imageUri ? (
-          <Image
-            source={{ uri: product.imageUri }}
-            style={styles.thumb}
-            cachePolicy="memory-disk"
-          />
-        ) : (
-          <View style={[styles.thumb, styles.thumbPlaceholder]} />
-        )}
-        <View style={styles.productText}>
-          {product?.brand ? (
-            <Text style={styles.brand}>{product.brand}</Text>
-          ) : null}
-          <Text style={styles.name} numberOfLines={2}>
-            {product?.name ?? "Product"}
-          </Text>
-        </View>
-      </View>
-
-      {/* Actions by variant */}
-      {variant === "barcode_lock" && (
+      {variant === "barcode_lock" ? (
         <>
-          <PressableScale
-            style={styles.btnPrimary}
-            onPress={
-              barcodeLockActions.primary.intent === "proceedToLabel"
-                ? onProceedToLabel
-                : onConfirm
+          {/* Found card: names what it caught (spec concept, "show me, then
+              tell me what you saw"). */}
+          <View style={styles.foundRow}>
+            {product?.imageUri ? (
+              <Image
+                source={{ uri: product.imageUri }}
+                style={styles.thumb}
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <View style={[styles.thumb, styles.thumbPlaceholder]} />
+            )}
+            <View style={styles.productText}>
+              {/* The visible "✓" stays out of the spoken label. */}
+              <Text style={styles.cardTitle} accessibilityLabel="Barcode found">
+                Barcode found ✓
+              </Text>
+              {lookupError ? (
+                <Text style={styles.cardSub}>
+                  {LOOKUP_ERROR_TEXT[lookupError]}
+                </Text>
+              ) : productNotFound ? (
+                <Text style={styles.cardSub}>
+                  We don&apos;t know this one yet. The label and front photos
+                  will fill it in
+                </Text>
+              ) : product ? (
+                <Text style={styles.cardSub} numberOfLines={2}>
+                  {product.brand
+                    ? `${product.name} · ${product.brand}`
+                    : product.name}
+                </Text>
+              ) : (
+                // Name still loading: a skeleton line, never "Loading…".
+                <View
+                  testID="found-card-name-skeleton"
+                  style={styles.skeleton}
+                  accessible={false}
+                  importantForAccessibility="no"
+                />
+              )}
+            </View>
+          </View>
+
+          {/* Top flag (badges only — never blocks the flow): the
+              highest-severity flag across ALL kinds (Task 14). It sits below
+              the name row, never inside it. The wrapper keeps the assertive
+              live region the old inline row had: it is Android's only cue for
+              a flag that loads after the card shows (iOS: the effect above). */}
+          {product?.topFlag ? (
+            <View accessibilityLiveRegion="assertive">
+              <ScanFlagBadge flag={product.topFlag} scheme="dark" />
+            </View>
+          ) : null}
+
+          {lookupError ? (
+            <>
+              {/* The lookup failed: retry it or type the number, never a
+                  silent return to the camera. The flow's own next step
+                  stays reachable below. */}
+              <View style={styles.actionRow}>
+                <ChipButton
+                  tone="ghost"
+                  style={styles.actionFlex}
+                  onPress={() => onRetryLookup?.()}
+                  accessibilityLabel="Try again"
+                >
+                  Try again
+                </ChipButton>
+                <ChipButton
+                  tone="accent"
+                  style={styles.actionFlex}
+                  onPress={() => onTypeBarcode?.()}
+                  accessibilityLabel="Type it in"
+                >
+                  Type it in
+                </ChipButton>
+              </View>
+              <ChipButton
+                tone="link"
+                onPress={runLockAction(barcodeLockActions.primary.intent)}
+                accessibilityLabel={barcodeLockActions.primary.label}
+              >
+                {barcodeLockActions.primary.label}
+              </ChipButton>
+            </>
+          ) : (
+            <>
+              <View style={styles.actionRow}>
+                <ChipButton
+                  tone="ghost"
+                  style={styles.actionFlex}
+                  onPress={onRescan}
+                  accessibilityLabel="Not this"
+                >
+                  Not this
+                </ChipButton>
+                <ChipButton
+                  tone="accent"
+                  style={styles.actionFlex}
+                  onPress={runLockAction(barcodeLockActions.primary.intent)}
+                  accessibilityLabel={barcodeLockActions.primary.label}
+                >
+                  {barcodeLockActions.primary.label}
+                </ChipButton>
+              </View>
+              {/* Not in database: there is no database data to use. */}
+              {productNotFound || !barcodeLockActions.secondary ? null : (
+                <ChipButton
+                  tone="link"
+                  onPress={runLockAction(barcodeLockActions.secondary.intent)}
+                  accessibilityLabel={barcodeLockActions.secondary.label}
+                >
+                  {barcodeLockActions.secondary.label}
+                </ChipButton>
+              )}
+            </>
+          )}
+        </>
+      ) : variant === "step2_review" || variant === "step3_review" ? (
+        <>
+          {/* The top flag rides on the captured cards too (badges only),
+            with the same assertive live region as on the found card. */}
+          {product?.topFlag ? (
+            <View accessibilityLiveRegion="assertive">
+              <ScanFlagBadge flag={product.topFlag} scheme="dark" />
+            </View>
+          ) : null}
+          <CapturedCard
+            title={
+              variant === "step2_review" ? "Label captured" : "Front captured"
             }
-            accessibilityLabel={barcodeLockActions.primary.label}
-            accessibilityRole="button"
-          >
-            <Text style={styles.btnPrimaryText}>
-              {barcodeLockActions.primary.label}
-            </Text>
-          </PressableScale>
-          <PressableScale
-            style={styles.btnSecondary}
-            onPress={
-              barcodeLockActions.secondary.intent === "proceedToLabel"
-                ? onProceedToLabel
-                : onConfirm
+            retakeLabel={
+              variant === "step2_review"
+                ? "Retake nutrition label photo"
+                : "Retake front label photo"
             }
-            accessibilityLabel={barcodeLockActions.secondary.label}
-            accessibilityRole="button"
-          >
-            <Text style={styles.btnSecondaryText}>
-              {barcodeLockActions.secondary.label}
-            </Text>
-          </PressableScale>
+            onRetake={
+              variant === "step2_review" ? onRetakeStep2 : onRetakeStep3
+            }
+            // Explicit Confirm only with a screen reader on: the ~1.5 s
+            // auto-advance is suppressed for screen-reader users, so they need
+            // their own continue affordance.
+            confirm={
+              screenReaderEnabled
+                ? variant === "step2_review"
+                  ? {
+                      label: "Confirm nutrition values",
+                      onPress: onStepConfirmed,
+                    }
+                  : { label: "Confirm product complete", onPress: onConfirm }
+                : null
+            }
+          />
+        </>
+      ) : (
+        <>
+          {/* Top flag row (badges only — never blocks the flow). Surfaces the
+              highest-severity flag across ALL kinds (allergen OR
+              universal/nutrition) — Task 14. */}
+          {product?.topFlag ? (
+            <View
+              style={[
+                styles.topFlag,
+                {
+                  backgroundColor:
+                    product.topFlag.severity === "danger"
+                      ? "rgba(229,72,77,0.22)"
+                      : product.topFlag.severity === "warn"
+                        ? "rgba(240,171,58,0.20)"
+                        : "rgba(100,181,246,0.20)",
+                },
+              ]}
+              accessible={true}
+              accessibilityLiveRegion="assertive"
+              accessibilityRole="text"
+              accessibilityLabel={
+                product.topFlag.detail
+                  ? `${product.topFlag.title}. ${product.topFlag.detail}`
+                  : product.topFlag.title
+              }
+            >
+              <Text style={styles.topFlagText}>⚠ {product.topFlag.title}</Text>
+            </View>
+          ) : null}
+
+          {/* Product info row */}
+          <View style={styles.productRow}>
+            {product?.imageUri ? (
+              <Image
+                source={{ uri: product.imageUri }}
+                style={styles.thumb}
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <View style={[styles.thumb, styles.thumbPlaceholder]} />
+            )}
+            <View style={styles.productText}>
+              {product?.brand ? (
+                <Text style={styles.brand}>{product.brand}</Text>
+              ) : null}
+              <Text style={styles.name} numberOfLines={2}>
+                {product?.name ?? "Product"}
+              </Text>
+            </View>
+          </View>
         </>
       )}
-
-      {variant === "step2_review" &&
-        (screenReaderEnabled ? (
-          <>
-            <PressableScale
-              style={styles.btnPrimary}
-              onPress={onStepConfirmed}
-              accessibilityLabel="Confirm nutrition values"
-              accessibilityRole="button"
-            >
-              <Text style={styles.btnPrimaryText}>Looks right →</Text>
-            </PressableScale>
-            <PressableScale
-              style={styles.btnSecondary}
-              onPress={onRetakeStep2}
-              accessibilityLabel="Retake nutrition label photo"
-              accessibilityRole="button"
-            >
-              <Text style={styles.btnSecondaryText}>Retake photo</Text>
-            </PressableScale>
-          </>
-        ) : (
-          <TouchableOpacity
-            style={styles.reviewCard}
-            onPress={onRetakeStep2}
-            accessibilityLabel="Nutrition label captured. Double tap to retake."
-            accessibilityRole="button"
-          >
-            <View style={styles.reviewRow}>
-              <View style={styles.reviewCheck}>
-                <Text style={styles.reviewCheckText}>✓</Text>
-              </View>
-              <Text style={styles.reviewText}>Nutrition label captured</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
 
       {variant === "step2_confirmed" && (
         <>
@@ -386,42 +547,6 @@ export function ProductChip({
           </Text>
         </>
       )}
-
-      {variant === "step3_review" &&
-        (screenReaderEnabled ? (
-          <>
-            <PressableScale
-              style={styles.btnPrimary}
-              onPress={onConfirm}
-              accessibilityLabel="Confirm product complete"
-              accessibilityRole="button"
-            >
-              <Text style={styles.btnPrimaryText}>Looks right →</Text>
-            </PressableScale>
-            <PressableScale
-              style={styles.btnSecondary}
-              onPress={onRetakeStep3}
-              accessibilityLabel="Retake front label photo"
-              accessibilityRole="button"
-            >
-              <Text style={styles.btnSecondaryText}>Retake photo</Text>
-            </PressableScale>
-          </>
-        ) : (
-          <TouchableOpacity
-            style={styles.reviewCard}
-            onPress={onRetakeStep3}
-            accessibilityLabel="Front label captured. Double tap to retake."
-            accessibilityRole="button"
-          >
-            <View style={styles.reviewRow}>
-              <View style={styles.reviewCheck}>
-                <Text style={styles.reviewCheckText}>✓</Text>
-              </View>
-              <Text style={styles.reviewText}>Front label captured</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
 
       {variant === "session_complete" && (
         <PressableScale
@@ -494,13 +619,113 @@ export function ProductChip({
   );
 }
 
+type ChipButtonTone = "accent" | "ghost" | "link";
+
+/**
+ * A found/captured-card button. Press scales (0.96, PressableScale) and also
+ * dims, so reduced motion — where usePressScale drops the scale — still
+ * answers the tap.
+ */
+function ChipButton({
+  tone,
+  onPress,
+  accessibilityLabel,
+  style,
+  children,
+}: {
+  tone: ChipButtonTone;
+  onPress: () => void;
+  accessibilityLabel: string;
+  style?: ViewProps["style"];
+  children: string;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <PressableScale
+      scaleTo={tone === "link" ? 1 : 0.96}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={[
+        tone === "accent"
+          ? styles.btnAccent
+          : tone === "ghost"
+            ? styles.btnGhost
+            : styles.btnTextLink,
+        style,
+        pressed && styles.btnPressed,
+      ]}
+    >
+      <Text
+        style={tone === "link" ? styles.btnTextLinkText : styles.btnCardText}
+        // Two lines, not one: half-width buttons at large Dynamic Type
+        // would otherwise truncate "Next: nutrition →" mid-word.
+        numberOfLines={2}
+      >
+        {children}
+      </Text>
+    </PressableScale>
+  );
+}
+
+/**
+ * "Label captured ✓" / "Front captured ✓" with Retake. Without a screen
+ * reader it moves on by itself (ScanScreen's auto-advance timer); with one on
+ * it also shows an explicit Confirm.
+ */
+function CapturedCard({
+  title,
+  retakeLabel,
+  onRetake,
+  confirm,
+}: {
+  title: string;
+  retakeLabel: string;
+  onRetake: () => void;
+  confirm: { label: string; onPress: () => void } | null;
+}) {
+  return (
+    <>
+      <View style={styles.capturedRow}>
+        {/* The visible "✓" stays out of the spoken label. */}
+        <Text
+          style={[styles.cardTitle, styles.capturedTitle]}
+          accessibilityLabel={title}
+        >
+          {`${title} ✓`}
+        </Text>
+        <ChipButton
+          tone="ghost"
+          style={styles.retake}
+          onPress={onRetake}
+          accessibilityLabel={retakeLabel}
+        >
+          Retake
+        </ChipButton>
+      </View>
+      {confirm ? (
+        <ChipButton
+          tone="accent"
+          onPress={confirm.onPress}
+          accessibilityLabel={confirm.label}
+        >
+          Looks right →
+        </ChipButton>
+      ) : null}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   chip: {
     position: "absolute",
     bottom: 0,
     left: 16,
     right: 16,
-    backgroundColor: "rgba(20,16,13,0.82)", // hardcoded — camera overlay (warm ink glass)
+    // The warm dark card surface (spec: #2C2420, not neutral grey).
+    backgroundColor: Colors.dark.surface,
     borderRadius: 20,
     padding: 14,
     gap: 10,
@@ -595,35 +820,76 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 2,
   },
-  reviewCard: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-  },
-  reviewRow: {
+  foundRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
   },
-  reviewCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#4CAF7D", // hardcoded — matches DONE_COLOR in StepPill.tsx
+  cardTitle: {
+    color: CameraColors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  cardSub: {
+    color: CameraColors.textMuted,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  skeleton: {
+    height: 12,
+    width: "70%",
+    borderRadius: 6,
+    marginTop: 6,
+    backgroundColor: Colors.dark.backgroundTertiary,
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+  },
+  actionFlex: { flex: 1 },
+  btnAccent: {
+    // accentSolid, not link: the AA-safe fill under white text in dark mode.
+    backgroundColor: Colors.dark.accentSolid,
+    borderRadius: 999,
+    minHeight: 44,
+    paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  reviewCheckText: {
-    color: "#fff", // hardcoded — camera overlay
-    fontSize: 12,
-    fontWeight: "700",
+  btnGhost: {
+    backgroundColor: Colors.dark.backgroundTertiary,
+    borderRadius: 999,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  reviewText: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 14,
-    fontWeight: "500",
+  btnCardText: {
+    color: CameraColors.text,
+    fontSize: 15,
+    fontWeight: "600",
+    // A label that wraps to a second line stays centred in its button.
+    textAlign: "center",
   },
+  btnTextLink: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnTextLinkText: {
+    color: CameraColors.textMuted,
+    fontSize: 13,
+    textDecorationLine: "underline",
+  },
+  btnPressed: { opacity: 0.7 },
+  capturedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  capturedTitle: { flex: 1 },
+  retake: { paddingHorizontal: 22 },
   errorText: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 14,

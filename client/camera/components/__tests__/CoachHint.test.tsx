@@ -8,7 +8,7 @@
  * See docs/rules/accessibility.md.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import * as RN from "react-native";
 import { CoachHint } from "../CoachHint";
 
@@ -32,13 +32,17 @@ describe("CoachHint — announce gating (H2)", () => {
     expect(announceSpy).not.toHaveBeenCalled();
   });
 
-  it("announces a changed hint to VoiceOver on iOS", () => {
+  it("announces a changed hint to VoiceOver on iOS", async () => {
     RN.Platform.OS = "ios";
     const { rerender } = render(
       <CoachHint message="Point at a nutrition label" />,
     );
 
     rerender(<CoachHint message="Hold steady" />);
+    // Batched through announceTogether: it goes out on the next tick.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
 
     expect(announceSpy).toHaveBeenCalledWith("Hold steady");
   });

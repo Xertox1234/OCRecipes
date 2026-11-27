@@ -1,23 +1,13 @@
-import {
-  extractBlockFences,
-  streamVisibleText,
-  stripCitationMarkers,
-} from "../coach-reply-text";
+import { streamVisibleText } from "../coach-reply-text";
 import {
   generateCoachResponse,
   generateCoachProResponse,
   SAFETY_OVERRIDE_SENTINEL,
 } from "../nutrition-coach";
-import {
-  matchesDisorderedEating,
-  type CoachIntent,
-} from "../coach-intent-classifier";
+import type { CoachIntent } from "../coach-intent-classifier";
 import { plainStatusLabel, toolStep } from "../coach-step-labels";
-import {
-  STANDARD_SAFETY_MESSAGE,
-  SAFETY_REFUSAL_FALLBACK_MESSAGE,
-  isFlatModelRefusal,
-} from "../../lib/ai-safety";
+import { STANDARD_SAFETY_MESSAGE } from "../../lib/ai-safety";
+import { flatRefusalReplacement, freeReplyShownText } from "./visible-reply";
 import {
   buildGoalsPayload,
   buildWriteCardPayload,
@@ -411,9 +401,7 @@ async function* streamFreeReply(
   // Saved and cached as it was shown: without the model's citation markup,
   // and without a card fence the free tier never asked for. The safety
   // message has neither.
-  reply.fullResponse = stripCitationMarkers(
-    extractBlockFences(reply.fullResponse).text,
-  ).trim();
+  reply.fullResponse = freeReplyShownText(reply.fullResponse);
   return reply;
 }
 
@@ -436,19 +424,11 @@ export async function* streamReply(
   // The model itself sometimes answers a safety-sensitive turn (distress,
   // disordered eating) with only a bare refusal. Replace it like an unsafe
   // reply: the client swaps what it showed, and the supportive text is saved.
-  if (
-    !reply.safetyOverridden &&
-    intent === "safety_refusal" &&
-    !isAborted() &&
-    isFlatModelRefusal(reply.fullResponse)
-  ) {
-    // The warm fallback is worded for distress about eating; other safety
-    // turns (medical, injection, ...) get the generic referral message. A
-    // suicide or self-harm message never gets here: handleCoachChat answers
-    // it with the crisis message before any model call.
-    const replacement = matchesDisorderedEating(content)
-      ? SAFETY_REFUSAL_FALLBACK_MESSAGE
-      : STANDARD_SAFETY_MESSAGE;
+  const replacement =
+    !reply.safetyOverridden && !isAborted()
+      ? flatRefusalReplacement(content, reply.fullResponse, intent)
+      : null;
+  if (replacement) {
     reply.fullResponse = replacement;
     reply.safetyOverridden = true;
     yield { type: "safety_override", message: replacement };

@@ -159,7 +159,7 @@ export default function QuickLogScreen() {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.goBack();
     runAfterTransition(() => {
-      navigation.navigate("Scan");
+      navigation.navigate("Scan", { intent: "log" });
     });
   }, [haptics, navigation]);
 

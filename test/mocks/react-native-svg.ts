@@ -48,6 +48,9 @@ export const Line = svgEl("line", "Line");
 export const Polygon = svgEl("polygon", "Polygon");
 export const Polyline = svgEl("polyline", "Polyline");
 export const Ellipse = svgEl("ellipse", "Ellipse");
+// SVG text (the scan example art draws a readable Nutrition Facts panel).
+export const Text = svgEl("text", "Text");
+export const TSpan = svgEl("tspan", "TSpan");
 
 const Svg = svgEl("svg", "Svg");
 export default Svg;

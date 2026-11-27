@@ -116,12 +116,15 @@ export async function* generateCoachResponse(
   intent?: CoachIntent,
   /** IANA timezone of the requesting user — renders the prompt's "Current time" line. */
   tz: string = "UTC",
+  /** The prompt's clock; defaults to the real one. The coach eval pins it per case. */
+  now?: Date,
 ): AsyncGenerator<string> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
   const resolvedIntent =
     intent ?? classifyIntent(lastUserMessage, { recipeRequests: false }).intent;
   const systemPrompt = buildSystemPrompt(context, resolvedIntent, {
+    now,
     tz,
     tier: "free",
   });

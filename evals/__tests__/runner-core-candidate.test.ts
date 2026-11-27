@@ -79,6 +79,35 @@ describe("runEvalSuite per-sample AI call checks", () => {
     expect(writeFileSync).not.toHaveBeenCalled();
   });
 
+  it("a sample the server answers without a model (noModelCall) is not flagged", async () => {
+    const config = configWith(async () => ({
+      text: "crisis reply",
+      latencyMs: 0,
+      wordCount: 2,
+      noModelCall: true,
+    }));
+    await runEvalSuite([testCase], config);
+    expect(loggedErrors()).not.toMatch(/not answered by the requested model/);
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(writeFileSync).toHaveBeenCalled();
+  });
+
+  it("a noModelCall sample that did call a model is flagged", async () => {
+    const model = AI_FEATURES["coach-chat"].model;
+    const config = configWith(async () => {
+      getAiCallContext()!.calls.push({
+        feature: "coach-chat",
+        requestedModel: model,
+        answeredModel: model,
+        answeredProvider: "Azure",
+        fellBack: false,
+      });
+      return { text: "hi", latencyMs: 1, wordCount: 1, noModelCall: true };
+    });
+    await expect(runEvalSuite([testCase], config)).rejects.toThrow("exit:1");
+    expect(loggedErrors()).toMatch(/expected no AI call/);
+  });
+
   it("a sample with a clean table-model record is not flagged", async () => {
     const model = AI_FEATURES["coach-chat"].model;
     const config = configWith(async () => {
