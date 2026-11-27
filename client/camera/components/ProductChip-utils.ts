@@ -68,7 +68,8 @@ export type BarcodeLockAction = {
 
 export type BarcodeLockActions = {
   primary: BarcodeLockAction;
-  secondary: BarcodeLockAction;
+  /** null when there is no second route (returnAfterLog). */
+  secondary: BarcodeLockAction | null;
 };
 
 /**
@@ -90,7 +91,17 @@ export type BarcodeLockActions = {
  */
 export function getBarcodeLockActions(
   verificationLevel: VerificationLevel | undefined,
+  opts: { returnAfterLog?: boolean } = {},
 ): BarcodeLockActions {
+  // QuickLogDrawer's returnAfterLog flow has no photo steps: the found card
+  // goes straight to the existing confirm-and-log card (spec "Entry and
+  // routing").
+  if (opts.returnAfterLog) {
+    return {
+      primary: { label: "Log it →", intent: "confirmProduct" },
+      secondary: null,
+    };
+  }
   if (verificationLevel === "verified") {
     return {
       primary: { label: "Use verified data →", intent: "confirmProduct" },
@@ -101,7 +112,7 @@ export function getBarcodeLockActions(
     };
   }
   return {
-    primary: { label: "Scan Nutrition Facts →", intent: "proceedToLabel" },
+    primary: { label: "Next: nutrition →", intent: "proceedToLabel" },
     secondary: {
       label: "Use database data anyway",
       intent: "confirmProduct",
@@ -195,13 +206,13 @@ export function getChipAnnounceText(
   }
   switch (variant) {
     case "barcode_lock":
-      return "Product found, choose how to continue";
+      return "Barcode found, choose how to continue";
     case "step2_review":
-      return "Nutrition label scanned, review values";
+      return "Label captured, review or retake";
     case "step2_confirmed":
       return "Nutrition values confirmed";
     case "step3_review":
-      return "Front label scanned, review values";
+      return "Front captured, review or retake";
     case "session_complete":
       return "Scan complete";
     case "smart_error":

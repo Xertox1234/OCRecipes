@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   getReticleTarget,
   getConfidenceFromPhase,
+  getShapedFrameConfidence,
   BARCODE_RETICLE,
   LABEL_RETICLE,
 } from "../ScanReticle-utils";
@@ -138,5 +139,69 @@ describe("getConfidenceFromPhase", () => {
         ocrText: "",
       }),
     ).toBe(1.0);
+  });
+});
+
+describe("getReticleTarget with a shape", () => {
+  it('shape "front" centers a 240x260 target', () => {
+    const t = getReticleTarget({ type: "HUNTING" }, SW, SH, "front");
+    expect(t).toEqual({ cx: SW / 2, cy: SH / 2, width: 240, height: 260 });
+  });
+
+  it("BARCODE_TRACKING still follows the bounds when a shape is given", () => {
+    const t = getReticleTarget(
+      {
+        type: "BARCODE_TRACKING",
+        barcode: "1",
+        bounds: BOUNDS,
+        frameCount: 1,
+      },
+      SW,
+      SH,
+      "label",
+    );
+    expect(t.cx).toBeCloseTo(SW * 0.5);
+    expect(t.cy).toBeCloseTo(SH * 0.5);
+  });
+});
+
+// Shaped (guided) frames are white at rest and green only on a catch.
+describe("getShapedFrameConfidence", () => {
+  const bounds = { x: 0.3, y: 0.4, width: 0.4, height: 0.2 };
+  it("is white (0) on the live photo steps", () => {
+    expect(
+      getShapedFrameConfidence({ type: "LABEL_PROMPTED", barcode: "1" }),
+    ).toBe(0);
+    expect(
+      getShapedFrameConfidence({ type: "STEP2_CONFIRMED", barcode: "1" }),
+    ).toBe(0);
+    expect(getShapedFrameConfidence({ type: "HUNTING" })).toBe(0);
+  });
+  it("is green (1) on a found barcode and a captured photo", () => {
+    expect(
+      getShapedFrameConfidence({
+        type: "BARCODE_LOCKED",
+        barcode: "1",
+        bounds,
+      }),
+    ).toBe(1);
+    expect(
+      getShapedFrameConfidence({
+        type: "STEP2_REVIEWING",
+        barcode: "1",
+        ocrText: null,
+        imageUri: "f",
+      }),
+    ).toBe(1);
+  });
+  it("follows the tracking confidence", () => {
+    expect(
+      getShapedFrameConfidence({
+        type: "BARCODE_TRACKING",
+        barcode: "1",
+        bounds,
+        frameCount: 7,
+      }),
+    ).toBe(1);
   });
 });

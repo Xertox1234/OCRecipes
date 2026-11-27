@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
-import { StyleSheet, Platform, AccessibilityInfo } from "react-native";
+import { StyleSheet, Platform } from "react-native";
+import { announceTogether } from "@/lib/announce-together";
 import Animated, {
   useSharedValue,
   withTiming,
@@ -36,7 +37,10 @@ export function CoachHint({ message }: Props) {
       return;
     }
     if (message && Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(message);
+      // Batched with the step tabs / cards changing in the same commit
+      // (VoiceOver cuts off a second announcement made in the same tick).
+      // The hint is content, so it leads; tab state follows.
+      announceTogether(message, { first: true });
     }
   }, [message]);
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import WeekProgress from "../WeekProgress";
 import type { WeekProgressBlock } from "@shared/schemas/coach-blocks";
@@ -96,5 +96,26 @@ describe("WeekProgress", () => {
         /^7 days to Fri, Nov 20\. .*Monday: nothing logged\. .*Wednesday: 2,400 calories, over the goal\. .*As of the Coach's reply\.$/,
       ),
     ).toBeTruthy();
+  });
+
+  describe("when the day turns while the card is on screen", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 10, 20, 23, 50, 0));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("stops calling it the last seven days without leaving the chat", () => {
+      renderComponent(<WeekProgress block={block} />);
+      expect(screen.getByText("Last 7 days")).toBeTruthy();
+
+      act(() => {
+        vi.advanceTimersByTime(11 * 60 * 1000);
+      });
+      expect(screen.getByText("7 days to Fri, Nov 20")).toBeTruthy();
+      expect(screen.queryByText("Last 7 days")).toBeNull();
+    });
   });
 });

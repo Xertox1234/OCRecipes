@@ -27,7 +27,7 @@ export function navigateAction(
       navigation.navigate("PhotoIntent");
       break;
     case "photo-food-log":
-      navigation.navigate("Scan");
+      navigation.navigate("Scan", { intent: "log" });
       break;
     case "scan-nutrition-label":
       navigation.navigate("Scan", { mode: "label" });

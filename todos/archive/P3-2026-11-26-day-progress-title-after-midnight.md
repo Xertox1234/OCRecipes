@@ -1,9 +1,9 @@
 ---
 title: 'Coach day card: the title can stay "Today so far" past midnight'
-status: backlog
+status: done
 priority: low
 created: 2026-11-26
-updated: 2026-11-26
+updated: 2026-11-27
 assignee:
 labels: [deferred, mobile]
 github_issue:
@@ -32,3 +32,12 @@ turns.
 ## Acceptance
 
 - A card made at 23:50 reads "Yesterday" after midnight without leaving the chat.
+
+## Updates
+
+- 2026-11-27: Done. `client/hooks/useLocalToday.ts` keeps today's local date
+  current (a timer to the next local midnight, plus a catch-up on AppState
+  "active"); DayProgress and WeekProgress both read it. Acceptance is covered
+  by `DayProgress.test.tsx` ("moves from today to yesterday without leaving
+  the chat") and the matching `WeekProgress.test.tsx` case; each fails
+  against the old card.

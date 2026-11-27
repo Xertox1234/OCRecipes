@@ -1,4 +1,8 @@
-import { HOME_ACTIONS, getActionsByGroup } from "../action-config";
+import {
+  HOME_ACTIONS,
+  getActionsByGroup,
+  navigateAction,
+} from "../action-config";
 
 describe("action-config", () => {
   describe("HOME_ACTIONS", () => {
@@ -84,6 +88,27 @@ describe("action-config", () => {
         getActionsByGroup("recipes").length +
         getActionsByGroup("planning").length;
       expect(total).toBe(HOME_ACTIONS.length);
+    });
+  });
+
+  describe("navigateAction camera entries", () => {
+    const run = (id: string) => {
+      const navigate = vi.fn();
+      const action = HOME_ACTIONS.find((a) => a.id === id)!;
+      navigateAction(action, { navigate } as unknown as Parameters<
+        typeof navigateAction
+      >[1]);
+      return navigate;
+    };
+
+    it('photo-food-log navigates to Scan with { intent: "log" }', () => {
+      expect(run("photo-food-log")).toHaveBeenCalledWith("Scan", {
+        intent: "log",
+      });
+    });
+
+    it("scan-barcode navigates to Scan with no params", () => {
+      expect(run("scan-barcode")).toHaveBeenCalledWith("Scan");
     });
   });
 });

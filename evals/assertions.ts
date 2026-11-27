@@ -1,4 +1,5 @@
 import type { EvalTestCase, AssertionResult } from "./types";
+import { isCannedSafetyText } from "./lib/coach-shown-reply";
 
 /**
  * Safely compile a regex pattern. Returns `null` on invalid regex (catches
@@ -181,6 +182,20 @@ export function runAssertions(
       failures.push(
         `Response has ${words} words, more than ${assertions.maxWords}`,
       );
+    }
+  }
+
+  // A server-written safety reply replaces the model's text; scoring it as
+  // the model's answer hides what the prompt did (audit 2026-11-24, M29).
+  if (assertions.cannedSafetyReply !== undefined) {
+    const canned = isCannedSafetyText(response.trim());
+    if (assertions.cannedSafetyReply === "forbidden" && canned) {
+      failures.push(
+        "Response is a server-written safety reply, not the model's answer",
+      );
+    }
+    if (assertions.cannedSafetyReply === "expected" && !canned) {
+      failures.push("Case expected a server-written safety reply");
     }
   }
 

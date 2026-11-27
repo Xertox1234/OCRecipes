@@ -361,7 +361,26 @@ export function buildSystemPrompt(
     ...buildIntentBlock(intent),
     "",
     "USER CONTEXT:",
+    ...buildUserContextLines(context, { now, tz }),
   ];
+
+  // Safety boundary is always LAST — after all context sections
+  parts.push("", SYSTEM_PROMPT_BOUNDARY);
+
+  return parts.join("\n");
+}
+
+/**
+ * Everything under USER CONTEXT: the user's data, the clock, and the sections
+ * that carry their own instructions. The coach eval's judge reads these same
+ * lines, so it scores a reply against exactly what the model saw (audit
+ * 2026-11-24, M28).
+ */
+export function buildUserContextLines(
+  context: CoachContext,
+  { now = new Date(), tz = "UTC" }: { now?: Date; tz?: string } = {},
+): string[] {
+  const parts: string[] = [];
 
   if (context.goals) {
     parts.push(
@@ -515,10 +534,7 @@ export function buildSystemPrompt(
     parts.push("", context.blocksPrompt);
   }
 
-  // Safety boundary is always LAST — after all context sections
-  parts.push("", SYSTEM_PROMPT_BOUNDARY);
-
-  return parts.join("\n");
+  return parts;
 }
 
 /** Fixed reference time — makes the template hash deterministic across restarts. */

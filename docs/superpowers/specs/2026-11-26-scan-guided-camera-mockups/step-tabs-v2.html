@@ -1,0 +1,154 @@
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  .story { display: flex; gap: 18px; flex-wrap: wrap; }
+  .cell { width: 224px; }
+  .num { font-size: 12px; font-weight: 600; opacity: .6; margin-bottom: 6px; }
+  .cap { font-size: 12.5px; opacity: .8; margin: 8px 0 0; line-height: 1.4; }
+  .phone { width: 224px; height: 470px; border-radius: 32px; background: #000; position: relative; overflow: hidden;
+           font-family: Poppins, sans-serif; color: #fff; box-shadow: 0 8px 26px rgba(0,0,0,.35); border: 6px solid #222; }
+  .feed { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, #3b342e 0%, #15110e 70%); }
+  .dim { position: absolute; inset: 0; background: #1E1814; }
+  .top { position: absolute; top: 14px; left: 10px; right: 10px; display: flex; justify-content: space-between; }
+  .rbtn { width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .dim ~ .top .rbtn { background: #2C2420; }
+  .frame { position: absolute; left: 50%; transform: translateX(-50%); }
+  .frame i { position: absolute; width: 24px; height: 24px; border: 3px solid #fff; }
+  .frame i:nth-child(1){ top:0; left:0; border-right:0; border-bottom:0; border-top-left-radius:11px }
+  .frame i:nth-child(2){ top:0; right:0; border-left:0; border-bottom:0; border-top-right-radius:11px }
+  .frame i:nth-child(3){ bottom:0; left:0; border-right:0; border-top:0; border-bottom-left-radius:11px }
+  .frame i:nth-child(4){ bottom:0; right:0; border-left:0; border-top:0; border-bottom-right-radius:11px }
+  .frame.found i { border-color: #4CAF7D; }
+  .wide { top: 110px; width: 184px; height: 100px; }
+  .tall { top: 58px; width: 140px; height: 220px; }
+  .sq   { top: 66px; width: 172px; height: 200px; }
+  .hint { position: absolute; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 500; text-shadow: 0 1px 3px rgba(0,0,0,.7); padding: 0 12px; }
+  .tabs { position: absolute; bottom: 86px; left: 8px; right: 8px; display: flex; gap: 6px; }
+  .tab { flex: 1; background: rgba(44,36,32,.9); border-radius: 12px; padding: 7px 2px; text-align: center; font-size: 9.5px; font-weight: 500; color: #B8A898; }
+  .tab b { display: block; font-size: 14px; margin-bottom: 1px; color: #fff; }
+  .tab.on { background: #B5451C; color: #fff; }
+  .tab.done, .tab.done b { color: #4CAF7D; }
+  .tab .opt { display:block; font-size: 8px; opacity: .8; }
+  .dim ~ .tabs .tab { opacity: .55; } .dim ~ .tabs .tab.on { opacity: 1; }
+  .ctrl { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-around; align-items: center; }
+  .shut { width: 54px; height: 54px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.25); }
+  .shut.off { background: rgba(255,255,255,.22); box-shadow:none }
+  .sm { width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .pillbtn { height: 32px; padding: 0 14px; border-radius: 999px; background: rgba(0,0,0,.55); display: flex; align-items: center; font-size: 10.5px; font-weight: 600; }
+  .bars { position:absolute; left:50%; transform:translateX(-50%); width:110px; height:46px;
+          background: repeating-linear-gradient(90deg,#ddd 0 3px,transparent 3px 5px,#ddd 5px 6px,transparent 6px 9px); opacity:.85 }
+  .sheet { position: absolute; left: 8px; right: 8px; bottom: 10px; background: #2C2420; border-radius: 18px; padding: 12px; }
+  .sheet .t { font-size: 12.5px; font-weight: 600; }
+  .sheet .s { font-size: 10.5px; color: #B8A898; margin-top: 2px; }
+  .row { display: flex; gap: 7px; margin-top: 10px; }
+  .btn { flex: 1; border-radius: 999px; padding: 8px 0; text-align: center; font-size: 11.5px; font-weight: 600; }
+  .btn.p { background: #B5451C; } .btn.g { background: #3C302A; }
+  .thumb { display: flex; gap: 10px; align-items: center; }
+  .thumb .img { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg,#d9a441,#8a5a2b); flex: none; }
+  /* example cards */
+  .ex { position: absolute; left: 0; right: 0; top: 54px; text-align: center; padding: 0 14px; }
+  .ex h4 { font-size: 15px; font-weight: 700; margin: 12px 0 4px; }
+  .ex p { font-size: 11px; color: #B8A898; margin: 0 0 12px; line-height: 1.45; }
+  .cta { display: inline-block; background: #fff; color: #1C1410; border-radius: 999px; padding: 8px 28px; font-size: 13px; font-weight: 600; }
+  .exbar { margin: 0 auto; width: 170px; height: 92px; border-radius: 12px; border: 3px solid #fff; position: relative; background:#000 }
+  .nf { margin: 0 auto; background:#fff; color:#111; font-family: Arial, Helvetica, sans-serif; font-size: 6.6px; padding: 4px 5px; text-align:left; width: 92px; border-radius: 4px; line-height: 1.25 }
+  .nf .h { font-size: 11px; font-weight: 900; border-bottom: 1px solid #111; }
+  .nf .thick { border-bottom: 4px solid #111; padding-bottom: 1px }
+  .nf .cal { font-size: 10px; font-weight: 900; display:flex; justify-content: space-between; border-bottom: 2px solid #111 }
+  .nf .r { display:flex; justify-content: space-between; border-bottom: .5px solid #777 }
+  .pkg { margin: 0 auto; width: 96px; height: 128px; border-radius: 6px; background: linear-gradient(160deg,#e8c27a,#b97a33); position: relative; color:#3a2410; font-weight:700; text-align:center; font-size: 10px; padding-top: 12px; box-sizing: border-box }
+  .pkg .bowl { width: 54px; height: 30px; margin: 10px auto 6px; border-radius: 0 0 30px 30px; background:#fff3dc; }
+  .pkg small { display:block; font-size:7px; font-weight:500 }
+  .q { margin-top: 28px; }
+</style>
+
+<h2>Barcode flow, with example cards</h2>
+<p class="subtitle">Each step opens with an example card (like your screenshots): a picture of what to scan, a title, one line on why, and "Got it". "?" brings the card back. After step 3 (or Skip) you land on the next screen, where you log.</p>
+
+<div class="story">
+
+  <div class="cell"><div class="num">1a · Barcode example</div>
+    <div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex"><div class="exbar"><div class="bars" style="top:20px"></div></div>
+        <h4>Scan the barcode</h4><p>Line it up inside the frame. It scans by itself. No tap needed.</p><span class="cta">Got it</span></div>
+      <div class="tabs"><div class="tab on"><b>▥</b>Barcode</div><div class="tab"><b>☰</b>Nutrition</div><div class="tab"><b>▣</b>Front<span class="opt">optional</span></div></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div style="width:54px"></div><div class="sm" style="opacity:.4">⌨︎</div></div>
+    </div>
+  </div>
+
+  <div class="cell"><div class="num">1b · Scanning</div>
+    <div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="frame wide"><i></i><i></i><i></i><i></i></div><div class="bars" style="top:137px"></div>
+      <div class="hint" style="top:224px">Line the barcode up inside the frame</div>
+      <div class="tabs"><div class="tab on"><b>▥</b>Barcode</div><div class="tab"><b>☰</b>Nutrition</div><div class="tab"><b>▣</b>Front<span class="opt">optional</span></div></div>
+      <div class="ctrl"><div class="sm">⚡</div><div style="width:54px"></div><div class="sm">⌨︎</div></div>
+    </div>
+  </div>
+
+  <div class="cell"><div class="num">1c · Found it</div>
+    <div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="frame wide found"><i></i><i></i><i></i><i></i></div><div class="bars" style="top:137px"></div>
+      <div class="sheet">
+        <div class="thumb"><div class="img"></div><div><div class="t">Barcode found ✓</div><div class="s">Oat Crunch Granola · Nature's Path</div></div></div>
+        <div class="row"><div class="btn g">Not this</div><div class="btn p">Next: nutrition →</div></div>
+      </div>
+    </div>
+    <p class="cap">Camera pauses; nothing moves on until you tap.</p>
+  </div>
+
+  <div class="cell"><div class="num">2a · Nutrition label example</div>
+    <div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex">
+        <div class="nf"><div class="h">Nutrition Facts</div><div>2 servings per container</div><div class="thick" style="display:flex;justify-content:space-between"><b>Serving size</b><b>3/4 cup (55g)</b></div>
+          <div style="font-size:5.5px;font-weight:700">Amount per serving</div><div class="cal"><span>Calories</span><span>230</span></div>
+          <div class="r"><b>Total Fat 8g</b><b>10%</b></div><div class="r"><span>&nbsp;Saturated Fat 1g</span><b>5%</b></div><div class="r"><b>Sodium 160mg</b><b>7%</b></div><div class="r"><b>Total Carb. 37g</b><b>13%</b></div><div class="r"><span>&nbsp;Total Sugars 12g</span><span></span></div><div class="r" style="border-bottom:3px solid #111"><b>Protein 5g</b><span></span></div></div>
+        <h4>Photo the nutrition label</h4><p>We check the numbers against the real package, so your log is accurate.</p><span class="cta">Got it</span></div>
+      <div class="tabs"><div class="tab done"><b>✓</b>Barcode</div><div class="tab on"><b>☰</b>Nutrition</div><div class="tab"><b>▣</b>Front<span class="opt">optional</span></div></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div class="shut off"></div><div class="pillbtn" style="opacity:.4">Skip</div></div>
+    </div>
+  </div>
+
+  <div class="cell"><div class="num">2b · Label photo</div>
+    <div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="frame tall"><i></i><i></i><i></i><i></i></div>
+      <div class="hint" style="top:288px">Fit the whole panel in the frame</div>
+      <div class="tabs"><div class="tab done"><b>✓</b>Barcode</div><div class="tab on"><b>☰</b>Nutrition</div><div class="tab"><b>▣</b>Front<span class="opt">optional</span></div></div>
+      <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="pillbtn">Skip</div></div>
+    </div>
+  </div>
+
+  <div class="cell"><div class="num">3a · Front example</div>
+    <div class="phone"><div class="dim"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="ex"><div class="pkg">OAT CRUNCH<small>Granola · Nature's Path</small><div class="bowl"></div><small>NET WT 450 g</small></div>
+        <h4>Photo the front <span style="font-weight:500;color:#B8A898;font-size:12px">(optional)</span></h4><p>Helps with the name, brand and size when the barcode isn't in our database.</p><span class="cta">Got it</span></div>
+      <div class="tabs"><div class="tab done"><b>✓</b>Barcode</div><div class="tab done"><b>✓</b>Nutrition</div><div class="tab on"><b>▣</b>Front<span class="opt">optional</span></div></div>
+      <div class="ctrl"><div class="sm" style="opacity:.4">⚡</div><div class="shut off"></div><div class="pillbtn" style="opacity:.4">Skip</div></div>
+    </div>
+  </div>
+
+  <div class="cell"><div class="num">3b · Front photo</div>
+    <div class="phone"><div class="feed"></div>
+      <div class="top"><div class="rbtn">✕</div><div class="rbtn">?</div></div>
+      <div class="frame sq"><i></i><i></i><i></i><i></i></div>
+      <div class="hint" style="top:276px">Fit the front of the package in the frame</div>
+      <div class="tabs"><div class="tab done"><b>✓</b>Barcode</div><div class="tab done"><b>✓</b>Nutrition</div><div class="tab on"><b>▣</b>Front<span class="opt">optional</span></div></div>
+      <div class="ctrl"><div class="sm">⚡</div><div class="shut"></div><div class="pillbtn">Skip</div></div>
+    </div>
+    <p class="cap">Skip or a photo → the next screen, where you log.</p>
+  </div>
+
+</div>
+
+<div class="q">
+<h3>How often should the example cards show?</h3>
+<div class="options">
+  <div class="option" data-choice="first" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>First 3 scans, then only via "?"</h3><p>New users are taught; regulars go straight to the camera. <b>My pick.</b></p></div></div>
+  <div class="option" data-choice="always" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Every scan</h3><p>Always clear, but one extra tap per step, every time.</p></div></div>
+  <div class="option" data-choice="toggle" onclick="toggleSelect(this)"><div class="letter">C</div><div class="content"><h3>Every scan, with "Don't show again" on the card</h3><p>The user decides when they've learned it.</p></div></div>
+</div>
+</div>
