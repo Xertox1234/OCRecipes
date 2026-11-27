@@ -60,29 +60,32 @@ export function usePlanSuggestFlow({
 
   const handleSelectSuggestion = useCallback(
     async (suggestion: MealSuggestion) => {
+      // The allergen check comes first. The recipe is not saved yet, so its
+      // ingredients get the derivation the server runs on save. Worked out
+      // before the try: React Compiler bails on `??` or an early return in one.
+      const meal = pickedFromIngredientNames(
+        (suggestion.ingredients ?? []).map((i) => i.name),
+      );
       try {
-        // The allergen check comes first. The recipe is not saved yet, so
-        // its ingredients get the derivation the server runs on save.
         const pick = await confirmPick({
           slot: { plannedDate: dateStr, mealType: suggestMealType },
-          meal: pickedFromIngredientNames(
-            (suggestion.ingredients ?? []).map((i) => i.name),
-          ),
+          meal,
         });
-        if (!pick.proceed) return;
-        // One server call: the recipe and its plan item are created in a
-        // single transaction, so a failure leaves nothing behind.
-        await addMealPlanItem(
-          suggestionToPlanItem(suggestion, dateStr, suggestMealType),
-        );
-        // The modal closes, so confirm with a toast (fires its own Success).
-        toast.success(
-          withAllergenNote(
-            formatPlanAddSuccess(dateStr, suggestMealType),
-            pick.note,
-          ),
-        );
-        setSuggestModalVisible(false);
+        if (pick.proceed) {
+          // One server call: the recipe and its plan item are created in a
+          // single transaction, so a failure leaves nothing behind.
+          await addMealPlanItem(
+            suggestionToPlanItem(suggestion, dateStr, suggestMealType),
+          );
+          // The modal closes, so confirm with a toast (fires its own Success).
+          toast.success(
+            withAllergenNote(
+              formatPlanAddSuccess(dateStr, suggestMealType),
+              pick.note,
+            ),
+          );
+          setSuggestModalVisible(false);
+        }
       } catch {
         toast.error(
           "Couldn't add the suggestion to your plan. Please try again.",
