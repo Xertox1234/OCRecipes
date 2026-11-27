@@ -208,7 +208,7 @@ const coachAboutUserSchema = z
   })
   .partial();
 
-const coachContextSchema = z.object({
+export const coachContextSchema = z.object({
   goals: macroGoalsSchema.nullable(),
   todayIntake: macroGoalsSchema,
   dietaryProfile: z.object({
@@ -283,6 +283,8 @@ export interface EvalCaseResult {
   aiCallViolations?: string[];
   /** The AI calls this sample made (incl. failed ones), so the run step can classify it */
   aiCalls?: AiCallRecord[];
+  /** What a suite's extraAssertions checked (Coach Pro: tool calls, blocks, cards). */
+  structuredData?: unknown;
   rubricScores: RubricScore[];
   /**
    * Model identifier used by the LLM judge for this case. Persisted per-case

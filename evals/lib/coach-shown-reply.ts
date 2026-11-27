@@ -226,7 +226,13 @@ export async function coachProShownReply(
   return {
     text: parsed.text,
     modelCalled: true,
-    blockTypes: parsed.blocks.map((b) => b.type),
+    // Progress cards are requests the parser reports apart from the blocks;
+    // the app draws them, so they count as shown.
+    blockTypes: [
+      ...parsed.blocks.map((b) => b.type),
+      ...(parsed.dayProgress ? ["day_progress"] : []),
+      ...(parsed.weekProgress ? ["week_progress"] : []),
+    ],
     toolCalls,
     proposals,
     ...(offer !== undefined && { offer }),

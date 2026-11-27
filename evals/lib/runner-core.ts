@@ -205,6 +205,9 @@ async function evaluateCase(
     wordCount,
     aiCallViolations,
     aiCalls: aiCtx.calls,
+    // A suite with its own checks keeps what they read (the Coach Pro
+    // runner's tool calls, blocks and cards), so a failure can be traced.
+    ...(config.extraAssertions && { structuredData }),
   };
 }
 

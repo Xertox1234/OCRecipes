@@ -71,6 +71,25 @@ describe("coachProShownReply (audit 2026-11-24, M30)", () => {
     expect(r.modelCalled).toBe(true);
   });
 
+  it("counts a day_progress request as a block, as the app draws it", async () => {
+    const r = await coachProShownReply(
+      {
+        ...BASE,
+        message: "how am I doing today?",
+        flags: { dayProgress: true },
+      },
+      gen([
+        { type: "content", content: "Here's today." },
+        {
+          type: "content",
+          content:
+            '\n```coach_blocks\n[{"type":"day_progress","day":"today"}]\n```',
+        },
+      ]),
+    );
+    expect(r.blockTypes).toContain("day_progress");
+  });
+
   it("a safety override replaces the reply with the standard message", async () => {
     const r = await coachProShownReply(
       { ...BASE, message: "hi" },
