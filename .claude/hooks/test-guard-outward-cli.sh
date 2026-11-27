@@ -7737,6 +7737,35 @@ docker run --entrypoint gh img pr view 1
 docker run --entrypoint sh img -c 'eas whoami'
 CEROWS
 
+# CE3 (2026-11-27, all ALLOWED on `main`): a shell and its `-c` inside compose's entry-point string,
+# with the command string after the service. Compose splits the entry point into words and appends
+# the words after the service, so `--entrypoint 'sh -c' web 'CMD'` runs `sh -c 'CMD'`.
+while IFS='|' read -r ce_cmd ce_reason; do
+  [ -n "$ce_cmd" ] || continue
+  assert_deny "CE3 '$ce_cmd' denies" "$(jsonc "$ce_cmd")" "$ce_reason"
+done <<'CEROWS'
+docker compose run --entrypoint 'sh -c' web 'eas update'|eas update/publish/submit
+docker compose run --entrypoint "sh -c" web "eas update"|eas update/publish/submit
+docker compose run --entrypoint='sh -c' web 'eas update'|eas update/publish/submit
+docker compose run --entrypoint 'bash -lc' web 'eas update'|eas update/publish/submit
+docker compose run --entrypoint "/bin/sh -c" web "eas update"|eas update/publish/submit
+docker compose run --entrypoint 'sh -ec' web 'eas update'|eas update/publish/submit
+docker compose run --entrypoint 'sh -e -c' web 'eas update'|eas update/publish/submit
+docker compose -f c.yml run --rm --entrypoint 'sh -c' web 'eas update --branch production'|eas update/publish/submit
+docker-compose run --entrypoint 'sh -c' web 'eas update'|eas update/publish/submit
+podman-compose run --entrypoint 'sh -c' web 'npm publish'|npm publish
+docker compose run --entrypoint 'sh -c' web 'gh pr merge 42'|without a REAL --auto flag
+CEROWS
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_allow "CE3 control '$ce_cmd' stays allowed" "$(jsonc "$ce_cmd")"
+done <<'CEROWS'
+docker compose run --entrypoint 'sh -c' web 'ls'
+docker compose run --entrypoint 'sh -c' web 'eas whoami'
+docker compose run --entrypoint 'npm test' web
+docker compose run web sh -c 'ls'
+CEROWS
+
 # SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
 # code (`bash -c`, `eval`, `ssh HOST`, `su -c`, `script -c`, `env -S`, `watch`, `flock -c`,
 # `nodemon --exec`, `parallel :::`, `trap`, a here-string or a pipe into a shell). The hook
@@ -8007,7 +8036,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # timed rows).
 # 1840 -> 1962 (runners not on the list): +122 = RN3, 96 deny rows and 26 controls.
 # 1962 -> 2019 (container entry point): +57 = CE and CE2, 41 deny rows and 16 controls.
-EXPECTED_TOTAL=2019
+# 2019 -> 2034 (compose's shell entry point): +15 = CE3, 11 deny rows and 4 controls.
+EXPECTED_TOTAL=2034
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
