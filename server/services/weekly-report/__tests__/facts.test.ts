@@ -67,7 +67,7 @@ describe("buildWeeklyFacts — protein rule", () => {
     expect(f.proteinDaysMet).toBe(1);
   });
 
-  it("a one-meal day is logged but not fully logged, and never counts as low", () => {
+  it("a one-meal day is logged but not fully logged, and alone never sets the guard", () => {
     const f = facts({
       logs: [log(DATES[0], 12, { protein: 60, calories: 500 })],
     });
@@ -274,6 +274,35 @@ describe("buildWeeklyFacts — low-calorie guard", () => {
       log(d, 19, {}),
     ]);
     expect(facts({ logs }).lowCalorieGuard).toBe(true);
+  });
+
+  // Todo 2026-11-27: the guard counted only days with two or more logs, so
+  // one tiny entry a day never tripped it.
+  it("seven days of one tiny log each set the guard", () => {
+    const logs = DATES.map((d) => log(d, 12, { calories: 150, protein: 5 }));
+    expect(facts({ logs }).lowCalorieGuard).toBe(true);
+  });
+
+  it("with no calorie goal, seven days of one tiny log each set the guard", () => {
+    const logs = DATES.map((d) => log(d, 12, { calories: 150 }));
+    expect(
+      facts({ goals: { calories: null, protein: null, carbs: null }, logs })
+        .lowCalorieGuard,
+    ).toBe(true);
+  });
+
+  it("a normal week with a couple of one-item days does not (control)", () => {
+    const logs = [
+      ...DATES.slice(0, 5).flatMap((d) => twoMeals(d, { calories: 2000 })),
+      log(DATES[5], 9, { calories: 300 }),
+      log(DATES[6], 9, { calories: 250 }),
+    ];
+    expect(facts({ logs }).lowCalorieGuard).toBe(false);
+  });
+
+  it("three small one-item days are too few to judge (control)", () => {
+    const logs = DATES.slice(0, 3).map((d) => log(d, 12, { calories: 150 }));
+    expect(facts({ logs }).lowCalorieGuard).toBe(false);
   });
 });
 

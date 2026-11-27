@@ -215,6 +215,24 @@ describe("get_intake_history (Coach: several days in one call)", () => {
     expect(out.sensitive).toBe(true);
   });
 
+  it("hides intake numbers for a week of one tiny log a day", async () => {
+    vi.mocked(storage.getDailySummary).mockResolvedValue(summary(150, 5, 1));
+    const out = await run({ days: 7, endDate: "2026-11-20" });
+    expect(out.sensitive).toBe(true);
+    expect(out.days.every((d) => d.calories === null)).toBe(true);
+  });
+
+  it("shows a normal week with a couple of one-item days (control)", async () => {
+    vi.mocked(storage.getDailySummary).mockImplementation(async (_u, date) =>
+      ["2026-11-19", "2026-11-20"].some((d) => date.toISOString().startsWith(d))
+        ? summary(300, 10, 1)
+        : summary(2000, 120),
+    );
+    const out = await run({ days: 7, endDate: "2026-11-20" });
+    expect(out.sensitive).toBe(false);
+    expect(out.days.at(-1)?.calories).toBe(300);
+  });
+
   it("hides intake numbers when most full days are under the safe line", async () => {
     vi.mocked(storage.getDailySummary).mockResolvedValue(summary(900, 30));
     const out = await run({ days: 7, endDate: "2026-11-20" });
