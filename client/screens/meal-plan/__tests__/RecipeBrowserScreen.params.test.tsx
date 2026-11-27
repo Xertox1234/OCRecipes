@@ -195,6 +195,16 @@ vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({ isPremium: false, isPremiumResolved: true }),
 }));
 
+const { mockConfirmPick } = vi.hoisted(() => ({
+  mockConfirmPick: vi.fn(async () => ({
+    proceed: true,
+    note: null as string | null,
+  })),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => mockConfirmPick,
+}));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
     mutateAsync: mockMutateAsync,
@@ -313,6 +323,44 @@ describe("RecipeBrowserScreen param contract", () => {
     });
     expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
       "Added to Wednesday Dinner",
+    );
+  });
+
+  // Owner decision 2026-11-20: the allergen check runs before the add.
+  it("checks the recipe's allergens for this slot before adding", async () => {
+    mockRouteParams.value = { mealType: "dinner", plannedDate: "2026-09-02" };
+    renderComponent(<RecipeBrowserScreen />);
+    fireEvent.click(await screen.findByText("Test Personal Recipe"));
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalled());
+    expect(mockConfirmPick).toHaveBeenCalledWith({
+      slot: { plannedDate: "2026-09-02", mealType: "dinner" },
+      meal: { recipeId: 42 },
+    });
+  });
+
+  it("adds nothing and stays open when the user cancels at the allergy warning", async () => {
+    mockRouteParams.value = { mealType: "dinner", plannedDate: "2026-09-02" };
+    mockConfirmPick.mockResolvedValueOnce({ proceed: false, note: null });
+    renderComponent(<RecipeBrowserScreen />);
+    fireEvent.click(await screen.findByText("Test Personal Recipe"));
+    await waitFor(() => expect(mockConfirmPick).toHaveBeenCalled());
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+    expect(mockGoBack).not.toHaveBeenCalled();
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("says in the success toast when allergens could not be checked", async () => {
+    mockRouteParams.value = { mealType: "dinner", plannedDate: "2026-09-02" };
+    mockConfirmPick.mockResolvedValueOnce({
+      proceed: true,
+      note: "Allergens not checked",
+    });
+    renderComponent(<RecipeBrowserScreen />);
+    fireEvent.click(await screen.findByText("Test Personal Recipe"));
+    await waitFor(() =>
+      expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+        "Added to Wednesday Dinner. Allergens not checked.",
+      ),
     );
   });
 

@@ -36,6 +36,16 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
   }),
 }));
 
+const { mockConfirmPick } = vi.hoisted(() => ({
+  mockConfirmPick: vi.fn(async () => ({
+    proceed: true,
+    note: null as string | null,
+  })),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => mockConfirmPick,
+}));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
     mutateAsync: mockAddItem,
@@ -606,6 +616,46 @@ describe("SimpleEntrySheet", () => {
   });
 
   // The picture is generated after the save, so the plan refreshed without it.
+  // Owner decision 2026-11-20: a quick entry keeps no ingredients, so its
+  // allergens cannot be checked; the toast says so for an eater with an
+  // allergy. The check runs before anything is saved.
+  it("checks the entry for this slot as not checkable, before saving it", async () => {
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
+    mockCreateRecipe.mockResolvedValue({ id: 42 });
+    mockAddItem.mockResolvedValue({ id: 1 });
+    renderComponent(
+      <SimpleEntrySheetContent {...defaultProps} plannedDate="2026-09-02" />,
+    );
+    await submitDish("soup");
+    await waitFor(() => expect(mockAddItem).toHaveBeenCalled());
+    expect(mockConfirmPick).toHaveBeenCalledWith({
+      slot: { plannedDate: "2026-09-02", mealType: "lunch" },
+      meal: { allergens: null },
+    });
+    expect(mockConfirmPick.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      mockCreateRecipe.mock.invocationCallOrder.at(-1)!,
+    );
+  });
+
+  it("says in the success toast when allergens could not be checked", async () => {
+    mockConfirmPick.mockResolvedValueOnce({
+      proceed: true,
+      note: "Allergens not checked",
+    });
+    mockParseFoodText.mockResolvedValue({ items: [food()] });
+    mockCreateRecipe.mockResolvedValue({ id: 42 });
+    mockAddItem.mockResolvedValue({ id: 1 });
+    renderComponent(
+      <SimpleEntrySheetContent {...defaultProps} plannedDate="2026-09-02" />,
+    );
+    await submitDish("soup");
+    await waitFor(() =>
+      expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+        "Added to Wednesday Lunch. Allergens not checked.",
+      ),
+    );
+  });
+
   it("keeps checking the plan for the picture when the entry was saved without one", async () => {
     mockParseFoodText.mockResolvedValue({ items: [food()] });
     mockCreateRecipe.mockResolvedValue({ id: 42, imageUrl: null });

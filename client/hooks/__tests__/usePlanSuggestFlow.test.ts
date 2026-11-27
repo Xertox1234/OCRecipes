@@ -14,6 +14,15 @@ vi.mock("../useMealPlan", () => ({
   useAddMealPlanItem: () => ({ mutateAsync: mockAdd }),
 }));
 vi.mock("../useHaptics", () => ({ useHaptics: () => haptics }));
+const { mockConfirmPick } = vi.hoisted(() => ({
+  mockConfirmPick: vi.fn(async () => ({
+    proceed: true,
+    note: null as string | null,
+  })),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => mockConfirmPick,
+}));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => toast }));
 
 const suggestion = {
@@ -76,6 +85,48 @@ describe("usePlanSuggestFlow", () => {
     );
     expect(toast.success).toHaveBeenCalledOnce();
     expect(result.current.suggestModalVisible).toBe(false);
+  });
+
+  // Owner decision 2026-11-20: the allergen check runs before the add. The
+  // suggestion is not saved yet, so its ingredients are checked.
+  it("checks the suggestion's ingredients for this slot before adding", async () => {
+    const { result } = setup();
+    act(() => result.current.handleSuggest("lunch"));
+    await act(() =>
+      result.current.handleSelectSuggestion({
+        ...suggestion,
+        ingredients: [{ name: "peanut butter", quantity: "2", unit: "tbsp" }],
+      } as MealSuggestion),
+    );
+    expect(mockConfirmPick).toHaveBeenCalledWith({
+      slot: { plannedDate: "2026-11-19", mealType: "lunch" },
+      meal: {
+        allergens: [expect.objectContaining({ id: "peanuts" })],
+      },
+    });
+  });
+
+  it("adds nothing and keeps the modal open when the user cancels at the allergy warning", async () => {
+    mockConfirmPick.mockResolvedValueOnce({ proceed: false, note: null });
+    const { result } = setup();
+    act(() => result.current.handleSuggest("lunch"));
+    await act(() => result.current.handleSelectSuggestion(suggestion));
+    expect(mockAdd).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(result.current.suggestModalVisible).toBe(true);
+  });
+
+  it("says in the success toast when allergens could not be checked", async () => {
+    mockConfirmPick.mockResolvedValueOnce({
+      proceed: true,
+      note: "Allergens not checked",
+    });
+    const { result } = setup();
+    act(() => result.current.handleSuggest("lunch"));
+    await act(() => result.current.handleSelectSuggestion(suggestion));
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringMatching(/\. Allergens not checked\.$/),
+    );
   });
 
   it("keeps the modal open and shows an error when the add fails", async () => {

@@ -157,6 +157,14 @@ vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({ isPremium: false, isPremiumResolved: true }),
 }));
 
+// The pick-time allergen check is covered by its own tests.
+const { stableConfirmPick } = vi.hoisted(() => ({
+  stableConfirmPick: async () => ({ proceed: true, note: null }),
+}));
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => stableConfirmPick,
+}));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
     mutateAsync: mockMutateAsync,

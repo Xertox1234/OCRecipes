@@ -51,6 +51,17 @@ export function takePendingAudience(slot: PlanSlot): PlanAudienceChoice | null {
   return Date.now() - setAt > PENDING_AUDIENCE_TTL_MS ? null : choice;
 }
 
+/**
+ * The choice the next add to this slot will use, without taking it: the
+ * allergen check reads it before the add, which then takes it.
+ */
+export function peekPendingAudience(slot: PlanSlot): PlanAudienceChoice | null {
+  if (!pending || !sameSlot(pending.slot, slot)) return null;
+  return Date.now() - pending.setAt > PENDING_AUDIENCE_TTL_MS
+    ? null
+    : { ...pending.choice };
+}
+
 export function clearPendingAudience(): void {
   pending = null;
 }

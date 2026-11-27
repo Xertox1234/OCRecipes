@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   queryOptions,
   useMutation,
@@ -89,11 +90,14 @@ export interface PlanFamily {
 export function usePlanFamily(): PlanFamily | null {
   const { active, profiles } = useFamilyContext();
   const { data: dietaryProfile } = useQuery(dietaryProfileQueryOptions);
-  if (!active || profiles.length === 0) return null;
-  return {
-    profiles,
-    userAllergies: dietaryProfile?.allergies ?? NO_ALLERGIES,
-  };
+  const shown = active && profiles.length > 0;
+  const userAllergies = dietaryProfile?.allergies ?? NO_ALLERGIES;
+  // One object per change: callers put it in callback deps (the pick-time
+  // allergen check), and a fresh one each render would rebuild list rows.
+  return useMemo(
+    () => (shown ? { profiles, userAllergies } : null),
+    [shown, profiles, userAllergies],
+  );
 }
 
 /**

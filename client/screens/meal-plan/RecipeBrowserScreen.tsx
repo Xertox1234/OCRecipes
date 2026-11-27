@@ -48,6 +48,8 @@ import {
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import { useConfirmPlanPick } from "@/hooks/useConfirmPlanPick";
+import { withAllergenNote } from "@/components/meal-plan/pick-allergen-utils";
 import {
   useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
@@ -255,6 +257,7 @@ export default function RecipeBrowserScreen() {
   // on every RecipeBrowserScreen render, including one caused by a single
   // search keystroke (see CoachChat.tsx for the same pattern).
   const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
+  const confirmPick = useConfirmPlanPick();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
@@ -454,13 +457,24 @@ export default function RecipeBrowserScreen() {
 
       setAddingId(item.id);
       try {
+        // The allergen check against whoever the meal is for comes first.
+        const pick = await confirmPick({
+          slot: { plannedDate, mealType },
+          meal: { recipeId: numericId },
+        });
+        if (!pick.proceed) return;
         await addMealPlanItem({
           recipeId: numericId,
           plannedDate,
           mealType,
         });
         // The screen closes, so confirm with a toast (fires its own Success).
-        toast.success(formatPlanAddSuccess(plannedDate, mealType));
+        toast.success(
+          withAllergenNote(
+            formatPlanAddSuccess(plannedDate, mealType),
+            pick.note,
+          ),
+        );
         navigation.goBack();
       } catch {
         toast.error("Couldn't add the recipe to your plan. Please try again.");
@@ -474,6 +488,7 @@ export default function RecipeBrowserScreen() {
       navigation,
       isBrowseOnly,
       addMealPlanItem,
+      confirmPick,
       plannedDate,
       mealType,
     ],

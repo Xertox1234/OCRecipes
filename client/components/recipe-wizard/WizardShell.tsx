@@ -44,6 +44,11 @@ import {
 import { useRecipeForm } from "@/hooks/useRecipeForm";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import { useConfirmPlanPick } from "@/hooks/useConfirmPlanPick";
+import {
+  pickedFromIngredientNames,
+  withAllergenNote,
+} from "@/components/meal-plan/pick-allergen-utils";
 import { inferCuisine, inferDietTags } from "@/lib/recipe-tag-inference";
 import {
   STEP_CONFIGS,
@@ -113,6 +118,7 @@ export default function WizardShell({
   });
   const createMutation = useCreateMealPlanRecipe();
   const addItemMutation = useAddMealPlanItem();
+  const confirmPick = useConfirmPlanPick();
 
   const [currentStep, setCurrentStep] = useState<WizardStep>(STEP_TITLE);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
@@ -247,6 +253,19 @@ export default function WizardShell({
     onSavingChangeRef.current?.(true);
     try {
       const payload = form.formToPayload();
+      // From the plan, the allergen check comes before anything is saved, on
+      // the ingredients the server derives the recipe's allergens from.
+      let note: string | null = null;
+      if (returnToMealPlan) {
+        const pick = await confirmPick({
+          slot: returnToMealPlan,
+          meal: pickedFromIngredientNames(
+            (payload.ingredients ?? []).map((i) => i.name),
+          ),
+        });
+        if (!pick.proceed) return;
+        note = pick.note;
+      }
       const created = await createMutation.mutateAsync(payload);
 
       if (returnToMealPlan) {
@@ -266,9 +285,12 @@ export default function WizardShell({
         // From the plan the moment is the add, confirmed only once it lands.
         // The toast fires its own Success haptic.
         toast.success(
-          formatPlanAddSuccess(
-            returnToMealPlan.plannedDate,
-            returnToMealPlan.mealType,
+          withAllergenNote(
+            formatPlanAddSuccess(
+              returnToMealPlan.plannedDate,
+              returnToMealPlan.mealType,
+            ),
+            note,
           ),
         );
       } else {
@@ -289,6 +311,7 @@ export default function WizardShell({
     form,
     createMutation,
     addItemMutation,
+    confirmPick,
     offerImport,
     returnToMealPlan,
     onSaveComplete,

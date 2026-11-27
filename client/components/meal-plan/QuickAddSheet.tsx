@@ -34,6 +34,8 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useUnifiedRecipes } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import { useConfirmPlanPick } from "@/hooks/useConfirmPlanPick";
+import { withAllergenNote } from "./pick-allergen-utils";
 import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import {
   Spacing,
@@ -150,6 +152,7 @@ function QuickAddSheetContentInner(
   // Destructure: the useMutation result is a new object every render; only
   // mutateAsync is stable (perf audit M2 — this file is a compiler bailout).
   const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
+  const confirmPick = useConfirmPlanPick();
   const isAdding = useRef(false);
 
   const frequent = data?.frequent;
@@ -210,13 +213,24 @@ function QuickAddSheetContentInner(
       isAdding.current = true;
       haptics.impact(ImpactFeedbackStyle.Light);
       try {
+        // The allergen check against whoever the meal is for comes first.
+        const pick = await confirmPick({
+          slot: { plannedDate, mealType },
+          meal: { recipeId: action.recipeId },
+        });
+        if (!pick.proceed) return;
         await addMealPlanItem({
           recipeId: action.recipeId,
           plannedDate,
           mealType,
         });
         // The sheet closes, so confirm with a toast (fires its own Success).
-        toast.success(formatPlanAddSuccess(plannedDate, mealType));
+        toast.success(
+          withAllergenNote(
+            formatPlanAddSuccess(plannedDate, mealType),
+            pick.note,
+          ),
+        );
         onDismiss();
       } catch {
         toast.error("Couldn't add the recipe to your plan. Please try again.");
@@ -230,6 +244,7 @@ function QuickAddSheetContentInner(
       haptics,
       toast,
       addMealPlanItem,
+      confirmPick,
       onDismiss,
       onOpenCommunityRecipe,
     ],

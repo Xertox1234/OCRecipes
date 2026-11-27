@@ -106,6 +106,25 @@ describe("usePlanFamily", () => {
     });
   });
 
+  // The pick-time allergen check lists it in callback deps; a fresh object
+  // each render rebuilt the add sheets' list rows.
+  it("is the same object across re-renders while nothing changed", async () => {
+    mockApiRequest.mockImplementation(async (_m: string, url: string) => ({
+      json: async () =>
+        url === "/api/user/dietary-profile"
+          ? { familyPlanningEnabled: true, allergies: [] }
+          : { enabled: true, profiles: [ivy] },
+    }));
+    const { wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(() => usePlanFamily(), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current).not.toBeNull());
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
   it("is null when planning is on but there are no profiles yet", async () => {
     mockApiRequest.mockImplementation(async (_m: string, url: string) => ({
       json: async () =>

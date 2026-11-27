@@ -20,6 +20,8 @@ import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useToast } from "@/context/ToastContext";
 import { useAddMealPlanItem, useRemoveMealPlanItem } from "@/hooks/useMealPlan";
+import { useConfirmPlanPick } from "@/hooks/useConfirmPlanPick";
+import { withAllergenNote } from "@/components/meal-plan/pick-allergen-utils";
 import {
   useMarkCelebrationShown,
   useMarkWeeklyReportSeen,
@@ -97,6 +99,7 @@ export default function WeeklyReportScreen() {
   const { mutate: markCelebration } = useMarkCelebrationShown();
   const { mutate: updateSettings } = useUpdateWeeklyReportSettings();
   const { mutateAsync: addToPlan } = useAddMealPlanItem();
+  const confirmPick = useConfirmPlanPick();
   const { mutate: removeFromPlan } = useRemoveMealPlanItem();
 
   useEffect(() => {
@@ -143,21 +146,32 @@ export default function WeeklyReportScreen() {
     setAdding(true);
     const plannedDate = tomorrowLocalDate(new Date());
     try {
-      const item = await addToPlan({
-        recipeId: next.recipeId,
-        plannedDate,
-        mealType: PLAN_MEAL,
+      // The allergen check against whoever the meal is for comes first.
+      const pick = await confirmPick({
+        slot: { plannedDate, mealType: PLAN_MEAL },
+        meal: { recipeId: next.recipeId },
       });
-      toast.success(formatPlanAddSuccess(plannedDate, PLAN_MEAL), {
-        action: { label: "Undo", onPress: () => removeFromPlan(item.id) },
-      });
+      if (pick.proceed) {
+        const item = await addToPlan({
+          recipeId: next.recipeId,
+          plannedDate,
+          mealType: PLAN_MEAL,
+        });
+        toast.success(
+          withAllergenNote(
+            formatPlanAddSuccess(plannedDate, PLAN_MEAL),
+            pick.note,
+          ),
+          { action: { label: "Undo", onPress: () => removeFromPlan(item.id) } },
+        );
+      }
     } catch {
       toast.error("Couldn't add it to your plan. Please try again.");
     }
     // Not in a `finally`: that opts the component out of React Compiler.
     addingRef.current = false;
     setAdding(false);
-  }, [report, addToPlan, removeFromPlan, toast]);
+  }, [report, addToPlan, confirmPick, removeFromPlan, toast]);
 
   const handleFewer = useCallback(() => {
     haptics.selection();

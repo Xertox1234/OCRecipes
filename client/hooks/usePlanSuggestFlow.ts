@@ -2,6 +2,11 @@ import { useCallback, useState } from "react";
 import * as Haptics from "expo-haptics";
 
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import { useConfirmPlanPick } from "@/hooks/useConfirmPlanPick";
+import {
+  pickedFromIngredientNames,
+  withAllergenNote,
+} from "@/components/meal-plan/pick-allergen-utils";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -33,6 +38,7 @@ export function usePlanSuggestFlow({
   const haptics = useHaptics();
   const toast = useToast();
   const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
+  const confirmPick = useConfirmPlanPick();
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
   const [suggestMealType, setSuggestMealType] =
@@ -54,22 +60,39 @@ export function usePlanSuggestFlow({
 
   const handleSelectSuggestion = useCallback(
     async (suggestion: MealSuggestion) => {
+      // The allergen check comes first. The recipe is not saved yet, so its
+      // ingredients get the derivation the server runs on save. Worked out
+      // before the try: React Compiler bails on `??` or an early return in one.
+      const meal = pickedFromIngredientNames(
+        (suggestion.ingredients ?? []).map((i) => i.name),
+      );
       try {
-        // One server call: the recipe and its plan item are created in a
-        // single transaction, so a failure leaves nothing behind.
-        await addMealPlanItem(
-          suggestionToPlanItem(suggestion, dateStr, suggestMealType),
-        );
-        // The modal closes, so confirm with a toast (fires its own Success).
-        toast.success(formatPlanAddSuccess(dateStr, suggestMealType));
-        setSuggestModalVisible(false);
+        const pick = await confirmPick({
+          slot: { plannedDate: dateStr, mealType: suggestMealType },
+          meal,
+        });
+        if (pick.proceed) {
+          // One server call: the recipe and its plan item are created in a
+          // single transaction, so a failure leaves nothing behind.
+          await addMealPlanItem(
+            suggestionToPlanItem(suggestion, dateStr, suggestMealType),
+          );
+          // The modal closes, so confirm with a toast (fires its own Success).
+          toast.success(
+            withAllergenNote(
+              formatPlanAddSuccess(dateStr, suggestMealType),
+              pick.note,
+            ),
+          );
+          setSuggestModalVisible(false);
+        }
       } catch {
         toast.error(
           "Couldn't add the suggestion to your plan. Please try again.",
         );
       }
     },
-    [addMealPlanItem, dateStr, suggestMealType, toast],
+    [addMealPlanItem, confirmPick, dateStr, suggestMealType, toast],
   );
 
   const closeSuggest = useCallback(() => setSuggestModalVisible(false), []);

@@ -16,6 +16,15 @@ import WeeklyReportScreen from "../WeeklyReportScreen";
 const h = vi.hoisted(() => ({
   addToPlan: vi.fn(),
   report: undefined as unknown,
+  toastSuccess: vi.fn(),
+  confirmPick: vi.fn(async () => ({
+    proceed: true,
+    note: null as string | null,
+  })),
+}));
+
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanPick: () => h.confirmPick,
 }));
 
 vi.mock("@/hooks/useWeeklyReports", () => ({
@@ -43,7 +52,7 @@ vi.mock("@/navigation/openCoachConversation", () => ({
   openCoachWithMessage: vi.fn(),
 }));
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: h.toastSuccess, error: vi.fn(), info: vi.fn() }),
 }));
 vi.mock("@/hooks/useHeaderContentInset", () => ({
   useHeaderContentInset: () => 0,
@@ -67,6 +76,8 @@ vi.mock("@/components/weekly-report/WeekNumbers", () => ({
 
 beforeEach(() => {
   h.addToPlan.mockReset();
+  h.toastSuccess.mockReset();
+  h.confirmPick.mockClear();
   h.report = {
     id: 41,
     weekStart: "2026-11-15",
@@ -93,10 +104,63 @@ describe("WeeklyReportScreen — Add to my plan", () => {
     const button = screen.getByText("Add to my plan");
     fireEvent.click(button);
     fireEvent.click(button);
+    // The allergen check runs first, so the add starts a tick later.
+    await act(async () => {});
+    expect(h.confirmPick).toHaveBeenCalledTimes(1);
     expect(h.addToPlan).toHaveBeenCalledTimes(1);
     await act(async () => {
       resolveAdd({ id: 9 });
     });
+  });
+
+  // Owner decision 2026-11-20: the allergen check runs before the add.
+  it("checks the recipe's allergens for tomorrow's dinner before adding", async () => {
+    h.addToPlan.mockResolvedValue({ id: 9 });
+    renderComponent(<WeeklyReportScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Add to my plan"));
+    });
+    expect(h.confirmPick).toHaveBeenCalledWith({
+      slot: { plannedDate: expect.any(String), mealType: "dinner" },
+      meal: { recipeId: expect.any(Number) },
+    });
+    const [{ slot }] = h.confirmPick.mock.calls[0] as unknown as [
+      { slot: { plannedDate: string } },
+    ];
+    expect(h.addToPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ plannedDate: slot.plannedDate }),
+    );
+  });
+
+  it("adds nothing when the user cancels at the allergy warning, and can try again", async () => {
+    h.confirmPick.mockResolvedValueOnce({ proceed: false, note: null });
+    h.addToPlan.mockResolvedValue({ id: 9 });
+    renderComponent(<WeeklyReportScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Add to my plan"));
+    });
+    expect(h.addToPlan).not.toHaveBeenCalled();
+    expect(h.toastSuccess).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(screen.getByText("Add to my plan"));
+    });
+    expect(h.addToPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("says in the success toast when allergens could not be checked", async () => {
+    h.confirmPick.mockResolvedValueOnce({
+      proceed: true,
+      note: "Allergens not checked",
+    });
+    h.addToPlan.mockResolvedValue({ id: 9 });
+    renderComponent(<WeeklyReportScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Add to my plan"));
+    });
+    expect(h.toastSuccess).toHaveBeenCalledWith(
+      expect.stringMatching(/\. Allergens not checked\.$/),
+      expect.anything(),
+    );
   });
 
   it("allows another add once the first has finished (control)", async () => {
