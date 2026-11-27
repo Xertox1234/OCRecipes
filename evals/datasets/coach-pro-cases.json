@@ -51,7 +51,7 @@
   {
     "id": "pro-food-card-fraction-01",
     "category": "accuracy",
-    "description": "L81: half an avocado; the card schema takes a whole count of at least 1, so a 0.5 count fails and no card is made",
+    "description": "L81: half an avocado on toast; the card's count is whole, so the half must reach the card in the item (count 1, 'half avocado'), and avocado and toast stay two items",
     "userMessage": "I had half an avocado on toast",
     "context": {
       "goals": { "calories": 2000, "protein": 120, "carbs": 220, "fat": 70 },
@@ -63,7 +63,39 @@
     "pro": {
       "expectTools": ["log_food_item"],
       "expectProposal": "food",
-      "toolArgs": { "log_food_item": { "items": "half|½|0\\.5" } }
+      "toolArgs": {
+        "log_food_item": {
+          "items": "^(?=[\\s\\S]*(half|½|0\\.5))[\\s\\S]*\"name\"[\\s\\S]*\"name\""
+        }
+      }
+    },
+    "assertions": {
+      "mustNotContain": [
+        "(I've|I have|has been|have been) (logged|added|saved)"
+      ]
+    }
+  },
+  {
+    "id": "pro-food-card-fraction-02",
+    "category": "accuracy",
+    "description": "L81: a cup and a half of rice; the card's count is whole, so the amount must reach the card as 1.5 (or halves), not be rounded to 1 or 2 cups",
+    "userMessage": "Just had a cup and a half of white rice with dinner",
+    "context": {
+      "goals": { "calories": 2000, "protein": 120, "carbs": 220, "fat": 70 },
+      "todayIntake": {
+        "calories": 1100,
+        "protein": 70,
+        "carbs": 120,
+        "fat": 40
+      },
+      "dietaryProfile": { "dietType": null, "allergies": [], "dislikes": [] }
+    },
+    "now": "2026-11-18T19:00:00Z",
+    "flags": { "writeCards": true },
+    "pro": {
+      "expectTools": ["log_food_item"],
+      "expectProposal": "food",
+      "toolArgs": { "log_food_item": { "items": "1\\.5|half|½" } }
     },
     "assertions": {
       "mustNotContain": [

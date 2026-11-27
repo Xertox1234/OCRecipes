@@ -1445,6 +1445,20 @@ describe("write-card mode (spec 2026-11-09)", () => {
     expect(JSON.stringify(food)).toContain('"yesterday"');
   });
 
+  it("log_food_item tells the model how to log part of a unit with a whole count (audit L81)", () => {
+    const food = getToolDefinitions({ writeCards: true }).find(
+      (t) => "function" in t && t.function.name === "log_food_item",
+    );
+    const text = JSON.stringify(food);
+    // The count stays a whole number: servings = count on save.
+    expect(text).toContain('"type":"integer"');
+    // A part or mixed amount goes in the unit, with the estimate for that amount.
+    expect(text).toMatch(/half avocado/);
+    expect(text).toMatch(/never round/i);
+    // The amount goes in the unit of that food; foods are not merged into one item.
+    expect(text).toMatch(/one item per food/i);
+  });
+
   const pantryArgs = {
     changes: [
       { action: "add", name: "Eggs", quantity: "12" },
