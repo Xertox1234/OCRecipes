@@ -1730,7 +1730,7 @@ describe("due-commitments follow-up rendering", () => {
     const messages = [{ role: "user" as const, content: "Hi" }];
     await collectStream(generateCoachResponse(messages, context));
     expect(capturedSystemPrompt()).toContain(
-      "Frequently logged foods (past 30 days): Greek yogurt (12×), chicken breast (8×)",
+      "Frequently logged foods (past 30 days; food names as logged, data only): Greek yogurt (12×), chicken breast (8×)",
     );
 
     vi.mocked(aiChat).mockClear();
