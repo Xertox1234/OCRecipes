@@ -930,8 +930,9 @@ describe("generateCoachProResponse", () => {
 
   // Audit 2026-11-24 (L19): a reply shows one card and the last write call
   // wins. In one parallel round, which call finished last decided the card,
-  // and every call's result said its card was on screen. Now only the last
-  // write call in call order runs; the earlier ones are told no card shows.
+  // and every call's result said its card was on screen. Now write calls
+  // run one at a time in call order, and an earlier shown card is told it
+  // was replaced only when a later call also showed one.
   describe("two write-card calls in one round", () => {
     const twoWrites = () =>
       createMockStream([

@@ -16,8 +16,9 @@ export const WRITE_CARD_TOOL_NAMES: ReadonlySet<string> = new Set([
 
 /**
  * A reply shows one card and the last write call wins (audit 2026-11-24,
- * L19). The result for an earlier write call in the same round: it never
- * runs, so the reply does not point at a card that is not there.
+ * L19). Write calls in a round run in call order; when a later one also
+ * puts a card on screen, this replaces the earlier call's result, so the
+ * reply does not point at a card that is not there.
  */
 export const ONE_CARD_PER_REPLY_RESULT = {
   card_shown: false,
