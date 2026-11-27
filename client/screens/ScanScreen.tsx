@@ -1021,8 +1021,12 @@ export default function ScanScreen() {
   // camera UI and ProductChip need different values — see getScanOverlayA11y.
   // The Front step's prompt card is hidden in the shell (Skip replaces it).
   const chipVariant = getProductChipVariant(scanPhase);
+  // "classifying" is a busy status, not a modal card: it has no buttons, so the
+  // shutter and close must stay reachable for screen readers while it shows.
   const productChipVisible =
-    chipVariant !== null && chipVariant !== "step2_confirmed";
+    chipVariant !== null &&
+    chipVariant !== "step2_confirmed" &&
+    chipVariant !== "classifying";
   const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
   // The carousel / example card is the only thing a screen reader should
   // reach: accessibilityViewIsModal is iOS-only, so TalkBack needs the static
