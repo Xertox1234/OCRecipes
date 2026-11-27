@@ -34,16 +34,13 @@ import {
   getChipAnnounceText,
   getProductChipVariant,
   getShutterClearanceStyle,
-  getSmartConfirmLabel,
-  getChipConfidenceLabel,
-  getChipConfidenceColor,
   getFoundCardActionBeats,
+  getSmartResultCopy,
 } from "./ProductChip-utils";
 
 // The card rises with the banner spring, clamped: it settles without the ~4%
 // overshoot (spec motion plan, "Found card"). Reduced motion fades it instead.
 const CHIP_SPRING = { ...bannerEntrySpring, overshootClamping: true };
-const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera-overlay primary button (styles.btnPrimary)
 // Off-screen distance for the enter/exit spring. Must clear the chip's own
 // rendered height PLUS the shutter-clearance raise (insets.bottom + 96, see
 // getShutterClearanceStyle below) on every device — every variant is raised
@@ -97,6 +94,8 @@ interface Props {
   onRetakeStep3: () => void;
   onSmartPhotoConfirm: () => void;
   onRetry: () => void;
+  /** "Pick it myself" on the unclear card: choose what to scan by hand. */
+  onPickItMyself?: () => void;
   /**
    * True while the smart-photo confirm handler is awaiting on-device OCR (menu
    * path). Drives a visible pending state on the smart-photo confirm button —
@@ -130,6 +129,7 @@ export function ProductChip({
   onRetakeStep3,
   onSmartPhotoConfirm,
   onRetry,
+  onPickItMyself,
   importantForAccessibility,
   isSmartConfirming = false,
   screenReaderEnabled = false,
@@ -189,7 +189,11 @@ export function ProductChip({
       opacity.value = withTiming(1, contentRevealTimingConfig);
       // Reduced motion drops the travel and keeps the fade.
       translateY.value = reducedMotion ? 0 : withSpring(0, CHIP_SPRING);
-      if (variant === "barcode_lock") {
+      if (
+        variant === "barcode_lock" ||
+        variant === "smart_photo" ||
+        variant === "smart_error"
+      ) {
         // Card body first, then the buttons. Under reduced motion both delays
         // are 0 and the buttons simply fade in with the card.
         actionRowIn.value = 0;
@@ -594,62 +598,98 @@ export function ProductChip({
         </PressableScale>
       )}
 
-      {variant === "smart_photo" && phase.type === "SMART_CONFIRMED" && (
-        <>
-          <View style={styles.classificationRow}>
-            <Text style={styles.classificationName}>
-              {getSmartConfirmLabel(phase.classification)}
-            </Text>
-            <Text
-              style={[
-                styles.classificationConfidence,
-                {
-                  color: getChipConfidenceColor(
-                    phase.classification.overallConfidence,
-                  ),
-                },
-              ]}
-            >
-              {getChipConfidenceLabel(phase.classification.overallConfidence)}
-            </Text>
-          </View>
-          <PressableScale
-            style={[styles.btnPrimary, isSmartConfirming && styles.btnPending]}
-            onPress={onSmartPhotoConfirm}
-            disabled={isSmartConfirming}
-            accessibilityLabel="Confirm smart photo analysis"
-            accessibilityRole="button"
-            // TouchableOpacity does not auto-propagate `disabled` to
-            // accessibilityState (unlike Pressable) — set it explicitly.
-            accessibilityState={{
-              busy: isSmartConfirming,
-              disabled: isSmartConfirming,
-            }}
-          >
-            {isSmartConfirming ? (
-              <ActivityIndicator size="small" color={SPINNER_COLOR} />
-            ) : (
-              <Text style={styles.btnPrimaryText}>Looks right →</Text>
-            )}
-          </PressableScale>
-        </>
+      {variant === "classifying" && (
+        <View style={styles.foundRow}>
+          <ActivityIndicator size="small" color={CameraColors.text} />
+          <Text style={styles.cardTitle}>Working out what this is…</Text>
+        </View>
       )}
 
-      {variant === "smart_error" && (
-        <>
-          <Text style={styles.errorText}>
-            Couldn&apos;t identify this. Try again?
-          </Text>
-          <PressableScale
-            style={styles.btnPrimary}
-            onPress={onRetry}
-            accessibilityLabel="Retry smart photo analysis"
-            accessibilityRole="button"
-          >
-            <Text style={styles.btnPrimaryText}>Try again</Text>
-          </PressableScale>
-        </>
-      )}
+      {(variant === "smart_photo" || variant === "smart_error") &&
+        (() => {
+          const copy =
+            phase.type === "SMART_CONFIRMED"
+              ? getSmartResultCopy(phase.classification)
+              : {
+                  kind: "unclear" as const,
+                  title: "Couldn't tell what this is",
+                  sub: "Try again, or pick what you're scanning",
+                };
+          const imageUri =
+            phase.type === "SMART_CONFIRMED" || phase.type === "SMART_ERROR"
+              ? phase.imageUri
+              : undefined;
+          return (
+            <>
+              <View style={styles.foundRow}>
+                {imageUri ? (
+                  <Image
+                    source={{ uri: imageUri }}
+                    style={styles.thumb}
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <View style={[styles.thumb, styles.thumbPlaceholder]} />
+                )}
+                <View style={styles.productText}>
+                  {/* The visible "✓" stays out of the spoken label. */}
+                  <Text
+                    style={styles.cardTitle}
+                    accessibilityLabel={copy.title.replace(/\s*✓$/, "")}
+                  >
+                    {copy.title}
+                  </Text>
+                  <Text style={styles.cardSub} numberOfLines={2}>
+                    {copy.sub}
+                  </Text>
+                </View>
+              </View>
+              {copy.kind === "found" ? (
+                <Animated.View style={[styles.actionRow, actionRowStyle]}>
+                  <ChipButton
+                    tone="ghost"
+                    style={styles.actionFlex}
+                    onPress={onRetry}
+                    accessibilityLabel="Not this"
+                  >
+                    Not this
+                  </ChipButton>
+                  <ChipButton
+                    tone="accent"
+                    style={styles.actionFlex}
+                    onPress={onSmartPhotoConfirm}
+                    accessibilityLabel="Continue"
+                    busy={isSmartConfirming}
+                  >
+                    Continue →
+                  </ChipButton>
+                </Animated.View>
+              ) : (
+                <>
+                  <Animated.View style={[styles.actionRow, actionRowStyle]}>
+                    <ChipButton
+                      tone="accent"
+                      style={styles.actionFlex}
+                      onPress={onRetry}
+                      accessibilityLabel="Retake"
+                    >
+                      Retake
+                    </ChipButton>
+                  </Animated.View>
+                  <Animated.View style={actionLinkStyle}>
+                    <ChipButton
+                      tone="link"
+                      onPress={() => onPickItMyself?.()}
+                      accessibilityLabel="Pick it myself"
+                    >
+                      Pick it myself
+                    </ChipButton>
+                  </Animated.View>
+                </>
+              )}
+            </>
+          );
+        })()}
     </Animated.View>
   );
 }
@@ -666,12 +706,15 @@ function ChipButton({
   onPress,
   accessibilityLabel,
   style,
+  busy = false,
   children,
 }: {
   tone: ChipButtonTone;
   onPress: () => void;
   accessibilityLabel: string;
   style?: ViewProps["style"];
+  /** Swaps the label for a spinner and disables the button. */
+  busy?: boolean;
   children: string;
 }) {
   const [pressed, setPressed] = useState(false);
@@ -683,6 +726,10 @@ function ChipButton({
       onPressOut={() => setPressed(false)}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      disabled={busy}
+      // TouchableOpacity does not auto-propagate `disabled` to
+      // accessibilityState (unlike Pressable) — set it explicitly.
+      accessibilityState={busy ? { busy: true, disabled: true } : undefined}
       style={[
         tone === "accent"
           ? styles.btnAccent
@@ -693,14 +740,18 @@ function ChipButton({
         pressed && styles.btnPressed,
       ]}
     >
-      <Text
-        style={tone === "link" ? styles.btnTextLinkText : styles.btnCardText}
-        // Two lines, not one: half-width buttons at large Dynamic Type
-        // would otherwise truncate "Next: nutrition →" mid-word.
-        numberOfLines={2}
-      >
-        {children}
-      </Text>
+      {busy ? (
+        <ActivityIndicator size="small" color={CameraColors.text} />
+      ) : (
+        <Text
+          style={tone === "link" ? styles.btnTextLinkText : styles.btnCardText}
+          // Two lines, not one: half-width buttons at large Dynamic Type
+          // would otherwise truncate "Next: nutrition →" mid-word.
+          numberOfLines={2}
+        >
+          {children}
+        </Text>
+      )}
     </PressableScale>
   );
 }

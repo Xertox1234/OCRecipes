@@ -28,9 +28,12 @@ describe("getProductChipVariant", () => {
         frameCount: 3,
       }),
     ).toBeNull();
-    expect(
-      getProductChipVariant({ type: "CLASSIFYING", imageUri: "x" }),
-    ).toBeNull();
+  });
+
+  it("returns classifying for CLASSIFYING", () => {
+    expect(getProductChipVariant({ type: "CLASSIFYING", imageUri: "x" })).toBe(
+      "classifying",
+    );
   });
 
   it("returns barcode_lock for BARCODE_LOCKED", () => {
@@ -194,22 +197,13 @@ describe("getChipAnnounceText", () => {
   // Non-smart_photo variants never read `phase`, so an IDLE placeholder is fine.
   const idle: ScanPhase = { type: "IDLE" };
 
-  it("derives the smart_photo announce from the content-type label when foods are empty", () => {
+  it("announces the smart result copy title (no ✓) then its sub-line", () => {
     expect(
       getChipAnnounceText(
         "smart_photo",
         smartConfirmed({ foods: [], contentType: "restaurant_menu" }),
       ),
-    ).toBe("Restaurant menu detected, tap to confirm");
-    expect(
-      getChipAnnounceText(
-        "smart_photo",
-        smartConfirmed({ foods: [], contentType: "grocery_receipt" }),
-      ),
-    ).toBe("Grocery receipt detected, tap to confirm");
-  });
-
-  it("announces the food name for a food-bearing smart_photo classification", () => {
+    ).toBe("Looks like a menu. We'll pull out the dishes for you");
     expect(
       getChipAnnounceText(
         "smart_photo",
@@ -218,7 +212,13 @@ describe("getChipAnnounceText", () => {
           contentType: "prepared_meal",
         }),
       ),
-    ).toBe("Grilled chicken, tap to confirm");
+    ).toBe("Looks like a meal. We'll estimate what's on the plate");
+  });
+
+  it("announces the busy card for the classifying variant", () => {
+    expect(getChipAnnounceText("classifying", idle)).toBe(
+      "Working out what this is…",
+    );
   });
 
   it("keeps the static announce strings for all other variants, with no ✓ read aloud", () => {
@@ -236,7 +236,7 @@ describe("getChipAnnounceText", () => {
     );
     expect(getChipAnnounceText("session_complete", idle)).toBe("Scan complete");
     expect(getChipAnnounceText("smart_error", idle)).toBe(
-      "Couldn't identify this food, try again",
+      "Couldn't tell what this is",
     );
   });
 

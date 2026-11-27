@@ -37,7 +37,8 @@ export type ProductChipVariant =
   | "step3_review"
   | "session_complete"
   | "smart_photo"
-  | "smart_error";
+  | "smart_error"
+  | "classifying";
 
 /**
  * Vertical placement for the chip's outer container, derived from the safe
@@ -150,6 +151,8 @@ export function getProductChipVariant(
       return "smart_photo";
     case "SMART_ERROR":
       return "smart_error";
+    case "CLASSIFYING":
+      return "classifying";
     // LABEL_PROMPTED intentionally returns null here — an explicit case, not a
     // fall-through: a null variant hides the chip, which is what "chip
     // collapsed, go frame the panel" means. Covered by test.
@@ -157,7 +160,6 @@ export function getProductChipVariant(
     case "IDLE":
     case "HUNTING":
     case "BARCODE_TRACKING":
-    case "CLASSIFYING":
       return null;
   }
 }
@@ -203,7 +205,9 @@ export function getChipAnnounceText(
   phase: ScanPhase,
 ): string {
   if (variant === "smart_photo" && phase.type === "SMART_CONFIRMED") {
-    return `${getSmartConfirmLabel(phase.classification)}, tap to confirm`;
+    // The visible "✓" stays out of the spoken text.
+    const copy = getSmartResultCopy(phase.classification);
+    return `${copy.title.replace(/\s*✓$/, "")}. ${copy.sub}`;
   }
   switch (variant) {
     case "barcode_lock":
@@ -217,7 +221,9 @@ export function getChipAnnounceText(
     case "session_complete":
       return "Scan complete";
     case "smart_error":
-      return "Couldn't identify this food, try again";
+      return "Couldn't tell what this is";
+    case "classifying":
+      return "Working out what this is…";
     case "smart_photo":
       // Defensive: variant === "smart_photo" without a SMART_CONFIRMED phase is
       // not reachable (the variant is derived from that phase), but keep a
