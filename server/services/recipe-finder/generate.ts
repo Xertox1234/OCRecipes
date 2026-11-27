@@ -47,6 +47,8 @@ export function buildFinderGenerationMessages(
     | {
         mode: "adjusted";
         dish: string;
+        /** flow.request: the original ask plus refinements and clarifying answers. */
+        request?: string;
         details: RecipeDetails;
         settings: AdjustSettings;
         answers: FinderAnswer[];
@@ -55,7 +57,7 @@ export function buildFinderGenerationMessages(
 ): GenerationMessages {
   if (input.mode === "refine") return buildRecipeContext(input.history);
   if (input.mode === "adjusted") {
-    const { dish, details, settings, answers, history } = input;
+    const { dish, request, details, settings, answers, history } = input;
     const time =
       COOKING_TIMES.find((t) => t.id === settings.time)?.description ??
       settings.time;
@@ -75,6 +77,15 @@ export function buildFinderGenerationMessages(
     for (const a of answers) {
       lines.push(
         `${sanitizeContextField(a.question, 160)} ${sanitizeContextField(a.answer, 200)}`,
+      );
+    }
+    // M44: the clarifying-round answers ("Vegan", "Thai") and typed
+    // refinements live only in flow.request. Skipped when it is just the
+    // dish; the settings lines above win on a conflict.
+    const bare = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    if (request && bare(request) !== bare(dish)) {
+      lines.push(
+        `What the user asked for and answered so far (the lines above win if they conflict): ${sanitizeContextField(request, 600)}`,
       );
     }
     return [

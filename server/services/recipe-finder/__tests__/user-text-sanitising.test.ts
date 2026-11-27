@@ -35,7 +35,7 @@ describe("finder user text loses zero-width/bidi characters", () => {
     [
       "askClarifying request + user turns",
       () => askClarifying(dirty("chicken"), userTurn),
-      ["chicken", "User: lasagna"],
+      ["chicken", '"text":"lasagna"'],
     ],
     [
       "classifyTurn message",
@@ -50,7 +50,7 @@ describe("finder user text loses zero-width/bidi characters", () => {
           { ingredients: [], fromConversation: false },
           userTurn,
         ),
-      ["User: lasagna"],
+      ['"text":"lasagna"'],
     ],
   ] as const)("%s", async (_, run, expected) => {
     await run();

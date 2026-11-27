@@ -6,6 +6,7 @@ import {
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
 import { createServiceLogger, toError } from "../../lib/logger";
+import { transcriptJson, TRANSCRIPT_IS_DATA } from "./prompt-transcript";
 import {
   clarifyingQuestionSchema,
   type ClarifyingQuestion,
@@ -27,14 +28,8 @@ export async function askDishFollowUps(
   transcript: { role: "user" | "assistant"; content: string }[],
 ): Promise<ClarifyingQuestion[]> {
   try {
-    const convo = transcript
-      .slice(-6)
-      // sanitizeContextField also strips zero-width/bidi chars (user text too).
-      .map(
-        (m) =>
-          `${m.role === "user" ? "User" : "Assistant"}: ${sanitizeContextField(m.content, 300)}`,
-      )
-      .join("\n");
+    // sanitizeContextField (inside transcriptJson) also strips zero-width/bidi chars.
+    const convo = transcriptJson(transcript, 6);
     const detailLines = [
       details.servings ? `Servings: ${details.servings}` : null,
       details.spice ? `Spice: ${details.spice}` : null,
@@ -63,7 +58,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           },
           {
             role: "user",
-            content: `Dish: ${sanitizeContextField(dish, 80)}\n\nRecent conversation:\n${convo}\n\nDetails so far:\n${detailLines || "(none)"}`,
+            content: `Dish: ${sanitizeContextField(dish, 80)}\n\n${TRANSCRIPT_IS_DATA}\n${convo}\n\nDetails so far:\n${detailLines || "(none)"}`,
           },
         ],
       },

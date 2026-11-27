@@ -36,6 +36,37 @@ describe("offer tool schema", () => {
     expect(props.spice.enum).toEqual([...spiceLevelSchema.options]);
     expect(props.time.enum).toEqual([...COOKING_TIME_IDS]);
   });
+
+  // Audit 2026-11-24 (L79): a filled optional value is treated as stated by
+  // the user and wins over the profile (adjust.ts), so the model is told to
+  // leave each one out unless the user said it.
+  it.each(["servings", "spice", "time", "ingredients"])(
+    "%s says to fill it only from what the user stated",
+    (name) => {
+      const props = (
+        OFFER_RECIPE_TOOL as unknown as {
+          function: {
+            parameters: {
+              properties: Record<string, { description?: string }>;
+            };
+          };
+        }
+      ).function.parameters.properties;
+      expect(props[name].description).toMatch(/only/i);
+      expect(props[name].description).toMatch(/omit/i);
+    },
+  );
+
+  it("ingredients says not to list the dish's usual ingredients", () => {
+    const props = (
+      OFFER_RECIPE_TOOL as unknown as {
+        function: {
+          parameters: { properties: Record<string, { description?: string }> };
+        };
+      }
+    ).function.parameters.properties;
+    expect(props.ingredients.description).toMatch(/usual ingredients/i);
+  });
 });
 
 describe("normalizeDish", () => {

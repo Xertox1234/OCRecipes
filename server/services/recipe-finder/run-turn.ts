@@ -205,6 +205,7 @@ async function executeFinderStepUnscreened(
         messages: buildFinderGenerationMessages({
           mode: "adjusted",
           dish: step.flow.dish ?? step.flow.query.q,
+          request: step.flow.request,
           details: step.flow.details ?? {
             ingredients: [],
             fromConversation: false,
