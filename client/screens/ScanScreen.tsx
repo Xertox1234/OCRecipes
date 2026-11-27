@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -25,7 +26,6 @@ import {
   useRoute,
 } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
 import { getConfidenceTier, getConfidenceHapticType } from "@/lib/confidence";
@@ -41,15 +41,27 @@ import {
 import { useAutoAdvanceTimer } from "@/camera/hooks/useAutoAdvanceTimer";
 
 import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer";
-import type { ScanAction } from "@/camera/types/scan-phase";
+import type { ScanAction, ScanPhase } from "@/camera/types/scan-phase";
 import { CoachHint } from "@/camera/components/CoachHint";
 import { ScanReticle } from "@/camera/components/ScanReticle";
-import { StepPill } from "@/camera/components/StepPill";
 import { ProductChip } from "@/camera/components/ProductChip";
 import { getProductChipVariant } from "@/camera/components/ProductChip-utils";
 import { ScanFlashOverlay } from "@/camera/components/ScanFlashOverlay";
 import { ScanSonarRing } from "@/camera/components/ScanSonarRing";
-import { getCoachMessage } from "@/camera/components/CoachHint-utils";
+import { getFlowCoachMessage } from "@/camera/components/CoachHint-utils";
+import { CameraShell } from "@/camera/shell/CameraShell";
+import { StepTabs } from "@/camera/shell/StepTabs";
+import { ExampleCard, EXAMPLE_CONTENT } from "@/camera/shell/ExampleCard";
+import { HelpSheet } from "@/camera/shell/HelpSheet";
+import { TipsCarousel } from "@/camera/shell/TipsCarousel";
+import { ManualBarcodeSheet } from "@/camera/shell/ManualBarcodeSheet";
+import {
+  getBarcodeFlowView,
+  getPhotosDiscardedByLock,
+  type FlowView,
+} from "@/camera/shell/barcode-flow";
+import { useScanOnboarding } from "@/camera/shell/useScanOnboarding";
+import type { ScanExampleKey } from "@/lib/feature-tips-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
@@ -67,7 +79,10 @@ import {
   buildNutritionDetailParams,
   getCapturePlan,
   getShutterBlockedReason,
+  getScanFlow,
+  getGenericFlowView,
   type BarcodeTrackingState,
+  type CaptureMode,
 } from "@/screens/scan-screen-utils";
 import {
   buildLoadingConfirmCard,
@@ -83,6 +98,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { ScanConfirmOverlay } from "@/components/scan/ScanConfirmOverlay";
 import { CameraPermissionGate } from "@/components/scan/CameraPermissionGate";
 import { useToast } from "@/context/ToastContext";
+import { CameraColors, FontFamily } from "@/constants/theme";
 import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
@@ -93,6 +109,28 @@ import type { ScanFlag } from "@shared/types/scan-flags";
 import { useMarkFeatureUsed } from "@/hooks/useFeatureTip";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
+
+const PHOTOS_CLEARED_NOTICE = "New product: earlier photos cleared";
+const NOT_IN_DATABASE_TEXT =
+  "We don't know this one yet. The label and front photos will fill it in";
+
+// The help sheet's step title / example card for each step tab.
+const TAB_EXAMPLE: Record<FlowView["tabs"][number]["id"], ScanExampleKey> = {
+  barcode: "barcode",
+  nutrition: "barcode-nutrition",
+  front: "barcode-front",
+};
+
+/** The example card for the step in progress ("?" and its sheet title). */
+function getStepExampleKey(view: FlowView): ScanExampleKey {
+  const active = view.tabs.find((tab) => tab.state === "active");
+  return active ? TAB_EXAMPLE[active.id] : (view.exampleKey ?? "barcode");
+}
+
+/** Phases where a barcode the camera reads (or one typed in) can lock. */
+function acceptsBarcode(phase: ScanPhase): boolean {
+  return phase.type === "HUNTING" || phase.type === "BARCODE_TRACKING";
+}
 
 // FrontLabelConfirm's seed when there is no on-device read of the package
 // front; the screen runs the AI extraction itself when sessionId is null.
@@ -109,7 +147,6 @@ export default function ScanScreen() {
   useMarkFeatureUsed("scan");
   const navigation = useNavigation<ScanScreenNavigationProp>();
   const isFocused = useIsFocused();
-  const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
@@ -140,7 +177,30 @@ export default function ScanScreen() {
   // `mode` wins when both are present (its branch runs first).
   const rawIntent: unknown = route.params?.intent;
   const pickedIntent = isScanIntent(rawIntent) ? rawIntent : undefined;
+  // No mode and no intent: the guided Barcode · Nutrition · Front flow.
+  // Otherwise the generic one-photo flow (title pill, one frame, shutter).
+  const isBarcodeFlow = getScanFlow(route.params) === "barcode";
+  // Raw presence, the same test getScanFlow uses, so an unknown intent's
+  // generic flow keeps a live shutter.
+  const hasIntent = rawIntent !== undefined;
+  // ONE capture mode for every getCapturePlan / getShutterBlockedReason call:
+  // the press guard and the armed visual must never disagree.
+  const captureMode = useMemo<CaptureMode>(
+    () => ({
+      isFrontLabelMode,
+      isLabelMode,
+      hasVerifyBarcode: !!verifyBarcode,
+      hasIntent,
+    }),
+    [isFrontLabelMode, isLabelMode, verifyBarcode, hasIntent],
+  );
   const toast = useToast();
+  // Read through a ref inside the stable dispatch wrapper below, which must
+  // not change identity when the toast context value does.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const [scanPhase, rawDispatch] = useReducer(scanPhaseReducer, {
     type: "IDLE",
@@ -165,6 +225,15 @@ export default function ScanScreen() {
   // free tier). Mirrors PhotoIntentScreen/ReceiptCaptureScreen — UpgradeModal has
   // no feature prop, so the copy is generic.
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  // The barcode whose lookup came back 404. Compared with the CURRENT lock at
+  // render, so a slow 404 for an earlier barcode never marks a newer lock.
+  const [notFoundBarcode, setNotFoundBarcode] = useState<string | null>(null);
+  const [helpVisible, setHelpVisible] = useState(false);
+  const [manualVisible, setManualVisible] = useState(false);
+  // True while the carousel, an example card or a sheet covers the camera:
+  // a barcode must not lock unseen behind it. A ref, because the native
+  // camera keeps calling the barcode callback it attached first.
+  const scanPausedRef = useRef(false);
 
   const cameraRef = useRef<CameraRef>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -174,23 +243,6 @@ export default function ScanScreen() {
   const hasLockedRef = useRef(false);
   const sessionNavigatedRef = useRef(false);
   const scanPhaseRef = useRef(scanPhase);
-  // Dispatch wrapper (docs/rules/hooks.md "wrap the setter"): onBarcodeScanned
-  // reads scanPhaseRef synchronously at native-camera-frame cadence, so the ref
-  // must advance at dispatch time — neither an effect mirror (post-paint lag)
-  // nor a render-body write (opts the component out of React Compiler) works.
-  // It relies on scanPhaseReducer staying pure: the reducer runs here and again
-  // inside React, and both must agree.
-  const dispatch = useCallback((action: ScanAction) => {
-    scanPhaseRef.current = scanPhaseReducer(scanPhaseRef.current, action);
-    rawDispatch(action);
-  }, []);
-  const reducedMotionRef = useRef(reducedMotion);
-  const isCapturingRef = useRef(false);
-  // Re-entrancy guard for onSmartPhotoConfirm: it is async (on-device OCR for
-  // menus), which opens a double-tap window where two confirms could fire two
-  // OCR runs + two navigations. Synchronous ref check, mirroring isCapturingRef.
-  const isConfirmingRef = useRef(false);
-
   // Temp capture files (capturePhotoToFile writes to the OS temp dir) that
   // this screen currently owns and nothing has cleaned up yet. Captures that
   // are handed to another screen (front-label/label-mode navigate, or the
@@ -217,6 +269,39 @@ export default function ScanScreen() {
     });
     pendingTempUrisRef.current.clear();
   }, []);
+  // Dispatch wrapper (docs/rules/hooks.md "wrap the setter"): onBarcodeScanned
+  // reads scanPhaseRef synchronously at native-camera-frame cadence, so the ref
+  // must advance at dispatch time — neither an effect mirror (post-paint lag)
+  // nor a render-body write (opts the component out of React Compiler) works.
+  // It relies on scanPhaseReducer staying pure: the reducer runs here and again
+  // inside React, and both must agree.
+  //
+  // It also owns the one cross-phase clean-up: a redo-barcode detour that
+  // locks a DIFFERENT product drops the photos carried for the old one, so
+  // their temp files are deleted here and the user is told (Review Focus 1).
+  // Every phase change goes through this wrapper (scanned and typed locks
+  // alike), which is why the check lives here rather than in an effect.
+  const dispatch = useCallback(
+    (action: ScanAction) => {
+      const prev = scanPhaseRef.current;
+      const next = scanPhaseReducer(prev, action);
+      scanPhaseRef.current = next;
+      rawDispatch(action);
+      const dropped = getPhotosDiscardedByLock(prev, next);
+      if (dropped.length > 0) {
+        dropped.forEach((uri) => discardTempUri(uri));
+        toastRef.current.info(PHOTOS_CLEARED_NOTICE);
+      }
+    },
+    [discardTempUri],
+  );
+  const reducedMotionRef = useRef(reducedMotion);
+  const isCapturingRef = useRef(false);
+  // Re-entrancy guard for onSmartPhotoConfirm: it is async (on-device OCR for
+  // menus), which opens a double-tap window where two confirms could fire two
+  // OCR runs + two navigations. Synchronous ref check, mirroring isCapturingRef.
+  const isConfirmingRef = useRef(false);
+
   // Every abandonment of the scan session (blur, an explicit retry, or a
   // premium-blocked smart confirm) must clean up before discarding scanPhase
   // — dispatch(RESET) alone silently drops whatever imageUri that phase held.
@@ -463,6 +548,21 @@ export default function ScanScreen() {
       try {
         await loadProduct();
       } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          // Not in the database: the found card says so instead of a
+          // skeleton forever. Spoken only while this barcode is still the
+          // lock on screen (a slow reply may land after "Not this").
+          setNotFoundBarcode(barcode);
+          const current = scanPhaseRef.current;
+          if (
+            navigation.isFocused() &&
+            current.type === "BARCODE_LOCKED" &&
+            current.barcode === barcode
+          ) {
+            AccessibilityInfo.announceForAccessibility(NOT_IN_DATABASE_TEXT);
+          }
+          return;
+        }
         logger.error("[fetchProductInfo] product info fetch failed", err);
         // Non-critical — ProductChip renders without product data
       }
@@ -472,7 +572,7 @@ export default function ScanScreen() {
 
   const onBarcodeScanned = useCallback(
     (result: BarcodeResult) => {
-      if (!isFocused || hasLockedRef.current) return;
+      if (!isFocused || hasLockedRef.current || scanPausedRef.current) return;
 
       if (barcodeAbsentTimerRef.current) {
         clearTimeout(barcodeAbsentTimerRef.current);
@@ -549,11 +649,7 @@ export default function ScanScreen() {
 
   const onShutterPress = useCallback(async () => {
     const phase = scanPhaseRef.current;
-    const capturePlan = getCapturePlan(phase, {
-      isFrontLabelMode,
-      isLabelMode,
-      hasVerifyBarcode: !!verifyBarcode,
-    });
+    const capturePlan = getCapturePlan(phase, captureMode);
     if (!capturePlan.capture) {
       // Was a bare `return`. Silence here is indistinguishable from a broken
       // button for a screen-reader user, which is exactly how this was
@@ -565,7 +661,7 @@ export default function ScanScreen() {
       // and if a TalkBack version declines to click a disabled-reporting node,
       // the announced "disabled" state itself covers the user. No-op when no
       // reader is running.
-      const blocked = getShutterBlockedReason(phase);
+      const blocked = getShutterBlockedReason(phase, captureMode);
       if (blocked) AccessibilityInfo.announceForAccessibility(blocked);
       return;
     }
@@ -763,8 +859,7 @@ export default function ScanScreen() {
     isCapturingRef.current = false;
   }, [
     dispatch,
-    isLabelMode,
-    isFrontLabelMode,
+    captureMode,
     verifyBarcode,
     pickedIntent,
     features,
@@ -774,6 +869,84 @@ export default function ScanScreen() {
     haptics,
     trackTempUri,
   ]);
+
+  // What the camera shell shows for this phase: the guided flow's step view,
+  // or the generic flow's single frame + shutter.
+  const view: FlowView & { title?: string } = isBarcodeFlow
+    ? getBarcodeFlowView(scanPhase, { returnAfterLog })
+    : getGenericFlowView(route.params);
+
+  const onboarding = useScanOnboarding({
+    exampleKey: view.exampleKey,
+    examplesEnabled: isBarcodeFlow,
+  });
+  const { exampleCardKey } = onboarding;
+
+  // Effect, not a render write (React Compiler): read only by the barcode
+  // callback, a frame later at the earliest.
+  useEffect(() => {
+    scanPausedRef.current =
+      onboarding.carouselVisible ||
+      exampleCardKey !== null ||
+      helpVisible ||
+      manualVisible;
+  }, [onboarding.carouselVisible, exampleCardKey, helpVisible, manualVisible]);
+
+  // ExampleCard is silent on appear and has no live region; name it for a
+  // screen reader on both platforms.
+  useEffect(() => {
+    if (exampleCardKey) {
+      AccessibilityInfo.announceForAccessibility(
+        EXAMPLE_CONTENT[exampleCardKey].title,
+      );
+    }
+  }, [exampleCardKey]);
+
+  // A ✓ tab: redo that step, keeping every other step's work.
+  const onRedoStep = useCallback(
+    (step: "barcode" | "nutrition") => {
+      const phase = scanPhaseRef.current;
+      if (step === "barcode") {
+        // Clear the lock gate, or the next sighting could never lock.
+        hasLockedRef.current = false;
+      } else if (phase.type === "STEP2_CONFIRMED" && phase.nutritionImageUri) {
+        // The old label photo is replaced, as on Retake.
+        discardTempUri(phase.nutritionImageUri);
+      }
+      dispatch({ type: "REDO_STEP", step });
+    },
+    [dispatch, discardTempUri],
+  );
+
+  // Typed barcode: the same lock and lookup as a scanned one.
+  const onManualBarcode = useCallback(
+    (barcode: string) => {
+      setManualVisible(false);
+      if (!acceptsBarcode(scanPhaseRef.current)) return;
+      if (barcodeAbsentTimerRef.current) {
+        clearTimeout(barcodeAbsentTimerRef.current);
+        barcodeAbsentTimerRef.current = null;
+      }
+      hasLockedRef.current = true;
+      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      dispatch({ type: "MANUAL_BARCODE_ENTERED", barcode });
+      // A redo that found the same barcode resumes its step; only a fresh
+      // lock needs the lookup.
+      if (scanPhaseRef.current.type === "BARCODE_LOCKED") {
+        void fetchProductInfo(barcode);
+      }
+    },
+    [dispatch, fetchProductInfo, haptics],
+  );
+
+  const stepExampleKey = getStepExampleKey(view);
+  const { showExample } = onboarding;
+  // Plain function: React Compiler memoizes it (a manual useCallback over
+  // the per-render `view` could not be preserved).
+  const onShowExampleFromHelp = () => {
+    setHelpVisible(false);
+    showExample(stepExampleKey);
+  };
 
   // Permission screens
   if (!permission || permission.status === "undetermined") {
@@ -796,67 +969,162 @@ export default function ScanScreen() {
     );
   }
 
-  const coachMessage = getCoachMessage(scanPhase, elapsedSeconds);
+  const coachMessage = getFlowCoachMessage(
+    scanPhase,
+    view.hint,
+    elapsedSeconds,
+  );
 
   // Android TalkBack focus trap for the overlays (no-op on iOS). The static
   // camera UI and ProductChip need different values — see getScanOverlayA11y.
-  const productChipVisible = getProductChipVariant(scanPhase) !== null;
+  // The Front step's prompt card is hidden in the shell (Skip replaces it).
+  const chipVariant = getProductChipVariant(scanPhase);
+  const productChipVisible =
+    chipVariant !== null && chipVariant !== "step2_confirmed";
   const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 
   // Same source of truth as onShutterPress's guard — the visual must never
   // claim the shutter is dead in a phase that captures (LABEL_PROMPTED
   // rendered un-armed, faithfully reflecting the broken behaviour), nor armed
   // in one that doesn't.
-  const shutterArmed = getCapturePlan(scanPhase).capture;
+  const shutterArmed = getCapturePlan(scanPhase, captureMode).capture;
   // Same phase, same source of truth as `shutterArmed` — drives the hint that
   // explains a dead shutter before the user taps it, not only after.
-  const shutterBlockedReason = getShutterBlockedReason(scanPhase);
+  const shutterBlockedReason = getShutterBlockedReason(scanPhase, captureMode);
+
+  const scansBarcodes = isBarcodeFlow;
+  // Step 1 of the barcode flow: no shutter, the keypad on the right.
+  const onBarcodeStep = isBarcodeFlow && acceptsBarcode(scanPhase);
+  const productNotFound =
+    scanPhase.type === "BARCODE_LOCKED" &&
+    scanPhase.barcode === notFoundBarcode;
+
+  const shutter = view.showShutter ? (
+    <Pressable
+      style={[styles.shutter, shutterArmed && styles.shutterArmed]}
+      onPress={onShutterPress}
+      accessibilityLabel="Take photo"
+      accessibilityRole="button"
+      // Mirrors the armed state into the a11y tree from the SAME
+      // `shutterArmed` the yellow border reads, so the two can't diverge.
+      // Set explicitly rather than via `disabled`: the file deliberately
+      // gates capture on a synchronous ref (see `onShutterPress`) because
+      // `disabled` lags behind fast input, and a real `disabled` would also
+      // swallow the press before the announcement above could explain it.
+      accessibilityState={{ disabled: !shutterArmed }}
+      // Known tradeoff: iOS reads a hint at focus time and does not
+      // re-announce it if the phase changes while focus stays parked here
+      // (e.g. IDLE → HUNTING seconds after mount), so a parked user can
+      // hold a stale hint. Accepted because the press-time announce above
+      // always reports the ACTUAL outcome; the hint is first-contact
+      // orientation, not the source of truth.
+      accessibilityHint={
+        shutterBlockedReason ?? "Captures a photo of what the camera sees"
+      }
+    />
+  ) : null;
+
+  const torch = (
+    <TouchableOpacity
+      style={[styles.iconBtn, styles.iconBtnVisible]}
+      onPress={() => {
+        haptics.selection();
+        setTorchEnabled((t) => !t);
+      }}
+      accessibilityLabel="Flashlight"
+      accessibilityRole="switch"
+      accessibilityState={{ checked: torchEnabled }}
+    >
+      <Feather
+        name={torchEnabled ? "zap" : "zap-off"}
+        size={20}
+        color={TORCH_ICON_COLOR}
+        accessible={false}
+      />
+    </TouchableOpacity>
+  );
+
+  let rightControl: React.ReactNode = null;
+  if (view.showSkip) {
+    rightControl = (
+      <TouchableOpacity
+        style={styles.skipBtn}
+        onPress={() => {
+          haptics.selection();
+          dispatch({ type: "SKIP_STEP" });
+        }}
+        accessibilityLabel="Skip"
+        accessibilityRole="button"
+      >
+        <Text style={styles.skipText}>Skip</Text>
+      </TouchableOpacity>
+    );
+  } else if (onBarcodeStep) {
+    rightControl = (
+      <TouchableOpacity
+        style={[styles.iconBtn, styles.iconBtnVisible]}
+        onPress={() => {
+          haptics.selection();
+          setManualVisible(true);
+        }}
+        accessibilityLabel="Type the barcode number"
+        accessibilityRole="button"
+      >
+        <Feather
+          name="hash"
+          size={20}
+          color={TORCH_ICON_COLOR}
+          accessible={false}
+        />
+      </TouchableOpacity>
+    );
+  }
 
   return (
-    <View style={styles.root} accessibilityViewIsModal>
-      <CameraView
-        ref={cameraRef}
-        barcodeTypes={
-          isLabelMode || isFrontLabelMode
-            ? []
-            : ["ean13", "ean8", "upc_e", "code128", "code39", "qr"]
-        }
-        onBarcodeScanned={
-          isLabelMode || isFrontLabelMode ? undefined : onBarcodeScanned
-        }
-        enableTorch={torchEnabled}
-        isActive={isFocused && !confirmCard}
-      />
-
-      <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
-
-      {sonarVisible && (
-        <ScanSonarRing
-          cx={sonarPos.cx}
-          cy={sonarPos.cy}
-          onComplete={() => setSonarVisible(false)}
+    <CameraShell
+      camera={
+        <CameraView
+          ref={cameraRef}
+          barcodeTypes={
+            scansBarcodes
+              ? ["ean13", "ean8", "upc_e", "code128", "code39", "qr"]
+              : []
+          }
+          onBarcodeScanned={scansBarcodes ? onBarcodeScanned : undefined}
+          enableTorch={torchEnabled}
+          isActive={isFocused && !confirmCard}
         />
-      )}
-
-      <ScanFlashOverlay triggerCount={flashCount} />
-
-      {/* Top overlay */}
-      <View
-        testID="scan-top-overlay"
-        style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}
-        importantForAccessibility={overlayA11y.staticUI}
-      >
-        <TouchableOpacity
-          style={styles.closeBtn}
-          hitSlop={4}
-          onPress={goBackOrMain}
-          accessibilityLabel="Close camera"
-          accessibilityRole="button"
-        >
-          <Text style={styles.closeBtnText}>✕</Text>
-        </TouchableOpacity>
-        <StepPill phase={scanPhase} />
-        {!isPremium && remainingScans !== null && (
+      }
+      frame={
+        <>
+          <ScanReticle
+            phase={scanPhase}
+            reducedMotion={reducedMotion}
+            shape={view.frame}
+          />
+          {sonarVisible && (
+            <ScanSonarRing
+              cx={sonarPos.cx}
+              cy={sonarPos.cy}
+              onComplete={() => setSonarVisible(false)}
+            />
+          )}
+          <ScanFlashOverlay triggerCount={flashCount} />
+        </>
+      }
+      overlay={
+        exampleCardKey ? (
+          <ExampleCard
+            exampleKey={exampleCardKey}
+            onDismiss={onboarding.onExampleDismiss}
+          />
+        ) : null
+      }
+      onClose={goBackOrMain}
+      title={isBarcodeFlow ? null : (view.title ?? null)}
+      onHelp={isBarcodeFlow ? () => setHelpVisible(true) : null}
+      topAccessory={
+        !isPremium && remainingScans !== null ? (
           <View style={styles.scanCountPill}>
             <Text style={styles.scanCountText}>
               {remainingScans > 0
@@ -864,64 +1132,21 @@ export default function ScanScreen() {
                 : "Daily limit reached"}
             </Text>
           </View>
-        )}
-      </View>
-
-      {/* Coach hint */}
-      <View
-        style={styles.coachContainer}
-        importantForAccessibility={overlayA11y.staticUI}
-      >
-        <CoachHint message={coachMessage} />
-      </View>
-
-      {/* Bottom controls */}
-      <View
-        style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}
-        importantForAccessibility={overlayA11y.staticUI}
-      >
-        <View style={styles.iconBtn} />
-        <Pressable
-          style={[styles.shutter, shutterArmed && styles.shutterArmed]}
-          onPress={onShutterPress}
-          accessibilityLabel="Take photo"
-          accessibilityRole="button"
-          // Mirrors the armed state into the a11y tree from the SAME
-          // `shutterArmed` the yellow border reads, so the two can't diverge.
-          // Set explicitly rather than via `disabled`: the file deliberately
-          // gates capture on a synchronous ref (see `onShutterPress`) because
-          // `disabled` lags behind fast input, and a real `disabled` would also
-          // swallow the press before the announcement above could explain it.
-          accessibilityState={{ disabled: !shutterArmed }}
-          // Known tradeoff: iOS reads a hint at focus time and does not
-          // re-announce it if the phase changes while focus stays parked here
-          // (e.g. IDLE → HUNTING seconds after mount), so a parked user can
-          // hold a stale hint. Accepted because the press-time announce above
-          // always reports the ACTUAL outcome; the hint is first-contact
-          // orientation, not the source of truth.
-          accessibilityHint={
-            shutterBlockedReason ?? "Captures a photo of what the camera sees"
-          }
-        />
-        <TouchableOpacity
-          style={[styles.iconBtn, styles.iconBtnVisible]}
-          onPress={() => {
-            haptics.selection();
-            setTorchEnabled((t) => !t);
-          }}
-          accessibilityLabel="Flashlight"
-          accessibilityRole="switch"
-          accessibilityState={{ checked: torchEnabled }}
-        >
-          <Feather
-            name={torchEnabled ? "zap" : "zap-off"}
-            size={20}
-            color={TORCH_ICON_COLOR}
-            accessible={false}
-          />
-        </TouchableOpacity>
-      </View>
-
+        ) : null
+      }
+      hint={<CoachHint message={coachMessage} />}
+      tabs={
+        view.tabs.length > 0 ? (
+          <StepTabs tabs={view.tabs} onRedo={onRedoStep} />
+        ) : null
+      }
+      left={torch}
+      shutter={shutter}
+      right={rightControl}
+      chromeHidden={productChipVisible}
+      controlsMuted={exampleCardKey !== null}
+      staticUIImportance={overlayA11y.staticUI}
+    >
       {showConfetti && (
         <ConfettiCannon
           count={30}
@@ -937,6 +1162,8 @@ export default function ScanScreen() {
       {/* Product chip */}
       <ProductChip
         importantForAccessibility={overlayA11y.productChip}
+        productNotFound={productNotFound}
+        hideFrontPrompt
         isSmartConfirming={isSmartConfirming}
         screenReaderEnabled={screenReaderEnabled}
         phase={scanPhase}
@@ -1102,50 +1329,36 @@ export default function ScanScreen() {
           rearmScan();
         }}
       />
-    </View>
+
+      {isBarcodeFlow ? (
+        <>
+          <HelpSheet
+            visible={helpVisible}
+            stepTitle={EXAMPLE_CONTENT[stepExampleKey].title}
+            stepHint={view.hint}
+            showTypeNumberTip={stepExampleKey === "barcode"}
+            onShowExample={onShowExampleFromHelp}
+            onClose={() => setHelpVisible(false)}
+          />
+          <ManualBarcodeSheet
+            visible={manualVisible}
+            onSubmit={onManualBarcode}
+            onClose={() => setManualVisible(false)}
+          />
+        </>
+      ) : null}
+
+      {/* Once ever, before the first scan: over everything. */}
+      {onboarding.carouselVisible ? (
+        <View style={StyleSheet.absoluteFill}>
+          <TipsCarousel onDone={onboarding.onCarouselDone} />
+        </View>
+      ) : null}
+    </CameraShell>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000" }, // hardcoded — camera background must always be black
-  topOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 10,
-    gap: 12,
-  },
-  closeBtn: {
-    alignSelf: "flex-end",
-    marginRight: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  closeBtnText: { color: "#FFF", fontSize: 14, fontWeight: "600" }, // hardcoded — camera overlay
-  coachContainer: {
-    position: "absolute",
-    bottom: 120,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 10,
-  },
-  controls: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    zIndex: 10,
-  },
   iconBtn: {
     width: 48,
     height: 48,
@@ -1155,6 +1368,20 @@ const styles = StyleSheet.create({
   },
   iconBtnVisible: {
     backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  skipBtn: {
+    minHeight: 44,
+    minWidth: 64,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: CameraColors.overlayMedium,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  skipText: {
+    color: CameraColors.text,
+    fontFamily: FontFamily.semiBold,
+    fontSize: 14,
   },
   shutter: {
     width: 72,

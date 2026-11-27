@@ -8,6 +8,7 @@ import { CONTENT_TYPE_LABELS } from "@/camera/utils/content-type-label";
 import { logger } from "@/lib/logger";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { ProductSummary, ScanPhase } from "@/camera/types/scan-phase";
+import type { FlowView } from "@/camera/shell/barcode-flow";
 import type { ScanFlag } from "@shared/types/scan-flags";
 import {
   pickTopSafetyFlag,
@@ -338,7 +339,77 @@ export type CaptureMode = {
   isLabelMode?: boolean;
   /** `verifyBarcode` route param is present. */
   hasVerifyBarcode?: boolean;
+  /**
+   * An `intent` route param is present (the generic photo flow). Raw presence,
+   * the same test as `getScanFlow`: an unknown intent still opens the generic
+   * flow, so its shutter must still capture.
+   */
+  hasIntent?: boolean;
 };
+
+/**
+ * Which camera a `Scan` route opens. No `mode` and no `intent` is the guided
+ * barcode flow (Barcode · Nutrition · Front), with or without
+ * `returnAfterLog` / `verifyBarcode`; anything else is the generic one-photo
+ * flow.
+ */
+export function getScanFlow(
+  params: RootStackParamList["Scan"],
+): "barcode" | "generic" {
+  return params?.mode === undefined && params?.intent === undefined
+    ? "barcode"
+    : "generic";
+}
+
+const GENERIC_INTENT_TITLES = new Map<unknown, string>([
+  ["log", "Photo food log"],
+  ["menu", "Menu"],
+  ["label", "Nutrition label"],
+  ["cook", "Cook & Track"],
+  ["identify", "Identify food"],
+  ["recipe", "Find recipes"],
+  ["calories", "Calorie check"],
+]);
+
+/**
+ * The generic one-photo flow's view: a title pill, one frame and a shutter,
+ * with no tabs, Skip or example card (stage 2 adds those per flow). `mode`
+ * picks the frame and hint; otherwise the intent names the flow.
+ */
+export function getGenericFlowView(
+  params: RootStackParamList["Scan"],
+): FlowView & { title: string } {
+  const base = {
+    tabs: [],
+    showShutter: true,
+    showSkip: false,
+    exampleKey: null,
+  };
+  if (params?.mode === "label") {
+    return {
+      ...base,
+      title: "Nutrition label",
+      frame: "label",
+      hint: "Fit the whole panel in the frame",
+    };
+  }
+  if (params?.mode === "front-label") {
+    return {
+      ...base,
+      title: "Package front",
+      frame: "front",
+      hint: "Fit the front of the package in the frame",
+    };
+  }
+  // The intent is untrusted at runtime (see ScanScreen's isScanIntent).
+  const title = GENERIC_INTENT_TITLES.get(params?.intent) ?? "Photo";
+  return { ...base, title, frame: "photo", hint: "" };
+}
+
+/** `HUNTING` captures by tap only outside the barcode flow's step 1. */
+function huntingCaptures(mode: CaptureMode): boolean {
+  return !!(mode.isLabelMode || mode.isFrontLabelMode || mode.hasIntent);
+}
 
 /**
  * Decide whether a shutter press captures in this phase, and whether that
@@ -362,13 +433,15 @@ export function getCapturePlan(
   mode: CaptureMode = {},
 ): CapturePlan {
   switch (phase.type) {
-    // Smart scan / label mode / front-label mode. Captures, but its
+    // Label mode / front-label mode / an intent. Captures, but its
     // recognition goes to `localOCRText` / the next screen, not
     // `STEP_PHOTO_CAPTURED`. Front-label WITHOUT a verify barcode falls through
-    // to "smart" (as before — label mode is a different `mode` value).
+    // to "smart" (as before — label mode is a different `mode` value). With
+    // none of them this is the barcode flow's step 1, which scans by itself:
+    // no capture.
     case "HUNTING":
       return {
-        capture: true,
+        capture: huntingCaptures(mode),
         runStepOcr: false,
         route:
           mode.isFrontLabelMode && mode.hasVerifyBarcode
@@ -416,9 +489,16 @@ export function getCapturePlan(
  * `default` clause for the same reason — a new `ScanPhase` must fail `tsc`
  * here rather than silently announcing nothing.
  */
-export function getShutterBlockedReason(phase: ScanPhase): string | null {
+export function getShutterBlockedReason(
+  phase: ScanPhase,
+  mode: CaptureMode = {},
+): string | null {
   switch (phase.type) {
+    // The barcode flow's step 1 scans by itself (see getCapturePlan).
     case "HUNTING":
+      return huntingCaptures(mode)
+        ? null
+        : "Scanning the barcode automatically. No photo needed.";
     case "BARCODE_LOCKED":
     case "LABEL_PROMPTED":
     case "STEP2_CONFIRMED":

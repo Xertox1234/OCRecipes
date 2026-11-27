@@ -17,7 +17,6 @@ export { CameraView } from "./components/CameraView";
 export { CoachHint } from "./components/CoachHint";
 export { ScanFlashOverlay } from "./components/ScanFlashOverlay";
 export { ScanSonarRing } from "./components/ScanSonarRing";
-export { StepPill } from "./components/StepPill";
 export { ScanReticle } from "./components/ScanReticle";
 export { ProductChip } from "./components/ProductChip";
 export { StepTabs } from "./shell/StepTabs";
@@ -27,10 +26,6 @@ export { scanPhaseReducer } from "./reducers/scan-phase-reducer";
 
 // Component utils (for testing / external use)
 export { getCoachMessage } from "./components/CoachHint-utils";
-export {
-  getStepDotState,
-  shouldShowStepPill,
-} from "./components/StepPill-utils";
 export {
   getReticleTarget,
   getConfidenceFromPhase,

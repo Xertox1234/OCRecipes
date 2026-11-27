@@ -102,6 +102,21 @@ describe("ProductChip — step2_confirmed has no secondary capture button", () =
   });
 });
 
+// The camera shell's Front step offers the shutter and Skip itself.
+describe("ProductChip — hideFrontPrompt", () => {
+  it("renders nothing for step2_confirmed when hidden", () => {
+    render(
+      <ProductChip phase={step2Confirmed} {...handlers} hideFrontPrompt />,
+    );
+    expect(screen.queryByLabelText("Finish scan")).toBeNull();
+  });
+
+  it("leaves the other variants alone", () => {
+    render(<ProductChip phase={barcodeLock} {...handlers} hideFrontPrompt />);
+    expect(screen.getByText("Not this")).toBeTruthy();
+  });
+});
+
 // barcode_lock's primary control must ADVANCE the flow — it used to be
 // "Looks right →" wired to CONFIRM_PRODUCT (a skip), with the only route to
 // step 2 an unlabeled implicit gesture in caption text. Both actions are now

@@ -67,6 +67,7 @@ const {
             mode?: "label" | "front-label";
             verifyBarcode?: string;
             returnAfterLog?: boolean;
+            intent?: string;
           }
         | undefined,
     },
@@ -295,6 +296,12 @@ vi.mock("react-native", async (importOriginal) => {
   };
 });
 
+// The retired auto-classify ("smart") photo path. Plain Scan is now the guided
+// barcode flow, whose step 1 has no shutter; the generic flow with an intent
+// ScanScreen doesn't recognise still auto-classifies the photo (isScanIntent
+// ignores it), so these tests reach that path the one way it is still reached.
+const UNKNOWN_INTENT = "unknown-intent";
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCanGoBack.mockReturnValue(true);
@@ -321,7 +328,15 @@ beforeEach(() => {
 });
 
 describe("ScanScreen — mounts with the new auto-advance/gesture wiring", () => {
-  it("renders the camera, reticle, and a live shutter button with no crash", () => {
+  // Step 1 of the guided barcode flow scans by itself: no shutter at all.
+  it("renders the barcode step with no shutter and no crash", () => {
+    renderComponent(<ScanScreen />);
+    expect(screen.queryByLabelText("Take photo")).toBeNull();
+    expect(screen.getByLabelText("Type the barcode number")).toBeTruthy();
+  });
+
+  it("renders a live shutter in the generic flow", () => {
+    mockRouteParams.value = { intent: "log" };
     renderComponent(<ScanScreen />);
     expect(screen.getByLabelText("Take photo")).toBeTruthy();
   });
@@ -1085,7 +1100,7 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
     // is the first post-capture phase no timer dissolves — so this assertion
     // can't race itself the way a STEP2_REVIEWING one would.
     expect(
-      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+      await screen.findByLabelText("Skip", {}, { timeout: 3000 }),
     ).toBeTruthy();
   });
 
@@ -1094,24 +1109,24 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
   // return — the pure agreement test in scan-screen-utils.test.ts proves the
   // map is consistent but never exercises onShutterPress itself (review
   // finding 2026-08-17).
-  it("announces the blocked reason on a shutter press in BARCODE_TRACKING, with the disabled state mirrored", async () => {
+  // The other half of the same defect class, at the real call site: in a
+  // blocked phase the press must ANNOUNCE why it did nothing, not silently
+  // return — the pure agreement test in scan-screen-utils.test.ts proves the
+  // map is consistent but never exercises onShutterPress itself (review
+  // finding 2026-08-17). The barcode flow now hides the shutter on every
+  // phase it would be dead in, so this drives the generic flow's shutter
+  // while its first photo is still being read (CLASSIFYING).
+  it("announces the blocked reason on a shutter press while a photo is processing, with the disabled state mirrored", async () => {
     const announceSpy = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
     announceSpy.mockClear();
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
+    vi.mocked(uploadPhotoForAnalysis).mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
 
     renderComponent(<ScanScreen />);
-    const attach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
-    const handler = attach.onBarcodeScanned;
-    expect(handler).toBeDefined();
-    // ONE frame: FIRST_BARCODE_DETECTED → BARCODE_TRACKING, well short of the
-    // lock threshold — the phase the original report was almost certainly in.
     await act(async () => {
-      handler!([
-        {
-          rawValue: "0778918011332",
-          format: "ean-13",
-          boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
-        },
-      ] as Parameters<NonNullable<typeof handler>>[0]);
+      fireEvent.click(screen.getByLabelText("Take photo"));
     });
 
     const shutter = screen.getByLabelText("Take photo");
@@ -1122,14 +1137,34 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
       fireEvent.click(shutter);
     });
     expect(announceSpy).toHaveBeenCalledWith(
-      "Scanning the barcode automatically. No photo needed.",
+      "Still working on the photo you just took.",
     );
-    expect(mockCapturePhotoToFile).not.toHaveBeenCalled();
+    expect(mockCapturePhotoToFile).toHaveBeenCalledTimes(1);
+  });
+
+  // Step 1 of the barcode flow scans by itself: the shutter is absent, not
+  // greyed out, while hunting and while a barcode is tracked.
+  it("shows no shutter on the barcode step, hunting or tracking", async () => {
+    renderComponent(<ScanScreen />);
+    expect(screen.queryByLabelText("Take photo")).toBeNull();
+    const handler = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0]
+      .onBarcodeScanned;
+    await act(async () => {
+      handler!([
+        {
+          rawValue: "0778918011332",
+          format: "ean-13",
+          boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+        },
+      ] as Parameters<NonNullable<typeof handler>>[0]);
+    });
+    expect(screen.queryByLabelText("Take photo")).toBeNull();
   });
 
   // Camera audit 2026-11-21 M2: the first frame's `start` branch returned
   // before arming the 800 ms "barcode lost" timer, so a code seen for one
-  // frame stranded BARCODE_TRACKING — shutter blocked, hints stopped.
+  // frame stranded BARCODE_TRACKING — hints stopped. Observed through the
+  // hint line: "Hold steady…" while tracking, the step hint once back.
   it("returns to HUNTING when a barcode is seen for a single frame", async () => {
     renderComponent(<ScanScreen />);
     const handler = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0]
@@ -1143,20 +1178,19 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
         },
       ] as Parameters<NonNullable<typeof handler>>[0]);
     });
-    expect(
-      screen.getByLabelText("Take photo").getAttribute("aria-disabled"),
-    ).toBe("true");
+    expect(await screen.findByText("Hold steady…")).toBeTruthy();
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 900));
     });
 
     expect(
-      screen.getByLabelText("Take photo").getAttribute("aria-disabled"),
-    ).toBe("false");
+      await screen.findByText("Line the barcode up inside the frame"),
+    ).toBeTruthy();
   });
 
-  it("mirrors the armed state as enabled on arrival (HUNTING)", () => {
+  it("mirrors the armed state as enabled on arrival (generic flow, HUNTING)", () => {
+    mockRouteParams.value = { intent: "log" };
     renderComponent(<ScanScreen />);
     expect(
       screen.getByLabelText("Take photo").getAttribute("aria-disabled"),
@@ -1191,7 +1225,7 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
     await proceedToLabelThenShoot();
 
     fireEvent.click(
-      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+      await screen.findByLabelText("Skip", {}, { timeout: 3000 }),
     );
 
     await waitFor(
@@ -1428,6 +1462,7 @@ describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untra
       barcode: "0778918011332",
     });
 
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
     const { rerender } = renderComponent(<ScanScreen />);
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
@@ -1474,6 +1509,7 @@ describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untra
       contentType: "grocery_receipt",
     });
 
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
     const { rerender } = renderComponent(<ScanScreen />);
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
@@ -1521,6 +1557,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       new Error("classification failed"),
     );
 
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
     renderComponent(<ScanScreen />);
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
@@ -1546,6 +1583,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       new Error("classification failed"),
     );
 
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
     renderComponent(<ScanScreen />);
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
@@ -1576,6 +1614,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       contentType: "grocery_receipt",
     });
 
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
     renderComponent(<ScanScreen />);
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
@@ -1611,6 +1650,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
       classificationResult,
     );
 
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
     const { rerender } = renderComponent(<ScanScreen />);
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
@@ -1675,7 +1715,7 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
     const { rerender } = await driveToStep2Reviewing();
 
     fireEvent.click(
-      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+      await screen.findByLabelText("Skip", {}, { timeout: 3000 }),
     );
 
     await waitFor(
@@ -1774,7 +1814,7 @@ describe("ScanScreen — Retake keeps the wizard's progress", () => {
       fireEvent.click(screen.getByLabelText("Take photo"));
     });
     fireEvent.click(
-      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+      await screen.findByLabelText("Skip", {}, { timeout: 3000 }),
     );
     await waitFor(
       () =>
@@ -1802,7 +1842,7 @@ describe("ScanScreen — Retake keeps the wizard's progress", () => {
     });
 
     // Auto-advance (1s) out of STEP2_REVIEWING into STEP2_CONFIRMED.
-    await screen.findByLabelText("Finish scan", {}, { timeout: 3000 });
+    await screen.findByLabelText("Skip", {}, { timeout: 3000 });
 
     // Front-of-package capture -> STEP3_REVIEWING.
     await act(async () => {
@@ -1820,7 +1860,7 @@ describe("ScanScreen — Retake keeps the wizard's progress", () => {
       expect.anything(),
     );
     // Back at step 3's prompt, nutrition photo kept.
-    expect(screen.getByLabelText("Finish scan")).toBeTruthy();
+    expect(screen.getByLabelText("Skip")).toBeTruthy();
 
     // A new front photo finishes with both photos on NutritionDetail.
     await act(async () => {
@@ -1924,28 +1964,21 @@ describe("ScanScreen — touch targets meet the 44pt minimum (P2-2026-09-23, M13
     }
   });
 
-  it("Close camera button reaches 44pt on both axes (visual 36x36 + hitSlop)", () => {
+  it("Close camera button reaches 44pt on both axes", () => {
     renderComponent(<ScanScreen />);
 
     // Denominator: the button actually rendered and was captured.
     expect(capturedPressProps["Close camera"]).toBeDefined();
 
-    // styles.closeBtn (ScanScreen.tsx) is a fixed 36x36 box.
+    // CameraShell's styles.roundBtn is a fixed 44x44 box (plus a 4pt slop).
     const { width, height } = effectiveTouchSize(
       capturedPressProps["Close camera"],
-      36,
+      44,
     );
     expect(width).toBeGreaterThanOrEqual(44);
     expect(height).toBeGreaterThanOrEqual(44);
 
-    // RN clips hitSlop to the parent's bounds: the 4pt slop needs room on
-    // the right (the button's own marginRight inside the full-width overlay)
-    // and on top (the overlay's paddingTop). The overlay is a plain View, so
-    // its props are captured by testID.
-    const closeStyle = (capturedPressProps["Close camera"]?.style ?? {}) as {
-      marginRight?: number;
-    };
-    expect(closeStyle.marginRight ?? 0).toBeGreaterThanOrEqual(4);
+    // The top bar sits below the safe-area inset, not flush with the edge.
     const overlay = flattenStyle(
       capturedPressProps["view:scan-top-overlay"]?.style,
     );
@@ -2065,6 +2098,7 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
         }),
     );
 
+    mockRouteParams.value = { intent: UNKNOWN_INTENT };
     renderComponent(<ScanScreen />);
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Take photo"));

@@ -60,6 +60,12 @@ interface Props {
    * data" link (there is none). Leaving it unset keeps the skeleton.
    */
   productNotFound?: boolean;
+  /**
+   * Hide the step-3 prompt card (`step2_confirmed`). The camera shell's Front
+   * step offers the shutter and Skip itself, so the card would only repeat
+   * Skip and cover the step tabs.
+   */
+  hideFrontPrompt?: boolean;
   onProceedToLabel: () => void;
   onStepConfirmed: () => void;
   onRetakeStep2: () => void;
@@ -103,12 +109,15 @@ export function ProductChip({
   isSmartConfirming = false,
   screenReaderEnabled = false,
   productNotFound = false,
+  hideFrontPrompt = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { reducedMotion } = useAccessibility();
   const translateY = useSharedValue(reducedMotion ? 0 : OFF_SCREEN_Y);
   const opacity = useSharedValue(0);
-  const variant = getProductChipVariant(phase);
+  const phaseVariant = getProductChipVariant(phase);
+  const variant =
+    hideFrontPrompt && phaseVariant === "step2_confirmed" ? null : phaseVariant;
   // The product name can arrive AFTER the chip is shown: BARCODE_LOCKED renders
   // with no product (a skeleton line on the found card), then an async PRODUCT_LOADED adds
   // it while keeping the same phase type (so `variant` is unchanged). Track it so

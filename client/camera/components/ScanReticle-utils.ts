@@ -103,3 +103,28 @@ export function getConfidenceFromPhase(phase: ScanPhase): number {
       return 1.0;
   }
 }
+
+/**
+ * Confidence for a step-shaped (guided) frame: white at rest on the live
+ * photo steps, green only once something is caught (a found barcode, a
+ * captured photo). `getConfidenceFromPhase` keeps every post-lock phase green,
+ * which read as "done" on steps still waiting for a photo.
+ */
+export function getShapedFrameConfidence(phase: ScanPhase): number {
+  switch (phase.type) {
+    case "LABEL_PROMPTED":
+    case "STEP2_CONFIRMED":
+      return 0;
+    case "IDLE":
+    case "HUNTING":
+    case "BARCODE_TRACKING":
+    case "BARCODE_LOCKED":
+    case "STEP2_REVIEWING":
+    case "STEP3_REVIEWING":
+    case "SESSION_COMPLETE":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
+      return getConfidenceFromPhase(phase);
+  }
+}

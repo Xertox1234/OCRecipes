@@ -63,7 +63,8 @@ function StepTab({ tab, onRedo }: TabProps) {
     prevState.current = state;
   }, [state, checkScale, label, reducedMotion]);
 
-  // Same as StepPill: also fires on mount when a tab starts out active.
+  // Carried over from the old StepPill: also fires on mount when a tab starts
+  // out active.
   useEffect(() => {
     if (state === "active" && Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(`${label} step in progress`);
