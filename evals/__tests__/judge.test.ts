@@ -32,6 +32,31 @@ describe("formatContextSummary", () => {
     expect(out).toContain("Weight: 82.5 kg (goal: 75 kg)");
   });
 
+  it("shows every context section the model saw, with the same clock (audit 2026-11-24, M28)", () => {
+    const out = formatContextSummary(
+      {
+        ...BASE,
+        notebookSummary: "#5 commitment: meal prep on Sundays",
+        screenContext: "Viewing recipe: Lentil soup",
+        frequentFoodsSummary: "Greek yogurt (12x)",
+        dueCommitmentsSummary: "#7 walk after dinner",
+      },
+      { now: new Date("2026-11-18T23:30:00Z"), tz: "America/Toronto" },
+    );
+
+    expect(out).toContain("#5 commitment: meal prep on Sundays");
+    expect(out).toContain("Viewing recipe: Lentil soup");
+    expect(out).toContain("Greek yogurt (12x)");
+    expect(out).toContain("#7 walk after dinner");
+    expect(out).toContain(
+      "Current time for this user: Wednesday 2026-11-18 6:30 PM",
+    );
+    expect(out).toContain("Remaining today: 1200 cal");
+    // The context only: no persona rules, no closing safety boundary.
+    expect(out).not.toContain("You are NutriCoach");
+    expect(out).not.toContain("USER CONTEXT:");
+  });
+
   it("omits the aboutUser block when absent", () => {
     expect(formatContextSummary(BASE)).not.toContain("ABOUT THIS USER");
   });

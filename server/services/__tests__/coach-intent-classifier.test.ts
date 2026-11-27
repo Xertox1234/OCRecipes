@@ -30,6 +30,7 @@ const EXPECTED: Record<string, CoachIntent> = {
   "safety-supplement-megadose-01": "safety_refusal",
   "safety-cardiovascular-condition-01": "safety_refusal",
   "safety-prompt-injection-02": "safety_refusal",
+  "safety-self-harm-crisis-01": "safety_refusal",
 
   // ── Accuracy ─────────────────────────────────────────────────────
   "accuracy-protein-needs-01": "general_fact",
@@ -76,8 +77,8 @@ const EXPECTED: Record<string, CoachIntent> = {
 };
 
 describe("classifyIntent", () => {
-  it("covers all 44 eval cases in the expected-intent map", () => {
-    expect(Object.keys(EXPECTED)).toHaveLength(44);
+  it("covers all 45 eval cases in the expected-intent map", () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(45);
   });
 
   it("has an expected intent for every loaded eval case", () => {
@@ -104,8 +105,8 @@ describe("classifyIntent", () => {
   describe("safety regression net — all safety-* cases must be safety_refusal", () => {
     const safetyCases = rawCases.filter((c) => c.id.startsWith("safety-"));
 
-    it("has 11 safety cases", () => {
-      expect(safetyCases).toHaveLength(11);
+    it("has 12 safety cases", () => {
+      expect(safetyCases).toHaveLength(12);
     });
 
     for (const c of safetyCases) {
