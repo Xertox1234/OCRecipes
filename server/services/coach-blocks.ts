@@ -168,6 +168,16 @@ const QUICK_LOG_RULE =
   "- A small food log can be logged at once: when the log_food_item result says it is already logged, say it was logged and that the user can tap Undo on its card. To change a food that is already logged, ask the user to tap Undo on its card first or to edit it in their log; never call log_food_item again for it, which would log it twice.";
 const INLINE_CHART_LINE =
   '- inline_chart: { type: "inline_chart", chartType: "bar"|"progress"|"stat_row", title, data: [{ label, value, target?, hit? }], summary? }';
+/** Coach roadmap T4: the chart kinds, for an app that draws all six. */
+const CHART_TYPES_BASE = '"bar"|"progress"|"stat_row",';
+const CHART_TYPES_MORE =
+  '"bar"|"progress"|"stat_row"|"ring"|"sparkline"|"heatmap",';
+// The Coach has no tool that returns many days at once (get_daily_log_details
+// reads one day) and no weight history, so the examples stay with data it
+// can get, and the rule ends on not drawing what it has not read.
+const MORE_CHARTS_RULE =
+  "- Pick the inline_chart kind by what it shows. bar: a few values side by side. progress: one value against its target. stat_row: two to four plain numbers. ring: one to four values, never more, each with its own target above zero (such as how much of the day's protein, carbs and fat goals one meal covers); for today or yesterday against the goals use day_progress when it is offered, not a ring. sparkline: one number over at least three points, oldest first; if there is a goal, put it as target on the last point only. heatmap: one square per day, oldest first, at most 35, each value the day's number (such as grams of protein); set hit on a day only against a goal the user has. For calories over the last seven days use week_progress when it is offered. Every value, label and hit must come from a tool result or your context: if you do not have the number for every point, do not draw the chart, say what you do know in words, and never estimate or fill in a missing day";
+
 /** Coach roadmap T3: a card that names the day and stays current. */
 const DAY_PROGRESS_LINE =
   '- day_progress: { type: "day_progress", day: "today"|"yesterday" } (the app fills in that day\'s calories, protein, carbs and fat against the goals, and keeps them up to date)';
@@ -209,12 +219,17 @@ export function getBlocksSystemPrompt(
     dayProgress?: boolean;
     /** The app can draw a week_progress card (T3). */
     weekProgress?: boolean;
+    /** The app draws ring, sparkline and heatmap charts (T4). */
+    moreCharts?: boolean;
   } = {},
 ): string {
-  const withCards = withProgressCards(blocksPromptFor(finderEnabled, opts), {
+  // The progress cards go in first: they are placed after the inline_chart
+  // line as it reads before the T4 kinds are added to it.
+  const progress = withProgressCards(blocksPromptFor(finderEnabled, opts), {
     day: !!opts.dayProgress,
     week: !!opts.weekProgress,
   });
+  const withCards = opts.moreCharts ? withMoreCharts(progress) : progress;
   if (!opts.notesPaused) return withCards;
   // Coach's notes are paused (no health consent on record): a commitment card
   // offers a check-in that nothing would save. Not offered, and said so.
@@ -234,6 +249,19 @@ export function getBlocksSystemPrompt(
  */
 export function withOfferRecipeRule(blocksPrompt: string): string {
   return blocksPrompt.replace(FINDER_RECIPE_RULE, OFFER_RECIPE_RULE);
+}
+
+/** Lists the T4 chart kinds in the inline_chart line, with their rule. */
+function withMoreCharts(prompt: string): string {
+  return prompt
+    .replace(
+      INLINE_CHART_LINE,
+      INLINE_CHART_LINE.replace(CHART_TYPES_BASE, CHART_TYPES_MORE),
+    )
+    .replace(
+      "\n\nExample response",
+      `\n${MORE_CHARTS_RULE}\n\nExample response`,
+    );
 }
 
 /**

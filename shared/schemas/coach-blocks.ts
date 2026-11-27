@@ -260,9 +260,17 @@ export const suggestionListSchema = z.object({
   ),
 });
 
+/**
+ * Chart kinds added by Coach roadmap T4. The server offers them, and keeps
+ * them, only for an app that says it draws them ("more_charts"); an older
+ * build drops a block it cannot parse, so the reply would name a chart that
+ * never shows.
+ */
+export const MORE_CHART_TYPES = ["ring", "sparkline", "heatmap"] as const;
+
 export const inlineChartSchema = z.object({
   type: z.literal("inline_chart"),
-  chartType: z.enum(["bar", "progress", "stat_row"]),
+  chartType: z.enum(["bar", "progress", "stat_row", ...MORE_CHART_TYPES]),
   title: z.string(),
   data: z.array(
     z.object({

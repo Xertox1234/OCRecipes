@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import type { InlineChart as InlineChartType } from "@shared/schemas/coach-blocks";
+import { HeatmapChart, RingChart, SparklineChart } from "./MoreCharts";
 
 interface Props {
   block: InlineChartType;
@@ -9,6 +10,11 @@ interface Props {
 
 const InlineChart = React.memo(function InlineChart({ block }: Props) {
   const { theme } = useTheme();
+
+  // Coach roadmap T4: the newer kinds draw in MoreCharts.tsx.
+  if (block.chartType === "ring") return <RingChart block={block} />;
+  if (block.chartType === "sparkline") return <SparklineChart block={block} />;
+  if (block.chartType === "heatmap") return <HeatmapChart block={block} />;
 
   if (block.chartType === "bar") {
     const maxValue = Math.max(...block.data.map((d) => d.value), 1);

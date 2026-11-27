@@ -18,6 +18,7 @@ import type { ReplyResult } from "./stream-reply";
 import type { CoachChatEvent, CoachChatParams } from "./types";
 import { buildDayProgressBlock } from "../day-progress";
 import { buildWeekProgressBlock } from "../week-progress";
+import { dropMoreCharts } from "../more-charts";
 import { createServiceLogger, toError } from "../../lib/logger";
 
 const log = createServiceLogger("coach-pro-chat");
@@ -89,6 +90,11 @@ async function proReplyBlocks(
     // Coach's notes are paused: accepting a commitment card would save
     // nothing, so a card the model wrote anyway never reaches the screen.
     if (turn.context.notesPaused) blocks = dropCommitmentCards(blocks);
+    // Coach roadmap T4: an app that did not say it draws the newer chart
+    // kinds would drop them, leaving the reply pointing at nothing.
+    if (!(params.writeCards && params.moreCharts)) {
+      blocks = dropMoreCharts(blocks);
+    }
     // Only for an app that declared the card (its prompt offered it), and
     // not under a safety message that replaced the reply.
     const cardsShown =

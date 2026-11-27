@@ -1678,3 +1678,64 @@ describe("the week progress card", () => {
     ]);
   });
 });
+
+describe("the T4 chart kinds", () => {
+  const quick = {
+    type: "quick_replies" as const,
+    options: [{ label: "Ok", message: "Ok" }],
+  };
+  const ring = {
+    type: "inline_chart" as const,
+    chartType: "ring" as const,
+    title: "This week's averages",
+    data: [{ label: "Protein", value: 120, target: 150 }],
+  };
+  const bar = { ...ring, chartType: "bar" as const };
+  const types = (events: CoachChatEvent[]) =>
+    blocksEvent(events)?.blocks.map((b) =>
+      b.type === "inline_chart" ? b.chartType : b.type,
+    );
+
+  beforeEach(() => {
+    vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+      text: t,
+      blocks: [ring, bar, quick],
+    }));
+    vi.mocked(generateCoachProResponse).mockImplementation(
+      async function* (): AsyncGenerator<CoachProChunk> {
+        yield { type: "content", content: "Here is your week." };
+      },
+    );
+  });
+
+  it("are kept, and offered, for an app that draws them", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true, moreCharts: true })),
+    );
+    expect(types(events)).toEqual(["ring", "bar", "quick_replies"]);
+    expect(getBlocksSystemPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ moreCharts: true }),
+    );
+  });
+
+  it("are dropped without write cards, even when the app says it draws them", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ moreCharts: true })),
+    );
+    expect(types(events)).toEqual(["bar", "quick_replies"]);
+  });
+
+  it("are dropped, and not offered, for an app that did not declare them", async () => {
+    const events = await collect(
+      handleCoachChat(makeParams({ writeCards: true })),
+    );
+    expect(types(events)).toEqual(["bar", "quick_replies"]);
+    const saved = vi.mocked(storage.createChatMessage).mock.calls.at(-1);
+    expect(saved?.[4]).toMatchObject({ blocks: [bar, quick] });
+    expect(getBlocksSystemPrompt).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ moreCharts: true }),
+    );
+  });
+});

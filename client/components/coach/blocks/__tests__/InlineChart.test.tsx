@@ -132,3 +132,105 @@ function hexToRgb(hex: string): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
 }
+
+describe("InlineChart, the T4 kinds", () => {
+  const ringBlock: InlineChartType = {
+    type: "inline_chart",
+    chartType: "ring",
+    title: "This week's averages",
+    data: [
+      { label: "Protein", value: 160, target: 150, hit: true },
+      { label: "Carbs", value: 125, target: 250 },
+      { label: "Fibre", value: 20 },
+    ],
+  };
+
+  it("draws one ring per value with a target, its number and its goal", () => {
+    renderComponent(<InlineChart block={ringBlock} />);
+    expect(screen.getAllByTestId("inline-chart-ring")).toHaveLength(2);
+    expect(screen.getByText("160")).toBeTruthy();
+    expect(screen.getByText("of 150")).toBeTruthy();
+    expect(screen.queryByText("Fibre")).toBeNull();
+    expect(
+      screen.getByLabelText(
+        "This week's averages. Protein: 160 of 150, on target. Carbs: 125 of 250",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("marks a met ring with a symbol, not colour alone", () => {
+    renderComponent(<InlineChart block={ringBlock} />);
+    expect(screen.getByText("Protein ✓")).toBeTruthy();
+    expect(screen.getByText("Carbs")).toBeTruthy();
+    renderComponent(
+      <InlineChart
+        block={{
+          ...ringBlock,
+          data: [{ label: "Fat", value: 90, target: 70, hit: false }],
+        }}
+      />,
+    );
+    expect(screen.getByText("Fat ✗")).toBeTruthy();
+  });
+
+  const sparkBlock: InlineChartType = {
+    type: "inline_chart",
+    chartType: "sparkline",
+    title: "Weight",
+    data: [
+      { label: "Nov 1", value: 84 },
+      { label: "Nov 8", value: 83 },
+      { label: "Nov 15", value: 82, target: 80 },
+    ],
+    summary: "Down 2 kg",
+  };
+
+  it("draws the line with its first and last day and the latest number", () => {
+    const { container } = renderComponent(<InlineChart block={sparkBlock} />);
+    expect(container.querySelector("polyline")).toBeTruthy();
+    // The goal line, dashed.
+    expect(container.querySelector("line")).toBeTruthy();
+    expect(screen.getByText("Nov 1")).toBeTruthy();
+    expect(screen.getByText("Nov 15 · 82 · goal 80")).toBeTruthy();
+    expect(screen.getByText("Down 2 kg")).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "Weight. From 84 on Nov 1 to 82 on Nov 15, down 2. Goal 80. Down 2 kg",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows only its words when there are too few points for a line", () => {
+    const { container } = renderComponent(
+      <InlineChart block={{ ...sparkBlock, data: [sparkBlock.data[0]] }} />,
+    );
+    expect(container.querySelector("polyline")).toBeNull();
+    expect(screen.getByText("Weight")).toBeTruthy();
+  });
+
+  const heatBlock: InlineChartType = {
+    type: "inline_chart",
+    chartType: "heatmap",
+    title: "Protein goal",
+    data: [
+      { label: "Mon", value: 160, hit: true },
+      { label: "Tue", value: 90, hit: false },
+      { label: "Wed", value: 155, hit: true },
+    ],
+  };
+
+  it("draws a square per day, the met days marked with a symbol", () => {
+    renderComponent(<InlineChart block={heatBlock} />);
+    expect(screen.getAllByTestId("inline-chart-cell")).toHaveLength(3);
+    expect(screen.getAllByText("✓")).toHaveLength(2);
+    // A missed day is marked too, not left as a faint square.
+    expect(screen.getAllByText("✗")).toHaveLength(1);
+    expect(screen.getByText("Mon")).toBeTruthy();
+    expect(screen.getByText("Wed")).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "Protein goal. 2 of 3 days met. Mon: 160, met. Tue: 90, missed. Wed: 155, met",
+      ),
+    ).toBeTruthy();
+  });
+});

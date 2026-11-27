@@ -39,6 +39,7 @@ export async function applyWriteCardContext(
     quickLog?: boolean;
     dayProgress?: boolean;
     weekProgress?: boolean;
+    moreCharts?: boolean;
   },
 ): Promise<void> {
   context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled(), {
@@ -47,6 +48,7 @@ export async function applyWriteCardContext(
     ...(a.quickLog && { quickLog: true }),
     ...(a.dayProgress && { dayProgress: true }),
     ...(a.weekProgress && { weekProgress: true }),
+    ...(a.moreCharts && { moreCharts: true }),
   });
   if (a.liveCard) {
     const card = await storage.getWriteCard(a.liveCard.cardId, a.userId);
