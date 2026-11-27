@@ -28,10 +28,14 @@ The owner wants the "one photo, the app works out what it is" camera back as a r
     - menu → MenuScanResult
     - ingredients → Cook & Track
     - grocery or restaurant receipt → ReceiptCapture (you snap there, because receipts can run to several photos)
-    - barcode with a number → NutritionDetail
+    - barcode → hands over to the guided barcode flow (below), never straight to NutritionDetail
   - Premium-locked types (menu, Cook & Track, receipts) show the upgrade card, as today.
   - Not this goes back to the camera.
-- **Couldn't tell** (`SMART_ERROR`, or `non_food`, or a barcode with no readable number): "Couldn't tell what this is", with **Retake** and a "Pick it myself" link. The link opens the existing PhotoIntent chooser (my call).
+- **Barcode hand-off (owner, 2026-11-27: "do both").** A barcode photo always ends in the full three-step barcode flow (Barcode → Nutrition → Front), the same as Scan Barcode:
+  - **Number read:** "Looks like a barcode ✓", with the number in the sub-line. Continue replaces the screen with the barcode flow carrying that number. It enters through the same path as the type-the-number keypad (`MANUAL_BARCODE_ENTERED` from HUNTING, plus the product lookup), so you land on "Barcode found ✓" with the product, then **Next: nutrition →** and the Front step.
+  - **Barcode seen, number unreadable:** "Looks like a barcode", with the sub-line "Let's scan it live". Continue replaces the screen with the barcode camera (`Scan` with no params) to scan it live. It no longer falls to "Couldn't tell".
+  - `navigation.replace`, not `navigate`, so Back doesn't return to the snap photo.
+- **Couldn't tell** (`SMART_ERROR`, or `non_food`): "Couldn't tell what this is", with **Retake** and a "Pick it myself" link. The link opens the existing PhotoIntent chooser (my call).
 - **Accessibility:**
   - Each card announces through `announceTogether`.
   - The result card waits for a tap anyway, so screen reader users need no special path.
@@ -54,4 +58,5 @@ The owner wants the "one photo, the app works out what it is" camera back as a r
 
 - How `getScanFlow` grows a third flow (`"smart"`), and the `FlowView` for it.
 - Copy for the "what happens next" line per type.
-- Tests, including the route for each content type and the Scan Menu target.
+- Tests, including the route for each content type, both barcode hand-offs, and the Scan Menu target.
+- How the barcode number reaches the new Scan screen (a route param read once on `CAMERA_READY` is the obvious shape; it must not re-fire on focus).
