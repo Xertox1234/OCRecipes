@@ -3,7 +3,7 @@ import { civilDateString } from "../lib/civil-date";
 import {
   sanitizeUserInput,
   sanitizeContextField,
-  COACH_PROMPT_BOUNDARY,
+  SYSTEM_PROMPT_BOUNDARY,
 } from "../lib/ai-safety";
 import { type CoachIntent } from "./coach-intent-classifier";
 import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
@@ -378,7 +378,7 @@ export function buildSystemPrompt(
   ];
 
   // Safety boundary is always LAST — after all context sections
-  parts.push("", COACH_PROMPT_BOUNDARY);
+  parts.push("", SYSTEM_PROMPT_BOUNDARY);
 
   return parts.join("\n");
 }

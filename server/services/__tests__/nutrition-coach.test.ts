@@ -50,7 +50,6 @@ vi.mock("../../lib/ai-safety", () => ({
   sanitizeContextField: vi.fn((text: string) => text),
   containsUnsafeCoachAdvice: vi.fn().mockReturnValue(false),
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
-  COACH_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
 // A hoisted singleton (not a per-call factory return) — `nutrition-coach.ts`

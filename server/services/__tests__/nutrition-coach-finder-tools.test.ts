@@ -48,7 +48,6 @@ vi.mock("../../lib/ai-safety", () => ({
   sanitizeContextField: vi.fn((t: string) => t),
   containsUnsafeCoachAdvice: vi.fn().mockReturnValue(false),
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
-  COACH_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 vi.mock("../../lib/logger", () => ({
   createServiceLogger: () => ({
