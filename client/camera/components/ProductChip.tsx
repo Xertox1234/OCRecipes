@@ -49,6 +49,13 @@ const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera
 // plus the largest realistic raised offset (~136px) with headroom.
 const OFF_SCREEN_Y = 400;
 
+export type LookupErrorKind = "offline" | "failed";
+
+export const LOOKUP_ERROR_TEXT: Record<LookupErrorKind, string> = {
+  offline: "Couldn't look this up. Check your connection.",
+  failed: "Something went wrong looking this up.",
+};
+
 interface Props {
   phase: ScanPhase;
   onConfirm: () => void;
@@ -66,6 +73,21 @@ interface Props {
    * Skip and cover the step tabs.
    */
   hideFrontPrompt?: boolean;
+  /**
+   * QuickLogDrawer's flow: the found card's primary logs straight away
+   * ("Log it →", via onConfirm) and there is no photo-step action.
+   */
+  returnAfterLog?: boolean;
+  /**
+   * The product lookup for this barcode failed (not a 404): "offline" for a
+   * network failure, "failed" for a server error. The card says so in one
+   * line and offers Try again / Type it in instead of a skeleton forever.
+   */
+  lookupError?: LookupErrorKind | null;
+  /** Try again: re-run the lookup for the locked barcode. */
+  onRetryLookup?: () => void;
+  /** Type it in: open the type-the-number sheet. */
+  onTypeBarcode?: () => void;
   onProceedToLabel: () => void;
   onStepConfirmed: () => void;
   onRetakeStep2: () => void;
@@ -110,6 +132,10 @@ export function ProductChip({
   screenReaderEnabled = false,
   productNotFound = false,
   hideFrontPrompt = false,
+  returnAfterLog = false,
+  lookupError = null,
+  onRetryLookup,
+  onTypeBarcode,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { reducedMotion } = useAccessibility();
@@ -267,7 +293,10 @@ export function ProductChip({
     phase.type === "BARCODE_LOCKED"
       ? phase.product?.verificationLevel
       : undefined,
+    { returnAfterLog },
   );
+  const runLockAction = (intent: "proceedToLabel" | "confirmProduct") =>
+    intent === "proceedToLabel" ? onProceedToLabel : onConfirm;
 
   if (!shouldRender) return null;
 
@@ -309,7 +338,11 @@ export function ProductChip({
               <Text style={styles.cardTitle} accessibilityLabel="Barcode found">
                 Barcode found ✓
               </Text>
-              {productNotFound ? (
+              {lookupError ? (
+                <Text style={styles.cardSub}>
+                  {LOOKUP_ERROR_TEXT[lookupError]}
+                </Text>
+              ) : productNotFound ? (
                 <Text style={styles.cardSub}>
                   We don&apos;t know this one yet. The label and front photos
                   will fill it in
@@ -343,41 +376,68 @@ export function ProductChip({
             </View>
           ) : null}
 
-          <View style={styles.actionRow}>
-            <ChipButton
-              tone="ghost"
-              style={styles.actionFlex}
-              onPress={onRescan}
-              accessibilityLabel="Not this"
-            >
-              Not this
-            </ChipButton>
-            <ChipButton
-              tone="accent"
-              style={styles.actionFlex}
-              onPress={
-                barcodeLockActions.primary.intent === "proceedToLabel"
-                  ? onProceedToLabel
-                  : onConfirm
-              }
-              accessibilityLabel={barcodeLockActions.primary.label}
-            >
-              {barcodeLockActions.primary.label}
-            </ChipButton>
-          </View>
-          {/* Not in database: there is no database data to use. */}
-          {productNotFound ? null : (
-            <ChipButton
-              tone="link"
-              onPress={
-                barcodeLockActions.secondary.intent === "proceedToLabel"
-                  ? onProceedToLabel
-                  : onConfirm
-              }
-              accessibilityLabel={barcodeLockActions.secondary.label}
-            >
-              {barcodeLockActions.secondary.label}
-            </ChipButton>
+          {lookupError ? (
+            <>
+              {/* The lookup failed: retry it or type the number, never a
+                  silent return to the camera. The flow's own next step
+                  stays reachable below. */}
+              <View style={styles.actionRow}>
+                <ChipButton
+                  tone="ghost"
+                  style={styles.actionFlex}
+                  onPress={() => onRetryLookup?.()}
+                  accessibilityLabel="Try again"
+                >
+                  Try again
+                </ChipButton>
+                <ChipButton
+                  tone="accent"
+                  style={styles.actionFlex}
+                  onPress={() => onTypeBarcode?.()}
+                  accessibilityLabel="Type it in"
+                >
+                  Type it in
+                </ChipButton>
+              </View>
+              <ChipButton
+                tone="link"
+                onPress={runLockAction(barcodeLockActions.primary.intent)}
+                accessibilityLabel={barcodeLockActions.primary.label}
+              >
+                {barcodeLockActions.primary.label}
+              </ChipButton>
+            </>
+          ) : (
+            <>
+              <View style={styles.actionRow}>
+                <ChipButton
+                  tone="ghost"
+                  style={styles.actionFlex}
+                  onPress={onRescan}
+                  accessibilityLabel="Not this"
+                >
+                  Not this
+                </ChipButton>
+                <ChipButton
+                  tone="accent"
+                  style={styles.actionFlex}
+                  onPress={runLockAction(barcodeLockActions.primary.intent)}
+                  accessibilityLabel={barcodeLockActions.primary.label}
+                >
+                  {barcodeLockActions.primary.label}
+                </ChipButton>
+              </View>
+              {/* Not in database: there is no database data to use. */}
+              {productNotFound || !barcodeLockActions.secondary ? null : (
+                <ChipButton
+                  tone="link"
+                  onPress={runLockAction(barcodeLockActions.secondary.intent)}
+                  accessibilityLabel={barcodeLockActions.secondary.label}
+                >
+                  {barcodeLockActions.secondary.label}
+                </ChipButton>
+              )}
+            </>
           )}
         </>
       ) : variant === "step2_review" || variant === "step3_review" ? (

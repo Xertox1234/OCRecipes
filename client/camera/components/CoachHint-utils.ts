@@ -38,20 +38,21 @@ export function getCoachMessage(
 
 /**
  * The hint line in the camera shell: the step's own hint (`viewHint`, from
- * the flow view), escalated after 5 s / 10 s / 15 s with nothing caught on a
- * barcode step, "Hold steady…" while a barcode is tracked, and quiet while a
- * found / captured card is up. An empty `viewHint` (the generic flow) stays
- * empty.
+ * the flow view), escalated after 5 s / 10 s / 15 s with nothing caught on the
+ * barcode flow's barcode step, "Hold steady…" while a barcode is tracked, and
+ * quiet while a found / captured card is up. The generic flow never
+ * escalates: it lines up a photo, and has no keypad to type a number on.
  */
 export function getFlowCoachMessage(
   phase: ScanPhase,
   viewHint: string,
   elapsedSeconds: number,
+  flow: "barcode" | "generic",
 ): string {
   switch (phase.type) {
     case "IDLE":
     case "HUNTING": {
-      if (!viewHint) return "";
+      if (!viewHint || flow !== "barcode") return viewHint;
       if (elapsedSeconds >= 15) return "Type the number";
       if (elapsedSeconds >= 10) return "Or tap ⚡ for torch";
       if (elapsedSeconds >= 5) return "Try moving closer";

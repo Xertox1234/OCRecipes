@@ -169,10 +169,16 @@ describe("getFlowCoachMessage", () => {
 
   it("shows the step hint first, then escalates at 5 s / 10 s / 15 s", () => {
     const hunting = { type: "HUNTING" } as const;
-    expect(getFlowCoachMessage(hunting, HINT, 0)).toBe(HINT);
-    expect(getFlowCoachMessage(hunting, HINT, 5)).toBe("Try moving closer");
-    expect(getFlowCoachMessage(hunting, HINT, 10)).toBe("Or tap ⚡ for torch");
-    expect(getFlowCoachMessage(hunting, HINT, 15)).toBe("Type the number");
+    expect(getFlowCoachMessage(hunting, HINT, 0, "barcode")).toBe(HINT);
+    expect(getFlowCoachMessage(hunting, HINT, 5, "barcode")).toBe(
+      "Try moving closer",
+    );
+    expect(getFlowCoachMessage(hunting, HINT, 10, "barcode")).toBe(
+      "Or tap ⚡ for torch",
+    );
+    expect(getFlowCoachMessage(hunting, HINT, 15, "barcode")).toBe(
+      "Type the number",
+    );
   });
 
   it("says hold steady while tracking", () => {
@@ -186,6 +192,7 @@ describe("getFlowCoachMessage", () => {
         },
         HINT,
         12,
+        "barcode",
       ),
     ).toBe("Hold steady…");
   });
@@ -196,6 +203,7 @@ describe("getFlowCoachMessage", () => {
         { type: "BARCODE_LOCKED", barcode: "1", bounds: BOUNDS },
         HINT,
         0,
+        "barcode",
       ),
     ).toBe("");
     expect(
@@ -203,11 +211,25 @@ describe("getFlowCoachMessage", () => {
         { type: "LABEL_PROMPTED", barcode: "1" },
         "Fit the whole panel in the frame",
         0,
+        "barcode",
       ),
     ).toBe("Fit the whole panel in the frame");
   });
 
   it("does not escalate an empty hint (the generic flow)", () => {
-    expect(getFlowCoachMessage({ type: "HUNTING" }, "", 12)).toBe("");
+    expect(getFlowCoachMessage({ type: "HUNTING" }, "", 12, "generic")).toBe(
+      "",
+    );
+  });
+
+  // Barcode advice ("move closer", "type the number") is for the barcode
+  // step only: the generic label flow lines up a photo and has no keypad.
+  it("never escalates in the generic flow", () => {
+    const LABEL = "Fit the whole panel in the frame";
+    for (const seconds of [5, 10, 15, 30]) {
+      expect(
+        getFlowCoachMessage({ type: "HUNTING" }, LABEL, seconds, "generic"),
+      ).toBe(LABEL);
+    }
   });
 });

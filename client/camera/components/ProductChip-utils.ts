@@ -68,7 +68,8 @@ export type BarcodeLockAction = {
 
 export type BarcodeLockActions = {
   primary: BarcodeLockAction;
-  secondary: BarcodeLockAction;
+  /** null when there is no second route (returnAfterLog). */
+  secondary: BarcodeLockAction | null;
 };
 
 /**
@@ -90,7 +91,17 @@ export type BarcodeLockActions = {
  */
 export function getBarcodeLockActions(
   verificationLevel: VerificationLevel | undefined,
+  opts: { returnAfterLog?: boolean } = {},
 ): BarcodeLockActions {
+  // QuickLogDrawer's returnAfterLog flow has no photo steps: the found card
+  // goes straight to the existing confirm-and-log card (spec "Entry and
+  // routing").
+  if (opts.returnAfterLog) {
+    return {
+      primary: { label: "Log it →", intent: "confirmProduct" },
+      secondary: null,
+    };
+  }
   if (verificationLevel === "verified") {
     return {
       primary: { label: "Use verified data →", intent: "confirmProduct" },

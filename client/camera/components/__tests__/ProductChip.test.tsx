@@ -102,6 +102,65 @@ describe("ProductChip — step2_confirmed has no secondary capture button", () =
   });
 });
 
+describe("ProductChip — returnAfterLog found card", () => {
+  it("offers Log it as the primary and no photo step", () => {
+    const onConfirm = vi.fn();
+    render(
+      <ProductChip
+        phase={barcodeLock}
+        {...handlers}
+        onConfirm={onConfirm}
+        returnAfterLog
+      />,
+    );
+    expect(screen.queryByText("Next: nutrition →")).toBeNull();
+    expect(screen.queryByText("Use database data anyway")).toBeNull();
+    screen.getByLabelText("Log it →").click();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ProductChip — found card lookup error", () => {
+  it("says the lookup failed offline and offers Try again / Type it in", () => {
+    const onRetryLookup = vi.fn();
+    const onTypeBarcode = vi.fn();
+    render(
+      <ProductChip
+        phase={barcodeLock}
+        {...handlers}
+        lookupError="offline"
+        onRetryLookup={onRetryLookup}
+        onTypeBarcode={onTypeBarcode}
+      />,
+    );
+    expect(
+      screen.getByText("Couldn't look this up. Check your connection."),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("found-card-name-skeleton")).toBeNull();
+    screen.getByLabelText("Try again").click();
+    expect(onRetryLookup).toHaveBeenCalledTimes(1);
+    screen.getByLabelText("Type it in").click();
+    expect(onTypeBarcode).toHaveBeenCalledTimes(1);
+    // The flow can still go on without the name.
+    expect(screen.getByLabelText("Next: nutrition →")).toBeTruthy();
+  });
+
+  it("says something went wrong for a server failure", () => {
+    render(
+      <ProductChip
+        phase={barcodeLock}
+        {...handlers}
+        lookupError="failed"
+        onRetryLookup={noop}
+        onTypeBarcode={noop}
+      />,
+    );
+    expect(
+      screen.getByText("Something went wrong looking this up."),
+    ).toBeTruthy();
+  });
+});
+
 // The camera shell's Front step offers the shutter and Skip itself.
 describe("ProductChip — hideFrontPrompt", () => {
   it("renders nothing for step2_confirmed when hidden", () => {

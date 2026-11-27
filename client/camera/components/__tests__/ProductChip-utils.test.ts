@@ -277,6 +277,19 @@ describe("getChipConfidenceColor", () => {
 });
 
 describe("getBarcodeLockActions", () => {
+  // QuickLogDrawer's returnAfterLog: barcode -> found card -> log, with no
+  // photo steps (spec "Entry and routing").
+  it("goes straight to logging for returnAfterLog, with no photo-step action", () => {
+    for (const level of ["verified", "unverified", undefined] as const) {
+      const actions = getBarcodeLockActions(level, { returnAfterLog: true });
+      expect(actions.primary).toEqual({
+        label: "Log it →",
+        intent: "confirmProduct",
+      });
+      expect(actions.secondary).toBeNull();
+    }
+  });
+
   it("offers the fast path as primary when the product is already verified", () => {
     const actions = getBarcodeLockActions("verified");
     expect(actions.primary).toEqual({

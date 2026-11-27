@@ -396,6 +396,94 @@ describe("ScanScreen guided barcode flow — step 1", () => {
     expect(screen.queryByText("Alpha")).toBeNull();
   });
 
+  // The found card's lookup-error and offline states (spec concept list).
+  describe("lookup failure", () => {
+    it("offline: says so and offers Try again / Type it in", async () => {
+      mockApiRequest.mockRejectedValue(new TypeError("Network request failed"));
+      renderComponent(<ScanScreen />);
+      await scanBarcode(BARCODE_A);
+      expect(
+        await screen.findByText(
+          "Couldn't look this up. Check your connection.",
+        ),
+      ).toBeTruthy();
+      expect(screen.getByLabelText("Try again")).toBeTruthy();
+      expect(screen.getByLabelText("Type it in")).toBeTruthy();
+      expect(screen.queryByTestId("found-card-name-skeleton")).toBeNull();
+    });
+
+    it("server error: says something went wrong", async () => {
+      mockApiRequest.mockRejectedValue(
+        new ApiError("500: boom", "INTERNAL_ERROR", 500),
+      );
+      renderComponent(<ScanScreen />);
+      await scanBarcode(BARCODE_A);
+      expect(
+        await screen.findByText("Something went wrong looking this up."),
+      ).toBeTruthy();
+    });
+
+    it("Try again re-runs the lookup for the same barcode", async () => {
+      mockApiRequest.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
+      renderComponent(<ScanScreen />);
+      await scanBarcode(BARCODE_A);
+      fireEvent.click(await screen.findByLabelText("Try again"));
+      expect(await screen.findByText(/Oat Crunch/)).toBeTruthy();
+      expect(
+        mockApiRequest.mock.calls.filter(
+          (c) => c[1] === `/api/nutrition/barcode/${BARCODE_A}`,
+        ),
+      ).toHaveLength(2);
+      expect(
+        screen.queryByText("Couldn't look this up. Check your connection."),
+      ).toBeNull();
+    });
+
+    it("Type it in opens the number sheet", async () => {
+      mockApiRequest.mockRejectedValue(new TypeError("Network request failed"));
+      renderComponent(<ScanScreen />);
+      await scanBarcode(BARCODE_A);
+      fireEvent.click(await screen.findByLabelText("Type it in"));
+      expect(screen.getByText("Submit typed barcode")).toBeTruthy();
+      // The typed number locks and looks up like a scanned one.
+      mockApiRequest.mockImplementation(async () => {
+        return {
+          json: async () => ({ productName: "Typed Product" }),
+        } as Response;
+      });
+      fireEvent.click(screen.getByText("Submit typed barcode"));
+      expect(await screen.findByText("Typed Product")).toBeTruthy();
+    });
+
+    it("a stale failure for an old barcode does not mark the new lock", async () => {
+      let rejectA: (e: unknown) => void = () => {};
+      mockApiRequest.mockImplementation(async (_m: string, url: string) => {
+        if (url.endsWith(BARCODE_A)) {
+          return new Promise((_res, rej) => {
+            rejectA = rej;
+          });
+        }
+        return {
+          json: async () => ({ productName: "Bravo" }),
+        } as Response;
+      });
+      renderComponent(<ScanScreen />);
+      await scanBarcode(BARCODE_A);
+      fireEvent.click(await screen.findByLabelText("Not this"));
+      await scanBarcode(BARCODE_B);
+      await screen.findByText("Bravo");
+      await act(async () => {
+        rejectA(new TypeError("Network request failed"));
+      });
+      expect(
+        screen.queryByText("Couldn't look this up. Check your connection."),
+      ).toBeNull();
+      expect(screen.queryByLabelText("Try again")).toBeNull();
+    });
+  });
+
   // R5: a 404 lookup says so instead of a skeleton forever.
   it("says the product is unknown when the lookup finds nothing", async () => {
     mockApiRequest.mockRejectedValue(
@@ -505,6 +593,21 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
     );
   }, 10000);
 
+  it("returnAfterLog: the found card logs straight away, with no photo steps", async () => {
+    mockRouteParams.value = { returnAfterLog: true };
+    renderComponent(<ScanScreen />);
+    await scanBarcode(BARCODE_A);
+    expect(await screen.findByLabelText("Log it →")).toBeTruthy();
+    expect(screen.queryByLabelText("Next: nutrition →")).toBeNull();
+    expect(screen.queryByLabelText("Use database data anyway")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Log it →"));
+    // The existing returnAfterLog confirm card (Dismiss / Log It).
+    expect(await screen.findByLabelText("Dismiss")).toBeTruthy();
+    expect(screen.queryByLabelText("Take photo")).toBeNull();
+    expect(screen.queryByLabelText("Nutrition")).toBeNull();
+  });
+
   it("returnAfterLog shows only the Barcode tab", () => {
     mockRouteParams.value = { returnAfterLog: true };
     renderComponent(<ScanScreen />);
@@ -515,6 +618,31 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
 });
 
 describe("ScanScreen generic flow", () => {
+  // Barcode advice is for the barcode step only (mobile-reviewer).
+  it("the generic label flow never shows barcode escalations", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      tips.seen.add("scan-tips-carousel");
+      mockRouteParams.value = { mode: "label" };
+      renderComponent(<ScanScreen />);
+      // One tick at a time, so each hint change commits and CoachHint's
+      // crossfade timer (100 ms) runs before the next.
+      for (let i = 0; i < 16; i++) {
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+      }
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.queryByText("Type the number")).toBeNull();
+      expect(screen.queryByText("Try moving closer")).toBeNull();
+      expect(screen.getByText("Fit the whole panel in the frame")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows a title pill and the shutter, with no tabs or example card", () => {
     mockRouteParams.value = { intent: "log" };
     renderComponent(<ScanScreen />);

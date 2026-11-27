@@ -44,7 +44,11 @@ import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer";
 import type { ScanAction, ScanPhase } from "@/camera/types/scan-phase";
 import { CoachHint } from "@/camera/components/CoachHint";
 import { ScanReticle } from "@/camera/components/ScanReticle";
-import { ProductChip } from "@/camera/components/ProductChip";
+import {
+  LOOKUP_ERROR_TEXT,
+  ProductChip,
+  type LookupErrorKind,
+} from "@/camera/components/ProductChip";
 import { getProductChipVariant } from "@/camera/components/ProductChip-utils";
 import { ScanFlashOverlay } from "@/camera/components/ScanFlashOverlay";
 import { ScanSonarRing } from "@/camera/components/ScanSonarRing";
@@ -228,6 +232,11 @@ export default function ScanScreen() {
   // The barcode whose lookup came back 404. Compared with the CURRENT lock at
   // render, so a slow 404 for an earlier barcode never marks a newer lock.
   const [notFoundBarcode, setNotFoundBarcode] = useState<string | null>(null);
+  // A failed (non-404) lookup, keyed the same way: offline or a server error.
+  const [lookupError, setLookupError] = useState<{
+    barcode: string;
+    kind: LookupErrorKind;
+  } | null>(null);
   const [helpVisible, setHelpVisible] = useState(false);
   const [manualVisible, setManualVisible] = useState(false);
   // True while the carousel, an example card or a sheet covers the camera:
@@ -529,6 +538,8 @@ export default function ScanScreen() {
     async (barcode: string) => {
       // Body hoisted into an inner function: React Compiler cannot lower value
       // blocks (`?.`, `&&`, ternaries) inside a try/catch.
+      // A retry starts clean: the card goes back to its skeleton.
+      setLookupError((prev) => (prev?.barcode === barcode ? null : prev));
       const loadProduct = async () => {
         const res = await apiRequest(
           "GET",
@@ -589,7 +600,21 @@ export default function ScanScreen() {
           return;
         }
         logger.error("[fetchProductInfo] product info fetch failed", err);
-        // Non-critical — ProductChip renders without product data
+        // The found card says what failed and offers Try again / Type it
+        // in. A thrown non-ApiError TypeError is fetch's network failure.
+        const kind: LookupErrorKind =
+          !(err instanceof ApiError) && err instanceof TypeError
+            ? "offline"
+            : "failed";
+        setLookupError({ barcode, kind });
+        const live = scanPhaseRef.current;
+        if (
+          navigation.isFocused() &&
+          live.type === "BARCODE_LOCKED" &&
+          live.barcode === barcode
+        ) {
+          AccessibilityInfo.announceForAccessibility(LOOKUP_ERROR_TEXT[kind]);
+        }
       }
     },
     [dispatch, haptics, returnAfterLog, navigation],
@@ -975,7 +1000,12 @@ export default function ScanScreen() {
   // Quiet under a teaching surface (the hint would draw over its scrim).
   const coachMessage = teachingUp
     ? ""
-    : getFlowCoachMessage(scanPhase, view.hint, elapsedSeconds);
+    : getFlowCoachMessage(
+        scanPhase,
+        view.hint,
+        elapsedSeconds,
+        isBarcodeFlow ? "barcode" : "generic",
+      );
 
   // Android TalkBack focus trap for the overlays (no-op on iOS). The static
   // camera UI and ProductChip need different values — see getScanOverlayA11y.
@@ -1006,6 +1036,11 @@ export default function ScanScreen() {
   const productNotFound =
     scanPhase.type === "BARCODE_LOCKED" &&
     scanPhase.barcode === notFoundBarcode;
+  const lookupErrorKind =
+    scanPhase.type === "BARCODE_LOCKED" &&
+    lookupError?.barcode === scanPhase.barcode
+      ? lookupError.kind
+      : null;
 
   const shutter = view.showShutter ? (
     <Pressable
@@ -1172,6 +1207,21 @@ export default function ScanScreen() {
         importantForAccessibility={overlayA11y.productChip}
         productNotFound={productNotFound}
         hideFrontPrompt
+        returnAfterLog={returnAfterLog}
+        lookupError={lookupErrorKind}
+        // Try again: the same lookup for the barcode locked now.
+        onRetryLookup={() => {
+          const phase = scanPhaseRef.current;
+          if (phase.type === "BARCODE_LOCKED") {
+            void fetchProductInfo(phase.barcode);
+          }
+        }}
+        // Type it in: drop the lock (as "Not this") and open the sheet.
+        onTypeBarcode={() => {
+          hasLockedRef.current = false;
+          dispatch({ type: "RESCAN" });
+          setManualVisible(true);
+        }}
         isSmartConfirming={isSmartConfirming}
         screenReaderEnabled={screenReaderEnabled}
         phase={scanPhase}
