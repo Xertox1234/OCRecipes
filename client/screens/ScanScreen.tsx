@@ -61,7 +61,7 @@ import { TipsCarousel } from "@/camera/shell/TipsCarousel";
 import { ManualBarcodeSheet } from "@/camera/shell/ManualBarcodeSheet";
 import {
   getBarcodeFlowView,
-  getPhotosDiscardedByLock,
+  getPhotosDiscardedByCommit,
   type FlowView,
 } from "@/camera/shell/barcode-flow";
 import { useScanOnboarding } from "@/camera/shell/useScanOnboarding";
@@ -102,6 +102,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { ScanConfirmOverlay } from "@/components/scan/ScanConfirmOverlay";
 import { CameraPermissionGate } from "@/components/scan/CameraPermissionGate";
 import { useToast } from "@/context/ToastContext";
+import { announceTogether } from "@/lib/announce-together";
 import { CameraColors, FontFamily } from "@/constants/theme";
 import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -285,18 +286,19 @@ export default function ScanScreen() {
   // It relies on scanPhaseReducer staying pure: the reducer runs here and again
   // inside React, and both must agree.
   //
-  // It also owns the one cross-phase clean-up: a redo-barcode detour that
-  // locks a DIFFERENT product drops the photos carried for the old one, so
-  // their temp files are deleted here and the user is told (Review Focus 1).
-  // Every phase change goes through this wrapper (scanned and typed locks
-  // alike), which is why the check lives here rather than in an effect.
+  // It also owns the one cross-phase clean-up: after a redo-barcode detour
+  // locks a DIFFERENT product, committing to it (any forward action off its
+  // found card) drops the photos carried for the old one, so their temp
+  // files are deleted here and the user is told (Review Focus 1). "Not this"
+  // keeps them. Every phase change goes through this wrapper, which is why
+  // the check lives here rather than in an effect.
   const dispatch = useCallback(
     (action: ScanAction) => {
       const prev = scanPhaseRef.current;
       const next = scanPhaseReducer(prev, action);
       scanPhaseRef.current = next;
       rawDispatch(action);
-      const dropped = getPhotosDiscardedByLock(prev, next);
+      const dropped = getPhotosDiscardedByCommit(prev, next);
       if (dropped.length > 0) {
         dropped.forEach((uri) => discardTempUri(uri));
         toastRef.current.info(PHOTOS_CLEARED_NOTICE);
@@ -538,8 +540,11 @@ export default function ScanScreen() {
     async (barcode: string) => {
       // Body hoisted into an inner function: React Compiler cannot lower value
       // blocks (`?.`, `&&`, ternaries) inside a try/catch.
-      // A retry starts clean: the card goes back to its skeleton.
+      // A new lookup starts clean: the card goes back to its skeleton until
+      // this answer lands (an earlier error or 404 for the same barcode must
+      // not hide a later success).
       setLookupError((prev) => (prev?.barcode === barcode ? null : prev));
+      setNotFoundBarcode((prev) => (prev === barcode ? null : prev));
       const loadProduct = async () => {
         const res = await apiRequest(
           "GET",
@@ -928,9 +933,8 @@ export default function ScanScreen() {
   // screen reader on both platforms.
   useEffect(() => {
     if (exampleCardKey) {
-      AccessibilityInfo.announceForAccessibility(
-        EXAMPLE_CONTENT[exampleCardKey].title,
-      );
+      // Batched with the tabs changing in the same commit; content leads.
+      announceTogether(EXAMPLE_CONTENT[exampleCardKey].title, { first: true });
     }
   }, [exampleCardKey]);
 

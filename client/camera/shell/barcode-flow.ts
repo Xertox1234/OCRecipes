@@ -138,7 +138,16 @@ export function getBarcodeFlowView(
       };
     case "SESSION_COMPLETE":
       return {
-        tabs: buildTabs(["done", "done", "done"], NO_TAP, returnAfterLog),
+        tabs: buildTabs(
+          // A skipped step is not a check mark (as on the earlier phases).
+          [
+            "done",
+            phase.nutritionImageUri ? "done" : "upcoming",
+            phase.frontImageUri ? "done" : "upcoming",
+          ],
+          NO_TAP,
+          returnAfterLog,
+        ),
         frame: "front",
         hint: HINT_FRONT,
         showShutter: false,
@@ -160,18 +169,35 @@ export function getBarcodeFlowView(
 }
 
 /**
- * Photo URIs to delete when a lock dropped a pending `resume`: the user redid
- * the barcode and scanned a different product, so photos carried for the old
- * one must not reach the new one.
+ * Photo URIs to delete when the user commits to a DIFFERENT product after a
+ * redo-barcode detour: the found card for it carried the old steps
+ * (`resume`) so "Not this" could bring them back, and moving on from it in
+ * any forward direction means photos of the old product must never reach the
+ * new one. Not this (HUNTING), a product load (still locked) and leaving the
+ * screen (IDLE — the abandon clean-up deletes them) discard nothing here.
  */
-export function getPhotosDiscardedByLock(
+export function getPhotosDiscardedByCommit(
   prev: ScanPhase,
   next: ScanPhase,
 ): string[] {
-  if (next.type !== "BARCODE_LOCKED") return [];
-  if (prev.type !== "HUNTING" && prev.type !== "BARCODE_TRACKING") return [];
+  if (prev.type !== "BARCODE_LOCKED" || !prev.resume) return [];
+  switch (next.type) {
+    case "LABEL_PROMPTED":
+    case "STEP2_REVIEWING":
+    case "SESSION_COMPLETE":
+      break;
+    case "IDLE":
+    case "HUNTING":
+    case "BARCODE_TRACKING":
+    case "BARCODE_LOCKED":
+    case "STEP2_CONFIRMED":
+    case "STEP3_REVIEWING":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
+      return [];
+  }
   const resume = prev.resume;
-  if (!resume || resume.barcode === next.barcode) return [];
   switch (resume.type) {
     case "STEP2_CONFIRMED":
       return resume.nutritionImageUri ? [resume.nutritionImageUri] : [];

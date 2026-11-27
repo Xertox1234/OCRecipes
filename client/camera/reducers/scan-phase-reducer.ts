@@ -38,8 +38,9 @@ type LockBounds = typeof MANUAL_ENTRY_BOUNDS;
 
 /**
  * Shared by BARCODE_LOCKED and MANUAL_BARCODE_ENTERED: a redo detour that finds
- * the same barcode again returns to the phase it left; any other barcode is a
- * fresh lock and the resume is dropped.
+ * the same barcode again returns to the phase it left. Any other barcode is a
+ * fresh lock that still carries the resume, so "Not this" can return to the
+ * detour; committing to the new product (any forward action) drops it.
  */
 function lockOrResume(
   barcode: string,
@@ -47,7 +48,12 @@ function lockOrResume(
   resume: ResumablePhase | undefined,
 ): ScanPhase {
   if (resume && resume.barcode === barcode) return resume;
-  return { type: "BARCODE_LOCKED", barcode, bounds };
+  return {
+    type: "BARCODE_LOCKED",
+    barcode,
+    bounds,
+    ...(resume && { resume }),
+  };
 }
 
 export function scanPhaseReducer(
@@ -88,7 +94,9 @@ export function scanPhaseReducer(
 
     case "RESCAN":
       if (state.type !== "BARCODE_LOCKED") return state;
-      return { type: "HUNTING" };
+      return state.resume
+        ? { type: "HUNTING", resume: state.resume }
+        : { type: "HUNTING" };
 
     case "REDO_STEP":
       if (state.type !== "LABEL_PROMPTED" && state.type !== "STEP2_CONFIRMED")

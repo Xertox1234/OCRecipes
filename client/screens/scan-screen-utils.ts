@@ -348,17 +348,19 @@ export type CaptureMode = {
 };
 
 /**
- * Which camera a `Scan` route opens. No `mode` and no `intent` is the guided
- * barcode flow (Barcode · Nutrition · Front), with or without
- * `returnAfterLog` / `verifyBarcode`; anything else is the generic one-photo
- * flow.
+ * Which camera a `Scan` route opens. A known `mode` ("label" /
+ * "front-label") or any `intent` is the generic one-photo flow; everything
+ * else is the guided barcode flow (Barcode · Nutrition · Front), with or
+ * without `returnAfterLog` / `verifyBarcode`. An unknown or null `mode`
+ * (CoachChat casts model params) falls back to the barcode flow: as a generic
+ * flow it would neither scan barcodes nor capture.
  */
 export function getScanFlow(
   params: RootStackParamList["Scan"],
 ): "barcode" | "generic" {
-  return params?.mode === undefined && params?.intent === undefined
-    ? "barcode"
-    : "generic";
+  const mode: unknown = params?.mode;
+  const knownMode = mode === "label" || mode === "front-label";
+  return knownMode || params?.intent !== undefined ? "generic" : "barcode";
 }
 
 const GENERIC_INTENT_TITLES = new Map<unknown, string>([

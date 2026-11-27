@@ -47,6 +47,12 @@ export type ScanPhase =
       barcode: string;
       bounds: Bounds;
       product?: ProductSummary;
+      /**
+       * A redo-barcode detour that locked a DIFFERENT barcode: the saved
+       * steps ride along until the user commits to this product, so "Not
+       * this" (RESCAN) can bring them back.
+       */
+      resume?: ResumablePhase;
     }
   | {
       /**

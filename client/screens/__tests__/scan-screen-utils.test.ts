@@ -925,6 +925,10 @@ describe("getScanFlow", () => {
     ],
     ["intent log", { intent: "log" }, "generic"],
     ["intent menu", { intent: "menu" }, "generic"],
+    // CoachChat casts model params: an unknown or null mode is not a
+    // generic mode — it must not open a camera that neither scans nor shoots.
+    ["unknown mode", { mode: "scan" as unknown as "label" }, "barcode"],
+    ["null mode", { mode: null as unknown as "label" }, "barcode"],
     [
       "intent with returnAfterLog",
       { intent: "log", returnAfterLog: true },

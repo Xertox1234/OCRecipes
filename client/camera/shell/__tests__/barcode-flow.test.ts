@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { ScanPhase } from "../../types/scan-phase";
-import { getBarcodeFlowView, getPhotosDiscardedByLock } from "../barcode-flow";
+import {
+  getBarcodeFlowView,
+  getPhotosDiscardedByCommit,
+} from "../barcode-flow";
 
 const BOUNDS = { x: 0.3, y: 0.4, width: 0.4, height: 0.2 };
 const opts = { returnAfterLog: false };
@@ -99,10 +102,20 @@ describe("getBarcodeFlowView", () => {
     }
   });
 
-  it("SESSION_COMPLETE: every tab done, none tappable", () => {
-    const p: ScanPhase = { type: "SESSION_COMPLETE", barcode: "1" };
-    expect(states(p)).toEqual(["done", "done", "done"]);
-    expect(tappable(p)).toEqual([false, false, false]);
+  it("SESSION_COMPLETE: photographed steps done, skipped ones not, none tappable", () => {
+    const all: ScanPhase = {
+      type: "SESSION_COMPLETE",
+      barcode: "1",
+      nutritionImageUri: "n",
+      frontImageUri: "f",
+    };
+    expect(states(all)).toEqual(["done", "done", "done"]);
+    expect(tappable(all)).toEqual([false, false, false]);
+    const skipped: ScanPhase = { type: "SESSION_COMPLETE", barcode: "1" };
+    expect(states(skipped)).toEqual(["done", "upcoming", "upcoming"]);
+    expect(
+      states({ type: "SESSION_COMPLETE", barcode: "1", frontImageUri: "f" }),
+    ).toEqual(["done", "upcoming", "done"]);
   });
 
   it("smart-scan phases map to the generic single-step view", () => {
@@ -114,59 +127,53 @@ describe("getBarcodeFlowView", () => {
   });
 });
 
-describe("getPhotosDiscardedByLock", () => {
+// A different barcode's found card keeps the saved steps (resume) until the
+// user commits to the new product; only then are the old photos discarded.
+describe("getPhotosDiscardedByCommit", () => {
   const resume = {
     type: "STEP2_CONFIRMED" as const,
     barcode: "A",
     nutritionImageUri: "file:///a-nutrition.jpg",
   };
-  const locked = (barcode: string): ScanPhase => ({
+  const lockedB: ScanPhase = {
     type: "BARCODE_LOCKED",
-    barcode,
+    barcode: "B",
     bounds: BOUNDS,
+    resume,
+  };
+
+  it("returns the resumed photo when the user moves on from B's found card", () => {
+    const forward: ScanPhase[] = [
+      { type: "LABEL_PROMPTED", barcode: "B" },
+      { type: "SESSION_COMPLETE", barcode: "B" },
+      { type: "STEP2_REVIEWING", barcode: "B", ocrText: null, imageUri: "u" },
+    ];
+    for (const next of forward) {
+      expect(getPhotosDiscardedByCommit(lockedB, next)).toEqual([
+        "file:///a-nutrition.jpg",
+      ]);
+    }
   });
 
-  it("returns the resume nutrition URI for a different barcode", () => {
+  it("returns [] for Not this, a product load, or leaving the screen", () => {
     expect(
-      getPhotosDiscardedByLock({ type: "HUNTING", resume }, locked("B")),
-    ).toEqual(["file:///a-nutrition.jpg"]);
-    expect(
-      getPhotosDiscardedByLock(
-        {
-          type: "BARCODE_TRACKING",
-          barcode: "B",
-          bounds: BOUNDS,
-          frameCount: 7,
-          resume,
-        },
-        locked("B"),
-      ),
-    ).toEqual(["file:///a-nutrition.jpg"]);
-  });
-
-  it("returns [] for the same barcode", () => {
-    expect(
-      getPhotosDiscardedByLock({ type: "HUNTING", resume }, locked("A")),
+      getPhotosDiscardedByCommit(lockedB, { type: "HUNTING", resume }),
     ).toEqual([]);
+    expect(getPhotosDiscardedByCommit(lockedB, lockedB)).toEqual([]);
+    expect(getPhotosDiscardedByCommit(lockedB, { type: "IDLE" })).toEqual([]);
   });
 
-  it("returns [] without resume, or when the next phase is not a plain lock", () => {
-    expect(getPhotosDiscardedByLock({ type: "HUNTING" }, locked("B"))).toEqual(
-      [],
-    );
+  it("returns [] for a lock with no resume, or a resume with no photo", () => {
     expect(
-      getPhotosDiscardedByLock(
-        { type: "HUNTING", resume },
-        { type: "HUNTING" },
+      getPhotosDiscardedByCommit(
+        { type: "BARCODE_LOCKED", barcode: "B", bounds: BOUNDS },
+        { type: "LABEL_PROMPTED", barcode: "B" },
       ),
     ).toEqual([]);
-  });
-
-  it("returns [] when the resume held no photo", () => {
     expect(
-      getPhotosDiscardedByLock(
-        { type: "HUNTING", resume: { type: "LABEL_PROMPTED", barcode: "A" } },
-        locked("B"),
+      getPhotosDiscardedByCommit(
+        { ...lockedB, resume: { type: "LABEL_PROMPTED", barcode: "A" } },
+        { type: "LABEL_PROMPTED", barcode: "B" },
       ),
     ).toEqual([]);
   });

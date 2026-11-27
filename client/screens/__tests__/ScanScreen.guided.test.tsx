@@ -238,12 +238,27 @@ describe("ScanScreen guided barcode flow — onboarding", () => {
     expect(screen.getByLabelText("Got it")).toBeTruthy();
   });
 
-  it('"Got it" increments the barcode example count', async () => {
+  // A showing counts when the card first appears, so leaving with ✕ (no
+  // "Got it") still spends one of the first 3.
+  it("counts the barcode example card once, when it appears", async () => {
     tips.seen.add("scan-tips-carousel");
     renderComponent(<ScanScreen />);
-    fireEvent.click(screen.getByLabelText("Got it"));
+    expect(screen.getByLabelText("Got it")).toBeTruthy();
+    expect(tips.increment).toHaveBeenCalledTimes(1);
     expect(tips.increment).toHaveBeenCalledWith("barcode");
+
+    fireEvent.click(screen.getByLabelText("Got it"));
     await waitFor(() => expect(screen.queryByLabelText("Got it")).toBeNull());
+    expect(tips.increment).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the 3rd showing up although counting it reaches the limit", () => {
+    tips.seen.add("scan-tips-carousel");
+    tips.counts = { barcode: 2 };
+    renderComponent(<ScanScreen />);
+    expect(tips.increment).toHaveBeenCalledWith("barcode");
+    expect(tips.counts.barcode).toBe(3);
+    expect(screen.getByLabelText("Got it")).toBeTruthy();
   });
 
   it("4th scan shows no example card", () => {
@@ -495,6 +510,19 @@ describe("ScanScreen guided barcode flow — step 1", () => {
     expect(screen.getByLabelText("Next: nutrition →")).toBeTruthy();
   });
 
+  it("a later successful lookup for a barcode that was not found shows its name", async () => {
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("404: Product not found", "NOT_FOUND", 404),
+    );
+    renderComponent(<ScanScreen />);
+    await scanBarcode(BARCODE_A);
+    await screen.findByText(/We don't know this one yet/);
+    fireEvent.click(screen.getByLabelText("Not this"));
+    await scanBarcode(BARCODE_A);
+    expect(await screen.findByText(/Oat Crunch/)).toBeTruthy();
+    expect(screen.queryByText(/We don't know this one yet/)).toBeNull();
+  });
+
   it("a slow 404 for an old barcode does not mark the new lock unknown", async () => {
     let rejectA: (e: unknown) => void = () => {};
     mockApiRequest.mockImplementation(async (_m: string, url: string) => {
@@ -553,6 +581,47 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
     ).toHaveLength(1);
   });
 
+  // VoiceOver cuts off a second announcement made in the same tick: one
+  // phase change that moves the tabs, the hint and the example card must be
+  // ONE announcement, content first and tab state after.
+  describe("one announcement per phase change", () => {
+    const settle = () =>
+      act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+
+    it("example card + tabs", async () => {
+      tips.counts = { barcode: 3, "barcode-nutrition": 0, "barcode-front": 3 };
+      const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+      renderComponent(<ScanScreen />);
+      await scanBarcode(BARCODE_A);
+      const next = await screen.findByLabelText("Next: nutrition →");
+      await settle();
+      announce.mockClear();
+      fireEvent.click(next);
+      await settle();
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(
+        "Photo the nutrition label Barcode step complete Nutrition step in progress",
+      );
+    });
+
+    it("hint + tabs", async () => {
+      const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+      renderComponent(<ScanScreen />);
+      await scanBarcode(BARCODE_A);
+      const next = await screen.findByLabelText("Next: nutrition →");
+      await settle();
+      announce.mockClear();
+      fireEvent.click(next);
+      await settle();
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(
+        "Fit the whole panel in the frame Barcode step complete Nutrition step in progress",
+      );
+    });
+  });
+
   it("Skip on the Front step navigates to NutritionDetail", async () => {
     renderComponent(<ScanScreen />);
     await scanBarcode(BARCODE_A);
@@ -572,7 +641,8 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
   });
 
   // Review Focus 1.
-  it("discards carried photo and toasts on a different barcode", async () => {
+  /** Barcode A, a nutrition photo, auto-advance to the Front step. */
+  async function reachFrontStepWithPhoto() {
     mockCapturePhotoToFile.mockResolvedValueOnce({ filePath: "/label-a.jpg" });
     renderComponent(<ScanScreen />);
     await scanBarcode(BARCODE_A);
@@ -582,19 +652,24 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
     });
     // Auto-advance (1.5 s) out of review into the Front step.
     await waitFor(
-      () => expect(screen.getByLabelText("Barcode, done")).toBeTruthy(),
-      { timeout: 3000 },
-    );
-    await waitFor(
       () => expect(screen.getByLabelText("Nutrition, done")).toBeTruthy(),
       { timeout: 3000 },
     );
+  }
+
+  it("discards carried photo and toasts once the user commits to a different barcode", async () => {
+    await reachFrontStepWithPhoto();
 
     // Redo the barcode step, then scan a different product.
     fireEvent.click(screen.getByLabelText("Barcode, done"));
-    expect(mockDeleteAsync).not.toHaveBeenCalled();
     await scanBarcode(BARCODE_B);
+    // Its found card still holds the old steps: nothing deleted yet.
+    await screen.findByLabelText("Next: nutrition →");
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+    expect(mockToastInfo).not.toHaveBeenCalled();
 
+    // Moving on with B is the commit.
+    fireEvent.click(screen.getByLabelText("Next: nutrition →"));
     expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label-a.jpg", {
       idempotent: true,
     });
@@ -603,7 +678,6 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
     );
 
     // Product B finishes without product A's photo.
-    fireEvent.click(await screen.findByLabelText("Next: nutrition →"));
     fireEvent.click(screen.getByLabelText("Skip"));
     fireEvent.click(screen.getByLabelText("Skip"));
     await waitFor(() =>
@@ -611,6 +685,29 @@ describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
         barcode: BARCODE_B,
       }),
     );
+  }, 10000);
+
+  it('"Not this" on a different barcode keeps the saved photo for the original product', async () => {
+    await reachFrontStepWithPhoto();
+    fireEvent.click(screen.getByLabelText("Barcode, done"));
+    await scanBarcode(BARCODE_B);
+    fireEvent.click(await screen.findByLabelText("Not this"));
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    // Finding A again resumes the Front step with its nutrition photo.
+    await scanBarcode(BARCODE_A);
+    expect(screen.getByLabelText("Nutrition, done")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Skip"));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "NutritionDetail",
+        expect.objectContaining({
+          barcode: BARCODE_A,
+          nutritionImageUri: "file:///label-a.jpg",
+        }),
+      ),
+    );
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
   }, 10000);
 
   it("returnAfterLog: the found card logs straight away, with no photo steps", async () => {

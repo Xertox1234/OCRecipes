@@ -4,6 +4,7 @@ import { act, render, screen } from "@testing-library/react";
 import * as ProductChipUtils from "../ProductChip-utils";
 import { ProductChip } from "../ProductChip";
 import type { ScanPhase } from "../../types/scan-phase";
+import type { ScanFlag } from "@shared/types/scan-flags";
 import type { StyleProp, ViewStyle } from "react-native";
 
 // The shared Pressable mock drops `style`, which would hide the buttons'
@@ -158,6 +159,41 @@ describe("ProductChip — found card lookup error", () => {
     expect(
       screen.getByText("Something went wrong looking this up."),
     ).toBeTruthy();
+  });
+});
+
+// The captured cards keep the top flag row every variant showed before.
+describe("ProductChip — captured cards keep the top flag", () => {
+  const topFlag: ScanFlag = {
+    id: "allergen:peanuts",
+    kind: "allergen",
+    severity: "danger",
+    tier: "safety",
+    title: "Contains Peanuts",
+  };
+  const product = { name: "Trail Mix", topFlag };
+
+  it("shows the flag on step2_review", () => {
+    const phase: ScanPhase = {
+      type: "STEP2_REVIEWING",
+      barcode: "123",
+      imageUri: "x",
+      ocrText: "Calories 200",
+      product,
+    };
+    render(<ProductChip phase={phase} {...handlers} />);
+    expect(screen.getByText("Contains Peanuts")).toBeTruthy();
+  });
+
+  it("shows the flag on step3_review", () => {
+    const phase: ScanPhase = {
+      type: "STEP3_REVIEWING",
+      barcode: "123",
+      frontImageUri: "y",
+      product,
+    };
+    render(<ProductChip phase={phase} {...handlers} />);
+    expect(screen.getByText("Contains Peanuts")).toBeTruthy();
   });
 });
 

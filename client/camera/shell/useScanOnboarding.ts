@@ -1,8 +1,15 @@
 // First-run teaching for the scan camera: the one-time tips carousel, then
-// the step's example card for the first 3 scans of a flow, and the card again
-// on demand through "?". Nothing shows until the saved counts have loaded, and
-// each card shows at most once per visit, so neither flashes nor repeats.
-import { useCallback, useState, useSyncExternalStore } from "react";
+// the step's example card for the first 3 scans of a flow (counted when it
+// appears), and the card again on demand through "?" (never counted).
+// Nothing shows until the saved counts have loaded, and each card shows at
+// most once per visit, so neither flashes nor repeats.
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   hasSeenTip,
   incrementExampleViewCount,
@@ -52,23 +59,41 @@ export function useScanOnboarding({
   );
   // This visit's dismissals: a card never comes back on a retake or a redo.
   const [dismissed, setDismissed] = useState<ScanExampleKey[]>([]);
+  // Cards this visit has shown unasked. Once shown, a card stays up until
+  // dismissed: counting it (below) can reach the limit and flip autoShow.
+  const [shown, setShown] = useState<ScanExampleKey[]>([]);
   const [forcedKey, setForcedKey] = useState<ScanExampleKey | null>(null);
   const [carouselDone, setCarouselDone] = useState(false);
+  const countedRef = useRef(new Set<ScanExampleKey>());
 
   const carouselVisible = carouselState === "unseen" && !carouselDone;
 
-  let exampleCardKey: ScanExampleKey | null = null;
-  if (forcedKey) {
-    exampleCardKey = forcedKey;
-  } else if (
+  const autoKey =
     !carouselVisible &&
     carouselState !== "loading" &&
     exampleKey &&
-    autoShow === true &&
-    !dismissed.includes(exampleKey)
-  ) {
-    exampleCardKey = exampleKey;
+    !dismissed.includes(exampleKey) &&
+    (shown.includes(exampleKey) || autoShow === true)
+      ? exampleKey
+      : null;
+  // React's "adjust state while rendering" pattern: latch the showing in the
+  // same commit it first appears.
+  if (autoKey && !shown.includes(autoKey)) {
+    setShown([...shown, autoKey]);
   }
+  const exampleCardKey: ScanExampleKey | null = forcedKey ?? autoKey;
+
+  // An unasked-for showing counts when it first appears (closing the camera
+  // with ✕ still spends one of the first 3); a card asked for through "?"
+  // never does.
+  useEffect(() => {
+    for (const key of shown) {
+      if (!countedRef.current.has(key)) {
+        countedRef.current.add(key);
+        void incrementExampleViewCount(key);
+      }
+    }
+  }, [shown]);
 
   const onCarouselDone = useCallback(() => {
     setCarouselDone(true);
@@ -77,12 +102,10 @@ export function useScanOnboarding({
 
   const onExampleDismiss = useCallback(() => {
     if (!exampleCardKey) return;
-    // Only an unasked-for showing spends one of the first 3.
-    if (!forcedKey) void incrementExampleViewCount(exampleCardKey);
     setForcedKey(null);
     const key = exampleCardKey;
     setDismissed((prev) => (prev.includes(key) ? prev : [...prev, key]));
-  }, [exampleCardKey, forcedKey]);
+  }, [exampleCardKey]);
 
   const showExample = useCallback((key: ScanExampleKey) => {
     setForcedKey(key);

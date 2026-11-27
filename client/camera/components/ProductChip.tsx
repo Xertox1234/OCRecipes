@@ -20,6 +20,7 @@ import Animated, {
 import { scheduleOnRN } from "react-native-worklets";
 import { PressableScale } from "@/components/PressableScale";
 import { ScanFlagBadge } from "@/components/ScanFlagBadge";
+import { announceTogether } from "@/lib/announce-together";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   bannerEntrySpring,
@@ -191,9 +192,10 @@ export function ProductChip({
       // fires once per variant change: appear (null→non-null) AND non-null→
       // non-null transitions (e.g. step2_review→step2_confirmed), which the old
       // live-region model announced only on Android and iOS heard not at all.
-      AccessibilityInfo.announceForAccessibility(
-        getChipAnnounceText(variant, phase),
-      );
+      // Batched with the step tabs / hint changing in the same commit
+      // (VoiceOver cuts off a second announcement made in the same tick);
+      // the card's content leads.
+      announceTogether(getChipAnnounceText(variant, phase), { first: true });
     } else {
       // Unmount only when the exit spring settles. A variant that returns
       // mid-exit starts the enter spring above, which cancels this one and
@@ -441,30 +443,41 @@ export function ProductChip({
           )}
         </>
       ) : variant === "step2_review" || variant === "step3_review" ? (
-        <CapturedCard
-          title={
-            variant === "step2_review" ? "Label captured" : "Front captured"
-          }
-          retakeLabel={
-            variant === "step2_review"
-              ? "Retake nutrition label photo"
-              : "Retake front label photo"
-          }
-          onRetake={variant === "step2_review" ? onRetakeStep2 : onRetakeStep3}
-          // Explicit Confirm only with a screen reader on: the ~1.5 s
-          // auto-advance is suppressed for screen-reader users, so they need
-          // their own continue affordance.
-          confirm={
-            screenReaderEnabled
-              ? variant === "step2_review"
-                ? {
-                    label: "Confirm nutrition values",
-                    onPress: onStepConfirmed,
-                  }
-                : { label: "Confirm product complete", onPress: onConfirm }
-              : null
-          }
-        />
+        <>
+          {/* The top flag rides on the captured cards too (badges only),
+            with the same assertive live region as on the found card. */}
+          {product?.topFlag ? (
+            <View accessibilityLiveRegion="assertive">
+              <ScanFlagBadge flag={product.topFlag} scheme="dark" />
+            </View>
+          ) : null}
+          <CapturedCard
+            title={
+              variant === "step2_review" ? "Label captured" : "Front captured"
+            }
+            retakeLabel={
+              variant === "step2_review"
+                ? "Retake nutrition label photo"
+                : "Retake front label photo"
+            }
+            onRetake={
+              variant === "step2_review" ? onRetakeStep2 : onRetakeStep3
+            }
+            // Explicit Confirm only with a screen reader on: the ~1.5 s
+            // auto-advance is suppressed for screen-reader users, so they need
+            // their own continue affordance.
+            confirm={
+              screenReaderEnabled
+                ? variant === "step2_review"
+                  ? {
+                      label: "Confirm nutrition values",
+                      onPress: onStepConfirmed,
+                    }
+                  : { label: "Confirm product complete", onPress: onConfirm }
+                : null
+            }
+          />
+        </>
       ) : (
         <>
           {/* Top flag row (badges only — never blocks the flow). Surfaces the
@@ -647,7 +660,9 @@ function ChipButton({
     >
       <Text
         style={tone === "link" ? styles.btnTextLinkText : styles.btnCardText}
-        numberOfLines={1}
+        // Two lines, not one: half-width buttons at large Dynamic Type
+        // would otherwise truncate "Next: nutrition →" mid-word.
+        numberOfLines={2}
       >
         {children}
       </Text>
@@ -854,6 +869,8 @@ const styles = StyleSheet.create({
     color: CameraColors.text,
     fontSize: 15,
     fontWeight: "600",
+    // A label that wraps to a second line stays centred in its button.
+    textAlign: "center",
   },
   btnTextLink: {
     minHeight: 44,

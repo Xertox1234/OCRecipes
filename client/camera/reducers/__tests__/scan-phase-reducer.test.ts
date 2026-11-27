@@ -753,7 +753,9 @@ describe("guided-camera reducer additions", () => {
     );
   });
 
-  it("BARCODE_LOCKED with resume of a different barcode → plain BARCODE_LOCKED", () => {
+  // The saved steps survive a different barcode's found card until the user
+  // commits to it: "Not this" must be able to bring them back.
+  it("BARCODE_LOCKED with resume of a different barcode keeps the resume on the lock", () => {
     const tracking: ScanPhase = {
       type: "BARCODE_TRACKING",
       barcode: "999",
@@ -761,13 +763,54 @@ describe("guided-camera reducer additions", () => {
       frameCount: 3,
       resume: confirmed,
     };
-    const result = scanPhaseReducer(tracking, { type: "BARCODE_LOCKED" });
-    expect(result).toEqual({
+    expect(scanPhaseReducer(tracking, { type: "BARCODE_LOCKED" })).toEqual({
       type: "BARCODE_LOCKED",
       barcode: "999",
       bounds: BOUNDS,
+      resume: confirmed,
     });
-    expect("resume" in result).toBe(false);
+  });
+
+  it("RESCAN from a lock that carries a resume restores it on HUNTING", () => {
+    const lockedB: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "999",
+      bounds: BOUNDS,
+      resume: confirmed,
+    };
+    expect(scanPhaseReducer(lockedB, { type: "RESCAN" })).toEqual({
+      type: "HUNTING",
+      resume: confirmed,
+    });
+  });
+
+  it("committing to the new product drops the resume", () => {
+    const lockedB: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "999",
+      bounds: BOUNDS,
+      resume: confirmed,
+    };
+    const next = scanPhaseReducer(lockedB, { type: "PROCEED_TO_LABEL" });
+    expect(next).toEqual({ type: "LABEL_PROMPTED", barcode: "999" });
+    const done = scanPhaseReducer(lockedB, { type: "CONFIRM_PRODUCT" });
+    expect(done).toEqual({ type: "SESSION_COMPLETE", barcode: "999" });
+  });
+
+  it("PRODUCT_LOADED keeps the lock's resume", () => {
+    const lockedB: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "999",
+      bounds: BOUNDS,
+      resume: confirmed,
+    };
+    expect(
+      scanPhaseReducer(lockedB, {
+        type: "PRODUCT_LOADED",
+        barcode: "999",
+        product,
+      }),
+    ).toMatchObject({ resume: confirmed, product });
   });
 
   it("CAMERA_READY and RESET drop resume", () => {
@@ -809,6 +852,7 @@ describe("guided-camera reducer additions", () => {
       type: "BARCODE_LOCKED",
       barcode: "777",
       bounds: MANUAL_ENTRY_BOUNDS,
+      resume: confirmed,
     });
   });
 

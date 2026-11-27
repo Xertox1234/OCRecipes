@@ -52,10 +52,12 @@ function StepTab({ tab, onRedo }: TabProps) {
         });
       }
       if (Platform.OS === "ios") {
-        // Batched with the next tab's "in progress" from the same commit:
-        // VoiceOver cuts off a second announcement made in the same tick.
-        // Done leads.
-        announceTogether(`${label} step complete`, { first: true });
+        // Batched with the next tab's "in progress" and with the hint /
+        // card / chip from the same commit: VoiceOver cuts off a second
+        // announcement made in the same tick. Tab state follows the content
+        // (theirs are `first`); among tabs, effect order puts "complete"
+        // before the next tab's "in progress".
+        announceTogether(`${label} step complete`);
       }
     }
     prevState.current = state;
