@@ -7584,6 +7584,33 @@ ifne eas update|eas update/publish/submit
 lckdo /tmp/l eas update|eas update/publish/submit
 chpst -u ci eas update|eas update/publish/submit
 schroot -c sid -- eas update|eas update/publish/submit
+uv --directory d run eas update|eas update/publish/submit
+uv -q run eas update|eas update/publish/submit
+poetry -C d run eas update|eas update/publish/submit
+poetry --directory=d run eas update|eas update/publish/submit
+pipenv --python 3 run eas update|eas update/publish/submit
+conda -v run -n e eas update|eas update/publish/submit
+pixi --color never run eas update|eas update/publish/submit
+devbox -q run eas update|eas update/publish/submit
+perf --no-pager stat eas update|eas update/publish/submit
+nodenv --x exec eas update|eas update/publish/submit
+n --x exec 20 eas update|eas update/publish/submit
+chamber exec a b -- eas update|eas update/publish/submit
+chamber exec a b c -- eas update|eas update/publish/submit
+docker container exec c eas update|eas update/publish/submit
+podman container exec c eas update|eas update/publish/submit
+docker compose exec web eas update|eas update/publish/submit
+docker compose run web eas update|eas update/publish/submit
+docker-compose exec web eas update|eas update/publish/submit
+docker run img eas update|eas update/publish/submit
+docker run --rm -it -v a:b img eas update|eas update/publish/submit
+podman run img eas update|eas update/publish/submit
+hatch run eas update|eas update/publish/submit
+pdm run eas update|eas update/publish/submit
+rye run eas update|eas update/publish/submit
+nix-shell --run 'eas update'|eas update/publish/submit
+nix-shell -p nodejs --run 'eas update'|eas update/publish/submit
+nix-shell --command 'eas update'|eas update/publish/submit
 uv run npm publish|npm publish
 docker exec app railway up|railway up/deploy
 kubectl exec pod -- gh pr merge 42|without a REAL --auto flag
@@ -7613,6 +7640,12 @@ n exec 20 npm test
 aws-vault exec prod -- aws s3 ls
 docker exec app gh pr merge 42 --auto
 git submodule foreach 'git pull'
+docker run img npm test
+docker compose run web npm test
+chamber exec a b -- npm test
+uv --directory d run pytest
+nix-shell --run 'npm test'
+hatch run pytest
 watchexec 'npm test'
 nvm run 20 app.js
 ls | entr -s 'npm test'
@@ -7886,8 +7919,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 1780 -> 1806 (confirmation review of SW2): +26 = SW3, 22 deny rows and 3 controls, and ND5g.
 # 1806 -> 1840 (third review of the scan): +34 = SW4, 28 deny rows and 4 controls, and ND5h (two
 # timed rows).
-# 1840 -> 1929 (runners not on the list): +89 = RN3, 69 deny rows and 20 controls.
-EXPECTED_TOTAL=1929
+# 1840 -> 1962 (runners not on the list): +122 = RN3, 96 deny rows and 26 controls.
+EXPECTED_TOTAL=1962
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
