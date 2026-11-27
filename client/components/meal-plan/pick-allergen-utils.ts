@@ -31,10 +31,18 @@ export function pickedFromRecipe(recipe: {
     : UNCHECKED_MEAL;
 }
 
-/** A recipe not saved yet: the same derivation the server runs on save. */
+/**
+ * A recipe not saved yet: the same derivation the server runs on save. The
+ * server first collapses runs of whitespace (`normalizeTitle`), and the
+ * allergen keywords match multi-word text, so a pasted "monkey\u00a0nut" must
+ * be read as "monkey nut" here too or it would miss a clash the server finds.
+ */
 export function pickedFromIngredientNames(names: string[]): PickedMeal {
-  return names.length > 0
-    ? { allergens: deriveRecipeAllergens(names) }
+  const tidy = names
+    .map((n) => n.trim().split(/\s+/).join(" "))
+    .filter(Boolean);
+  return tidy.length > 0
+    ? { allergens: deriveRecipeAllergens(tidy) }
     : UNCHECKED_MEAL;
 }
 
@@ -49,11 +57,24 @@ export function pickNeedsCheck(
   choice: PlanAudienceChoice,
   family: PlanFamily,
 ): boolean {
+  // A profile missing from the list may still exist on the server: its
+  // allergies are unknown, so it is checked (and comes out "not checked").
+  if (isMissingProfile(choice, family)) return true;
   return getEaters(
     choice,
     { allergies: family.userAllergies },
     family.profiles,
   ).some((e) => e.allergies.length > 0);
+}
+
+function isMissingProfile(
+  choice: PlanAudienceChoice,
+  family: PlanFamily,
+): boolean {
+  return (
+    choice.audience === "profile" &&
+    !family.profiles.some((p) => p.id === choice.familyProfileId)
+  );
 }
 
 /**
@@ -66,6 +87,7 @@ export function getPickWarning(
   choice: PlanAudienceChoice,
   family: PlanFamily,
 ): PickWarning {
+  if (isMissingProfile(choice, family)) return { kind: "unchecked" };
   const eaters = getEaters(
     choice,
     { allergies: family.userAllergies },
@@ -98,5 +120,5 @@ export function pickClashPrompt(lines: string[]): {
 
 /** The success toast, with the "not checked" note when there is one. */
 export function withAllergenNote(message: string, note: string | null): string {
-  return note ? `${message}. ${note}` : message;
+  return note ? `${message}. ${note}.` : message;
 }

@@ -125,7 +125,7 @@ describe("usePlanSuggestFlow", () => {
     act(() => result.current.handleSuggest("lunch"));
     await act(() => result.current.handleSelectSuggestion(suggestion));
     expect(toast.success).toHaveBeenCalledWith(
-      expect.stringMatching(/\. Allergens not checked$/),
+      expect.stringMatching(/\. Allergens not checked\.$/),
     );
   });
 

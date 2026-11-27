@@ -359,7 +359,7 @@ describe("RecipeBrowserScreen param contract", () => {
     fireEvent.click(await screen.findByText("Test Personal Recipe"));
     await waitFor(() =>
       expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
-        "Added to Wednesday Dinner. Allergens not checked",
+        "Added to Wednesday Dinner. Allergens not checked.",
       ),
     );
   });

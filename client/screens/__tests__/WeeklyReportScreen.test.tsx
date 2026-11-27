@@ -158,7 +158,7 @@ describe("WeeklyReportScreen — Add to my plan", () => {
       fireEvent.click(screen.getByText("Add to my plan"));
     });
     expect(h.toastSuccess).toHaveBeenCalledWith(
-      expect.stringMatching(/\. Allergens not checked$/),
+      expect.stringMatching(/\. Allergens not checked\.$/),
       expect.anything(),
     );
   });

@@ -587,7 +587,7 @@ describe("WizardShell", () => {
       saveFromPlan(onSaveComplete);
       await waitFor(() => expect(onSaveComplete).toHaveBeenCalled());
       expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
-        "Added to Wednesday Dinner. Allergens not checked",
+        "Added to Wednesday Dinner. Allergens not checked.",
       );
     });
 

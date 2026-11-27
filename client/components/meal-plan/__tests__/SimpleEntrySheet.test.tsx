@@ -651,7 +651,7 @@ describe("SimpleEntrySheet", () => {
     await submitDish("soup");
     await waitFor(() =>
       expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
-        "Added to Wednesday Lunch. Allergens not checked",
+        "Added to Wednesday Lunch. Allergens not checked.",
       ),
     );
   });

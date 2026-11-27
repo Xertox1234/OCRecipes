@@ -185,7 +185,7 @@ describe("QuickAddSheet", () => {
       fireEvent.click(screen.getByLabelText("Add Oats to breakfast"));
       await waitFor(() =>
         expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
-          "Added to Wednesday Breakfast. Allergens not checked",
+          "Added to Wednesday Breakfast. Allergens not checked.",
         ),
       );
     });

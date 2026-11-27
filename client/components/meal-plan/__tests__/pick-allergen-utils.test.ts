@@ -108,7 +108,7 @@ describe("withAllergenNote", () => {
   it("adds the not-checked note to the success message", () => {
     expect(
       withAllergenNote("Added to Friday's dinner", "Allergens not checked"),
-    ).toBe("Added to Friday's dinner. Allergens not checked");
+    ).toBe("Added to Friday's dinner. Allergens not checked.");
   });
   it("leaves the message alone with no note", () => {
     expect(withAllergenNote("Added to Friday's dinner", null)).toBe(
@@ -148,6 +148,28 @@ describe("what a picked meal is known to contain", () => {
       ),
     ).toEqual({ kind: "clash", lines: ["Contains peanuts \u2014 Ivy"] });
     expect(pickedFromIngredientNames([])).toEqual(UNCHECKED_MEAL);
+    expect(pickedFromIngredientNames(["  ", ""])).toEqual(UNCHECKED_MEAL);
+  });
+
+  // Security review: the server collapses whitespace before deriving, and
+  // keywords match multi-word text, so pasted spacing must not hide a clash.
+  it("reads a name with odd spacing the way the server does", () => {
+    for (const name of ["monkey\u00a0nut", "monkey  nut", "monkey\tnut"]) {
+      expect(
+        getPickWarning(pickedFromIngredientNames([name]), forIvy, family()),
+      ).toEqual({ kind: "clash", lines: ["Contains peanuts \u2014 Ivy"] });
+    }
+  });
+});
+
+describe("a family member missing from the list", () => {
+  // Security review: the server may still store the meal for them.
+  const gone = { audience: "profile" as const, familyProfileId: 99 };
+  it("is checked, and comes out not checked, never safe", () => {
+    expect(pickNeedsCheck(gone, family())).toBe(true);
+    expect(getPickWarning({ allergens: peanuts }, gone, family())).toEqual({
+      kind: "unchecked",
+    });
   });
 });
 

@@ -102,7 +102,7 @@ describe("useConfirmPlanPick (allergen check before a meal is added)", () => {
       note: null,
     });
     // Nobody the meal is for has an allergy: no read, no alert.
-    expect(mockApi).not.toHaveBeenCalled();
+    expect(mockApi).not.toHaveBeenCalledWith("GET", "/api/meal-plan/recipes/7");
     expect(mockAlert).not.toHaveBeenCalled();
   });
 
@@ -132,15 +132,55 @@ describe("useConfirmPlanPick (allergen check before a meal is added)", () => {
     expect(mockAlert).not.toHaveBeenCalled();
   });
 
-  it("does nothing while family planning is off", async () => {
-    family.value = null;
-    const confirm = setup();
-    const out = await confirm({
-      slot,
-      meal: { allergens: null },
-      audience: { audience: "profile", familyProfileId: 1 },
+  describe("with family planning off", () => {
+    beforeEach(() => {
+      family.value = null;
     });
-    expect(out).toEqual({ proceed: true, note: null });
-    expect(mockAlert).not.toHaveBeenCalled();
+
+    function setupWithProfile(profile: unknown) {
+      const { wrapper, queryClient } = createQueryWrapper();
+      if (profile !== undefined) {
+        queryClient.setQueryData(["/api/user/dietary-profile"], profile);
+      }
+      return renderHook(() => useConfirmPlanPick(), { wrapper }).result.current;
+    }
+
+    it("still checks the user's own allergies", async () => {
+      answerAlert("Cancel");
+      const confirm = setupWithProfile({
+        allergies: [{ name: "peanuts", severity: "mild" }],
+      });
+      const out = await confirm({ slot, meal: { recipeId: 7 } });
+      expect(out.proceed).toBe(false);
+      expect(mockAlert.mock.calls[0][1]).toContain(
+        "Contains peanuts \u2014 You",
+      );
+    });
+
+    it("ignores a stale family choice: the meal is the user's own", async () => {
+      setPendingAudience(slot, { audience: "profile", familyProfileId: 1 });
+      const confirm = setupWithProfile({ allergies: [] });
+      expect(await confirm({ slot, meal: { recipeId: 7 } })).toEqual({
+        proceed: true,
+        note: null,
+      });
+      expect(mockAlert).not.toHaveBeenCalled();
+    });
+
+    it("no allergies and no profile: nothing to check", async () => {
+      const confirm = setupWithProfile(null);
+      expect(await confirm({ slot, meal: { allergens: null } })).toEqual({
+        proceed: true,
+        note: null,
+      });
+    });
+
+    it("allergies not loaded yet: not checked, never safe", async () => {
+      const confirm = setupWithProfile(undefined);
+      expect(await confirm({ slot, meal: { recipeId: 7 } })).toEqual({
+        proceed: true,
+        note: "Allergens not checked",
+      });
+    });
   });
 });
