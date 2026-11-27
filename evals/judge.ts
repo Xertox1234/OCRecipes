@@ -1,72 +1,20 @@
 import { currentJudgeModel } from "./lib/judge-generic";
-import { sanitizeUserInput } from "../server/lib/ai-safety";
-import { formatAboutUserLines } from "../server/services/coach-prompt";
+import { buildUserContextLines } from "../server/services/coach-prompt";
 import type { CoachContext } from "../server/services/coach-prompt";
 
 export { currentJudgeModel };
 
 /**
- * Context summary shown to the LLM judge. Typed as the real CoachContext —
- * a hand-duplicated inline shape here let `aboutUser` drift out of the
- * judge's view while the model was being scored on using it.
+ * Context summary shown to the LLM judge: the coach prompt's own USER CONTEXT
+ * lines, rendered with the clock and timezone the reply was generated with,
+ * so the judge sees exactly what the model saw. A hand-written copy left the
+ * notebook, screen, frequent foods, due commitments and the time out of the
+ * judge's view while the model was being scored on using them (audit
+ * 2026-11-24, M28).
  */
-export function formatContextSummary(context: CoachContext): string {
-  const lines: string[] = [];
-
-  if (context.goals) {
-    lines.push(
-      `Daily goals: ${context.goals.calories} cal, ${context.goals.protein}g protein, ${context.goals.carbs}g carbs, ${context.goals.fat}g fat`,
-    );
-  } else {
-    lines.push("Daily goals: Not set");
-  }
-
-  lines.push(
-    `Today's intake: ${context.todayIntake.calories} cal, ${context.todayIntake.protein}g protein, ${context.todayIntake.carbs}g carbs, ${context.todayIntake.fat}g fat`,
-  );
-
-  if (context.goals) {
-    const rem = {
-      cal: context.goals.calories - context.todayIntake.calories,
-      protein: context.goals.protein - context.todayIntake.protein,
-    };
-    if (rem.cal >= 0) {
-      lines.push(`Remaining: ${rem.cal} cal, ${rem.protein}g protein`);
-    } else {
-      lines.push(
-        `Remaining: OVER by ${Math.abs(rem.cal)} cal, ${rem.protein >= 0 ? `${rem.protein}g protein needed` : `over by ${Math.abs(rem.protein)}g protein`}`,
-      );
-    }
-  }
-
-  if (context.dietaryProfile.dietType) {
-    lines.push(`Diet: ${sanitizeUserInput(context.dietaryProfile.dietType)}`);
-  }
-  if (context.dietaryProfile.allergies.length > 0) {
-    // Mirror the coach prompt's rendering so the judge sees what the model saw.
-    lines.push(
-      `Allergies: ${context.dietaryProfile.allergies
-        .map((a) =>
-          a.severity
-            ? `${sanitizeUserInput(a.name)} (${a.severity})`
-            : sanitizeUserInput(a.name),
-        )
-        .join(", ")}`,
-    );
-  }
-  if (context.dietaryProfile.dislikes.length > 0) {
-    lines.push(
-      `Dislikes: ${context.dietaryProfile.dislikes.map(sanitizeUserInput).join(", ")}`,
-    );
-  }
-
-  if (context.aboutUser) {
-    // Shared renderer — the judge must see exactly what the model saw.
-    const aboutLines = formatAboutUserLines(context.aboutUser);
-    if (aboutLines.length > 0) {
-      lines.push("ABOUT THIS USER:", ...aboutLines);
-    }
-  }
-
-  return lines.join("\n");
+export function formatContextSummary(
+  context: CoachContext,
+  clock: { now?: Date; tz?: string } = {},
+): string {
+  return buildUserContextLines(context, clock).join("\n").trim();
 }

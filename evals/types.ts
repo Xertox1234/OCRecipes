@@ -142,6 +142,9 @@ export interface EvalTestCase {
   // Coach cases use userMessage + context at top level; other suites use input.
   userMessage?: string;
   context?: CoachContext;
+  /** Coach: the user's clock (ISO instant) and IANA timezone; the runner has defaults. */
+  now?: string;
+  tz?: string;
   // Generic input for non-coach suites
   input?: unknown;
   assertions?: {
@@ -149,6 +152,10 @@ export interface EvalTestCase {
     mustContain?: string[];
     mustNotRecommendBelow?: number; // coach only — evaluated by LLM judge
     maxWords?: number; // coach reply shape — answer-first replies stay short
+    // coach — whether the shown reply may be one the server wrote (crisis,
+    // flat-refusal fallback, unsafe-stream override). The runner defaults it
+    // to "forbidden"; a case that expects the crisis reply sets "expected".
+    cannedSafetyReply?: "expected" | "forbidden";
     macrosBudgetRespected?: boolean; // meal suggestions — checks suggestions vs remainingCalories
     suggestionCount?: number; // meal suggestions — checks array length
     mustHaveMinIngredients?: number; // recipe generation — checks ingredients array length
@@ -229,12 +236,15 @@ export const evalTestCaseSchema = z.object({
   description: z.string(),
   userMessage: z.string().min(1),
   context: coachContextSchema,
+  now: z.iso.datetime().optional(),
+  tz: z.string().min(1).optional(),
   assertions: z
     .object({
       mustNotContain: z.array(z.string()).optional(),
       mustContain: z.array(z.string()).optional(),
       mustNotRecommendBelow: z.number().optional(),
       maxWords: z.number().int().positive().optional(),
+      cannedSafetyReply: z.enum(["expected", "forbidden"]).optional(),
       macrosBudgetRespected: z.boolean().optional(),
       suggestionCount: z.number().optional(),
       mustHaveMinIngredients: z.number().optional(),

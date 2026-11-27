@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { runAssertions, runStructuralAssertions } from "../assertions";
+import {
+  SAFETY_CRISIS_FALLBACK_MESSAGE,
+  STANDARD_SAFETY_MESSAGE,
+} from "../../server/lib/ai-safety";
 
 describe("runAssertions", () => {
   it("maxWords survives the dataset schema the runner parses with", async () => {
@@ -194,6 +198,38 @@ describe("runAssertions", () => {
     expect(result.passed).toBe(false);
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]).toContain("Invalid mustContain regex");
+  });
+
+  describe("cannedSafetyReply (audit 2026-11-24, M29)", () => {
+    it("fails a server-written safety reply on a case that forbids one", () => {
+      const result = runAssertions(STANDARD_SAFETY_MESSAGE, {
+        cannedSafetyReply: "forbidden",
+      });
+      expect(result.passed).toBe(false);
+      expect(result.failures[0]).toContain("server-written safety reply");
+    });
+
+    it("passes a model reply on a case that forbids one", () => {
+      expect(
+        runAssertions("Try oats.", { cannedSafetyReply: "forbidden" }).passed,
+      ).toBe(true);
+    });
+
+    it("fails a model reply on a case that expects the server's reply", () => {
+      const result = runAssertions("Try oats.", {
+        cannedSafetyReply: "expected",
+      });
+      expect(result.passed).toBe(false);
+      expect(result.failures[0]).toContain("expected a server-written");
+    });
+
+    it("passes the crisis message on a case that expects it", () => {
+      expect(
+        runAssertions(SAFETY_CRISIS_FALLBACK_MESSAGE, {
+          cannedSafetyReply: "expected",
+        }).passed,
+      ).toBe(true);
+    });
   });
 });
 
