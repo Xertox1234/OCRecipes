@@ -94,6 +94,7 @@ vi.mock("../../services/nutrition-coach", () => ({
   generateCoachResponse: vi.fn(),
   generateCoachProResponse: vi.fn(),
   SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
+  PROVIDER_FAILURE_SENTINEL: "\x00PROVIDER_FAILURE\x00",
 }));
 
 vi.mock("../../services/coach-prompt", () => ({
@@ -993,6 +994,33 @@ describe("Chat Routes", () => {
 
       expect(res.text).toContain('"error":"Failed to generate response"');
       expect(res.text).not.toContain('"done":true');
+      expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(42, "1");
+      expect(
+        vi
+          .mocked(storage.createChatMessage)
+          .mock.calls.filter((c) => c[2] === "assistant"),
+      ).toHaveLength(0);
+    });
+
+    // Coach chat audit 2026-11-24 (M13).
+    it("ends a provider failure as an error and hands the message back", async () => {
+      mockStreamingSetup();
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        createMockChatMessage({ id: 42, role: "user" }),
+      );
+      vi.mocked(storage.refundUndeliveredMessage).mockResolvedValue(true);
+      async function* failedStream() {
+        yield { type: "provider_failure" as const };
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(failedStream());
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Hello" });
+
+      expect(res.text).toContain('"error":"Failed to generate response"');
+      expect(res.text).not.toContain("Sorry");
       expect(storage.refundUndeliveredMessage).toHaveBeenCalledWith(42, "1");
       expect(
         vi

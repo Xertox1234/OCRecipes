@@ -8,7 +8,10 @@
 import { randomUUID } from "node:crypto";
 import type { Response } from "express";
 import { storage } from "../storage";
-import { EmptyCoachReplyError } from "./coach-pro-chat/empty-reply";
+import {
+  CoachProviderFailureError,
+  EmptyCoachReplyError,
+} from "./coach-pro-chat/empty-reply";
 import type { AuthenticatedRequest } from "../middleware/auth";
 import { parseTimezone } from "../lib/civil-date";
 import { SseSink, openSse } from "../lib/sse";
@@ -189,13 +192,20 @@ export async function runTurn(input: TurnInput): Promise<void> {
         { err: toError(error) },
         "chat stream ended by client disconnect",
       );
-    } else if (error instanceof EmptyCoachReplyError) {
+    } else if (
+      error instanceof EmptyCoachReplyError ||
+      error instanceof CoachProviderFailureError
+    ) {
       // Nothing was delivered, so the message and its daily-limit claim go
       // back (paid finder claims on the row stay, as in the disconnect
-      // refund). warn, not error: the provider answered, with nothing.
+      // refund). warn, not error: an empty reply is the provider answering
+      // with nothing, and a provider failure was already logged at error by
+      // the generator (audit 2026-11-24, L47 and M13).
       logger.warn(
         { conversationId: input.conversationId },
-        "coach reply was empty",
+        error instanceof EmptyCoachReplyError
+          ? "coach reply was empty"
+          : "coach provider failed",
       );
       // Before the error goes out: the app re-reads the chat when it gets it.
       try {
@@ -206,7 +216,7 @@ export async function runTurn(input: TurnInput): Promise<void> {
       } catch (err) {
         logger.error(
           { err: toError(err) },
-          "failed to refund an empty coach reply",
+          "failed to refund an undelivered coach reply",
         );
       }
     } else {

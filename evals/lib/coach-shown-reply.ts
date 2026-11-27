@@ -1,6 +1,7 @@
 import {
   generateCoachResponse,
   SAFETY_OVERRIDE_SENTINEL,
+  PROVIDER_FAILURE_SENTINEL,
 } from "../../server/services/nutrition-coach";
 import { matchesSelfHarm } from "../../server/services/coach-intent-classifier";
 import {
@@ -42,6 +43,11 @@ export async function coachShownReply(
     clock.tz,
     clock.now,
   )) {
+    // A failed provider call is not a reply to score: the sample errors, as
+    // the chat turn does (audit 2026-11-24, M13).
+    if (chunk === PROVIDER_FAILURE_SENTINEL) {
+      throw new Error("Coach provider failed; no reply to score");
+    }
     if (chunk === SAFETY_OVERRIDE_SENTINEL) {
       return { text: STANDARD_SAFETY_MESSAGE, modelCalled: true };
     }

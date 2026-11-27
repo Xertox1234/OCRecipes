@@ -223,6 +223,8 @@ export function buildMealPatternSummary(
   logs: Pick<DailyLog, "loggedAt">[],
   tz: string = "UTC",
   windowDays: number = 7,
+  /** The end of the caller's [now - windowDays, now) window. */
+  now: Date = new Date(),
 ): string | null {
   if (logs.length === 0) return null;
 
@@ -235,14 +237,20 @@ export function buildMealPatternSummary(
     hourCycle: "h23",
   });
 
+  const dayAndHour = (at: Date): { key: string; hour: number } => {
+    const parts = fmt.formatToParts(at);
+    const part = (type: Intl.DateTimeFormatPartTypes): string =>
+      parts.find((p) => p.type === type)?.value ?? "";
+    return {
+      key: `${part("year")}-${part("month")}-${part("day")}`,
+      hour: Number(part("hour")),
+    };
+  };
+
   // Group log hours by calendar day (YYYY-MM-DD in the user's timezone)
   const byDay = new Map<string, number[]>();
   for (const log of logs) {
-    const parts = fmt.formatToParts(new Date(log.loggedAt));
-    const part = (type: Intl.DateTimeFormatPartTypes): string =>
-      parts.find((p) => p.type === type)?.value ?? "";
-    const key = `${part("year")}-${part("month")}-${part("day")}`;
-    const hour = Number(part("hour"));
+    const { key, hour } = dayAndHour(new Date(log.loggedAt));
     const existing = byDay.get(key);
     if (existing) {
       existing.push(hour);
@@ -267,10 +275,23 @@ export function buildMealPatternSummary(
   let skippedDinner = 0;
   let lateNightDays = 0;
 
-  for (const hours of activeDays) {
+  // A skip is only possible on a day the window covers end to end: today is
+  // logged only up to now, and the oldest day only from the cut-off on, so
+  // their missing meals are not skips (audit 2026-11-24, M18).
+  const todayKey = dayAndHour(now).key;
+  const oldestKey = dayAndHour(
+    new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000),
+  ).key;
+  const completeDays = Array.from(byDay.entries())
+    .filter(([key]) => key !== todayKey && key !== oldestKey)
+    .map(([, hours]) => hours);
+
+  for (const hours of completeDays) {
     if (!hours.some(inBreakfast)) skippedBreakfast++;
     if (!hours.some(inLunch)) skippedLunch++;
     if (!hours.some(inDinner)) skippedDinner++;
+  }
+  for (const hours of activeDays) {
     if (hours.some(isLateNight)) lateNightDays++;
   }
 
@@ -287,17 +308,24 @@ export function buildMealPatternSummary(
     );
   }
 
-  // Only surface patterns that are notable (skipped on majority of days)
+  // Only surface patterns that are notable (skipped on majority of days),
+  // and only from at least three complete days.
+  const completeCount = completeDays.length;
+  const skipThreshold = Math.ceil(completeCount / 2);
+  if (completeCount >= 3) {
+    if (skippedBreakfast >= skipThreshold) {
+      patterns.push(
+        `breakfast skipped ${skippedBreakfast}/${completeCount} days`,
+      );
+    }
+    if (skippedLunch >= skipThreshold) {
+      patterns.push(`lunch skipped ${skippedLunch}/${completeCount} days`);
+    }
+    if (skippedDinner >= skipThreshold) {
+      patterns.push(`dinner skipped ${skippedDinner}/${completeCount} days`);
+    }
+  }
   const majorityThreshold = Math.ceil(totalDays / 2);
-  if (skippedBreakfast >= majorityThreshold) {
-    patterns.push(`breakfast skipped ${skippedBreakfast}/${totalDays} days`);
-  }
-  if (skippedLunch >= majorityThreshold) {
-    patterns.push(`lunch skipped ${skippedLunch}/${totalDays} days`);
-  }
-  if (skippedDinner >= majorityThreshold) {
-    patterns.push(`dinner skipped ${skippedDinner}/${totalDays} days`);
-  }
   if (lateNightDays >= majorityThreshold) {
     patterns.push(`late-night eating on ${lateNightDays}/${totalDays} days`);
   }
@@ -446,9 +474,11 @@ export function assembleCoachContext(a: {
             ? { severity: a.severity }
             : {}),
         })),
-      dislikes: ((profile?.foodDislikes as string[]) || []).map((d) =>
-        sanitizeSingleLineField(d, 100),
-      ),
+      // A legacy jsonb row can hold a non-string; it used to throw here and
+      // fail every coach turn for that user (audit 2026-11-24, L45).
+      dislikes: (profile?.foodDislikes ?? [])
+        .filter((d): d is string => typeof d === "string")
+        .map((d) => sanitizeSingleLineField(d, 100)),
     },
     screenContext,
   };
@@ -464,6 +494,8 @@ export function assembleCoachContext(a: {
     const mealPatternSummary = buildMealPatternSummary(
       recentLogsForPatterns,
       tz,
+      7,
+      now,
     );
     if (mealPatternSummary) {
       context.mealPatternSummary = mealPatternSummary;

@@ -11,3 +11,17 @@ export class EmptyCoachReplyError extends Error {
     this.name = "EmptyCoachReplyError";
   }
 }
+
+/**
+ * Thrown when the model provider fails or its stream breaks mid-reply. The
+ * route ends the turn as an error and hands the user's message back, as for
+ * an empty reply: no apology is saved as Coach's answer, cached for the hour,
+ * fed back into the next prompt or read for the notebook (coach chat audit
+ * 2026-11-24, M13).
+ */
+export class CoachProviderFailureError extends Error {
+  constructor() {
+    super("Coach provider failed");
+    this.name = "CoachProviderFailureError";
+  }
+}

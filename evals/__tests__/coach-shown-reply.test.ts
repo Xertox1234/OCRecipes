@@ -9,7 +9,10 @@ import {
   SAFETY_REFUSAL_FALLBACK_MESSAGE,
   STANDARD_SAFETY_MESSAGE,
 } from "../../server/lib/ai-safety";
-import { SAFETY_OVERRIDE_SENTINEL } from "../../server/services/nutrition-coach";
+import {
+  PROVIDER_FAILURE_SENTINEL,
+  SAFETY_OVERRIDE_SENTINEL,
+} from "../../server/services/nutrition-coach";
 import type { CoachContext } from "../../server/services/coach-prompt";
 
 const CTX: CoachContext = {
@@ -67,6 +70,17 @@ describe("coachShownReply (audit 2026-11-24, M29)", () => {
     expect(args[3]).not.toBe("recipe_request");
     expect(args[4]).toBe("America/Toronto");
     expect(args[5]).toBe(CLOCK.now);
+  });
+
+  it("fails the sample when the provider fails, instead of scoring a marker", async () => {
+    await expect(
+      coachShownReply(
+        "Ideas for breakfast?",
+        CTX,
+        CLOCK,
+        gen(["Try oats.", PROVIDER_FAILURE_SENTINEL]),
+      ),
+    ).rejects.toThrow(/provider failed/i);
   });
 
   it("strips a card fence the free tier never asked for", async () => {

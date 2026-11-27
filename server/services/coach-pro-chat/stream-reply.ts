@@ -3,7 +3,9 @@ import {
   generateCoachResponse,
   generateCoachProResponse,
   SAFETY_OVERRIDE_SENTINEL,
+  PROVIDER_FAILURE_SENTINEL,
 } from "../nutrition-coach";
+import { CoachProviderFailureError } from "./empty-reply";
 import type { CoachIntent } from "../coach-intent-classifier";
 import { plainStatusLabel, toolStep } from "../coach-step-labels";
 import { STANDARD_SAFETY_MESSAGE } from "../../lib/ai-safety";
@@ -321,6 +323,8 @@ async function* streamProReply(
       }),
     },
   )) {
+    if (chunk.type === "provider_failure")
+      throw new CoachProviderFailureError();
     // A later sentence failed the unsafe-advice check: replace everything
     // shown and save only the safety message (as the free tier does).
     if (chunk.type === "safety_override") {
@@ -386,6 +390,8 @@ async function* streamFreeReply(
     turn.tz,
   )) {
     if (params.isAborted()) break;
+    if (chunk === PROVIDER_FAILURE_SENTINEL)
+      throw new CoachProviderFailureError();
     if (chunk === SAFETY_OVERRIDE_SENTINEL) {
       reply.fullResponse = STANDARD_SAFETY_MESSAGE;
       yield { type: "safety_override", message: STANDARD_SAFETY_MESSAGE };
