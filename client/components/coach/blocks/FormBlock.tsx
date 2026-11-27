@@ -9,6 +9,12 @@ import type { FormBlock as FormBlockType } from "@shared/schemas/coach-form";
 import { CardCheckRow } from "./write-cards/CardCheckRow";
 import { CardStepper } from "./write-cards/CardStepper";
 import {
+  clearFormAnswers,
+  formAnswersKey,
+  getFormAnswers,
+  setFormAnswers,
+} from "./write-cards/write-card-session";
+import {
   canSubmitForm,
   formAnswerMessage,
   formatFormNumber,
@@ -42,8 +48,10 @@ export default function FormBlock({
   busy = false,
 }: Props) {
   const { theme } = useTheme();
-  const [answers, setAnswers] = useState<FormAnswer[]>(() =>
-    initialFormAnswers(block),
+  // Answers in progress survive the footer-to-saved-row remount (L34).
+  const answersKey = formAnswersKey(block);
+  const [answers, setAnswers] = useState<FormAnswer[]>(
+    () => getFormAnswers<FormAnswer>(answersKey) ?? initialFormAnswers(block),
   );
   const frame = [
     styles.card,
@@ -65,8 +73,11 @@ export default function FormBlock({
     );
   }
 
-  const setAnswer = (index: number, answer: FormAnswer) =>
-    setAnswers((prev) => prev.map((a, i) => (i === index ? answer : a)));
+  const setAnswer = (index: number, answer: FormAnswer) => {
+    const next = answers.map((a, i) => (i === index ? answer : a));
+    setFormAnswers(answersKey, next);
+    setAnswers(next);
+  };
   const submitLabel = block.submitLabel ?? "Send answers";
 
   return (
@@ -157,7 +168,10 @@ export default function FormBlock({
         );
       })}
       <Button
-        onPress={() => onSubmit?.(formAnswerMessage(block, answers), blockKey)}
+        onPress={() => {
+          clearFormAnswers(answersKey);
+          onSubmit?.(formAnswerMessage(block, answers), blockKey);
+        }}
         disabled={busy || !canSubmitForm(block, answers)}
         accessibilityLabel={submitLabel}
         style={styles.submit}
