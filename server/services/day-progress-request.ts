@@ -53,3 +53,17 @@ export function readLabelCompareRequest(
   const parsed = labelCompareRequestSchema.safeParse(raw);
   return parsed.success ? parsed.data.scanIds : undefined;
 }
+
+// Coach roadmap A3, the weekly report card: the request names one report by
+// the id get_weekly_reports gave, never its numbers. Not strict, like the
+// rest. A report id is a 32-bit serial too.
+const weeklyReportRequestSchema = z.object({
+  type: z.literal("weekly_report"),
+  reportId: z.number().int().positive().max(2147483647),
+});
+
+/** The report a model-authored weekly_report block names, if it is one. */
+export function readWeeklyReportRequest(raw: unknown): number | undefined {
+  const parsed = weeklyReportRequestSchema.safeParse(raw);
+  return parsed.success ? parsed.data.reportId : undefined;
+}

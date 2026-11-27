@@ -764,3 +764,68 @@ describe("label_compare requests (Coach roadmap T4)", () => {
     );
   });
 });
+
+describe("weekly_report requests (Coach roadmap A3)", () => {
+  const fence = (blocks: unknown[]) =>
+    "Here it is.\n```coach_blocks\n" + JSON.stringify(blocks) + "\n```";
+
+  it("is read from the reply, and the model's block itself is dropped", () => {
+    const parsed = parseBlocksFromContent(
+      fence([{ type: "weekly_report", reportId: 12 }]),
+    );
+    expect(parsed.weeklyReport).toBe(12);
+    expect(parsed.blocks).toEqual([]);
+  });
+
+  it("drops a model-authored card that carries its own numbers", () => {
+    const forged = {
+      type: "weekly_report",
+      reportId: 12,
+      weekStart: "2026-11-15",
+      weekEnd: "2026-11-21",
+      headline: "A perfect week",
+      daysActive: 7,
+      mealsLogged: 21,
+      proteinDaysMet: 7,
+    };
+    expect(validateBlocks([forged])).toEqual([]);
+    expect(
+      parseBlocksFromContent(fence([{ type: "weekly_report", reportId: 0 }]))
+        .weeklyReport,
+    ).toBeUndefined();
+    expect(parseBlocksFromContent("Plain text.").weeklyReport).toBeUndefined();
+  });
+
+  it("is offered in the prompt only to an app that can draw it", () => {
+    const on = getBlocksSystemPrompt(false, {
+      writeCards: true,
+      weeklyReport: true,
+    });
+    expect(on).toContain(
+      '- weekly_report: { type: "weekly_report", reportId: id }',
+    );
+    expect(on).toMatch(
+      /call get_weekly_reports, then use one weekly_report block/,
+    );
+    expect(on).toMatch(/never guess an id/);
+    expect(on).toMatch(/no reports[^.]*write no weekly_report block/);
+    expect(on).toMatch(/Sunday to Saturday/);
+    expect(on).toMatch(/rather than repeating its numbers/);
+    // Reviewed: a guarded week is never cheered, and nothing is worked out.
+    expect(on).toMatch(/sensitiveWeek is true[^.]*never mention calories/);
+    expect(on).toMatch(/celebrate is false, do not cheer/);
+    expect(on).toMatch(/A blank count means there was no goal, not zero/);
+    expect(on).toMatch(/name it by its dates/);
+    expect(on).not.toMatch(/one is written each Sunday/);
+    expect(getBlocksSystemPrompt(false, { writeCards: true })).not.toContain(
+      "weekly_report",
+    );
+  });
+
+  it("keeps the offer prompt equal to a rebuilt one", () => {
+    const opts = { writeCards: true, weeklyReport: true, labelCompare: true };
+    expect(withOfferRecipeRule(getBlocksSystemPrompt(true, opts))).toBe(
+      getBlocksSystemPrompt(true, { ...opts, offer: true }),
+    );
+  });
+});

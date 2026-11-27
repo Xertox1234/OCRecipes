@@ -20,7 +20,8 @@
  *  10. get_grocery_lists     — recent grocery lists with the items still to buy
  *
  * With write cards, also: get_my_recipes, find_plan_recipes, get_recent_scans
- * (the latest scans, for the compare card), and the card-gated write tools.
+ * (the latest scans, for the compare card), get_weekly_reports (for the
+ * weekly report card), and the card-gated write tools.
  */
 
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -34,6 +35,7 @@ import { PANTRY_TOOLS } from "./coach-tools/pantry";
 import { PLAN_TOOLS } from "./coach-tools/plan";
 import { RECIPE_TOOLS } from "./coach-tools/recipes";
 import { SCAN_TOOLS } from "./coach-tools/scans";
+import { WEEKLY_REPORT_TOOLS } from "./coach-tools/weekly-reports";
 import {
   invalidArgs,
   type CoachToolEntry,
@@ -66,6 +68,7 @@ const ALL_TOOLS: CoachToolEntry[] = [
   ...PLAN_TOOLS,
   ...GOALS_TOOLS,
   ...SCAN_TOOLS,
+  ...WEEKLY_REPORT_TOOLS,
 ];
 
 const TOOL_ORDER = [
@@ -82,6 +85,7 @@ const TOOL_ORDER = [
   "get_my_recipes",
   "find_plan_recipes",
   "get_recent_scans",
+  "get_weekly_reports",
   "update_pantry",
   "set_nutrition_goals",
 ] as const;

@@ -76,6 +76,7 @@ export interface TurnInput {
       | "week_progress"
       | "more_charts"
       | "label_compare"
+      | "weekly_report"
     )[];
     liveCard?: { cardId: string; edits: Record<string, unknown> };
   };
@@ -512,6 +513,8 @@ async function streamCoachTurn(ctx: TurnContext): Promise<void> {
     moreCharts: !!ctx.body.cardKinds?.includes("more_charts"),
     // T4: the app draws two scanned products side by side.
     labelCompareCard: !!ctx.body.cardKinds?.includes("label_compare"),
+    // Coach roadmap A3: the app draws the weekly report card.
+    weeklyReportCard: !!ctx.body.cardKinds?.includes("weekly_report"),
     liveCard: ctx.body.liveCard,
     turnKey: coachTurnKey,
     isCoachPro: !!features.coachPro,

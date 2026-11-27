@@ -20,6 +20,7 @@ import { buildDayProgressBlock } from "../day-progress";
 import { buildWeekProgressBlock } from "../week-progress";
 import { dropMoreCharts } from "../more-charts";
 import { buildLabelCompareBlock } from "../label-compare";
+import { buildWeeklyReportBlock } from "../weekly-report-card";
 import { createServiceLogger, toError } from "../../lib/logger";
 
 const log = createServiceLogger("coach-pro-chat");
@@ -43,7 +44,7 @@ function freeReplyBlocks(reply: ReplyResult): ReplyBlocks {
 async function withProgressCard(
   blocks: CoachBlock[],
   build: () => Promise<CoachBlock>,
-  what: "Day progress" | "Week progress" | "Label compare",
+  what: "Day progress" | "Week progress" | "Label compare" | "Weekly report",
 ): Promise<CoachBlock[]> {
   let card: CoachBlock;
   try {
@@ -129,6 +130,15 @@ async function proReplyBlocks(
         blocks,
         () => buildLabelCompareBlock(labelCompare, userId),
         "Label compare",
+      );
+    }
+    // Coach roadmap A3: the weekly report the reply named, read for this user.
+    const { weeklyReport } = parsedBlocks;
+    if (cardsShown && weeklyReport && params.weeklyReportCard) {
+      blocks = await withProgressCard(
+        blocks,
+        () => buildWeeklyReportBlock(weeklyReport, userId),
+        "Weekly report",
       );
     }
   }

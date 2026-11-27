@@ -145,6 +145,12 @@ Then re-rank.
       categories (this trigger enforces its own cap).
 - [ ] **A3. Fill the coverage gaps.** Family profiles, reminders, and the
       weekly report as a block. Value: medium. Size: M each. Needs T1.
+      Part 1, the weekly report as a block: a `get_weekly_reports` tool
+      (the latest six reports, and one in detail) and a `weekly_report`
+      card the server builds from the stored report (the week, its
+      headline, the days logged, the meals and the protein goal days); a
+      tap opens the full report on the Profile tab. Left: reminders and
+      family profiles.
 
 ## Speak: the road to rung 10
 

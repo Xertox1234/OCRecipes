@@ -429,6 +429,30 @@ export const labelCompareBlockSchema = z.object({
 });
 export type LabelCompareBlock = z.infer<typeof labelCompareBlockSchema>;
 
+const weekCount = z.number().int().min(0).max(7);
+
+/**
+ * The user's weekly report as a chat card (Coach roadmap A3): the week, the
+ * headline and three counts, with a link to the full report. A report is
+ * frozen once made, so the card's copy of it never goes stale.
+ *
+ * SERVER-BUILT: the model asks with `{ type: "weekly_report", reportId }`
+ * (an id from get_weekly_reports), which this schema rejects; the server
+ * reads the report for the user (server/services/weekly-report-card.ts).
+ */
+export const weeklyReportBlockSchema = z.object({
+  type: z.literal("weekly_report"),
+  reportId: z.number().int().positive(),
+  weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  weekEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  headline: z.string().min(1).max(120),
+  daysActive: weekCount,
+  mealsLogged: z.number().int().min(0),
+  /** Null when the user had no protein goal that week, or the report guarded it. */
+  proteinDaysMet: weekCount.nullable(),
+});
+export type WeeklyReportBlock = z.infer<typeof weeklyReportBlockSchema>;
+
 // ── Discriminated union of all blocks ───────────────────────────────
 
 // recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
@@ -456,6 +480,7 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   dayProgressBlockSchema,
   weekProgressBlockSchema,
   labelCompareBlockSchema,
+  weeklyReportBlockSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;
