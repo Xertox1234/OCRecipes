@@ -148,29 +148,10 @@ export async function createFinderUserMessage(
     }
 
     if (opts.coachDailyLimit !== undefined) {
-      const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
-      const [row] = await tx
-        .select({ count: sql<number>`count(*)` })
-        .from(chatMessages)
-        .innerJoin(
-          chatConversations,
-          eq(chatMessages.conversationId, chatConversations.id),
-        )
-        .where(
-          and(
-            eq(chatConversations.userId, userId),
-            eq(chatConversations.type, "coach"),
-            eq(chatMessages.role, "user"),
-            gte(chatMessages.createdAt, startOfDay),
-            lt(chatMessages.createdAt, endOfDay),
-          ),
-        );
-      // Never below today's claims, typed and tapped: a deleted message
-      // or tap keeps its slot (audit 2026-11-24, H4).
-      const used = Math.max(
-        Number(row?.count ?? 0),
-        await countCoachClaimsToday(tx, userId, { includeTaps: true }),
-      );
+      // A tap always counts against itself, whatever the offer flag.
+      const used = await countCoachMessagesToday(tx, userId, {
+        excludeFinderTaps: false,
+      });
       if (used >= opts.coachDailyLimit) {
         return { status: "limit_reached" as const };
       }
@@ -236,6 +217,46 @@ export async function countCoachClaimsToday(
   const typedCount = await countClaimsToday(tx, userId, "coach_message");
   if (!opts.includeTaps) return typedCount;
   return typedCount + (await countClaimsToday(tx, userId, "coach_tap"));
+}
+
+/**
+ * Today's Coach messages for the daily limit: the user's rows in Coach chats
+ * within their quota day, never below today's claims (a deleted row keeps
+ * its slot, audit 2026-11-24 H4). `excludeFinderTaps` leaves finder taps out
+ * (the offer flag: only typed messages count). The one count for the typed
+ * and the tap paths, so they always agree on the limit (L137).
+ */
+export async function countCoachMessagesToday(
+  tx: ChatTx,
+  userId: string,
+  opts: { excludeFinderTaps: boolean },
+): Promise<number> {
+  const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(chatMessages)
+    .innerJoin(
+      chatConversations,
+      eq(chatMessages.conversationId, chatConversations.id),
+    )
+    .where(
+      and(
+        eq(chatConversations.userId, userId),
+        eq(chatConversations.type, "coach"),
+        eq(chatMessages.role, "user"),
+        gte(chatMessages.createdAt, startOfDay),
+        lt(chatMessages.createdAt, endOfDay),
+        opts.excludeFinderTaps
+          ? sql`coalesce(${chatMessages.metadata}->>'finderInput', 'false') <> 'true'`
+          : undefined,
+      ),
+    );
+  return Math.max(
+    Number(row?.count ?? 0),
+    await countCoachClaimsToday(tx, userId, {
+      includeTaps: !opts.excludeFinderTaps,
+    }),
+  );
 }
 
 type ClaimKind = "recipe_generation" | "spoonacular_search" | MessageClaimKind;

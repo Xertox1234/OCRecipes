@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
 import { allergenIdSchema } from "../constants/allergens";
+import { mealTypeSchema } from "../constants/meal-types";
 import { writeCardBlockSchema } from "./coach-write-cards";
 import { formBlockSchema } from "./coach-form";
 import {
@@ -20,7 +21,7 @@ const logFoodActionSchema = z.object({
   protein: z.number(),
   fat: z.number(),
   carbs: z.number(),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
+  mealType: mealTypeSchema.optional(),
   servings: z.number().optional(),
 });
 

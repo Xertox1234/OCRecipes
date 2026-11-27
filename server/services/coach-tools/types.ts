@@ -7,6 +7,7 @@
  * and "executable" are the same rule and cannot drift apart.
  */
 
+import { MEAL_TYPES } from "@shared/constants/meal-types";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
 import { isValidCalendarDate } from "../../utils/date-validation";
@@ -126,12 +127,12 @@ export function defineTool<S extends z.ZodType>(
   };
 }
 
-// One source for the meal types. The plan tool's Zod schema and its JSON tool
-// definitions (legacy and write-card) all read this list, which is what keeps
-// them aligned, rather than literals hundreds of lines apart. (Further copies
-// live in server/routes/meal-plan.ts and
+// One source for the meal types (shared/constants/meal-types.ts). The plan
+// tool's Zod schema and its JSON tool definitions (legacy and write-card) all
+// read it, as do the coach and finder schemas. (Further copies live in the
+// meal-plan and recipe schemas, server/routes/meal-plan.ts and
 // client/components/meal-plan/meal-plan-utils.ts.)
-export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
+export { MEAL_TYPES };
 
 export const MEAL_TYPE_PARAM = {
   type: "string",

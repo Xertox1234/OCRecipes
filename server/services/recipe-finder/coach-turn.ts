@@ -4,6 +4,7 @@
 // Generate/refine persists RecipeChef's top-level recipe metadata (R5) and
 // yields only conversational text — the card arrives on the post-`done`
 // refetch, so the route's CoachChatEvent ternary needs no new arm.
+import { isOpeningBriefMessage } from "@shared/lib/opening-brief";
 import type { ChatMessage } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { CoachChatEvent } from "../coach-pro-chat";
@@ -98,7 +99,9 @@ async function persistAssistant(
 }
 
 function maybeAutoTitle(p: CoachFinderTurnParams): void {
-  if (p.history.length > 1) return;
+  // The opening brief is saved before the turn; it is not an earlier turn
+  // (audit 2026-11-24, L133; same test as load-turn-context.ts).
+  if (p.history.filter((m) => !isOpeningBriefMessage(m)).length > 1) return;
   const title = p.content.slice(0, 50) + (p.content.length > 50 ? "..." : "");
   fireAndForget(
     "coach-chat-auto-title",

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyGuards,
+  BANNED_WORDS,
   factNumbers,
   isBestWeek,
   hasSafetySignal,
@@ -87,6 +88,15 @@ describe("validateContent", () => {
       normal,
     );
     expect(r.ok).toBe(false);
+  });
+
+  // L135: the writer prompt lists the same words, from the same constant.
+  it.each(BANNED_WORDS)("rejects every listed word: %s", (word) => {
+    const r = validateContent(
+      { ...base, watch: [`Keep going, ${word} here.`] },
+      normal,
+    );
+    expect(r).toEqual({ ok: false, reason: "banned-word" });
   });
 
   it("rejects 'didn’t eat' with a curly apostrophe", () => {

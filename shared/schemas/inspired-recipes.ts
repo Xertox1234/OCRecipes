@@ -1,6 +1,7 @@
 // shared/schemas/inspired-recipes.ts
 // Inspired recipes (spec 2026-10-12): AI-written cards; nothing from Spoonacular.
 import { z } from "zod";
+import { mealTypeSchema } from "../constants/meal-types";
 import type { InspiredSuggestionRow } from "../schema";
 
 export const INSPIRED_LISTING_SIZE = 8;
@@ -44,7 +45,7 @@ export const createListingBodySchema = z.object({
   query: z.string().trim().min(1).max(200),
   cuisine: z.string().trim().min(1).max(50).optional(),
   diet: z.string().trim().min(1).max(50).optional(),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
+  mealType: mealTypeSchema.optional(),
   maxReadyTime: z.number().int().positive().max(1440).optional(),
 });
 export type CreateListingBody = z.infer<typeof createListingBodySchema>;
