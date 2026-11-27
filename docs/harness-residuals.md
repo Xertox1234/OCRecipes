@@ -1006,7 +1006,18 @@ continued `<<` line no longer open a heredoc bash never opens; `$((echo a); ...)
 the commands bash runs; a word glued after `)` or a backtick (`$(true)bash -c`, `case x in x)eval`)
 is judged both ways; the needle test drops `${...}`, `$(...)`, backticks and backslash-newlines
 (`e${U}as update`); and the printf format filler is capped (a 3 KB format with 1000 arguments ran
-past the timeout with mawk, row `ND5g`). The review also measured a child and a grandchild on 190 KB at 12.9 s with mawk; bodies
+past the timeout with mawk, row `ND5g`). A third review, which the owner asked for, found more
+and they are fixed with it (rows `SW4`, `ND5h`): the needle test dropped a substitution inside
+a body (`bash -c 'echo $(eas update)'`; it now matches the text as written or stripped); `$${`
+and `$$[` stuck the brace counters; `#` after a subshell or case `)`, `a[1<<2]=5`, an ANSI-C
+delimiter (`<<$'E\x4fF'`) and a heredoc line ending inside a quote or `$(` opened heredocs bash
+never opens; an empty expansion between a wrapper and its body (`bash -c $(true) '...'`,
+`bash -c $NOPE '...'`); `$( )` in the body of an unquoted-delimiter heredoc, which runs whatever
+the quotes; a script run as `./x.sh`, through `$SHELL` or `$BASH`; an unclosed `${` repeated
+40000 times (16 s with mawk) and 10000 heredocs on a continued line (11 s); and an over-denial:
+a 1700-line script written to a file tripped the record cap, which now counts only strings in a
+wrapper context (and is 5000). Still open from it: a run-time shell name
+(`| "$(command -v bash)"`). The review also measured a child and a grandchild on 190 KB at 12.9 s with mawk; bodies
 are now capped at 64 KB and 100 per command. Fails closed: a third nesting level, more than
 2000 listed bodies, more than 400 wrapper-context evaluations, more than 100 bodies or 64 KB of
 them, a body that does not parse, and the scan's `\001`/`\002` separators in the command. Cost:

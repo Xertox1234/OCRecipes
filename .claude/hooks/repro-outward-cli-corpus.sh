@@ -6059,9 +6059,9 @@ ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-
 #       row on four paths, and the table prints each row's command. A 20000-line row
 #       would swamp both, and the row would test only the cap.
 #       test-guard-outward-cli.sh rows ND5d own it.
-#   - this command holds more than 2000 quoted strings ...   (2026-11-27)
+#   - this command holds more than 5000 quoted strings ...   (2026-11-27)
 #   - this command holds more quoted strings near a command wrapper ...   (2026-11-27)
-#       the string-wrapper scan's two count caps. A row would need 2001 quoted bodies or 401
+#       the string-wrapper scan's two count caps. A row would need 5001 quoted bodies or 401
 #       distinct wrapper contexts (40-60 KB), and like the line cap it would swamp the
 #       per-row table and test only the cap. test-guard-outward-cli.sh rows SW own both.
 #   - this command holds more than 100 quoted strings that a wrapper runs ...   (2026-11-27)
@@ -6089,7 +6089,7 @@ the hook envelope's .tool_name could not be read (malformed JSON or a ch
 the quote-aware rendering came back empty for a non-empty command - eith
 the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is mis
 GH_API_RE_SEPSAFE is no longer built from BOTH _OUT_GH_GLOBALS_SEPSAFE a
-this command holds more than 2000 quoted strings that name an outward-fa
+this command holds more than 5000 quoted strings that name an outward-fa
 this command holds more quoted strings near a command wrapper than the h
 ${_out_sw_r#guard-outward-cli: }${_out_sw_note}"
 this command holds more than 100 quoted strings that a wrapper runs as c

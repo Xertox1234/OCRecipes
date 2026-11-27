@@ -6981,6 +6981,19 @@ ND_OUT=$(awk 'BEGIN { printf "printf %ceas update %%s ", 39; for (i = 0; i < 300
 ND_SECS=${ND_OUT##*@}; ND_OUT=${ND_OUT%@*}; ND_RC=0; ND_ERR=""
 n="ND5g a 3000-character printf format with 200 arguments piped to cat: allowed in under 5 s"
 nd_silent && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+# ND5h. Shapes from the third review of the scan that ran past the timeout: an unclosed `${`
+#      repeated 40000 times inside a body (the needle test was quadratic: 16 s with mawk), and
+#      10000 heredocs on one continued line (each continued line walked every heredoc: 11 s).
+nd_time() {  # stdin: the command (by redirection, not a pipe: it sets ND_OUT ND_RC ND_SECS)
+  ND_OUT=$(jq -Rsc '{tool_name:"Bash",tool_input:{command:.}}' | { t0=$(date +%s); LC_ALL="$ND_LOCALE" bash "$HOOK" 2>/dev/null; echo "@$(( $(date +%s) - t0 ))"; })
+  ND_SECS=${ND_OUT##*@}; ND_OUT=${ND_OUT%@*}; ND_RC=0; ND_ERR=""
+}
+nd_time < <(awk 'BEGIN { printf "bash -c %c", 39; for (i = 0; i < 40000; i++) printf "${"; printf " ; eas update%c", 39 }')
+n="ND5h 40000 unclosed \${ in a bash -c body: a deny in under 5 s"
+nd_only_deny && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
+nd_time < <(awk 'BEGIN { printf "echo"; for (i = 0; i < 10000; i++) printf " <<a"; printf " \\\n"; for (i = 0; i < 10000; i++) printf "\\\n"; printf "bash -c %ceas update%c\n", 39, 39 }')
+n="ND5h 10000 heredocs on a continued line: a deny in under 5 s"
+nd_only_deny && [ "$ND_SECS" -lt 5 ] && nd_ok "$n" || { nd_bad "$n"; echo "  took ${ND_SECS}s"; }
 # ND6. Nothing on stderr for an allow or a deny.
 nd_run "$(dirname "$HOOK")" 'ls -la'
 n="ND6 an allowed command writes nothing to stderr"
@@ -7580,14 +7593,14 @@ assert_deny "SW a third level of nesting fails closed" "$(jsonc "bash -c \"bash 
 assert_allow "SW control: an apostrophe in a heredoc body" "$(jsonc "$(printf "cat <<'EOF' > notes.md\nwe don't ship it, it's fine\nnpm test\nEOF\necho done")")"
 assert_deny "SW a wrapper after a heredoc with an apostrophe" "$(jsonc "$(printf "cat <<'EOF' > n.md\nwe don't ship\nEOF\nbash -c 'eas update'")")" "eas update/publish/submit"
 # The caps: more than 2000 listed bodies, or more than 400 command-position evaluations, deny.
-sw_many=$(awk 'BEGIN { for (i = 0; i < 2001; i++) printf "echo %cnpm run %d%c; ", 39, i, 39; print "true" }')
-assert_deny "SW more than 2000 quoted strings naming a gated word fail closed" "$(jsonc "$sw_many")" "more than 2000 quoted strings"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 5001; i++) printf "echo sh %cnpm run %d%c; ", 39, i, 39; print "true" }')
+assert_deny "SW more than 5000 quoted strings naming a gated word fail closed" "$(jsonc "$sw_many")" "more than 5000 quoted strings"
 sw_many=$(awk 'BEGIN { for (i = 0; i < 401; i++) printf "env A=%d %cnpm run x%c; ", i, 39, 39; print "true" }')
 assert_deny "SW more than 400 wrapper-context evaluations fail closed" "$(jsonc "$sw_many")" "more quoted strings near a command wrapper"
 sw_many=$(awk 'BEGIN { for (i = 0; i < 400; i++) printf "env A=%d %cnpm run x%c; ", i, 39, 39; print "true" }')
 assert_allow "SW control: 400 wrapper-context evaluations are read" "$(jsonc "$sw_many")"
-sw_many=$(awk 'BEGIN { for (i = 0; i < 2000; i++) printf "echo %cnpm run %d%c; ", 39, i, 39; print "true" }')
-assert_allow "SW control: 2000 quoted strings naming a gated word are read" "$(jsonc "$sw_many")"
+sw_many=$(awk 'BEGIN { for (i = 0; i < 5000; i++) printf "echo sh %cnpm run %d%c; ", 39, i, 39; print "true" }')
+assert_allow "SW control: 5000 quoted strings naming a gated word are read" "$(jsonc "$sw_many")"
 sw_many=$(awk 'BEGIN { for (i = 0; i < 101; i++) printf "bash -c %ceas whoami %d%c; ", 39, i, 39; print "true" }')
 assert_deny "SW more than 100 wrapper bodies fail closed" "$(jsonc "$sw_many")" "more than 100 quoted strings that a wrapper runs"
 sw_many=$(awk 'BEGIN { for (i = 0; i < 100; i++) printf "bash -c %ceas whoami %d%c; ", 39, i, 39; print "true" }')
@@ -7693,6 +7706,48 @@ assert_allow "SW3 control: git commit -F - <<EOF / docs: mention bash -c 'eas up
 assert_allow "SW3 control: echo ((1<<2)) / bash -c 'npm test'" "$(jsonc $'echo $((1<<2))\nbash -c \'npm test\'')"
 assert_allow "SW3 control: cat <<EOF | sh / bash -c 'npm test' / EOF" "$(jsonc $'cat <<EOF | sh\nbash -c \'npm test\'\nEOF')"
 
+# SW4 (third review of the scan): a substitution inside a body (the needle test dropped it),
+# `$${` and `$$[` sticking the brace counters, `#` after a subshell or case `)`, an array
+# subscript `a[1<<2]`, an ANSI-C delimiter, a heredoc line ending inside a quote or `$(`, an empty
+# expansion between a wrapper and its body (`bash -c $(true) '...'`), `$( )` in an unquoted
+# heredoc body, and a script run as `./x.sh` or through `$SHELL`/`$BASH`.
+assert_deny "SW4 bash -c 'echo (eas update)'" "$(jsonc $'bash -c \'echo $(eas update)\'')" "eas update/publish/submit"
+assert_deny "SW4 bash -c 'x=eas update'" "$(jsonc $'bash -c \'x=`eas update`\'')" "eas update/publish/submit"
+assert_deny "SW4 bash -c 'echo {x:-(eas update)}'" "$(jsonc $'bash -c \'echo ${x:-$(eas update)}\'')" "eas update/publish/submit"
+assert_deny "SW4 eval 'y=(eas update)'" "$(jsonc $'eval \'y=$(eas update)\'')" "eas update/publish/submit"
+assert_deny "SW4 bash -c 'echo '(eas update)''" "$(jsonc $'bash -c \'echo "$(eas update)"\'')" "eas update/publish/submit"
+assert_deny "SW4 echo 'x=(eas update)' | sh" "$(jsonc $'echo \'x=$(eas update)\' | sh')" "eas update/publish/submit"
+assert_deny "SW4 bash <<< 'x=(eas update)'" "$(jsonc $'bash <<< \'x=$(eas update)\'')" "eas update/publish/submit"
+assert_deny "SW4 bash -c 'echo '(' ; eas update ; echo ')''" "$(jsonc $'bash -c "echo \'\\$(\' ; eas update ; echo \')\'"')" "eas update/publish/submit"
+assert_deny "SW4 echo {x / cat <<EOF / don't / EOF / bash -c 'eas update'" "$(jsonc $'echo $${x\ncat <<EOF\ndon\'t\nEOF\nbash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 echo [x / cat <<EOF / don't / EOF / bash -c 'eas update'" "$(jsonc $'echo $$[x\ncat <<EOF\ndon\'t\nEOF\nbash -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 (true)#<<: / bash -c 'eas update' / :" "$(jsonc $'(true)#<<:\nbash -c \'eas update\'\n:')" "eas update/publish/submit"
+assert_deny "SW4 case x in x)#<<: / bash -c 'eas update' / : / ;; esac" "$(jsonc $'case x in x)#<<:\nbash -c \'eas update\'\n:\n;; esac')" "eas update/publish/submit"
+assert_deny "SW4 a[1<<2]=5 / bash -c 'eas update' / 2]=5" "$(jsonc $'a[1<<2]=5\nbash -c \'eas update\'\n2]=5')" "eas update/publish/submit"
+assert_deny "SW4 cat <<'Ex4fF' / x / EOF / bash -c 'eas update' / Ex4fF" "$(jsonc $'cat <<$\'E\\x4fF\'\nx\nEOF\nbash -c \'eas update\'\nE\\x4fF')" "eas update/publish/submit"
+assert_deny "SW4 echo <<EOF ' / ' ; bash -c 'eas update' / EOF" "$(jsonc $'echo <<EOF \'\n\' ; bash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW4 echo <<EOF ' / ' ; bash -c 'eas update' / EOF" "$(jsonc $'echo <<EOF "\n" ; bash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW4 echo <<EOF ( / ) ; bash -c 'eas update' / EOF" "$(jsonc $'echo <<EOF $(\n) ; bash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW4 bash -c (true) 'eas update'" "$(jsonc $'bash -c $(true) \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 bash (true) -c 'eas update'" "$(jsonc $'bash $(true) -c \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 eval true 'eas update'" "$(jsonc $'eval `true` \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 bash -c {NOPE} 'eas update'" "$(jsonc $'bash -c ${NOPE} \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 bash -c NOPE 'eas update'" "$(jsonc $'bash -c $NOPE \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 eval NOPE 'eas update'" "$(jsonc $'eval $NOPE \'eas update\'')" "eas update/publish/submit"
+assert_deny "SW4 cat <<EOF / '(eas update)' / EOF" "$(jsonc $'cat <<EOF\n\'$(eas update)\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW4 cat <<EOF / 'eas update' / EOF" "$(jsonc $'cat <<EOF\n\'`eas update`\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW4 cat > x.sh <<EOF / bash -c 'eas update' / EOF / chmod +x x.sh; ./x.sh" "$(jsonc $'cat > x.sh <<EOF\nbash -c \'eas update\'\nEOF\nchmod +x x.sh; ./x.sh')" "eas update/publish/submit"
+assert_deny "SW4 cat <<'EOF' | SHELL / bash -c 'eas update' / EOF" "$(jsonc $'cat <<\'EOF\' | $SHELL\nbash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_deny "SW4 BASH <<'EOF' / bash -c 'eas update' / EOF" "$(jsonc $'$BASH <<\'EOF\'\nbash -c \'eas update\'\nEOF')" "eas update/publish/submit"
+assert_allow "SW4 control: cat <<'EOF' / '(eas update)' / EOF" "$(jsonc $'cat <<\'EOF\'\n\'$(eas update)\'\nEOF')"
+assert_allow "SW4 control: bash -c 'echo {HOME} (pwd)'" "$(jsonc $'bash -c \'echo ${HOME} $(pwd)\'')"
+assert_allow "SW4 control: echo  {x:-y}" "$(jsonc $'echo $$ ${x:-y}')"
+sw_many="cat > s.sh <<'EOF'
+$(awk 'BEGIN { for (i = 0; i < 1700; i++) printf "x%d=\"${HOME}/$(basename \"$f\") npm run build-%d\" ; echo \"${x%d:-y}\" | grep -q \"npm ci\" && echo %cok npm%c\n", i, i, i, 39, 39 }')
+EOF
+bash s.sh"
+assert_allow "SW4 control: a 1700-line script written to a file and run (6800 quoted npm strings, no wrapper)" "$(jsonc "$sw_many")"
+
 # 1367 -> 1392 (2026-11-25, a `--` between the gated binary and its verb): +25 = 19 deny rows
 # (all RED before the guard change) and 6 allow controls.
 # 1392 -> 1419 (2026-11-25, security review of that change): +27 = DD2, 17 deny rows (all
@@ -7723,7 +7778,9 @@ assert_allow "SW3 control: cat <<EOF | sh / bash -c 'npm test' / EOF" "$(jsonc $
 # 1724 -> 1780 (review of SW): +56 = SW2, 44 deny rows, 7 controls, and 5 cap rows (the 400 and 2000
 # boundaries, the 100-body and 64 KB caps, a 2100-row seed heredoc).
 # 1780 -> 1806 (confirmation review of SW2): +26 = SW3, 22 deny rows and 3 controls, and ND5g.
-EXPECTED_TOTAL=1806
+# 1806 -> 1840 (third review of the scan): +34 = SW4, 28 deny rows and 4 controls, and ND5h (two
+# timed rows).
+EXPECTED_TOTAL=1840
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
