@@ -1,3 +1,4 @@
+import { ErrorCode } from "@shared/constants/error-codes";
 import { ApiError } from "@/lib/api-error";
 import { mealLabel } from "@shared/lib/coach-write-card-math";
 import type {
@@ -68,6 +69,11 @@ export function saveErrorMessage(err: unknown): string {
         // not JSON — fall through
       }
     }
+    if (err.code === ErrorCode.RATE_LIMITED || err.status === 429) {
+      return "Too many saves at once. Please wait a moment and try again.";
+    }
+    // The server answered, so the connection is fine (audit 2026-11-24, L54).
+    return "Couldn't save. Please try again.";
   }
   return "Couldn't save. Check your connection and try again.";
 }

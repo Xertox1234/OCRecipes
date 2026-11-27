@@ -21,8 +21,8 @@ import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
-import { usePremiumContext } from "@/context/PremiumContext";
-import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { useShowsCoachPro } from "@/hooks/useShowsCoachPro";
+import { coachConversationParams } from "@/navigation/coachConversationRoute";
 import {
   useChatConversations,
   useDeleteConversation,
@@ -69,11 +69,7 @@ export default function AllConversationsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AllConversationsNavigationProp>();
 
-  const { isPremiumResolved } = usePremiumContext();
-  const isCoachPro = usePremiumFeature("coachPro");
-  // Unknown plan (loading, or a failed check whose features read free):
-  // keep Coach Pro routing, as CoachProScreen does (owner ruling 2026-11-02).
-  const showCoachPro = isCoachPro || !isPremiumResolved;
+  const showCoachPro = useShowsCoachPro();
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const [search, setSearch] = useState("");
@@ -191,29 +187,13 @@ export default function AllConversationsScreen() {
               if (activeSegment === "recipe") {
                 navigation.navigate("RecipeChat", { conversationId: conv.id });
               } else {
-                // This is a root-stack screen; CoachPro lives only in the Coach
-                // tab's nested ChatStack. A bare navigate("CoachPro") is never
-                // handled (navigationInChildEnabled is off), so name the path.
-                // `pop: true` returns to the EXISTING Main route below this modal;
-                // without it the root StackRouter pushes a second Main on top.
-                // Free-tier rows open the plain Chat screen (as ChatListScreen
-                // does). While the plan is unknown, keep CoachPro so a Coach Pro
-                // user is never routed to Chat (CoachProScreen assumes access
-                // until the plan is known too).
+                // A root-stack screen: name the path into the Coach tab, the
+                // same route as openCoachConversation (coachConversationRoute.ts).
                 navigation.navigate(
                   "Main",
                   {
                     screen: "CoachTab",
-                    params: showCoachPro
-                      ? {
-                          screen: "CoachPro",
-                          params: { selectedConversationId: conv.id },
-                        }
-                      : {
-                          screen: "Chat",
-                          params: { conversationId: conv.id },
-                          pop: true,
-                        },
+                    params: coachConversationParams(conv.id, showCoachPro),
                   },
                   { pop: true },
                 );

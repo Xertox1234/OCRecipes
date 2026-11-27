@@ -1,3 +1,5 @@
+import { ApiError } from "@/lib/api-error";
+
 /**
  * Static, user-safe copy for chat request failures.
  * docs/rules/client-state.md: a failed request's body is server text — never
@@ -49,5 +51,24 @@ export function chatRequestErrorCopy(code: string | undefined): string {
       return "The Coach is still answering. Please try again in a moment.";
     default:
       return CHAT_GENERIC_ERROR;
+  }
+}
+
+/**
+ * Copy for a failed conversation create (POST /api/chat/conversations), by
+ * the route's own codes, never by the error's text (audit 2026-11-24, L59).
+ * The route answers 429 RATE_LIMITED and 409 LIMIT_REACHED (too many chats).
+ */
+export function conversationCreateErrorCopy(err: unknown): string {
+  const code = err instanceof ApiError ? err.code : undefined;
+  switch (code) {
+    case "LIMIT_REACHED":
+      return "You have the most chats allowed. Delete some to start a new one.";
+    case "DAILY_LIMIT_REACHED":
+      return "Daily limit reached. Upgrade to Premium for unlimited messages.";
+    case "RATE_LIMITED":
+      return chatRequestErrorCopy(code);
+    default:
+      return "Could not send message. Please try again.";
   }
 }

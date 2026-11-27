@@ -66,6 +66,7 @@ import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { viewCoachConversation } from "@/hooks/useCoachUnreadReplies";
 import { useShowsCoachPro } from "@/hooks/useShowsCoachPro";
 import { shouldHandOffToCoachPro } from "@/navigation/coachConversationRoute";
+import { conversationCreateErrorCopy } from "@/lib/chat-error-copy";
 import {
   Spacing,
   FontFamily,
@@ -740,18 +741,7 @@ function PlainChatScreen() {
         // unless the user has already started typing something new.
         setPendingUser(null);
         setInputText((current) => current || content);
-        const message =
-          e instanceof Error ? e.message : "Failed to send message";
-        if (
-          message.includes("429") ||
-          message.includes("DAILY_LIMIT_REACHED")
-        ) {
-          toast.error(
-            "Daily limit reached. Upgrade to Premium for unlimited messages.",
-          );
-        } else {
-          toast.error("Could not send message. Please try again.");
-        }
+        toast.error(conversationCreateErrorCopy(e));
       }
     },
     [
