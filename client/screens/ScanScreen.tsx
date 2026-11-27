@@ -1363,6 +1363,9 @@ export default function ScanScreen() {
               case "abort":
                 // user left during OCR — do nothing.
                 break;
+              case "barcodeHandoff":
+                // wired in Task 4
+                break;
               default: {
                 // Exhaustiveness guard: a new SmartConfirmAction kind must be handled
                 // here — a silent no-op is exactly the bug this change fixes.

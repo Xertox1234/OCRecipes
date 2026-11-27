@@ -5,6 +5,7 @@ import { getContentTypeLabel } from "../utils/content-type-label";
 import { getShutterTopInset } from "./shutter-layout";
 import { getConfidenceTier } from "@/lib/confidence";
 import type { VerificationLevel } from "@shared/types/verification";
+import { normalizeTypedBarcode } from "../shell/manual-barcode-utils";
 
 /**
  * Confidence copy for the smart-scan chip — kept distinct from
@@ -238,4 +239,65 @@ export function getFoundCardActionBeats(reducedMotion: boolean): {
 } {
   if (reducedMotion) return { rowDelay: 0, linkDelay: 0, travel: 0 };
   return { rowDelay: 120, linkDelay: 200, travel: 12 };
+}
+
+/** Title and sub-line the smart-scan result chip shows for a classification. */
+export function getSmartResultCopy(
+  classification: Pick<PhotoAnalysisResponse, "contentType" | "barcode">,
+): { kind: "found" | "unclear"; title: string; sub: string } {
+  switch (classification.contentType) {
+    case "prepared_meal":
+      return {
+        kind: "found",
+        title: "Looks like a meal ✓",
+        sub: "We'll estimate what's on the plate",
+      };
+    case "nutrition_label":
+      return {
+        kind: "found",
+        title: "Looks like a nutrition label ✓",
+        sub: "We'll read the panel for you",
+      };
+    case "restaurant_menu":
+      return {
+        kind: "found",
+        title: "Looks like a menu ✓",
+        sub: "We'll pull out the dishes for you",
+      };
+    case "raw_ingredients":
+      return {
+        kind: "found",
+        title: "Looks like ingredients ✓",
+        sub: "We'll start a Cook & Track session",
+      };
+    case "grocery_receipt":
+    case "restaurant_receipt":
+      return {
+        kind: "found",
+        title: "Looks like a receipt ✓",
+        sub: "You'll snap it in the receipt camera",
+      };
+    case "has_barcode": {
+      const barcode = normalizeTypedBarcode(classification.barcode ?? "");
+      return barcode
+        ? { kind: "found", title: "Looks like a barcode ✓", sub: barcode }
+        : {
+            kind: "found",
+            title: "Looks like a barcode",
+            sub: "Couldn't read the number. Let's scan it live",
+          };
+    }
+    case "non_food":
+      return {
+        kind: "unclear",
+        title: "Couldn't tell what this is",
+        sub: "Try again, or pick what you're scanning",
+      };
+    default:
+      return {
+        kind: "found",
+        title: "Looks like food ✓",
+        sub: "We'll estimate what's on the plate",
+      };
+  }
 }

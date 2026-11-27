@@ -9,6 +9,7 @@ import { logger } from "@/lib/logger";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { ProductSummary, ScanPhase } from "@/camera/types/scan-phase";
 import type { FlowView } from "@/camera/shell/barcode-flow";
+import { normalizeTypedBarcode } from "@/camera/shell/manual-barcode-utils";
 import type { ScanFlag } from "@shared/types/scan-flags";
 import {
   pickTopSafetyFlag,
@@ -148,6 +149,7 @@ export type SmartConfirmAction =
   | { kind: "navigate"; route: ClassificationRoute }
   | { kind: "blocked"; gate: { feature: PremiumFeatureKey; label: string } } // premium gate hit
   | { kind: "unrecognized" } // content type has no destination route
+  | { kind: "barcodeHandoff"; barcode: string | null } // hand to the live barcode flow; null = number unreadable
   | { kind: "abort" };
 
 /**
@@ -180,6 +182,13 @@ export async function resolveSmartConfirmAction({
   isStillLive: () => boolean;
 }): Promise<SmartConfirmAction> {
   const contentType = classification.contentType;
+  // Barcode hand-off is never premium-gated and needs no OCR: decide it first.
+  if (contentType === "has_barcode") {
+    return {
+      kind: "barcodeHandoff",
+      barcode: normalizeTypedBarcode(classification.barcode ?? ""),
+    };
+  }
   if (!contentType) {
     return {
       kind: "navigate",
