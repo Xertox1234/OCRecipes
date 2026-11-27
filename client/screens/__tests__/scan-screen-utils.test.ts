@@ -781,6 +781,13 @@ describe("scan-screen-utils", () => {
     // The routing decision this field exists for: only HUNTING takes
     // onShutterPress's smart-classification/LabelAnalysis branch. Every other
     // capturing phase takes the STEP2/STEP3 branch.
+    it("captures in HUNTING for smart mode via the smart route", () => {
+      expect(
+        getCapturePlan({ type: "HUNTING" }, { isSmartMode: true }),
+      ).toEqual({ capture: true, runStepOcr: false, route: "smart" });
+      expect(getCapturePlan({ type: "HUNTING" }, {}).capture).toBe(false);
+    });
+
     it("routes only HUNTING to the smart branch", () => {
       expect(getCapturePlan({ type: "HUNTING" }).route).toBe("smart");
       expect(
@@ -923,6 +930,8 @@ describe("getScanFlow", () => {
       { mode: "front-label", verifyBarcode: "06772408" },
       "generic",
     ],
+    ["smart mode", { mode: "smart" }, "generic"],
+    ["lockedBarcode", { lockedBarcode: "0064144043512" }, "barcode"],
     ["intent log", { intent: "log" }, "generic"],
     ["intent menu", { intent: "menu" }, "generic"],
     // CoachChat casts model params: an unknown or null mode is not a
@@ -960,6 +969,18 @@ describe("getGenericFlowView", () => {
     expect(
       getGenericFlowView({ mode: "front-label", verifyBarcode: "1" }).frame,
     ).toBe("front");
+  });
+
+  it("describes the snap-anything camera for smart mode", () => {
+    expect(getGenericFlowView({ mode: "smart" })).toEqual({
+      title: "Snap anything",
+      frame: "photo",
+      hint: "A meal, a label, a menu or a receipt \u2014 fit it in the frame",
+      tabs: [],
+      showShutter: true,
+      showSkip: false,
+      exampleKey: null,
+    });
   });
 
   it("falls back to a plain title for an unknown intent", () => {

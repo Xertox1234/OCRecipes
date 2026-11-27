@@ -345,11 +345,13 @@ export type CaptureMode = {
    * flow, so its shutter must still capture.
    */
   hasIntent?: boolean;
+  /** `mode: "smart"` — the one-photo snap-anything camera. */
+  isSmartMode?: boolean;
 };
 
 /**
  * Which camera a `Scan` route opens. A known `mode` ("label" /
- * "front-label") or any `intent` is the generic one-photo flow; everything
+ * "front-label" / "smart") or any `intent` is the generic one-photo flow; everything
  * else is the guided barcode flow (Barcode · Nutrition · Front), with or
  * without `returnAfterLog` / `verifyBarcode`. An unknown or null `mode`
  * (CoachChat casts model params) falls back to the barcode flow: as a generic
@@ -359,7 +361,8 @@ export function getScanFlow(
   params: RootStackParamList["Scan"],
 ): "barcode" | "generic" {
   const mode: unknown = params?.mode;
-  const knownMode = mode === "label" || mode === "front-label";
+  const knownMode =
+    mode === "label" || mode === "front-label" || mode === "smart";
   return knownMode || params?.intent !== undefined ? "generic" : "barcode";
 }
 
@@ -403,6 +406,14 @@ export function getGenericFlowView(
       hint: "Fit the front of the package in the frame",
     };
   }
+  if (params?.mode === "smart") {
+    return {
+      ...base,
+      title: "Snap anything",
+      frame: "photo",
+      hint: "A meal, a label, a menu or a receipt — fit it in the frame",
+    };
+  }
   // The intent is untrusted at runtime (see ScanScreen's isScanIntent).
   const title = GENERIC_INTENT_TITLES.get(params?.intent) ?? "Photo";
   return { ...base, title, frame: "photo", hint: "" };
@@ -410,7 +421,12 @@ export function getGenericFlowView(
 
 /** `HUNTING` captures by tap only outside the barcode flow's step 1. */
 function huntingCaptures(mode: CaptureMode): boolean {
-  return !!(mode.isLabelMode || mode.isFrontLabelMode || mode.hasIntent);
+  return !!(
+    mode.isLabelMode ||
+    mode.isFrontLabelMode ||
+    mode.hasIntent ||
+    mode.isSmartMode
+  );
 }
 
 /**

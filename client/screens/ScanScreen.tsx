@@ -175,6 +175,7 @@ export default function ScanScreen() {
   const isLabelMode = route.params?.mode === "label";
   // front-label uses FrontLabelConfirm AI flow — OCR frame processor not needed there
   const isFrontLabelMode = route.params?.mode === "front-label";
+  const isSmartMode = route.params?.mode === "smart";
   const verifyBarcode = route.params?.verifyBarcode;
   // Photo intent picked on PhotoIntent before capture. Untrusted at runtime
   // (CoachChat casts model params to this screen's type): anything that is not
@@ -196,8 +197,9 @@ export default function ScanScreen() {
       isLabelMode,
       hasVerifyBarcode: !!verifyBarcode,
       hasIntent,
+      isSmartMode,
     }),
-    [isFrontLabelMode, isLabelMode, verifyBarcode, hasIntent],
+    [isFrontLabelMode, isLabelMode, verifyBarcode, hasIntent, isSmartMode],
   );
   const toast = useToast();
   // Read through a ref inside the stable dispatch wrapper below, which must
