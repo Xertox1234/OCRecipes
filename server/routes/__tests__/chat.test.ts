@@ -876,6 +876,15 @@ describe("Chat Routes", () => {
       expect(
         vi.mocked(generateCoachProResponse).mock.calls[0][7],
       ).toMatchObject({ remindersCard: true });
+      // The family card (A3) needs the app to declare it AND family profiles
+      // on the user's plan.
+      vi.mocked(generateCoachProResponse).mockClear();
+      mockStreamingSetup();
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      expect((await send({ cardKinds: ["family"] })).status).toBe(200);
+      expect(
+        vi.mocked(generateCoachProResponse).mock.calls[0][7]?.familyCard,
+      ).toBe(true);
       // 'allergy' is a known kind too (it has no tool; the turn reads it).
       mockStreamingSetup();
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
@@ -954,6 +963,7 @@ describe("Chat Routes", () => {
               "label_compare",
               "weekly_report",
               "reminders",
+              "family",
             ],
           })
         ).status,

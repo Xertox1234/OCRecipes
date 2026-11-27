@@ -1,5 +1,5 @@
 import { GOALS_QUERY_KEY } from "@/hooks/useCalorieGoal";
-import { QUERY_KEYS } from "@/lib/query-keys";
+import { QUERY_KEYS, familyProfilesKey } from "@/lib/query-keys";
 import type { WriteCardKind } from "@shared/schemas/coach-write-cards";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
@@ -45,6 +45,9 @@ export function writeCardRefreshKeys(
     case "reminders":
       // The Coach Reminders screen reads the mutes from the dietary profile.
       return [QUERY_KEYS.dietaryProfile];
+    case "family":
+      // Undo deletes the person, and their own planned meals with them.
+      return [familyProfilesKey(), ["/api/meal-plan"]];
     default:
       return [];
   }

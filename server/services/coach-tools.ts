@@ -34,6 +34,7 @@ import { NUTRITION_TOOLS } from "./coach-tools/nutrition";
 import { PANTRY_TOOLS } from "./coach-tools/pantry";
 import { PLAN_TOOLS } from "./coach-tools/plan";
 import { RECIPE_TOOLS } from "./coach-tools/recipes";
+import { FAMILY_TOOLS } from "./coach-tools/family";
 import { REMINDER_TOOLS } from "./coach-tools/reminders";
 import { SCAN_TOOLS } from "./coach-tools/scans";
 import { WEEKLY_REPORT_TOOLS } from "./coach-tools/weekly-reports";
@@ -71,6 +72,7 @@ const ALL_TOOLS: CoachToolEntry[] = [
   ...SCAN_TOOLS,
   ...WEEKLY_REPORT_TOOLS,
   ...REMINDER_TOOLS,
+  ...FAMILY_TOOLS,
 ];
 
 const TOOL_ORDER = [
@@ -91,6 +93,7 @@ const TOOL_ORDER = [
   "update_pantry",
   "set_nutrition_goals",
   "set_reminders",
+  "add_family_member",
 ] as const;
 
 const TOOL_REGISTRY: CoachToolEntry[] = TOOL_ORDER.map((name) => {
@@ -105,7 +108,7 @@ const TOOL_REGISTRY: CoachToolEntry[] = TOOL_ORDER.map((name) => {
  * spec 2026-11-09) swaps the three write tools for their card-building forms
  * and adds the two recipe-id tools a plan card needs; `pantryCard` adds
  * update_pantry; `goalsCard` adds set_nutrition_goals; `remindersCard` adds
- * set_reminders. Without them the list is exactly the original ten, so an
+ * set_reminders; `familyCard` adds add_family_member. Without them the list is exactly the original ten, so an
  * older app is unaffected.
  */
 export function getToolDefinitions(
@@ -114,6 +117,7 @@ export function getToolDefinitions(
     pantryCard?: boolean;
     goalsCard?: boolean;
     remindersCard?: boolean;
+    familyCard?: boolean;
   } = {},
 ): ChatCompletionTool[] {
   return TOOL_REGISTRY.filter((t) => t.available(opts)).map((t) =>

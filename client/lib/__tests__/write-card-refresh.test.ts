@@ -57,6 +57,13 @@ describe("writeCardRefreshKeys", () => {
     ]);
   });
 
+  it("a family card refreshes the family list and the meal plan (A3)", () => {
+    expect(writeCardRefreshKeys("family")).toEqual([
+      ["/api/family-profiles"],
+      ["/api/meal-plan"],
+    ]);
+  });
+
   it("an unknown kind refreshes nothing extra", () => {
     expect(writeCardRefreshKeys(undefined)).toEqual([]);
   });

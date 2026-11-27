@@ -27,6 +27,8 @@ import {
   PlanCardEdits,
   PlanCardPayload,
   REMINDER_LABELS,
+  type FamilyCardEdits,
+  type FamilyCardPayload,
   type RemindersCardEdits,
   type RemindersCardPayload,
   WriteCardBlock,
@@ -48,6 +50,7 @@ import { GroceryWriteCard } from "./GroceryWriteCard";
 import { PantryWriteCard } from "./PantryWriteCard";
 import { PlanWriteCard } from "./PlanWriteCard";
 import { RemindersWriteCard } from "./RemindersWriteCard";
+import { FamilyWriteCard } from "./FamilyWriteCard";
 import {
   atOnceUndoShown,
   cardUiState,
@@ -108,6 +111,12 @@ function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
         (v, i) => v === p.changes[i].on,
       );
     }
+    // Every allergy's severity is the user's to choose, as on the allergy card.
+    case "family": {
+      const p = block.payload as FamilyCardPayload;
+      const picked = (edits as FamilyCardEdits).severities ?? [];
+      return p.allergens.every((_, i) => picked[i] != null);
+    }
   }
 }
 
@@ -130,6 +139,9 @@ function lockedSummary(block: WriteCardBlock): string {
   if (block.kind === "goals") {
     const n = (block.payload as GoalsCardPayload).rows.length;
     return `${n} daily goal${n === 1 ? "" : "s"}`;
+  }
+  if (block.kind === "family") {
+    return `${(block.payload as FamilyCardPayload).name}, family member`;
   }
   if (block.kind === "reminders") {
     return (block.payload as RemindersCardPayload).changes
@@ -291,6 +303,12 @@ export default function WriteCard({
         <GoalsWriteCard
           payload={block.payload as GoalsCardPayload}
           edits={edits as GoalsCardEdits}
+          onEdit={onEdit}
+        />
+      ) : block.kind === "family" ? (
+        <FamilyWriteCard
+          payload={block.payload as FamilyCardPayload}
+          edits={edits as FamilyCardEdits}
           onEdit={onEdit}
         />
       ) : block.kind === "reminders" ? (

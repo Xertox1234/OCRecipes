@@ -57,6 +57,9 @@ export interface CoachChatParams {
   goalsCard?: boolean;
   /** Reminders card (Coach roadmap A3): the app declared it can draw it. */
   remindersCard?: boolean;
+  /** Family card (Coach roadmap A3): the app can draw it and the plan has
+   *  family profiles. */
+  familyCard?: boolean;
   /** Plan card's shopping section (Coach roadmap A1): the app can draw it. */
   planShopCard?: boolean;
   /** Allergy card (Coach roadmap T1): the app declared it can draw the card. */

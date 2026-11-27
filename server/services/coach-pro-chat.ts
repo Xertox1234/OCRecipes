@@ -84,6 +84,7 @@ export async function* handleCoachChat(
   const pantryCard = writeCards && !!params.pantryCard;
   const goalsCard = writeCards && !!params.goalsCard;
   const remindersCard = writeCards && !!params.remindersCard;
+  const familyCard = writeCards && !!params.familyCard;
   const planShopCard = writeCards && !!params.planShopCard;
   const quickLog = writeCards && !!params.quickLog;
   const dayProgressCard = writeCards && !!params.dayProgressCard;
@@ -160,6 +161,7 @@ export async function* handleCoachChat(
     pantryCard,
     goalsCard,
     remindersCard,
+    familyCard,
     planShopCard,
     quickLog,
   });
