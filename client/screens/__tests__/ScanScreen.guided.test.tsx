@@ -11,6 +11,7 @@ import { renderComponent } from "../../../test/utils/render-component";
 import ScanScreen from "../ScanScreen";
 import { useBarcodeScannerOutput } from "react-native-vision-camera-barcode-scanner";
 import { ApiError } from "@/lib/api-error";
+import { AccessibilityInfo } from "react-native";
 
 const {
   mockNavigate,
@@ -252,6 +253,32 @@ describe("ScanScreen guided barcode flow — onboarding", () => {
     expect(screen.queryByText("Scan now")).toBeNull();
   });
 
+  it("keeps the camera chrome from screen readers and the hint quiet while the example card is up", async () => {
+    tips.seen.add("scan-tips-carousel");
+    renderComponent(<ScanScreen />);
+    expect(
+      screen.getByTestId("scan-top-overlay").getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(
+      screen.queryByText("Line the barcode up inside the frame"),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Got it"));
+    expect(
+      screen.getByTestId("scan-top-overlay").getAttribute("aria-hidden"),
+    ).toBeNull();
+    expect(
+      await screen.findByText("Line the barcode up inside the frame"),
+    ).toBeTruthy();
+  });
+
+  it("keeps the camera chrome from screen readers under the carousel", () => {
+    renderComponent(<ScanScreen />);
+    expect(
+      screen.getByTestId("scan-top-overlay").getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+
   // Review Focus 5: nothing shows while storage loads, then it decides once.
   it("waits for storage before showing the carousel, then shows it once", async () => {
     tips.ready = false;
@@ -325,6 +352,50 @@ describe("ScanScreen guided barcode flow — step 1", () => {
     );
   });
 
+  // Review Focus 2 at the screen: a slow lookup for the old barcode never
+  // names the new lock.
+  const slowLookupFor = (code: string) => {
+    let resolveSlow: () => void = () => {};
+    mockApiRequest.mockImplementation(async (_m: string, url: string) => {
+      if (url.endsWith(code)) {
+        return new Promise((res) => {
+          resolveSlow = () =>
+            res({ json: async () => ({ productName: "Alpha" }) } as Response);
+        });
+      }
+      return { json: async () => ({ productName: "Bravo" }) } as Response;
+    });
+    return () => resolveSlow();
+  };
+
+  it("a slow lookup for A after Not this never names B's card", async () => {
+    const finishA = slowLookupFor(BARCODE_A);
+    renderComponent(<ScanScreen />);
+    await scanBarcode(BARCODE_A);
+    fireEvent.click(await screen.findByLabelText("Not this"));
+    await scanBarcode(BARCODE_B);
+    await screen.findByText("Bravo");
+    await act(async () => {
+      finishA();
+    });
+    expect(screen.queryByText("Alpha")).toBeNull();
+    expect(screen.getByText("Bravo")).toBeTruthy();
+  });
+
+  it("a slow lookup for A after typing another number never names its card", async () => {
+    const finishA = slowLookupFor(BARCODE_A);
+    renderComponent(<ScanScreen />);
+    await scanBarcode(BARCODE_A);
+    fireEvent.click(await screen.findByLabelText("Not this"));
+    fireEvent.click(screen.getByLabelText("Type the barcode number"));
+    fireEvent.click(screen.getByText("Submit typed barcode"));
+    await screen.findByText("Bravo");
+    await act(async () => {
+      finishA();
+    });
+    expect(screen.queryByText("Alpha")).toBeNull();
+  });
+
   // R5: a 404 lookup says so instead of a skeleton forever.
   it("says the product is unknown when the lookup finds nothing", async () => {
     mockApiRequest.mockRejectedValue(
@@ -362,6 +433,17 @@ describe("ScanScreen guided barcode flow — step 1", () => {
 
 describe("ScanScreen guided barcode flow — steps 2 and 3", () => {
   beforeEach(returningUser);
+
+  // Review Focus 3: the tabs stay mounted under the found card, so the
+  // Barcode tab still announces its done moment.
+  it("announces the Barcode step done after Next: nutrition →", async () => {
+    const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<ScanScreen />);
+    await scanBarcode(BARCODE_A);
+    announce.mockClear();
+    fireEvent.click(await screen.findByLabelText("Next: nutrition →"));
+    expect(announce).toHaveBeenCalledWith("Barcode step complete");
+  });
 
   it("Skip on the Front step navigates to NutritionDetail", async () => {
     renderComponent(<ScanScreen />);

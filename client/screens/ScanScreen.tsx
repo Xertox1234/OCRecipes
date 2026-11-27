@@ -347,9 +347,34 @@ export default function ScanScreen() {
     if (!isFocused) resetScan();
   }, [isFocused, resetScan]);
 
-  // Coach hint escalation timer
+  // What the camera shell shows for this phase: the guided flow's step view,
+  // or the generic flow's single frame + shutter.
+  const view: FlowView & { title?: string } = isBarcodeFlow
+    ? getBarcodeFlowView(scanPhase, { returnAfterLog })
+    : getGenericFlowView(route.params);
+
+  const onboarding = useScanOnboarding({
+    exampleKey: view.exampleKey,
+    examplesEnabled: isBarcodeFlow,
+  });
+  const { exampleCardKey } = onboarding;
+  // A teaching surface (carousel / example card) covers the camera.
+  const teachingUp = onboarding.carouselVisible || exampleCardKey !== null;
+  // Anything covering the camera: no barcode may lock unseen behind it, and
+  // the hint escalation clock waits.
+  const scanPaused = teachingUp || helpVisible || manualVisible;
+
+  // Effect, not a render write (React Compiler): read only by the barcode
+  // callback, a frame later at the earliest.
   useEffect(() => {
-    if (scanPhase.type === "HUNTING") {
+    scanPausedRef.current = scanPaused;
+  }, [scanPaused]);
+
+  // Coach hint escalation timer
+  // Held at 0 while something covers the camera, so a first-time user who
+  // reads the carousel and card lands on the step hint, not an escalation.
+  useEffect(() => {
+    if (scanPhase.type === "HUNTING" && !scanPaused) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- camera coach-hint timer: the reset stays with the interval it restarts on each HUNTING entry (and with its clear on leaving), kept as one effect rather than restructuring camera lifecycle
       setElapsedSeconds(0);
       elapsedTimerRef.current = setInterval(
@@ -366,7 +391,7 @@ export default function ScanScreen() {
     return () => {
       if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
     };
-  }, [scanPhase.type]);
+  }, [scanPhase.type, scanPaused]);
 
   // Cleanup barcodeAbsentTimerRef on unmount
   useEffect(() => {
@@ -870,28 +895,6 @@ export default function ScanScreen() {
     trackTempUri,
   ]);
 
-  // What the camera shell shows for this phase: the guided flow's step view,
-  // or the generic flow's single frame + shutter.
-  const view: FlowView & { title?: string } = isBarcodeFlow
-    ? getBarcodeFlowView(scanPhase, { returnAfterLog })
-    : getGenericFlowView(route.params);
-
-  const onboarding = useScanOnboarding({
-    exampleKey: view.exampleKey,
-    examplesEnabled: isBarcodeFlow,
-  });
-  const { exampleCardKey } = onboarding;
-
-  // Effect, not a render write (React Compiler): read only by the barcode
-  // callback, a frame later at the earliest.
-  useEffect(() => {
-    scanPausedRef.current =
-      onboarding.carouselVisible ||
-      exampleCardKey !== null ||
-      helpVisible ||
-      manualVisible;
-  }, [onboarding.carouselVisible, exampleCardKey, helpVisible, manualVisible]);
-
   // ExampleCard is silent on appear and has no live region; name it for a
   // screen reader on both platforms.
   useEffect(() => {
@@ -969,11 +972,10 @@ export default function ScanScreen() {
     );
   }
 
-  const coachMessage = getFlowCoachMessage(
-    scanPhase,
-    view.hint,
-    elapsedSeconds,
-  );
+  // Quiet under a teaching surface (the hint would draw over its scrim).
+  const coachMessage = teachingUp
+    ? ""
+    : getFlowCoachMessage(scanPhase, view.hint, elapsedSeconds);
 
   // Android TalkBack focus trap for the overlays (no-op on iOS). The static
   // camera UI and ProductChip need different values — see getScanOverlayA11y.
@@ -982,6 +984,12 @@ export default function ScanScreen() {
   const productChipVisible =
     chipVariant !== null && chipVariant !== "step2_confirmed";
   const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
+  // The carousel / example card is the only thing a screen reader should
+  // reach: accessibilityViewIsModal is iOS-only, so TalkBack needs the static
+  // camera UI hidden too.
+  const staticUIImportance = teachingUp
+    ? "no-hide-descendants"
+    : overlayA11y.staticUI;
 
   // Same source of truth as onShutterPress's guard — the visual must never
   // claim the shutter is dead in a phase that captures (LABEL_PROMPTED
@@ -1145,7 +1153,7 @@ export default function ScanScreen() {
       right={rightControl}
       chromeHidden={productChipVisible}
       controlsMuted={exampleCardKey !== null}
-      staticUIImportance={overlayA11y.staticUI}
+      staticUIImportance={staticUIImportance}
     >
       {showConfetti && (
         <ConfettiCannon
@@ -1350,7 +1358,7 @@ export default function ScanScreen() {
 
       {/* Once ever, before the first scan: over everything. */}
       {onboarding.carouselVisible ? (
-        <View style={StyleSheet.absoluteFill}>
+        <View style={styles.carousel} accessibilityViewIsModal>
           <TipsCarousel onDone={onboarding.onCarouselDone} />
         </View>
       ) : null}
@@ -1359,6 +1367,16 @@ export default function ScanScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Above the shell's chrome (zIndex 10), which would otherwise draw over it
+  // and take its taps.
+  carousel: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
+  },
   iconBtn: {
     width: 48,
     height: 48,

@@ -36,9 +36,12 @@ interface CameraShellProps {
   /** The shutter; null keeps an empty slot so left/right stay put. */
   shutter: ReactNode | null;
   right?: ReactNode;
-  /** Hide the tabs and the controls row (a found / captured card is up). */
+  /**
+   * A found / captured card is up: the controls row unmounts and the tabs
+   * hide (they stay mounted for their done moment).
+   */
   chromeHidden?: boolean;
-  /** Dim the controls and ignore taps (an example card is up). */
+  /** Dim the controls row and ignore its taps (an example card is up). */
   controlsMuted?: boolean;
   /** Android TalkBack trap for the static camera UI (getScanOverlayA11y). */
   staticUIImportance?: ViewProps["importantForAccessibility"];
@@ -131,18 +134,30 @@ export function CameraShell({
         >
           {hint}
         </View>
+        {/* The tabs stay mounted while a card is up — hidden from sight,
+            touch and both screen readers — so a tab that turns done under
+            the card still pops its ✓ and announces it. */}
+        {tabs ? (
+          <View
+            style={[styles.tabs, chromeHidden && styles.hidden]}
+            pointerEvents={chromeHidden ? "none" : "auto"}
+            accessibilityElementsHidden={chromeHidden}
+            importantForAccessibility={
+              chromeHidden ? "no-hide-descendants" : staticUIImportance
+            }
+          >
+            {tabs}
+          </View>
+        ) : null}
         {chromeHidden ? null : (
           <View
-            style={controlsMuted && styles.muted}
+            style={[styles.controls, controlsMuted && styles.muted]}
             pointerEvents={controlsMuted ? "none" : "auto"}
             importantForAccessibility={staticUIImportance}
           >
-            {tabs ? <View style={styles.tabs}>{tabs}</View> : null}
-            <View style={styles.controls}>
-              <View style={styles.side}>{left}</View>
-              {shutter ?? <View style={styles.shutterSlot} />}
-              <View style={styles.side}>{right}</View>
-            </View>
+            <View style={styles.side}>{left}</View>
+            {shutter ?? <View style={styles.shutterSlot} />}
+            <View style={styles.side}>{right}</View>
           </View>
         )}
       </View>
@@ -217,4 +232,5 @@ const styles = StyleSheet.create({
   },
   shutterSlot: { width: SHUTTER_SLOT, height: SHUTTER_SLOT },
   muted: { opacity: 0.4 },
+  hidden: { opacity: 0 },
 });
