@@ -377,9 +377,20 @@ export function containsUnsafeMedicalAdvice(text: string): boolean {
   return UNSAFE_MEDICAL_ADVICE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * Markdown emphasis markers (`**`, `*`, `__`, `_`) the coach writes around
+ * numbers and words. The screen reads the text as the user does, without
+ * them: "**900 calories** a day" broke the "a day" check (fail-open), and
+ * "about **200 calories** left" broke the "left" running-total check, so a
+ * good reply was replaced (2026-11-27 eval baseline). Removing characters
+ * never splits a phrase a pattern matches.
+ */
+const MARKDOWN_EMPHASIS_RE = /[*_]+/g;
+
 function isUnsafeCoachText(text: string): boolean {
+  const plain = text.replace(MARKDOWN_EMPHASIS_RE, "");
   return (
-    containsDangerousDietaryAdvice(text) || containsUnsafeMedicalAdvice(text)
+    containsDangerousDietaryAdvice(plain) || containsUnsafeMedicalAdvice(plain)
   );
 }
 
