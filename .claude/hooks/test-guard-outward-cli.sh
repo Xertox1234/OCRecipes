@@ -7512,6 +7512,111 @@ RNROWS
 # (`xargs -I{} gh pr merge {} --auto` too); the new runners reach that handling.
 assert_deny "RN2 known false positive 'find . -exec gh pr merge {} --auto \\;' denies" "$(jsonc 'find . -exec gh pr merge {} --auto \;')" "gh pr merge"
 
+# RN3 (2026-11-27, runners not on the list, all ALLOWED on `main`): the runners the residuals
+# named as open, in their unquoted form: prefix runners (`fakeroot`, `bwrap`, `setpriv`, ...),
+# `run`/`exec` subcommands (`uv run`, `poetry run`, `nix develop -c`, `aws-vault exec PROFILE --`),
+# a container or pod before the command (`docker exec app`, `kubectl exec pod --`), `tmux` and
+# `screen` sessions, `git submodule foreach` and `git bisect run`, and the quoted string of the
+# runners that hand it to a shell (`git submodule foreach '...'`, `watchexec '...'`, `entr -s '...'`). The controls run each with an ungated command.
+while IFS='|' read -r rn_cmd rn_reason; do
+  [ -n "$rn_cmd" ] || continue
+  assert_deny "RN3 '$rn_cmd' denies" "$(jsonc "$rn_cmd")" "$rn_reason"
+done <<'RNROWS'
+rsh host eas update|eas update/publish/submit
+mosh host -- eas update|eas update/publish/submit
+mosh host eas update|eas update/publish/submit
+ssh-agent eas update|eas update/publish/submit
+busybox env eas update|eas update/publish/submit
+niceload eas update|eas update/publish/submit
+env_parallel eas update|eas update/publish/submit
+fakeroot eas update|eas update/publish/submit
+fakechroot eas update|eas update/publish/submit
+proot -R / eas update|eas update/publish/submit
+bwrap --bind / / eas update|eas update/publish/submit
+run0 eas update|eas update/publish/submit
+runuser -u ci -- eas update|eas update/publish/submit
+setpriv --reuid=1000 eas update|eas update/publish/submit
+tmux new eas update|eas update/publish/submit
+tmux new-session -d -s ci eas update|eas update/publish/submit
+tmux -L sock new-window eas update|eas update/publish/submit
+tmux split-window eas update|eas update/publish/submit
+screen -dmS ci eas update|eas update/publish/submit
+screen eas update|eas update/publish/submit
+dbus-launch eas update|eas update/publish/submit
+systemd-inhibit --why=ci eas update|eas update/publish/submit
+torify eas update|eas update/publish/submit
+tsocks eas update|eas update/publish/submit
+aws-vault exec prod -- eas update|eas update/publish/submit
+chamber exec app -- eas update|eas update/publish/submit
+n exec 20 eas update|eas update/publish/submit
+nodenv exec eas update|eas update/publish/submit
+uv run eas update|eas update/publish/submit
+uv run --with x eas update|eas update/publish/submit
+poetry run eas update|eas update/publish/submit
+pipenv run eas update|eas update/publish/submit
+conda run -n base eas update|eas update/publish/submit
+pixi run eas update|eas update/publish/submit
+devbox run eas update|eas update/publish/submit
+nix develop -c eas update|eas update/publish/submit
+nix shell nixpkgs#nodejs -c eas update|eas update/publish/submit
+watchexec -e ts -- eas update|eas update/publish/submit
+watchexec eas update|eas update/publish/submit
+ls | entr eas update|eas update/publish/submit
+ls | entr -r eas update|eas update/publish/submit
+git submodule foreach eas update|eas update/publish/submit
+git bisect run eas update|eas update/publish/submit
+docker exec app eas update|eas update/publish/submit
+docker exec -it -e A=1 app eas update|eas update/publish/submit
+podman exec app eas update|eas update/publish/submit
+kubectl exec pod -- eas update|eas update/publish/submit
+kubectl exec -it pod -c web -- eas update|eas update/publish/submit
+perf stat eas update|eas update/publish/submit
+perf record -g eas update|eas update/publish/submit
+gdb --args eas update|eas update/publish/submit
+lldb -- eas update|eas update/publish/submit
+heaptrack eas update|eas update/publish/submit
+prlimit --nofile=1024 eas update|eas update/publish/submit
+setarch x86_64 eas update|eas update/publish/submit
+cgexec -g cpu:ci eas update|eas update/publish/submit
+trickle -d 100 eas update|eas update/publish/submit
+sandbox-exec -p x eas update|eas update/publish/submit
+ifne eas update|eas update/publish/submit
+lckdo /tmp/l eas update|eas update/publish/submit
+chpst -u ci eas update|eas update/publish/submit
+uv run npm publish|npm publish
+docker exec app railway up|railway up/deploy
+kubectl exec pod -- gh pr merge 42|without a REAL --auto flag
+git submodule foreach 'eas update'|eas update/publish/submit
+watchexec 'eas update'|eas update/publish/submit
+watchexec -e ts -- 'eas update'|eas update/publish/submit
+ls | entr -s 'eas update'|eas update/publish/submit
+RNROWS
+while IFS= read -r rn_cmd; do
+  [ -n "$rn_cmd" ] || continue
+  assert_allow "RN3 control '$rn_cmd' stays allowed" "$(jsonc "$rn_cmd")"
+done <<'RNROWS'
+uv run pytest
+poetry run eas whoami
+docker exec app npm test
+kubectl exec pod -- ls
+tmux new-session -d -s ci npm test
+screen -dmS ci eas whoami
+git submodule foreach git pull
+git bisect run npm test
+nix develop -c npm test
+perf stat npm test
+watchexec -e ts -- npm test
+ls | entr npm test
+docker exec app eas update:list
+n exec 20 npm test
+aws-vault exec prod -- aws s3 ls
+docker exec app gh pr merge 42 --auto
+git submodule foreach 'git pull'
+watchexec 'npm test'
+nvm run 20 app.js
+ls | entr -s 'npm test'
+RNROWS
+
 # SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
 # code (`bash -c`, `eval`, `ssh HOST`, `su -c`, `script -c`, `env -S`, `watch`, `flock -c`,
 # `nodemon --exec`, `parallel :::`, `trap`, a here-string or a pipe into a shell). The hook
@@ -7780,7 +7885,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 1780 -> 1806 (confirmation review of SW2): +26 = SW3, 22 deny rows and 3 controls, and ND5g.
 # 1806 -> 1840 (third review of the scan): +34 = SW4, 28 deny rows and 4 controls, and ND5h (two
 # timed rows).
-EXPECTED_TOTAL=1840
+# 1840 -> 1928 (runners not on the list): +88 = RN3, 68 deny rows and 20 controls.
+EXPECTED_TOTAL=1928
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
