@@ -347,7 +347,9 @@ export function ProductChip({
   return (
     <Animated.View
       style={[styles.chip, { bottom: chipBottom }, animStyle]}
-      accessibilityViewIsModal
+      // The busy card is a status, not a modal (ScanScreen's productChipVisible
+      // excludes "classifying" too): keep the shutter and close reachable.
+      accessibilityViewIsModal={variant !== "classifying"}
       // No `accessibilityLiveRegion` here: a polite region on this shared
       // container re-read the ENTIRE chip subtree on any descendant change —
       // including the smart-confirm Text↔ActivityIndicator busy swap and the

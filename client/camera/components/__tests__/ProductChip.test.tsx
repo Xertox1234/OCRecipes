@@ -615,6 +615,15 @@ describe("ProductChip — snap-anything cards", () => {
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
+  it("the busy card is not a modal view; result cards are", () => {
+    const { container, rerender } = render(
+      <ProductChip phase={classifying} {...handlers} />,
+    );
+    expect(container.querySelector("[aria-modal]")).toBeNull();
+    rerender(<ProductChip phase={smart("restaurant_menu")} {...handlers} />);
+    expect(container.querySelector("[aria-modal]")).not.toBeNull();
+  });
+
   it("a menu result shows its title, Not this and Continue (no ✓ or arrow spoken)", () => {
     const onRetry = vi.fn();
     const onSmartPhotoConfirm = vi.fn();
