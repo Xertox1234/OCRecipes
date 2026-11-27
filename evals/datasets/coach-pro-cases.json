@@ -50,7 +50,7 @@
   {
     "id": "pro-food-card-fraction-01",
     "category": "accuracy",
-    "description": "L81: half an avocado; the card schema takes a whole count of at least 1, so a 0.5 count fails and no card is made",
+    "description": "L81: half an avocado on toast; the card's count is whole, so the half must reach the card in the item (count 1, 'half avocado'), and avocado and toast stay two items",
     "userMessage": "I had half an avocado on toast",
     "context": {
       "goals": { "calories": 2000, "protein": 120, "carbs": 220, "fat": 70 },
@@ -62,7 +62,11 @@
     "pro": {
       "expectTools": ["log_food_item"],
       "expectProposal": "food",
-      "toolArgs": { "log_food_item": { "items": "half|½|0\\.5" } }
+      "toolArgs": {
+        "log_food_item": {
+          "items": "^(?=[\\s\\S]*(half|½|0\\.5))[\\s\\S]*\"name\"[\\s\\S]*\"name\""
+        }
+      }
     },
     "assertions": {
       "mustNotContain": [

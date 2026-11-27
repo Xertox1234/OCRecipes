@@ -1455,6 +1455,8 @@ describe("write-card mode (spec 2026-11-09)", () => {
     // A part or mixed amount goes in the unit, with the estimate for that amount.
     expect(text).toMatch(/half avocado/);
     expect(text).toMatch(/never round/i);
+    // The amount goes in the unit of that food; foods are not merged into one item.
+    expect(text).toMatch(/one item per food/i);
   });
 
   const pantryArgs = {

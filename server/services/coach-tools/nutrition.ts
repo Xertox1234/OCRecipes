@@ -169,7 +169,8 @@ const logFoodItemCardDefinition = (): ChatCompletionTool => ({
       properties: {
         items: {
           type: "array",
-          description: "Each food the user ate (1 to 8).",
+          description:
+            "Each food the user ate, one item per food (1 to 8): 'half an avocado on toast' is two items.",
           items: {
             type: "object",
             properties: {
@@ -180,7 +181,7 @@ const logFoodItemCardDefinition = (): ChatCompletionTool => ({
               count: {
                 type: "integer",
                 description:
-                  "How many units they had, a whole number (1 to 20). For part of a unit or a mixed amount, use 1 and put the amount in unitLabel; never round to a whole unit.",
+                  "How many units they had, a whole number (1 to 20). For part of a unit or a mixed amount of this food, use 1 and put the amount in unitLabel; never round to a whole unit.",
               },
               unitLabel: {
                 type: "string",
