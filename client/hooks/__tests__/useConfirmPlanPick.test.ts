@@ -2,7 +2,7 @@
 import { renderHook } from "@testing-library/react";
 import type { FamilyProfile } from "@shared/schema";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
-import { useConfirmPlanPick } from "../useConfirmPlanPick";
+import { useConfirmPlanBatch, useConfirmPlanPick } from "../useConfirmPlanPick";
 import { clearPendingAudience, setPendingAudience } from "@/lib/plan-audience";
 
 const { mockAlert, mockApi, family, haptics } = vi.hoisted(() => ({
@@ -182,5 +182,68 @@ describe("useConfirmPlanPick (allergen check before a meal is added)", () => {
         note: "Allergens not checked",
       });
     });
+  });
+});
+
+describe("useConfirmPlanBatch (allergen check before a generated plan is saved)", () => {
+  const satay = {
+    title: "Satay noodles",
+    meal: { allergens: [{ id: "peanuts" as const, viaDerived: false }] },
+  };
+  const rice = { title: "Rice bowl", meal: { allergens: [] } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function setupBatch(familyValue: unknown, profile?: unknown) {
+    family.value = familyValue;
+    const { wrapper, queryClient } = createQueryWrapper();
+    if (profile !== undefined) {
+      queryClient.setQueryData(["/api/user/dietary-profile"], profile);
+    }
+    return renderHook(() => useConfirmPlanBatch(), { wrapper }).result.current;
+  }
+
+  it("one alert lists the clashing meals; Save anyway saves", async () => {
+    answerAlert("Save anyway");
+    const confirm = setupBatch(null, {
+      allergies: [{ name: "peanuts", severity: "mild" }],
+    });
+    expect(await confirm([satay, rice])).toEqual({ proceed: true, note: null });
+    expect(mockAlert).toHaveBeenCalledTimes(1);
+    const [title, message] = mockAlert.mock.calls[0];
+    expect(title).toBe("Allergy check");
+    expect(message).toContain("Satay noodles: Contains peanuts \u2014 You");
+    expect(message).not.toContain("Rice bowl");
+    expect(haptics.notification).toHaveBeenCalled();
+  });
+
+  it("Cancel and dismiss stop the save", async () => {
+    const confirm = setupBatch(null, {
+      allergies: [{ name: "peanuts", severity: "mild" }],
+    });
+    answerAlert("Cancel");
+    expect((await confirm([satay])).proceed).toBe(false);
+    answerAlert("dismiss");
+    expect((await confirm([satay])).proceed).toBe(false);
+  });
+
+  it("with family planning on, checks the user's own allergies", async () => {
+    answerAlert("Cancel");
+    const confirm = setupBatch({
+      profiles: [ivy],
+      userAllergies: [{ name: "peanuts", severity: "mild" }],
+    });
+    expect((await confirm([satay])).proceed).toBe(false);
+  });
+
+  it("allergies not loaded yet: saves with the not-checked note", async () => {
+    const confirm = setupBatch(null);
+    expect(await confirm([satay])).toEqual({
+      proceed: true,
+      note: "Allergens not checked",
+    });
+    expect(mockAlert).not.toHaveBeenCalled();
   });
 });

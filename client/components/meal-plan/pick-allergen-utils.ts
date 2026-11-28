@@ -118,6 +118,57 @@ export function pickClashPrompt(lines: string[]): {
   };
 }
 
+/** A meal in a plan saved in one go (the pantry-generated plan). */
+export interface BatchMeal {
+  title: string;
+  meal: PickedMeal;
+}
+
+const SELF_CHOICE: PlanAudienceChoice = {
+  audience: "self",
+  familyProfileId: null,
+};
+
+/**
+ * The allergen check before a whole generated plan is saved (owner decision
+ * 2026-11-28): one summary of every clashing meal, not one confirm per meal.
+ * The plan's meals are the user's own, so only the user's allergies count. A
+ * clash outranks a meal that cannot be checked.
+ */
+export function getBatchWarning(
+  meals: BatchMeal[],
+  family: PlanFamily,
+): PickWarning {
+  if (!pickNeedsCheck(SELF_CHOICE, family)) return null;
+  const lines: string[] = [];
+  let unchecked = false;
+  for (const { title, meal } of meals) {
+    const w = getPickWarning(meal, SELF_CHOICE, family);
+    if (w?.kind === "clash") {
+      for (const line of w.lines) lines.push(`${title}: ${line}`);
+    } else if (w?.kind === "unchecked") {
+      unchecked = true;
+    }
+  }
+  if (lines.length > 0) return { kind: "clash", lines };
+  return unchecked ? { kind: "unchecked" } : null;
+}
+
+/** The confirm step before saving a plan with a clash. */
+export function batchClashPrompt(lines: string[]): {
+  title: string;
+  message: string;
+  confirm: string;
+  cancel: string;
+} {
+  return {
+    title: "Allergy check",
+    message: `${lines.join("\n")}\n\nSave the plan anyway?`,
+    confirm: "Save anyway",
+    cancel: "Cancel",
+  };
+}
+
 /** The success toast, with the "not checked" note when there is one. */
 export function withAllergenNote(message: string, note: string | null): string {
   return note ? `${message}. ${note}.` : message;

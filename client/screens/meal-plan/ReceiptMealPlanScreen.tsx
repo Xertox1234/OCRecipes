@@ -17,6 +17,12 @@ import { PressableScale } from "@/components/PressableScale";
 import { IngredientIcon } from "@/components/IngredientIcon";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useConfirmPlanBatch } from "@/hooks/useConfirmPlanPick";
+import { useToast } from "@/context/ToastContext";
+import {
+  pickedFromIngredientNames,
+  withAllergenNote,
+} from "@/components/meal-plan/pick-allergen-utils";
 import {
   useGenerateMealPlanFromPantry,
   useSaveGeneratedMealPlan,
@@ -126,6 +132,11 @@ export default function ReceiptMealPlanScreen() {
 
   const generateMutation = useGenerateMealPlanFromPantry();
   const saveMutation = useSaveGeneratedMealPlan();
+  const confirmBatch = useConfirmPlanBatch();
+  const toast = useToast();
+  // True while the allergen check (and its alert) is open: a second tap must
+  // not open a second alert or save twice.
+  const [checking, setChecking] = useState(false);
 
   const handleGenerate = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
@@ -168,8 +179,8 @@ export default function ReceiptMealPlanScreen() {
     [visibleMeals],
   );
 
-  const handleSave = useCallback(() => {
-    if (totalMealCount === 0) return;
+  const handleSave = useCallback(async () => {
+    if (totalMealCount === 0 || checking) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Heavy);
 
     const mealsToSave = visibleMeals.flatMap((day) =>
@@ -183,17 +194,32 @@ export default function ReceiptMealPlanScreen() {
       })),
     );
 
+    // Owner decision 2026-11-28: one allergen warning for the whole plan.
+    setChecking(true);
+    const pick = await confirmBatch(
+      mealsToSave.map((meal) => ({
+        title: meal.title,
+        meal: pickedFromIngredientNames(meal.ingredients.map((i) => i.name)),
+      })),
+    );
+    setChecking(false);
+    if (!pick.proceed) return;
+
     saveMutation.mutate(mealsToSave, {
       onSuccess: () => {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
+        if (pick.note) toast.success(withAllergenNote("Plan saved", pick.note));
         navigation.popToTop();
       },
     });
   }, [
     visibleMeals,
     totalMealCount,
+    checking,
     startDate,
     haptics,
+    confirmBatch,
+    toast,
     saveMutation,
     navigation,
   ]);
@@ -407,7 +433,7 @@ export default function ReceiptMealPlanScreen() {
       >
         <PressableScale
           onPress={handleSave}
-          disabled={saveMutation.isPending || totalMealCount === 0}
+          disabled={saveMutation.isPending || checking || totalMealCount === 0}
           style={[
             styles.saveButton,
             {

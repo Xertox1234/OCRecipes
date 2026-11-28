@@ -5,10 +5,13 @@ import * as Haptics from "expo-haptics";
 import { ALLERGENS_NOT_CHECKED } from "@/components/meal-plan/family-utils";
 import {
   UNCHECKED_MEAL,
+  batchClashPrompt,
+  getBatchWarning,
   getPickWarning,
   pickClashPrompt,
   pickNeedsCheck,
   pickedFromRecipe,
+  type BatchMeal,
   type PickedMeal,
 } from "@/components/meal-plan/pick-allergen-utils";
 import { usePlanFamily, type PlanFamily } from "@/hooks/useFamily";
@@ -44,8 +47,7 @@ const UNCHECKED: PlanPickResult = {
 const SELF: PlanAudienceChoice = { audience: "self", familyProfileId: null };
 
 /** A native alert: VoiceOver and TalkBack announce it and move focus to it. */
-function confirmClash(lines: string[]): Promise<boolean> {
-  const p = pickClashPrompt(lines);
+function confirmClash(p: ReturnType<typeof pickClashPrompt>): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(
       p.title,
@@ -117,8 +119,46 @@ export function useConfirmPlanPick(): (
       if (!warning) return GO;
       if (warning.kind === "unchecked") return UNCHECKED;
       notification(Haptics.NotificationFeedbackType.Warning);
-      return { proceed: await confirmClash(warning.lines), note: null };
+      return {
+        proceed: await confirmClash(pickClashPrompt(warning.lines)),
+        note: null,
+      };
     },
     [family, dietaryProfile, queryClient, notification],
+  );
+}
+
+/**
+ * The same check for a generated plan saved in one go (owner decision
+ * 2026-11-28): one "Save anyway?" listing every clashing meal. The meals are
+ * the user's own, so the user's allergies are checked, family planning or not.
+ */
+export function useConfirmPlanBatch(): (
+  meals: BatchMeal[],
+) => Promise<PlanPickResult> {
+  const family = usePlanFamily();
+  const { data: dietaryProfile } = useQuery(dietaryProfileQueryOptions);
+  const { notification } = useHaptics();
+
+  return useCallback(
+    async (meals) => {
+      let userAllergies: PlanFamily["userAllergies"];
+      if (family) {
+        userAllergies = family.userAllergies;
+      } else {
+        // Undefined while loading or failed: unknown, never "no allergies".
+        if (dietaryProfile === undefined) return UNCHECKED;
+        userAllergies = dietaryProfile?.allergies ?? [];
+      }
+      const warning = getBatchWarning(meals, { profiles: [], userAllergies });
+      if (!warning) return GO;
+      if (warning.kind === "unchecked") return UNCHECKED;
+      notification(Haptics.NotificationFeedbackType.Warning);
+      return {
+        proceed: await confirmClash(batchClashPrompt(warning.lines)),
+        note: null,
+      };
+    },
+    [family, dietaryProfile, notification],
   );
 }

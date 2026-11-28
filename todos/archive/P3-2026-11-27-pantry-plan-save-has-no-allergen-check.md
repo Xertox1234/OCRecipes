@@ -1,9 +1,9 @@
 ---
 title: "Saving a pantry-generated meal plan runs no allergen check before its meals are added"
-status: backlog
+status: done
 priority: low
 created: 2026-11-27
-updated: 2026-11-27
+updated: 2026-11-28
 assignee:
 labels: [deferred, client, meal-plan, allergens]
 github_issue:
@@ -30,9 +30,9 @@ in the preview.
 
 ## Acceptance Criteria
 
-- [ ] The owner picks how a batch save shows a clash (one summary, or per meal).
-- [ ] Saving a generated plan with a meal that clashes with the user's allergy warns before the save, using `getPickWarning` from `client/components/meal-plan/pick-allergen-utils.ts`.
-- [ ] A test in `client/screens/meal-plan/__tests__/ReceiptMealPlanScreen.test.tsx` fails without the warning.
+- [x] The owner picks how a batch save shows a clash (one summary, or per meal).
+- [x] Saving a generated plan with a meal that clashes with the user's allergy warns before the save, using `getPickWarning` from `client/components/meal-plan/pick-allergen-utils.ts`.
+- [x] A test fails without the warning. It is in `client/screens/meal-plan/__tests__/ReceiptMealPlanScreen.allergens.test.tsx`, a render test: `ReceiptMealPlanScreen.test.tsx` holds only timezone-pinned pure-function tests.
 
 ## Implementation Notes
 
@@ -40,3 +40,16 @@ in the preview.
   on them, with the audience `self`.
 - Files: `client/screens/meal-plan/ReceiptMealPlanScreen.tsx`,
   `client/hooks/useConfirmPlanPick.ts` (a batch variant), and their tests.
+
+## Updates
+
+### 2026-11-28
+
+- Owner chose one summary warning before the save.
+- `getBatchWarning` and `batchClashPrompt` in `pick-allergen-utils.ts` (built on
+  `getPickWarning`, audience self: the plan's meals are the user's own);
+  `useConfirmPlanBatch` in `client/hooks/useConfirmPlanPick.ts`.
+- The alert lists each clashing meal by name ("Satay noodles: Contains peanuts
+  — You") and asks "Save the plan anyway?". A meal that cannot be checked saves
+  with a "Plan saved. Allergens not checked." toast. The save button is
+  disabled while the check is open.

@@ -1,6 +1,8 @@
 import type { Allergy, FamilyProfile } from "@shared/schema";
 import {
   UNCHECKED_MEAL,
+  batchClashPrompt,
+  getBatchWarning,
   getPickWarning,
   pickNeedsCheck,
   pickedFromIngredientNames,
@@ -179,5 +181,74 @@ describe("pickNeedsCheck", () => {
     expect(pickNeedsCheck(forSam, family())).toBe(false);
     expect(pickNeedsCheck(shared, family())).toBe(true);
     expect(pickNeedsCheck(self, family())).toBe(false);
+  });
+});
+
+// Owner decision 2026-11-28: a generated plan saved in one go gets one summary
+// warning listing every clashing meal, not one confirm per meal.
+describe("getBatchWarning (allergen check before a whole plan is saved)", () => {
+  const mine = (userAllergies: Allergy[]) => ({ profiles: [], userAllergies });
+  const peanutAllergy = [{ name: "peanuts", severity: "mild" }] as Allergy[];
+
+  it("lists each clashing meal by name, and only those", () => {
+    const out = getBatchWarning(
+      [
+        { title: "Satay noodles", meal: { allergens: peanuts } },
+        { title: "Rice bowl", meal: { allergens: [] } },
+      ],
+      mine(peanutAllergy),
+    );
+    expect(out).toEqual({
+      kind: "clash",
+      lines: ["Satay noodles: Contains peanuts — You"],
+    });
+  });
+
+  it("no allergies: nothing to say, even for meals that cannot be checked", () => {
+    expect(
+      getBatchWarning([{ title: "A", meal: UNCHECKED_MEAL }], mine([])),
+    ).toBeNull();
+  });
+
+  it("no clash but a meal that cannot be checked: not checked, never safe", () => {
+    expect(
+      getBatchWarning(
+        [
+          { title: "A", meal: { allergens: [] } },
+          { title: "B", meal: UNCHECKED_MEAL },
+        ],
+        mine(peanutAllergy),
+      ),
+    ).toEqual({ kind: "unchecked" });
+  });
+
+  it("a clash outranks a meal that cannot be checked", () => {
+    expect(
+      getBatchWarning(
+        [
+          { title: "B", meal: UNCHECKED_MEAL },
+          { title: "Satay", meal: { allergens: peanuts } },
+        ],
+        mine(peanutAllergy),
+      )?.kind,
+    ).toBe("clash");
+  });
+
+  it("checks the user's own allergies, not a family profile's: the plan is the user's", () => {
+    expect(
+      getBatchWarning([{ title: "Satay", meal: { allergens: peanuts } }], {
+        profiles: [ivy],
+        userAllergies: [],
+      }),
+    ).toBeNull();
+  });
+
+  it("asks to save the plan anyway", () => {
+    expect(batchClashPrompt(["Satay: Contains peanuts — You"])).toEqual({
+      title: "Allergy check",
+      message: "Satay: Contains peanuts — You\n\nSave the plan anyway?",
+      confirm: "Save anyway",
+      cancel: "Cancel",
+    });
   });
 });
