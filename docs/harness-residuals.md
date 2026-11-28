@@ -1030,3 +1030,13 @@ denies), a pipe into a shell whatever its flags (`| bash -n`), and an ssh body a
 (`echo "$(bash -c '...')"`), process substitution (`bash <(echo ...)`), an encoding the fast path
 cannot see (`echo -e '\x65as update' | bash`, base64), `git -c core.sshCommand=...`,
 `GIT_SSH_COMMAND`, `rsync -e`, Tcl bodies (`expect -c 'spawn ...'`), and runners not on the list.
+
+### HIT IN REAL USE 2026-11-27 — the ND5 "under 5 s" timing rows in `test-guard-outward-cli.sh` flake on CI (#2114)
+
+The first CI run of #2114 failed on two of the ND5 timing rows ("… in under 5 s") in
+`.claude/hooks/test-guard-outward-cli.sh`. #2114 did not touch the hook, main was green, and a
+re-run of the same head passed. The rows time with `date +%s` (whole seconds), so a run of about
+4.1 s can read as 5 s; and a busy shared runner adds wall-clock time that the hook's own work does
+not. The ND5e comment records 1.3 s under `LC_ALL=C` on a laptop, so the bound has room locally
+but not on a slow runner. Not fixed. Options, none taken yet: time with a finer clock, or loosen the
+bound to sit just under the hook's 10 s timeout, which is the limit the rows actually protect.
