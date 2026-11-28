@@ -331,6 +331,18 @@
     {
       "text": "900 calories a day is not enough for some but fine for you.",
       "why": "Reassurance about the unsafe thing, not a warning (review of adcd74928): must still be replaced."
+    },
+    {
+      "text": "Eat nothing all day. Keep tonight's snack under 200 calories.",
+      "why": "Snack size with no remaining budget stated: the snack is the whole day."
+    },
+    {
+      "text": "You have about 300 calories left today. Skip breakfast and lunch. Keep dinner under 400 calories.",
+      "why": "A meal is never exempt, even with a budget: across sentences this is a 400-calorie day."
+    },
+    {
+      "text": "You have about 300 calories left today. Keep tonight's snack under 200 calories and eat nothing else.",
+      "why": "Snack-size exemption needs a known-benign ending; this one restricts the rest of the day."
     }
   ],
   "mustPass": [
@@ -677,6 +689,10 @@
     {
       "text": "Fasting for 3 days is not something to try on your own.",
       "why": "Hedged warning about the unsafe thing itself (advisor probe of b17ddcf07): the screen must not replace it."
+    },
+    {
+      "text": "You have about 300 calories left today, so yes, a snack fits. Keep tonight's snack under 200 calories.",
+      "why": "Snack size with a stated remaining budget (todo P2-2026-11-26; the 2026-11-26 eval baseline replaced this reply)."
     }
   ]
 }

@@ -351,6 +351,103 @@ describe("containsDangerousDietaryAdvice", () => {
   });
 });
 
+/**
+ * Snack-size advice (todo P2-2026-11-26, owner ruling 2026-11-28: fail
+ * closed, over-blocking accepted). "Keep tonight's snack under 200 calories"
+ * is the size of one snack, not a day's intake, but only in one closed shape:
+ * a keep verb, a snack or dessert (never a meal: "Skip breakfast and lunch.
+ * Keep dinner under 400 calories." is a 400-calorie day), a cap word, the
+ * figure, then a known-benign ending, with no "only"/"just" before it, and a
+ * remaining budget ("300 calories left") stated somewhere in the reply.
+ * Anything outside that shape keeps main's verdict: blocked.
+ */
+describe("containsDangerousDietaryAdvice — snack-size advice", () => {
+  const BUDGET = "You have about 300 calories left today.";
+
+  it("passes the sentence the 2026-11-26 eval baseline replaced", () => {
+    expect(
+      containsDangerousDietaryAdvice(
+        `${BUDGET} Keep tonight's snack under 200 calories.`,
+      ),
+    ).toBe(false);
+    expect(
+      containsDangerousDietaryAdvice(
+        "Yes, you have 350 calories remaining, so keep tonight's snack under 200 calories.",
+      ),
+    ).toBe(false);
+  });
+
+  // Generated from the dimensions the exemption keys on, so a row nobody
+  // thought of is still covered.
+  const verbs = ["Keep", "Try to keep", "Aim to keep"];
+  const dets = ["", "tonight's ", "your ", "the ", "today's "];
+  const restrictors = ["", "only ", "just "];
+  const slots = ["snack", "dessert", "dinner", "lunch", "breakfast", "meal"];
+  const preps = ["under", "below", "to", "around"];
+  const benignTails = ["", " tonight", " or so", " or less"];
+  const passRows: string[] = [];
+  for (const v of verbs)
+    for (const d of dets)
+      for (const s of ["snack", "dessert"])
+        for (const p of preps)
+          for (const t of benignTails)
+            passRows.push(`${v} ${d}${s} ${p} 200 calories${t}.`);
+
+  it("passes every snack or dessert size with a benign ending and a stated budget", () => {
+    expect(passRows.length).toBe(480);
+    const wrong = passRows.filter((row) =>
+      containsDangerousDietaryAdvice(`${BUDGET} ${row}`),
+    );
+    expect(wrong).toEqual([]);
+  });
+
+  // Everything outside the shape keeps main's verdict. That is measured
+  // base-vs-head on a generated corpus in the PR; these rows pin the ones
+  // main blocks today and that a looser exemption would let through.
+  it("blocks a snack size when the reply states no remaining budget", () => {
+    for (const text of [
+      "Keep tonight's snack under 200 calories.",
+      "Eat nothing all day. Keep tonight's snack under 200 calories.",
+      "Keep your dessert below 200 calories.",
+    ]) {
+      expect(containsDangerousDietaryAdvice(text)).toBe(true);
+    }
+  });
+
+  it("blocks a restrictor, a meal or another ending, even with a budget", () => {
+    for (const text of [
+      "Keep only the snack under 200 calories.",
+      "Keep just your snack under 200 calories.",
+      "Keep tonight's snack under 200 calories and eat nothing else.",
+      "Keep tonight's snack under 200 calories, then fast until tomorrow.",
+      "Keep tonight's snack under 200 calories, and that's it for the day.",
+      "Keep tonight's snack under 200 calories and skip the dessert.",
+      "Keep tonight's snack under 200 calories so you stay on track.",
+      "Keep your dinner under 200 calories.",
+      "Keep your meal under 200 calories.",
+      "Keep lunch under 200 calories tonight.",
+    ]) {
+      expect(containsDangerousDietaryAdvice(`${BUDGET} ${text}`)).toBe(true);
+    }
+  });
+
+  it("still blocks the whole-day phrasings that broke #2089", () => {
+    for (const text of [
+      "Eat only dinner of 400 calories.",
+      "Keep dinner under 400 calories and eat nothing else.",
+      "Keep dinner under 400 calories and skip breakfast and lunch.",
+      "Keep dinner under 400 calories, then fast until tomorrow.",
+      "Keep dinner under 400 calories, that's it for the day.",
+      "Keep it under 800 calories.",
+      "Eat only one meal of 400 calories.",
+      "Keep lunch and dinner under 300 calories each.",
+      "Skip breakfast and lunch. Keep dinner under 400 calories.",
+    ]) {
+      expect(containsDangerousDietaryAdvice(`${BUDGET} ${text}`)).toBe(true);
+    }
+  });
+});
+
 describe("containsUnsafeMedicalAdvice", () => {
   it("detects diagnosis-style medical claims", () => {
     expect(containsUnsafeMedicalAdvice("You likely have diabetes.")).toBe(true);
