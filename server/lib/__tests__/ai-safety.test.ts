@@ -401,6 +401,35 @@ describe("containsDangerousDietaryAdvice — snack-size advice", () => {
     expect(wrong).toEqual([]);
   });
 
+  // The same grid with a restrictor or a meal slot: the exemption never
+  // applies, so a stated budget never changes the verdict. (Without a budget
+  // the exemption is off and the screen is main's; some long phrasings such
+  // as "Keep only tonight's breakfast under 200 calories." pass there, which
+  // is main's 25-character intake-verb window, not this exemption.)
+  const blockRows: string[] = [];
+  for (const v of verbs)
+    for (const r of restrictors)
+      for (const d of dets)
+        for (const s of slots)
+          for (const p of preps)
+            for (const t of benignTails)
+              if (r !== "" || (s !== "snack" && s !== "dessert"))
+                blockRows.push(`${v} ${r}${d}${s} ${p} 200 calories${t}.`);
+
+  it("never exempts a row of that grid with a restrictor or a meal", () => {
+    expect(blockRows.length).toBe(3840);
+    const changed = blockRows.filter(
+      (row) =>
+        containsDangerousDietaryAdvice(`${BUDGET} ${row}`) !==
+        containsDangerousDietaryAdvice(row),
+    );
+    expect(changed).toEqual([]);
+    // Control: the grid does exercise the block side.
+    expect(
+      blockRows.filter((row) => containsDangerousDietaryAdvice(row)).length,
+    ).toBe(2712);
+  });
+
   // Everything outside the shape keeps main's verdict. That is measured
   // base-vs-head on a generated corpus in the PR; these rows pin the ones
   // main blocks today and that a looser exemption would let through.
@@ -464,6 +493,38 @@ describe("containsDangerousDietaryAdvice — snack-size advice", () => {
     ]) {
       expect(containsDangerousDietaryAdvice(text)).toBe(true);
     }
+  });
+
+  // Confirmation review of c63b6eb30 (ai-reviewer, measured).
+  it("blocks a stop-eating neighbour sentence", () => {
+    for (const after of [
+      "Stop eating after that.",
+      "Then no food until tomorrow.",
+      "Don't eat again until morning.",
+      "Drink water for dinner.",
+      "Dinner is optional.",
+    ]) {
+      expect(
+        containsDangerousDietaryAdvice(
+          `${BUDGET} Keep tonight's snack under 200 calories. ${after}`,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("never exempts a snack bigger than the stated budget", () => {
+    for (const text of [
+      `${BUDGET} Keep your dessert under 900 calories.`,
+      `${BUDGET} Keep your snack under 1,100 calories.`,
+      "You have 150 calories left. Keep your snack under 200 calories.",
+    ]) {
+      expect(containsDangerousDietaryAdvice(text)).toBe(true);
+    }
+    expect(
+      containsDangerousDietaryAdvice(
+        "You have 1,000 calories left. Keep your snack under 300 calories.",
+      ),
+    ).toBe(false);
   });
 
   it("needs a calorie unit on the remaining budget", () => {

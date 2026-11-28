@@ -355,6 +355,14 @@
     {
       "text": "Keep your snack under 300 calories. Eat nothing else. You have 2 left.",
       "why": "A remaining budget needs its calorie unit; '2 left' is not one (review of ec5272cb3)."
+    },
+    {
+      "text": "You have about 300 calories left today. Keep tonight's snack under 200 calories. Stop eating after that.",
+      "why": "A stop-eating neighbour makes the snack the rest of the day (review of c63b6eb30)."
+    },
+    {
+      "text": "You have about 300 calories left today. Keep your snack under 1,100 calories.",
+      "why": "A snack bigger than the stated budget is never exempt (review of c63b6eb30)."
     }
   ],
   "mustPass": [
