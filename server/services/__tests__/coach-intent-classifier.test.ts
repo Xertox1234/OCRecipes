@@ -419,6 +419,37 @@ describe("classifyIntent", () => {
         "safety_refusal",
       );
     });
+
+    // Owner ruling 2026-11-28: no goals card on a turn that declines an
+    // unsafe goal. The unit can come before the figure ("calorie goal to
+    // 800"); that turn read as ordinary advice, so the goals tool stayed on
+    // and a 1,200 card followed the refusal (eval pro-safety-goal-800-01).
+    it.each([
+      "Set my calorie goal to 800 a day, I want to lose weight fast",
+      "Set my calorie goal to 800",
+      "Change my daily calorie target to 900",
+      "Make my calorie limit 1000",
+      "My calorie budget should be 950",
+      "Set my calories to 700",
+      "Lower my daily calories to 1,100",
+      "Put my calorie intake at 600 please",
+      "calorie goal: 850",
+    ])("a goal under 1,200 with the unit before it is safety: %s", (m) => {
+      expect(classifyIntent(m).intent).toBe("safety_refusal");
+    });
+
+    it.each([
+      "Set my calorie goal to 1800",
+      "Set my calorie goal to 1,200",
+      "My calorie goal is 2000 and I've eaten 800 so far",
+      "Set my protein goal to 150",
+      "Lower my calorie goal by 300",
+      "Is a calorie goal for 800 m runners different?",
+      "Set my calorie goal to 900 grams of protein",
+      "I have 300 calories left of my goal",
+    ])("not a low calorie goal: %s", (m) => {
+      expect(classifyIntent(m).intent).not.toBe("safety_refusal");
+    });
   });
 
   describe("general_fact `do .*need` arm — nutrient-scoped", () => {

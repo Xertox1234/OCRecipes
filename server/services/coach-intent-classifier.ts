@@ -306,9 +306,21 @@ const CALORIE_CHANGE_BEFORE_RE =
  * later by "today" or "Monday" is ordinary food talk (audit 2026-11-24,
  * M32 + M33).
  */
+/**
+ * A calorie goal with the unit before a bare figure: "set my calorie goal to
+ * 800", "calorie limit 1000", "lower my daily calories to 1,100". The figure
+ * must not carry another unit ("900 grams") and "by"/"for" never join it
+ * ("goal by 300" is a change, "goal for 800 m runners" is not a goal).
+ */
+const UNIT_FIRST_GOAL_RE =
+  /\b(?:calori(?:e|es)\s+(?:goal|target|limit|budget|intake|allowance|cap)s?|(?:set|change|lower|drop|cut|reduce|put|make|bring)\s+(?:(?:my|your|the)\s+)?(?:daily\s+)?calories)\s*(?::|=|\b(?:to|at|of|is|be|as|should\s+be|will\s+be|around|about|under|below)\b)?\s*(?:(?:about|around|roughly|just)\s+)?~?(\d{2,4})(?![\d.,])(?!\s*(?:g|grams?|%|kg|lbs?|pounds?|m|km|miles?|steps|minutes?|mins?)\b)/gi;
+
 function asksForLowDailyCalories(message: string): boolean {
   // "1,100" → "1100" so the figure is read whole.
   const s = message.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+  for (const m of s.matchAll(UNIT_FIRST_GOAL_RE)) {
+    if (Number(m[1]) < 1200) return true;
+  }
   for (const m of s.matchAll(CALORIE_FIGURE_RE)) {
     if (Number(m[1]) >= 1200) continue;
     const after = s.slice(m.index + m[0].length);
