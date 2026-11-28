@@ -7814,6 +7814,36 @@ docker compose run --entrypoint 'python -u' web -c 'eas update'
 docker compose run --entrypoint 'grep -x' web -c 'eas update'
 CEROWS
 
+# CE6 (2026-11-28, all ALLOWED before it): a runner before the shell inside compose's entry point
+# (`--entrypoint 'env sh -x' web -c '...'`, `'tini -- sh -c' web '...'`).
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_deny "CE6 '$ce_cmd' denies" "$(jsonc "$ce_cmd")" "eas update/publish/submit"
+done <<'CEROWS'
+docker compose run --entrypoint 'env sh -x' web -c 'eas update'
+docker compose run --entrypoint '/usr/bin/env bash -e' web -c 'eas update'
+docker compose run --entrypoint 'busybox sh -x' web -c 'eas update'
+docker compose run --entrypoint 'nice -n 5 sh' web -c 'eas update'
+docker compose run --entrypoint 'tini -- sh -x' web -c 'eas update'
+docker compose run --entrypoint 'env sh -c' web 'eas update'
+docker compose run --entrypoint 'busybox sh -c' web 'eas update'
+docker compose run --entrypoint 'tini -- bash -o pipefail -c' web 'eas update'
+docker-compose run --entrypoint='env sh -x' web -c 'eas update'
+docker compose run --entrypoint 'env "sh" -x' web -c 'eas update'
+docker compose run --entrypoint "env 'sh' -c" web 'eas update'
+docker compose run --entrypoint 'tini -- "/bin/sh" -x' web -c 'eas update'
+CEROWS
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_allow "CE6 control '$ce_cmd' stays allowed" "$(jsonc "$ce_cmd")"
+done <<'CEROWS'
+docker compose run --entrypoint 'env sh -x' web -c 'ls'
+docker compose run --entrypoint 'env python -u' web -c 'eas update'
+docker compose run --entrypoint 'env sh -c' web 'ls'
+docker compose run --entrypoint 'tini -- node' web -c 'eas update'
+docker compose run --entrypoint 'env "sh" -x' web -c 'ls'
+CEROWS
+
 # SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
 # code (`bash -c`, `eval`, `ssh HOST`, `su -c`, `script -c`, `env -S`, `watch`, `flock -c`,
 # `nodemon --exec`, `parallel :::`, `trap`, a here-string or a pipe into a shell). The hook
@@ -8086,7 +8116,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 1962 -> 2019 (container entry point): +57 = CE and CE2, 41 deny rows and 16 controls.
 # 2019 -> 2045 (compose's shell entry point): +26 = CE3 and CE4, 19 deny rows and 7 controls.
 # 2045 -> 2056 (compose's entry-point shell option): +11 = CE5, 7 deny rows and 4 controls.
-EXPECTED_TOTAL=2056
+# 2056 -> 2073 (a runner before compose's entry-point shell): +17 = CE6, 12 deny rows and 5 controls.
+EXPECTED_TOTAL=2073
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
