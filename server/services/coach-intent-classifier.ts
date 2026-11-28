@@ -306,7 +306,7 @@ const CALORIE_CHANGE_BEFORE_RE =
  * soup", "items", "%") makes it a figure for one meal or thing, not a day.
  */
 const GOAL_FIGURE_END =
-  "(?=\\s*(?:$|[.!?,;:)](?!\\d)|(?:k?cal(?:orie)?s?|kilocalories)\\b|(?:a|per|each|every)\\s+day\\b|daily\\b|please\\b|and\\b|instead\\b|now\\b|starting\\b|from\\s+now\\b|going\\s+forward\\b|i\\s+want\\b|so\\b))";
+  "(?=\\s*(?:$|[.!?,;:)](?!\\d)|(?:k?cal(?:orie)?s?|kilocalories)\\b|(?:a|per|each|every)\\s+day\\b|for\\s+(?:the\\s+|each\\s+|every\\s+)?day\\b|for\\s+today\\b|daily\\b|please\\b|and\\b|instead\\b|now\\b|starting\\b|from\\s+now\\b|going\\s+forward\\b|i\\s+want\\b|so\\b))";
 
 /**
  * A calorie goal with the unit before a bare figure: "set my calorie goal to
