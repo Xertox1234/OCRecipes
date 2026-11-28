@@ -2322,6 +2322,18 @@ describe("fuzzyMatchCNF — committed gold set", () => {
     // an unqualified query picked these shorter rows before the species rule.
     { food_code: 88, food_description: "Egg, duck, whole, fresh, raw" },
     { food_code: 74, food_description: "Milk, fluid, sheep, whole" },
+    // Whole-milk siblings that outscored the plain cow's milk row (milk todo,
+    // 2026-11-28): a flavour, dry milk, and buttermilk 0.01 behind.
+    { food_code: 69, food_description: "Milk, fluid, chocolate, whole" },
+    {
+      food_code: 7024,
+      food_description: "Milk, fluid, buttermilk, cultured, whole",
+    },
+    { food_code: 66, food_description: "Milk, dry whole" },
+    {
+      food_code: 123,
+      food_description: "Milk, fluid, whole, producer, 3.7% M.F.",
+    },
   ];
 
   interface GoldSetEntry {
@@ -2388,7 +2400,7 @@ describe("fuzzyMatchCNF — committed gold set", () => {
         "bread, bagel, plain",
       ].sort(),
     );
-    expect(counts).toEqual({ right: 55, wrong: 11, "no-match": 4 });
+    expect(counts).toEqual({ right: 56, wrong: 11, "no-match": 4 });
   });
 
   it("keeps beef/chicken taco resolving to their own row (positive controls beside the bare-taco residual)", () => {
@@ -2412,6 +2424,18 @@ describe("fuzzyMatchCNF — committed gold set", () => {
     );
     expect(fuzzyMatchCNF("sheep milk", rows)?.food_description).toBe(
       "Milk, fluid, sheep, whole",
+    );
+  });
+
+  it("picks plain whole milk for an unqualified whole milk, and the flavour or dry milk when asked", () => {
+    expect(fuzzyMatchCNF("milk, whole", rows)?.food_description).toBe(
+      "Milk, fluid, whole, producer, 3.7% M.F.",
+    );
+    expect(
+      fuzzyMatchCNF("milk, chocolate, whole", rows)?.food_description,
+    ).toBe("Milk, fluid, chocolate, whole");
+    expect(fuzzyMatchCNF("milk, dry", rows)?.food_description).toBe(
+      "Milk, dry whole",
     );
   });
 
