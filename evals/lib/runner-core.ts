@@ -6,6 +6,10 @@ import { runAssertions, runStructuralAssertions } from "../assertions";
 import { bootstrapMeanCI, mulberry32 } from "./bootstrap";
 import { persistResults } from "./eval-results-store";
 import {
+  formatPromptCacheSummary,
+  summarizePromptCache,
+} from "./prompt-cache-summary";
+import {
   judgeGeneric,
   currentJudgeModel,
   resolveJudgeBackend,
@@ -669,6 +673,9 @@ export async function runEvalSuite(
   runResult.candidate = candidateArg;
   runResult.moderationBlocked = moderationBlocked;
   printSummary(runResult, config);
+  for (const line of formatPromptCacheSummary(summarizePromptCache(scored))) {
+    console.log(line);
+  }
 
   const resultsDir = path.join(__dirname, "..", "results");
   if (!fs.existsSync(resultsDir)) fs.mkdirSync(resultsDir, { recursive: true });

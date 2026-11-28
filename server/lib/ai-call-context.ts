@@ -16,6 +16,11 @@ export interface AiCallUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
   completion_tokens_details?: { reasoning_tokens?: number };
+  /** Provider prefix-cache counts (OpenRouter passes them through as sent). */
+  prompt_tokens_details?: {
+    cached_tokens?: number;
+    cache_write_tokens?: number;
+  };
 }
 
 export interface AiCallRecord {
