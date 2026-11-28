@@ -187,7 +187,36 @@ const UNCOMMON_SPECIES_WORDS = new Set([
   "turkey",
   "goat",
   "sheep",
+  // Not a species, but the same shape: a different product filed under the
+  // plain food ("Milk, fluid, buttermilk, cultured, whole").
+  "buttermilk",
 ]);
+
+/**
+ * Flavour qualifiers: "Milk, fluid, chocolate, whole" beside plain whole
+ * milk. "vanilla" is left out: it is the plain default flavour.
+ */
+const FLAVOUR_WORDS = new Set([
+  "chocolate",
+  "strawberry",
+  "malted",
+  "flavour",
+  "flavoured",
+  "flavored",
+]);
+
+/** Whether a qualifier part (not the head) holds a word from `set` that the query did not name. */
+function hasUnaskedQualifier(
+  set: Set<string>,
+  partWordsList: string[][],
+  asked: Set<string>,
+): boolean {
+  return partWordsList
+    .slice(1)
+    .some((words) =>
+      words.some((w) => set.has(w) && wordMatch(asked, w) === 0),
+    );
+}
 
 /**
  * Whether a qualifier part (not the head) names a less common species the
@@ -198,14 +227,28 @@ function isUnaskedUncommonSpecies(
   partWordsList: string[][],
   qWords: string[],
 ): boolean {
-  const asked = new Set(qWords);
-  return partWordsList
-    .slice(1)
-    .some((words) =>
-      words.some(
-        (w) => UNCOMMON_SPECIES_WORDS.has(w) && wordMatch(asked, w) === 0,
-      ),
-    );
+  return hasUnaskedQualifier(
+    UNCOMMON_SPECIES_WORDS,
+    partWordsList,
+    new Set(qWords),
+  );
+}
+
+/**
+ * Whether the row is a flavoured form of the food the query names and the
+ * query did not name the flavour. Only rows whose head is the query's first
+ * word count ("Milk, fluid, chocolate, whole" for "milk, whole"): under a
+ * category head every sibling names a flavour ("Dessert, frozen, ice cream,
+ * chocolate"), so a penalty there hands bare "ice cream" to "Ice cream cone".
+ */
+function isUnaskedFlavour(
+  partWordsList: string[][],
+  qWords: string[],
+): boolean {
+  return (
+    wordMatch(new Set(partWordsList[0]), qWords[0]) > 0 &&
+    hasUnaskedQualifier(FLAVOUR_WORDS, partWordsList, new Set(qWords))
+  );
 }
 
 /**
@@ -250,15 +293,18 @@ function tokenizeDescription(d: string): DescriptionTokens {
  * and the head part gets a small edge, so "egg" ranks the "Egg, chicken, …"
  * rows over "Bagel, egg" and "Egg Benedict".
  *
- * A dried, powdered or flour form the query didn't name loses a point, which
- * breaks a near tie: "milk" picks "Milk, fluid, …" over "Milk, dry whole".
+ * A dried, powdered or flour form the query didn't name loses two points,
+ * which breaks a near tie: "milk" picks "Milk, fluid, …" over "Milk, dry whole".
  * A qualifier naming a less common species the query didn't name loses a
  * point the same way: "egg, whole, raw" picks the chicken row, not
  * "Egg, duck, whole, fresh, raw" (duck egg todo, 2026-11-28; on the 70-query
  * gold set right 55, wrong 11, no match 4, the three added egg queries right).
- * Measured residual it does not fix: "milk, whole" leaves "Milk, fluid,
- * sheep, whole" for "Milk, fluid, chocolate, whole" (an unasked flavour),
- * not the plain cow's milk row, whose six-part name loses on length.
+ * An unasked flavour on a row headed by the queried food loses a point too,
+ * and the dehydrated penalty is two points, so "milk, whole" picks "Milk,
+ * fluid, whole, producer, 3.7% M.F." over the chocolate, buttermilk and dry
+ * rows (milk todo, 2026-11-28; gold set right 56, wrong 11, no match 4; on
+ * about 150 other real-list queries only "milk, whole" moved). Residual:
+ * "whole milk", in that word order, still picks the chocolate row.
  *
  * Baseline, measured on the then 67-query gold set (`server/services/__tests__/fixtures/
  * cnf-gold-set.json`) against the real EN list (2026-09-27): right food 52,
@@ -325,10 +371,14 @@ function scoreCNFMatch(query: string, description: string): number {
 
   // A dehydrated form shares its head with the fresh food, and its shorter
   // name would win the length tie-break ("milk" → "Milk, dry whole").
-  if (isUnaskedDehydratedForm(parts, partWordsList, qWords)) score -= 1;
+  // Two points, not one: "Milk, dry whole" is short enough that a single
+  // point still left it above "Milk, fluid, whole, producer, 3.7% M.F.".
+  if (isUnaskedDehydratedForm(parts, partWordsList, qWords)) score -= 2;
 
-  // Same shape for species: "egg, whole, raw" → "Egg, duck, whole, …".
+  // Same shape for species and flavour: "egg, whole, raw" → "Egg, duck, …",
+  // "milk, whole" → "Milk, fluid, chocolate, whole".
   if (isUnaskedUncommonSpecies(partWordsList, qWords)) score -= 1;
+  if (isUnaskedFlavour(partWordsList, qWords)) score -= 1;
 
   // Penalty for very long descriptions (less specific/relevant)
   score -= d.length / 100;
