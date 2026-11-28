@@ -7,6 +7,7 @@ module: client
 applies_to: ["client/hooks/**/*.ts", "client/lib/query-client.ts"]
 symptoms: ["A spinner that never stops when the user taps while offline", "An in-flight guard ref stays true, so the button never works again", "A request fires minutes later, on reconnect, after the user left the screen", "A test of an offline mutateAsync times out instead of rejecting"]
 created: '2026-11-19'
+last_updated: '2026-11-28'
 severity: low
 ---
 
@@ -46,6 +47,23 @@ mutationFn: async (args) => {
 `shouldSurfaceMutationError`, so it never reaches Sentry (silentError
 mutations still report since M-obs-4), and screens show "You're offline".
 
+### Same trap for `queryClient.fetchQuery` before an action (2026-11-28)
+
+A query has the same default. `useConfirmPlanPick` (#2115) awaits
+`queryClient.fetchQuery(recipeDetail)` before adding a meal; offline, the
+fetch paused, so the add waited for the network with the button busy. Fix:
+spread the options and set `networkMode: "always"` so it rejects at once,
+and treat the rejection as "unknown" (the check then says "Allergens not
+checked"), never as safe:
+
+```ts
+await queryClient.fetchQuery({
+  ...mealPlanRecipeDetailQueryOptions(id),
+  staleTime: 60_000,
+  networkMode: "always",
+});
+```
+
 ## Prevention
 
 Test with `onlineManager.setOnline(false)`: a paused mutation shows up as a
@@ -56,6 +74,7 @@ Test with `onlineManager.setOnline(false)`: a paused mutation shows up as a
 - `client/hooks/useMealPlanRecipes.ts` — `throwIfOffline`
 - `client/lib/api-error.ts` — `OfflineError`
 - `client/lib/query-client.ts` — `shouldSurfaceMutationError`
+- `client/hooks/useConfirmPlanPick.ts` — the `fetchQuery` case
 
 ## See Also
 
