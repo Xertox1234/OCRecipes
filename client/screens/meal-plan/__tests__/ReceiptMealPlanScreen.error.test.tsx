@@ -26,6 +26,16 @@ vi.mock("@/hooks/useGenerateMealPlan", () => ({
   useSaveGeneratedMealPlan: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+const confirmBatch = vi.hoisted(() =>
+  vi.fn(async () => ({ proceed: true, note: null })),
+);
+vi.mock("@/hooks/useConfirmPlanPick", () => ({
+  useConfirmPlanBatch: () => confirmBatch,
+}));
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+}));
+
 // Accessibility audit 2026-11-21 M5: the generate-plan error (often the
 // server's own reason, e.g. an empty pantry) was a plain View — no alert role,
 // live region or announcement, so screen-reader users never heard it.
