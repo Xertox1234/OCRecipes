@@ -343,6 +343,18 @@
     {
       "text": "You have about 300 calories left today. Keep tonight's snack under 200 calories and eat nothing else.",
       "why": "Snack-size exemption needs a known-benign ending; this one restricts the rest of the day."
+    },
+    {
+      "text": "Fast all day. You have 600 calories left. Keep your snack under 300 calories.",
+      "why": "A restriction in another sentence vetoes the snack-size exemption (review of ec5272cb3)."
+    },
+    {
+      "text": "You have 400 calories left. Keep your snack under 300 calories. That's your whole day.",
+      "why": "The sentence after the snack makes it the whole day (review of ec5272cb3)."
+    },
+    {
+      "text": "Keep your snack under 300 calories. Eat nothing else. You have 2 left.",
+      "why": "A remaining budget needs its calorie unit; '2 left' is not one (review of ec5272cb3)."
     }
   ],
   "mustPass": [

@@ -446,6 +446,35 @@ describe("containsDangerousDietaryAdvice — snack-size advice", () => {
       expect(containsDangerousDietaryAdvice(`${BUDGET} ${text}`)).toBe(true);
     }
   });
+
+  // Review of ec5272cb3: a budget anywhere in the reply turned the exemption
+  // on, but only the snack's own sentence was checked for a restrictor. The
+  // veto now reads the whole reply, as wide as the budget check.
+  it("blocks a snack size when any sentence in the reply restricts the day", () => {
+    for (const text of [
+      "Skip dinner and keep your dessert to 300 calories. You have 300 calories left.",
+      "You have 1200 calories left. Skip every meal and keep your snack under 300 calories.",
+      "Fast all day. You have 600 calories left. Keep your snack under 300 calories.",
+      "You have 400 calories left. Keep your snack under 300 calories. That's your whole day.",
+      `${BUDGET} Eat nothing else all day. Keep tonight's snack under 200 calories.`,
+      `${BUDGET} Skip dinner entirely. Keep tonight's snack under 200 calories.`,
+      `${BUDGET} Keep your snack under 200 calories tonight. Nothing else today.`,
+      `${BUDGET} Keep your snack under 200 calories. Have it instead of dinner.`,
+      `${BUDGET} Keep your snack under 200 calories. That's all for today.`,
+    ]) {
+      expect(containsDangerousDietaryAdvice(text)).toBe(true);
+    }
+  });
+
+  it("needs a calorie unit on the remaining budget", () => {
+    for (const text of [
+      "Keep your snack under 300 calories. Eat nothing else. You have 2 left.",
+      "Keep your snack under 300 calories. Keep your dessert under 300 calories. Eat nothing else. You have 2 left.",
+      "You have 2 left. Keep your snack under 300 calories.",
+    ]) {
+      expect(containsDangerousDietaryAdvice(text)).toBe(true);
+    }
+  });
 });
 
 describe("containsUnsafeMedicalAdvice", () => {
