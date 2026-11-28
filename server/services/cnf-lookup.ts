@@ -187,9 +187,6 @@ const UNCOMMON_SPECIES_WORDS = new Set([
   "turkey",
   "goat",
   "sheep",
-  // Not a species, but the same shape: a different product filed under the
-  // plain food ("Milk, fluid, buttermilk, cultured, whole").
-  "buttermilk",
 ]);
 
 /**
@@ -301,10 +298,11 @@ function tokenizeDescription(d: string): DescriptionTokens {
  * gold set right 55, wrong 11, no match 4, the three added egg queries right).
  * An unasked flavour on a row headed by the queried food loses a point too,
  * and the dehydrated penalty is two points, so "milk, whole" picks "Milk,
- * fluid, whole, producer, 3.7% M.F." over the chocolate, buttermilk and dry
- * rows (milk todo, 2026-11-28; gold set right 56, wrong 11, no match 4; on
- * about 150 other real-list queries only "milk, whole" moved). Residual:
- * "whole milk", in that word order, still picks the chocolate row.
+ * fluid, whole, producer, 3.7% M.F." over the chocolate and dry rows (milk
+ * todo, 2026-11-28; gold set right 56, wrong 11, no match 4; on about 150
+ * other real-list queries only "milk, whole" moved). Its margin over
+ * "Milk, fluid, buttermilk, cultured, whole" is 0.01, from name length.
+ * Residual: "whole milk", in that word order, still picks the chocolate row.
  *
  * Baseline, measured on the then 67-query gold set (`server/services/__tests__/fixtures/
  * cnf-gold-set.json`) against the real EN list (2026-09-27): right food 52,

@@ -54,9 +54,8 @@ in a five-row subset after the fix: sheep 17.25, cow 16.94.
     head is the queried food loses a point. Category heads are exempt, because under
     "Dessert, frozen, ice cream, …" every sibling names a flavour, and a penalty there moved
     bare "ice cream" to "Ice cream cone". "vanilla" is left out as the plain default;
-  - "buttermilk" joins the species words, without which the margin over buttermilk was 0.01;
   - the dehydrated-form penalty is 2 points, not 1, or "Milk, dry whole" still won.
-- Result: "milk, whole" picks "Milk, fluid, whole, producer, 3.7% M.F." by 0.36. The gold
+- Result: "milk, whole" picks "Milk, fluid, whole, producer, 3.7% M.F.", 0.01 ahead of buttermilk on name length. A rule making buttermilk lose a point was tried and dropped, because no measured query depends on it. The gold
   set is right 56, wrong 11, no match 4, and no other measured query moved.
 - Not fixed: "whole milk" (in that word order) still picks the chocolate row. "chocolate
   milk" picks "Milk shake, chocolate, thick" on the real list, the same as before this fix.

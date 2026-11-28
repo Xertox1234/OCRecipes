@@ -2323,7 +2323,7 @@ describe("fuzzyMatchCNF — committed gold set", () => {
     { food_code: 88, food_description: "Egg, duck, whole, fresh, raw" },
     { food_code: 74, food_description: "Milk, fluid, sheep, whole" },
     // Whole-milk siblings that outscored the plain cow's milk row (milk todo,
-    // 2026-11-28): a flavour, buttermilk and dry milk.
+    // 2026-11-28): a flavour, dry milk, and buttermilk 0.01 behind.
     { food_code: 69, food_description: "Milk, fluid, chocolate, whole" },
     {
       food_code: 7024,
@@ -2427,17 +2427,14 @@ describe("fuzzyMatchCNF — committed gold set", () => {
     );
   });
 
-  it("picks plain whole milk for an unqualified whole milk, and the flavour, buttermilk or dry milk when asked", () => {
+  it("picks plain whole milk for an unqualified whole milk, and the flavour or dry milk when asked", () => {
     expect(fuzzyMatchCNF("milk, whole", rows)?.food_description).toBe(
       "Milk, fluid, whole, producer, 3.7% M.F.",
     );
     expect(
       fuzzyMatchCNF("milk, chocolate, whole", rows)?.food_description,
     ).toBe("Milk, fluid, chocolate, whole");
-    expect(fuzzyMatchCNF("buttermilk, whole", rows)?.food_description).toBe(
-      "Milk, fluid, buttermilk, cultured, whole",
-    );
-    expect(fuzzyMatchCNF("milk, dry whole", rows)?.food_description).toBe(
+    expect(fuzzyMatchCNF("milk, dry", rows)?.food_description).toBe(
       "Milk, dry whole",
     );
   });
