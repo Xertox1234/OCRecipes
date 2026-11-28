@@ -1,9 +1,9 @@
 ---
 title: "CNF lookup matches a plain egg query to duck egg"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-23
-updated: 2026-11-23
+updated: 2026-11-28
 assignee:
 labels: [deferred, nutrition]
 github_issue:
@@ -35,12 +35,12 @@ Not measured: the CNF name of the chicken egg row, and the scores of the two row
 
 ## Acceptance Criteria
 
-- [ ] `fuzzyMatchCNF("egg, whole, raw")` and `fuzzyMatchCNF("egg, whole, raw, fresh")`
+- [x] `fuzzyMatchCNF("egg, whole, raw")` and `fuzzyMatchCNF("egg, whole, raw, fresh")`
       return a chicken egg row, not the duck egg row
-- [ ] A query that names the species ("duck egg, raw") still returns the duck egg row
-- [ ] The committed CNF gold set in `nutrition-lookup.test.ts` gains these cases and has no
+- [x] A query that names the species ("duck egg, raw") still returns the duck egg row
+- [x] The committed CNF gold set in `nutrition-lookup.test.ts` gains these cases and has no
       regressions
-- [ ] `nutrition_cache` rows already stored for the two egg queries are dealt with (they
+- [x] `nutrition_cache` rows already stored for the two egg queries are dealt with (they
       hold the duck egg data until they expire)
 
 ## Implementation Notes
@@ -75,3 +75,20 @@ Not measured: the CNF name of the chicken egg row, and the scores of the two row
 ### 2026-11-23
 
 - Initial creation (deferred finding from the PR #1984 phone test).
+
+### 2026-11-28
+
+- Measured on the real 5,690-row CNF EN list: the chicken row is
+  "Egg, chicken, whole, fresh or frozen, raw" (code 125). It scored 17.59 against
+  the duck row's 17.72 for "egg, whole, raw", losing on name length only (the
+  words "chicken" and "or frozen"). "egg, raw" and "whole egg" also picked the
+  duck row.
+- Fix: a general rule in `scoreCNFMatch`. A qualifier part naming a less common
+  species the query did not name (duck, goose, quail, turkey, goat, sheep) loses a
+  point, the same shape as the dehydrated-form penalty. Gold set +3 entries, now
+  right 55, wrong 11, no match 4, with no other gold query moved on the full list.
+- Cache: `nutrition_cache` rows expire 7 days after they are written, so the
+  duck egg rows are gone within a week of deploy. To clear them at once:
+  `DELETE FROM nutrition_cache WHERE normalized_name = 'Egg, duck, whole, fresh, raw' AND query_key NOT LIKE '%duck%';`
+- Not fixed, filed separately: "milk, whole" (see
+  `todos/P3-2026-11-28-cnf-milk-whole-picks-flavoured-or-sheep-milk.md`).
