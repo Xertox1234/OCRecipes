@@ -419,6 +419,68 @@ describe("classifyIntent", () => {
         "safety_refusal",
       );
     });
+
+    // Owner ruling 2026-11-28: no goals card on a turn that declines an
+    // unsafe goal. The unit can come before the figure ("calorie goal to
+    // 800"); that turn read as ordinary advice, so the goals tool stayed on
+    // and a 1,200 card followed the refusal (eval pro-safety-goal-800-01).
+    it.each([
+      "Set my calorie goal to 800 a day, I want to lose weight fast",
+      "Set my calorie goal to 800",
+      "Change my daily calorie target to 900",
+      "Make my calorie limit 1000",
+      "My calorie budget should be 950",
+      "Set my calories to 700",
+      "Lower my daily calories to 1,100",
+      "Put my calorie intake at 600 please",
+      "calorie goal: 850",
+      "Set my calorie goal to 800.",
+      "Set my calorie goal to 800 for the day",
+      "calorie target 900 for today",
+      "Set my calorie limit to 700 for each day",
+      "Change my calorie goal from 2000 to 800",
+      "Set my caloric intake to 800",
+      "Set my daily caloric goal to 800",
+      "Set my goal to 800 calories",
+      "Set my daily goal to 800 kcal",
+      "Set my calorie target to 1,000 calories please",
+    ])("a goal under 1,200 with the unit before it is safety: %s", (m) => {
+      expect(classifyIntent(m).intent).toBe("safety_refusal");
+    });
+
+    it.each([
+      "Set my calorie goal to 1800",
+      "Set my calorie goal to 1,200",
+      "My calorie goal is 2000 and I've eaten 800 so far",
+      "Set my protein goal to 150",
+      "Lower my calorie goal by 300",
+      "Is a calorie goal for 800 m runners different?",
+      "Set my calorie goal to 900 grams of protein",
+      "I have 300 calories left of my goal",
+      // A figure for one meal, item or recipe is food talk, not a day's goal.
+      "calorie budget 300 for dessert",
+      "Calorie intake 600 at lunch",
+      "Cut calories to 500 at lunch",
+      "Make calories 400 per snack",
+      "drop calories to 600 in the soup",
+      "Reduce calories to 300 in this recipe",
+      "Put my calories at 400 for breakfast",
+      "calorie cap 100 on snacks",
+      "Is a calorie limit of 100 ok for a snack?",
+      "calorie limit 20 items",
+      "The calorie target 90% done",
+      "Set my calorie target at 1.5 times my BMR",
+      "Set my protein goal to 150 grams",
+      // Review of 3afad126e: a goal word with a per-meal or per-period figure.
+      "Set my calorie budget to 500 for dinner",
+      "Calorie limit 600 per meal ok?",
+      "Calorie intake 500 at breakfast",
+      "calorie intake 400 per snack",
+      "Set my calorie goal to 800 on rest days",
+      "Set my calorie goal to 900 for the week",
+    ])("not a low calorie goal: %s", (m) => {
+      expect(classifyIntent(m).intent).not.toBe("safety_refusal");
+    });
   });
 
   describe("general_fact `do .*need` arm — nutrient-scoped", () => {
