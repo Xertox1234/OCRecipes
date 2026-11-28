@@ -174,6 +174,41 @@ function isUnaskedDehydratedForm(
 }
 
 /**
+ * Less common species CNF names in a qualifier part beside the common one:
+ * "Egg, duck, whole, fresh, raw" beside "Egg, chicken, whole, fresh or frozen,
+ * raw", "Milk, fluid, sheep, whole" beside "Milk, fluid, whole, …". The
+ * common species' row is often the longer name ("chicken", "or frozen"), so
+ * the length penalty hands an unqualified query to the rarer species.
+ */
+const UNCOMMON_SPECIES_WORDS = new Set([
+  "duck",
+  "goose",
+  "quail",
+  "turkey",
+  "goat",
+  "sheep",
+]);
+
+/**
+ * Whether a qualifier part (not the head) names a less common species the
+ * query did not name: an unqualified animal food means the common species.
+ * The head is exempt, so "turkey" still matches "Turkey, …" rows.
+ */
+function isUnaskedUncommonSpecies(
+  partWordsList: string[][],
+  qWords: string[],
+): boolean {
+  const asked = new Set(qWords);
+  return partWordsList
+    .slice(1)
+    .some((words) =>
+      words.some(
+        (w) => UNCOMMON_SPECIES_WORDS.has(w) && wordMatch(asked, w) === 0,
+      ),
+    );
+}
+
+/**
  * Tokens derived from a CNF description, memoized per description string so
  * a query batch (`fuzzyMatchCNF` scores every query against the whole CNF
  * list) tokenizes each description at most once instead of on every query.
@@ -217,6 +252,13 @@ function tokenizeDescription(d: string): DescriptionTokens {
  *
  * A dried, powdered or flour form the query didn't name loses a point, which
  * breaks a near tie: "milk" picks "Milk, fluid, …" over "Milk, dry whole".
+ * A qualifier naming a less common species the query didn't name loses a
+ * point the same way: "egg, whole, raw" picks the chicken row, not
+ * "Egg, duck, whole, fresh, raw" (duck egg todo, 2026-11-28; on the 70-query
+ * gold set right 55, wrong 11, no match 4, the three added egg queries right).
+ * Measured residual it does not fix: "milk, whole" leaves "Milk, fluid,
+ * sheep, whole" for "Milk, fluid, chocolate, whole" (an unasked flavour),
+ * not the plain cow's milk row, whose six-part name loses on length.
  *
  * Measured on the 67-query gold set (`server/services/__tests__/fixtures/
  * cnf-gold-set.json`) against the real EN list (2026-09-27): right food 52,
@@ -284,6 +326,9 @@ function scoreCNFMatch(query: string, description: string): number {
   // A dehydrated form shares its head with the fresh food, and its shorter
   // name would win the length tie-break ("milk" → "Milk, dry whole").
   if (isUnaskedDehydratedForm(parts, partWordsList, qWords)) score -= 1;
+
+  // Same shape for species: "egg, whole, raw" → "Egg, duck, whole, …".
+  if (isUnaskedUncommonSpecies(partWordsList, qWords)) score -= 1;
 
   // Penalty for very long descriptions (less specific/relevant)
   score -= d.length / 100;

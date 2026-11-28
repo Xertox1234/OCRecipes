@@ -2318,6 +2318,10 @@ describe("fuzzyMatchCNF — committed gold set", () => {
     { food_code: 2909, food_description: "Tea, brewed" },
     { food_code: 136, food_description: "Cream, table (coffee), 18% M.F." },
     { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+    // Less common species beside the common one (duck egg todo, 2026-11-28):
+    // an unqualified query picked these shorter rows before the species rule.
+    { food_code: 88, food_description: "Egg, duck, whole, fresh, raw" },
+    { food_code: 74, food_description: "Milk, fluid, sheep, whole" },
   ];
 
   interface GoldSetEntry {
@@ -2384,7 +2388,7 @@ describe("fuzzyMatchCNF — committed gold set", () => {
         "bread, bagel, plain",
       ].sort(),
     );
-    expect(counts).toEqual({ right: 52, wrong: 11, "no-match": 4 });
+    expect(counts).toEqual({ right: 55, wrong: 11, "no-match": 4 });
   });
 
   it("keeps beef/chicken taco resolving to their own row (positive controls beside the bare-taco residual)", () => {
@@ -2393,6 +2397,21 @@ describe("fuzzyMatchCNF — committed gold set", () => {
     );
     expect(fuzzyMatchCNF("chicken taco", rows)?.food_description).toBe(
       "Fast foods, mexican, taco with chicken, cheese and lettuce, soft",
+    );
+  });
+
+  it("picks the common species for an unqualified egg, and the named species when asked", () => {
+    expect(fuzzyMatchCNF("egg, whole, raw", rows)?.food_description).toBe(
+      "Egg, chicken, whole, fresh or frozen, raw",
+    );
+    expect(
+      fuzzyMatchCNF("egg, whole, raw, fresh", rows)?.food_description,
+    ).toBe("Egg, chicken, whole, fresh or frozen, raw");
+    expect(fuzzyMatchCNF("duck egg, raw", rows)?.food_description).toBe(
+      "Egg, duck, whole, fresh, raw",
+    );
+    expect(fuzzyMatchCNF("sheep milk", rows)?.food_description).toBe(
+      "Milk, fluid, sheep, whole",
     );
   });
 
