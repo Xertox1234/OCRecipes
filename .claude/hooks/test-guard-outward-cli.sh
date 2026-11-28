@@ -7844,6 +7844,35 @@ docker compose run --entrypoint 'tini -- node' web -c 'eas update'
 docker compose run --entrypoint 'env "sh" -x' web -c 'ls'
 CEROWS
 
+# CE7 (2026-11-28, all ALLOWED before it): a shell entry point that reads its commands from stdin
+# (`docker compose run -T --entrypoint sh web <<< '...'`, `echo '...' | docker run -i --entrypoint sh img`).
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_deny "CE7 '$ce_cmd' denies" "$(jsonc "$ce_cmd")" "eas update/publish/submit"
+done <<'CEROWS'
+docker compose run -T --entrypoint sh web <<< 'eas update'
+docker compose run -T --entrypoint=sh web <<< 'eas update'
+docker-compose run -T --entrypoint /bin/bash web <<< 'eas update'
+docker run -i --entrypoint sh img <<< 'eas update'
+podman run -i --entrypoint=bash img <<< 'eas update'
+docker compose run -T --entrypoint 'sh -x' web <<< 'eas update'
+docker run -i --entrypoint sh img -s <<< 'eas update'
+echo 'eas update' | docker run -i --entrypoint sh img
+echo 'eas update' | docker compose run -T --entrypoint sh web
+printf 'eas update' | podman run -i --entrypoint=bash img
+echo 'eas update' | docker run -i --entrypoint /bin/sh img -s
+CEROWS
+while IFS= read -r ce_cmd; do
+  [ -n "$ce_cmd" ] || continue
+  assert_allow "CE7 control '$ce_cmd' stays allowed" "$(jsonc "$ce_cmd")"
+done <<'CEROWS'
+docker compose run -T --entrypoint sh web <<< 'ls'
+echo 'ls' | docker run -i --entrypoint sh img
+docker run -i --entrypoint python img <<< 'eas update'
+echo 'eas update' | docker run -i --entrypoint node img
+docker run -i --entrypoint shellcheck img <<< 'eas update'
+CEROWS
+
 # SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
 # code (`bash -c`, `eval`, `ssh HOST`, `su -c`, `script -c`, `env -S`, `watch`, `flock -c`,
 # `nodemon --exec`, `parallel :::`, `trap`, a here-string or a pipe into a shell). The hook
@@ -8117,7 +8146,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 2019 -> 2045 (compose's shell entry point): +26 = CE3 and CE4, 19 deny rows and 7 controls.
 # 2045 -> 2056 (compose's entry-point shell option): +11 = CE5, 7 deny rows and 4 controls.
 # 2056 -> 2073 (a runner before compose's entry-point shell): +17 = CE6, 12 deny rows and 5 controls.
-EXPECTED_TOTAL=2073
+# 2073 -> 2089 (a stdin shell entry point): +16 = CE7, 11 deny rows and 5 controls.
+EXPECTED_TOTAL=2089
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
