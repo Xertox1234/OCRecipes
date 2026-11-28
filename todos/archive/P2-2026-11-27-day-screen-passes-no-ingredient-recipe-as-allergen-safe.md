@@ -1,6 +1,6 @@
 ---
 title: "The meal plan day screen shows no allergen line for a recipe with no ingredients, as if it were checked"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-27
 updated: 2026-11-27
@@ -32,9 +32,9 @@ the same case (`server/services/recipe-search.ts`, "safe for me").
 
 ## Acceptance Criteria
 
-- [ ] A planned recipe with no ingredients shows "Allergens not checked" on the day screen for an eater with an allergy.
-- [ ] A recipe with ingredients and no allergens found still shows no line (control).
-- [ ] A test in `client/components/meal-plan/__tests__/family-utils.test.ts` fails without the fix.
+- [x] A planned recipe with no ingredients shows "Allergens not checked" on the day screen for an eater with an allergy.
+- [x] A recipe with ingredients and no allergens found still shows no line (control).
+- [x] A test fails without the fix. The fix is on the server, so the failing test is in `server/storage/__tests__/meal-plan-items.test.ts`; the client half (null allergens show "Allergens not checked") was already covered in `family-utils.test.ts` ("says allergens are not checked when they are unknown").
 
 ## Implementation Notes
 
@@ -46,3 +46,14 @@ the same case (`server/services/recipe-search.ts`, "safe for me").
 - Files: `client/components/meal-plan/family-utils.ts`, possibly
   `server/storage/meal-plan-recipes-crud.ts` and
   `server/services/meal-plan/*` for the relation.
+
+## Updates
+
+### 2026-11-27
+
+- Fixed on read, in `getMealPlanItems` (`server/storage/meal-plan-items.ts`):
+  a recipe with no ingredient rows goes out with `allergens: null`, so the
+  client's existing "unknown" path shows "Allergens not checked". Chosen over
+  storing null at write time because it also covers existing rows with no
+  migration, and leaves recipe search and the write-card safety checks (which
+  already guard on ingredient count) unchanged.
