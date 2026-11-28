@@ -163,7 +163,7 @@ rather than writing a second gate.
   "Possible" foods are worded "may contain", never "contains" (owner ruling 2026-11-15). A recipe
   whose allergens are not worked out says "Allergens not checked".
 - **Warning when a meal is picked for the plan**:
-  `todos/P2-2026-11-20-allergen-warning-when-a-meal-is-picked.md`. This stage carries that todo.
+  `todos/archive/P2-2026-11-20-allergen-warning-when-a-meal-is-picked.md`. This stage carried that todo; shipped in PR #2115, with the pantry plan save following in #2120.
 
 Open — the owner's decision, to be asked before this stage is planned:
 
