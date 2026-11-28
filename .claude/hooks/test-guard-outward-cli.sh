@@ -7829,6 +7829,9 @@ docker compose run --entrypoint 'env sh -c' web 'eas update'
 docker compose run --entrypoint 'busybox sh -c' web 'eas update'
 docker compose run --entrypoint 'tini -- bash -o pipefail -c' web 'eas update'
 docker-compose run --entrypoint='env sh -x' web -c 'eas update'
+docker compose run --entrypoint 'env "sh" -x' web -c 'eas update'
+docker compose run --entrypoint "env 'sh' -c" web 'eas update'
+docker compose run --entrypoint 'tini -- "/bin/sh" -x' web -c 'eas update'
 CEROWS
 while IFS= read -r ce_cmd; do
   [ -n "$ce_cmd" ] || continue
@@ -7838,6 +7841,7 @@ docker compose run --entrypoint 'env sh -x' web -c 'ls'
 docker compose run --entrypoint 'env python -u' web -c 'eas update'
 docker compose run --entrypoint 'env sh -c' web 'ls'
 docker compose run --entrypoint 'tini -- node' web -c 'eas update'
+docker compose run --entrypoint 'env "sh" -x' web -c 'ls'
 CEROWS
 
 # SW (2026-11-27, string wrappers, all ALLOWED on `main`): a quoted string a wrapper runs as
@@ -8112,8 +8116,8 @@ assert_allow "SW4 control: a 1700-line script written to a file and run (6800 qu
 # 1962 -> 2019 (container entry point): +57 = CE and CE2, 41 deny rows and 16 controls.
 # 2019 -> 2045 (compose's shell entry point): +26 = CE3 and CE4, 19 deny rows and 7 controls.
 # 2045 -> 2056 (compose's entry-point shell option): +11 = CE5, 7 deny rows and 4 controls.
-# 2056 -> 2069 (a runner before compose's entry-point shell): +13 = CE6, 9 deny rows and 4 controls.
-EXPECTED_TOTAL=2069
+# 2056 -> 2073 (a runner before compose's entry-point shell): +17 = CE6, 12 deny rows and 5 controls.
+EXPECTED_TOTAL=2073
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
