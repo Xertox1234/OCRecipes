@@ -311,8 +311,66 @@ const INTAKE_VERB_BEFORE_RE =
 const PARTIAL_AFTER_RE =
   /^\s*(?:at|for|per|of|in|before|after|from|over|under|left|remaining|so\s+far|today|to\s+spare)\b/i;
 
-/** The first low daily calorie target the sentence recommends, as [start, end). */
-function lowCalorieTargetSpan(sentence: string): [number, number] | null {
+/**
+ * The size of one snack or dessert, in one closed shape: "Keep tonight's
+ * snack under 200 calories." (todo P2-2026-11-26; owner ruling 2026-11-28:
+ * fail closed, over-blocking accepted). Every part must be present, so a
+ * phrasing nobody listed stays a target:
+ * - before the figure, ending at it: a keep verb, at most one plain
+ *   determiner, "snack" or "dessert", a cap word. Never a meal: "Skip
+ *   breakfast and lunch. Keep dinner under 400 calories." is a 400-calorie day.
+ * - after the figure, the rest of the sentence is one of a few endings
+ *   ("tonight", "or so", "or less", or nothing), then its closing punctuation.
+ * - the figure is no bigger than the smallest remaining budget the reply
+ *   states, so a snack is never the rest of a larger day.
+ * The exemption is only switched on for the whole reply, by
+ * snackSizeCap(): the reply states a remaining budget with its calorie
+ * unit, and no sentence anywhere in it restricts the day ("only", "skip",
+ * "fast", "stop eating", "no food until tomorrow", "that's your whole day").
+ * The veto reads as wide as the budget does, so a restriction in another
+ * sentence still blocks ("Fast all day. You have 600 calories left. Keep
+ * your snack under 300 calories."). The screen still only sees words: a
+ * restriction phrased in a way nobody listed passes, which is why every
+ * other part is closed too.
+ */
+const SNACK_SIZE_BEFORE_RE =
+  /(?:^|[\s,;:—–-])(?:(?:try|aim)\s+to\s+)?keep\s+(?:(?:tonight['’]s|today['’]s|your|the|this|that|a|any)\s+)?(?:snack|dessert)\s+(?:under|below|to|around|at|about)\s+(?:(?:about|around|roughly)\s+)?~?$/i;
+const SNACK_SIZE_TAIL_RE =
+  /^(?:\s+(?:tonight|or\s+so|or\s+less|or\s+fewer))?\s*[.!]?["'”’)\]]*\s*$/i;
+/** A remaining budget the reply states, with its unit: "about 300 calories left". */
+const RUNNING_BUDGET_RE =
+  /\b(\d+)\s+(?:k?cal(?:orie)?s?|kilocalories)\s+(?:left|remaining|to\s+spare)\b/gi;
+/** Anything, anywhere in the reply, that restricts the rest of the day. */
+const DAY_RESTRICTOR_RE =
+  /\b(?:only|just|solely|single|entirely|nothing|else|skip\w*|instead|replac\w*|swap\w*|fast(?:s|ed|ing)?|every\s+meal|all\s+day|rest\s+of|no\s+(?:other|more|food|eating|meals?)|whole\s+day|all\s+you|done\s+for|last\s+(?:thing|meal|food|bite)|that['’]?s\s+(?:it|all|your)|stop\w*|again|until\s+(?:tomorrow|morning|breakfast)|(?:don['’]?t|do\s+not|never|won['’]?t)\s+eat|optional|water|for\s+(?:breakfast|lunch|dinner))\b/i;
+
+/**
+ * The largest snack-size figure the reply may carry: the smallest remaining
+ * budget it states, or 0 (no exemption) when it states none or restricts
+ * the day anywhere.
+ */
+function snackSizeCap(text: string): number {
+  const s = text.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
+  if (DAY_RESTRICTOR_RE.test(s)) return 0;
+  const budgets = [...s.matchAll(RUNNING_BUDGET_RE)].map((m) => Number(m[1]));
+  return budgets.length > 0 ? Math.min(...budgets) : 0;
+}
+
+function isSnackSize(s: string, start: number, end: number): boolean {
+  return (
+    SNACK_SIZE_BEFORE_RE.test(s.slice(0, start)) &&
+    SNACK_SIZE_TAIL_RE.test(s.slice(end))
+  );
+}
+
+/**
+ * The first low daily calorie target the sentence recommends, as [start, end).
+ * `snackCap` comes from snackSizeCap() on the whole reply.
+ */
+function lowCalorieTargetSpan(
+  sentence: string,
+  snackCap = 0,
+): [number, number] | null {
   // "1,100" → "1100" keeps the figure whole; the offsets below are into `s`.
   const s = sentence.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
   for (const m of s.matchAll(CALORIE_FIGURE_RE)) {
@@ -339,19 +397,23 @@ function lowCalorieTargetSpan(sentence: string): [number, number] | null {
     // No "per day": still a target when a verb sets it and nothing says the
     // amount is for one meal ("Aim for 900 calories." vs "... at dinner").
     if (INTAKE_VERB_BEFORE_RE.test(before) && !PARTIAL_AFTER_RE.test(after)) {
+      if (value <= snackCap && isSnackSize(s, start, end)) continue;
       return [start, end];
     }
   }
   return null;
 }
 
-function isDangerousDietarySentence(sentence: string): boolean {
+function isDangerousDietarySentence(
+  sentence: string,
+  snackCap: number,
+): boolean {
   for (const pattern of DANGEROUS_DIETARY_PATTERNS) {
     const m = pattern.exec(sentence);
     if (m && !declines(sentence, m.index, m.index + m[0].length)) return true;
   }
   const s = sentence.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
-  const span = lowCalorieTargetSpan(sentence);
+  const span = lowCalorieTargetSpan(sentence, snackCap);
   return span !== null && !declines(s, span[0], span[1]);
 }
 
@@ -361,9 +423,10 @@ function isDangerousDietarySentence(sentence: string): boolean {
  * and does not itself decline or warn against it.
  */
 export function containsDangerousDietaryAdvice(text: string): boolean {
+  const snackCap = snackSizeCap(text);
   return text
     .split(SENTENCE_BREAK)
-    .some((sentence) => isDangerousDietarySentence(sentence.trim()));
+    .some((sentence) => isDangerousDietarySentence(sentence.trim(), snackCap));
 }
 
 export const UNSAFE_MEDICAL_ADVICE_PATTERNS: RegExp[] = [
