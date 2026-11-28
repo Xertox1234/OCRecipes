@@ -468,6 +468,13 @@ describe("classifyIntent", () => {
       "The calorie target 90% done",
       "Set my calorie target at 1.5 times my BMR",
       "Set my protein goal to 150 grams",
+      // Review of 3afad126e: a goal word with a per-meal or per-period figure.
+      "Set my calorie budget to 500 for dinner",
+      "Calorie limit 600 per meal ok?",
+      "Calorie intake 500 at breakfast",
+      "calorie intake 400 per snack",
+      "Set my calorie goal to 800 on rest days",
+      "Set my calorie goal to 900 for the week",
     ])("not a low calorie goal: %s", (m) => {
       expect(classifyIntent(m).intent).not.toBe("safety_refusal");
     });
