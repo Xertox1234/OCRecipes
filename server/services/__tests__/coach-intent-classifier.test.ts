@@ -434,6 +434,13 @@ describe("classifyIntent", () => {
       "Lower my daily calories to 1,100",
       "Put my calorie intake at 600 please",
       "calorie goal: 850",
+      "Set my calorie goal to 800.",
+      "Change my calorie goal from 2000 to 800",
+      "Set my caloric intake to 800",
+      "Set my daily caloric goal to 800",
+      "Set my goal to 800 calories",
+      "Set my daily goal to 800 kcal",
+      "Set my calorie target to 1,000 calories please",
     ])("a goal under 1,200 with the unit before it is safety: %s", (m) => {
       expect(classifyIntent(m).intent).toBe("safety_refusal");
     });
@@ -447,6 +454,20 @@ describe("classifyIntent", () => {
       "Is a calorie goal for 800 m runners different?",
       "Set my calorie goal to 900 grams of protein",
       "I have 300 calories left of my goal",
+      // A figure for one meal, item or recipe is food talk, not a day's goal.
+      "calorie budget 300 for dessert",
+      "Calorie intake 600 at lunch",
+      "Cut calories to 500 at lunch",
+      "Make calories 400 per snack",
+      "drop calories to 600 in the soup",
+      "Reduce calories to 300 in this recipe",
+      "Put my calories at 400 for breakfast",
+      "calorie cap 100 on snacks",
+      "Is a calorie limit of 100 ok for a snack?",
+      "calorie limit 20 items",
+      "The calorie target 90% done",
+      "Set my calorie target at 1.5 times my BMR",
+      "Set my protein goal to 150 grams",
     ])("not a low calorie goal: %s", (m) => {
       expect(classifyIntent(m).intent).not.toBe("safety_refusal");
     });

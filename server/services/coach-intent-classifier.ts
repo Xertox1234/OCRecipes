@@ -300,26 +300,45 @@ const CALORIE_CHANGE_BEFORE_RE =
   /\b(?:cut(?:ting)?|trim(?:ming)?|burn(?:s|ed|ing)?|add(?:ing)?|sav(?:e|ing)|deficit\s+of|surplus\s+of|by|extra|another)\s+(?:(?:about|around|roughly|up\s+to)\s+)*$/i;
 
 /**
+ * What may follow a goal's figure: the end of the message or sentence, a
+ * calorie unit, a daily marker, or a word that closes the request ("please",
+ * "and ...", "instead"). Anything else ("at lunch", "for dessert", "in the
+ * soup", "items", "%") makes it a figure for one meal or thing, not a day.
+ */
+const GOAL_FIGURE_END =
+  "(?=\\s*(?:$|[.!?,;:)](?!\\d)|(?:k?cal(?:orie)?s?|kilocalories)\\b|(?:a|per|each|every)\\s+day\\b|daily\\b|please\\b|and\\b|instead\\b|now\\b|starting\\b|from\\s+now\\b|going\\s+forward\\b|i\\s+want\\b|so\\b))";
+
+/**
+ * A calorie goal with the unit before a bare figure: "set my calorie goal to
+ * 800", "calorie limit 1000", "change my calorie goal from 2000 to 800",
+ * "lower my daily calories to 1,100" (owner ruling 2026-11-28: no goals card
+ * on a turn that declines an unsafe goal).
+ */
+const UNIT_FIRST_GOAL_RE = new RegExp(
+  "\\b(?:calori(?:e|es|c)\\s+(?:goal|target|limit|budget|intake|allowance|cap)s?|(?:set|change|lower|drop|cut|reduce|put|make|bring)\\s+(?:(?:my|your|the)\\s+)?(?:daily\\s+)?calories)" +
+    "(?:\\s+from\\s+\\d+)?\\s*(?::|=|\\b(?:to|at|of|is|be|as|should\\s+be|will\\s+be|around|about|under|below)\\b)?\\s*(?:(?:about|around|roughly|just)\\s+)?~?(\\d{2,4})(?!\\d)" +
+    GOAL_FIGURE_END,
+  "gi",
+);
+
+/** A goal set to a figure with its unit: "set my daily goal to 800 kcal". */
+const GOAL_WITH_UNIT_RE =
+  /\b(?:set|change|lower|drop|cut|reduce|put|make|bring)\s+(?:(?:my|your|the)\s+)?(?:daily\s+)?(?:goal|target|limit)\s+(?:from\s+\d+\s+)?(?:to|at|of|as)\s+(?:(?:about|around|roughly|just)\s+)?~?(\d{2,4})(?!\d)\s*(?:k?cal(?:orie)?s?|kilocalories)\b/gi;
+
+/**
  * True when the message asks for a daily intake under 1,200 calories: the
  * figure has to be followed directly by its daily marker ("800 kcal a day",
  * "900 cal/day", "a 1,199 calorie daily limit"). A per-meal figure followed
  * later by "today" or "Monday" is ordinary food talk (audit 2026-11-24,
  * M32 + M33).
  */
-/**
- * A calorie goal with the unit before a bare figure: "set my calorie goal to
- * 800", "calorie limit 1000", "lower my daily calories to 1,100". The figure
- * must not carry another unit ("900 grams") and "by"/"for" never join it
- * ("goal by 300" is a change, "goal for 800 m runners" is not a goal).
- */
-const UNIT_FIRST_GOAL_RE =
-  /\b(?:calori(?:e|es)\s+(?:goal|target|limit|budget|intake|allowance|cap)s?|(?:set|change|lower|drop|cut|reduce|put|make|bring)\s+(?:(?:my|your|the)\s+)?(?:daily\s+)?calories)\s*(?::|=|\b(?:to|at|of|is|be|as|should\s+be|will\s+be|around|about|under|below)\b)?\s*(?:(?:about|around|roughly|just)\s+)?~?(\d{2,4})(?![\d.,])(?!\s*(?:g|grams?|%|kg|lbs?|pounds?|m|km|miles?|steps|minutes?|mins?)\b)/gi;
-
 function asksForLowDailyCalories(message: string): boolean {
   // "1,100" → "1100" so the figure is read whole.
   const s = message.replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
-  for (const m of s.matchAll(UNIT_FIRST_GOAL_RE)) {
-    if (Number(m[1]) < 1200) return true;
+  for (const re of [UNIT_FIRST_GOAL_RE, GOAL_WITH_UNIT_RE]) {
+    for (const m of s.matchAll(re)) {
+      if (Number(m[1]) < 1200) return true;
+    }
   }
   for (const m of s.matchAll(CALORIE_FIGURE_RE)) {
     if (Number(m[1]) >= 1200) continue;
