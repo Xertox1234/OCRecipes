@@ -177,7 +177,7 @@ function isUnaskedDehydratedForm(
  * Less common species CNF names in a qualifier part beside the common one:
  * "Egg, duck, whole, fresh, raw" beside "Egg, chicken, whole, fresh or frozen,
  * raw", "Milk, fluid, sheep, whole" beside "Milk, fluid, whole, …". The
- * common species' row is often the longer name ("chicken", "or frozen"), so
+ * common species' row can be the longer name ("chicken", "or frozen"), so
  * the length penalty hands an unqualified query to the rarer species.
  */
 const UNCOMMON_SPECIES_WORDS = new Set([
@@ -260,7 +260,7 @@ function tokenizeDescription(d: string): DescriptionTokens {
  * sheep, whole" for "Milk, fluid, chocolate, whole" (an unasked flavour),
  * not the plain cow's milk row, whose six-part name loses on length.
  *
- * Measured on the 67-query gold set (`server/services/__tests__/fixtures/
+ * Baseline, measured on the then 67-query gold set (`server/services/__tests__/fixtures/
  * cnf-gold-set.json`) against the real EN list (2026-09-27): right food 52,
  * wrong 11, no match 4. The base 51 queries alone are 43 / 4 / 4, unchanged
  * from before this file's fixes; before the dehydrated-form penalty (#1126)
