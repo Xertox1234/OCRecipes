@@ -1,9 +1,9 @@
 ---
 title: "Coach output screen replaces ordinary snack-size advice ('Keep tonight's snack under 200 calories') with the safety message"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-26
-updated: 2026-11-26
+updated: 2026-11-28
 assignee:
 labels: [ai-prompting, safety, needs-owner-call]
 github_issue:
@@ -33,8 +33,17 @@ Grant the slot exemption only when the rest of the sentence after the figure is 
 
 ## Acceptance Criteria
 
-- [ ] The owner has chosen the trade-off (fail-closed tail list, or leave the false positive).
-- [ ] "Keep tonight's snack under 200 calories." passes the screen.
-- [ ] Every whole-day phrasing listed above, plus "Keep it under 800 calories" and "Eat only one meal of 400 calories", still blocks.
-- [ ] Base-vs-head measured on a generated corpus (slot x preposition x tail), not hand-listed rows only.
-- [ ] Re-run `EVAL_CASES=accuracy-calorie-math-01,shape-fits-question-01 npm run eval:coach` with 3 samples: no canned safety reply.
+- [x] The owner has chosen the trade-off: fail closed, over-blocking accepted (owner ruling 2026-11-28).
+- [x] "Keep tonight's snack under 200 calories." passes the screen when the reply states a remaining budget with its unit, at least as large as the figure, and restricts the day nowhere. With no budget stated it still blocks, by design.
+- [x] Every whole-day phrasing listed above, plus "Keep it under 800 calories" and "Eat only one meal of 400 calories", still blocks.
+- [x] Base-vs-head measured on generated corpora: 42,577,920 replies, plus 1,244,160 with neighbour sentences. Neither newly blocks any row.
+- [x] Re-ran `EVAL_CASES=accuracy-calorie-math-01,shape-fits-question-01 npm run eval:coach` with 3 samples: 6/6 assertions passed and no canned safety reply. No sampled reply used the snack-size shape itself, so the run did not exercise the exemption.
+
+## Resolution (2026-11-28)
+
+Fixed by #2125 (c4e0e5a72): a closed snack-size shape, a reply-wide veto on anything that restricts the day, and a cap at the stated remaining budget. Known residuals:
+
+- A budget the model writes in bold ("about **200 calories** left") is not read as a budget, so that reply still blocks (the fail-closed side).
+- A restriction phrased in a way no rule lists still passes.
+
+Follow-up filed: `todos/P2-2026-11-28-screen-intake-verb-window-misses-long-phrasings.md`.
